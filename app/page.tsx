@@ -5,37 +5,46 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { AuthButton } from "@/components/auth-button";
 import ToggleMenu from "@/components/toggle-menu";
 import MenuOpen from "@/components/menu-open";
+import Image from "next/image";
 
 // Menambahkan tipe untuk props komponen
-interface DivProps extends React.HTMLAttributes<HTMLDivElement> {}
-interface HeadingProps extends React.HTMLAttributes<HTMLHeadingElement> {}
-interface ParagraphProps extends React.HTMLAttributes<HTMLParagraphElement> {}
 
-const Card: React.FC<DivProps> = ({ className, ...props }) => (
+const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
+  className,
+  ...props
+}) => (
   <div
     className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm ${className}`}
     {...props}
   />
 );
 
-const CardHeader: React.FC<DivProps> = ({ className, ...props }) => (
+const CardHeader: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
+  className,
+  ...props
+}) => (
   <div className={`flex flex-col space-y-1.5 p-6 ${className}`} {...props} />
 );
 
-const CardTitle: React.FC<HeadingProps> = ({ className, ...props }) => (
+const CardTitle: React.FC<React.HTMLAttributes<HTMLHeadingElement>> = ({
+  className,
+  ...props
+}) => (
   <h3
     className={`text-2xl font-semibold leading-none tracking-tight ${className}`}
     {...props}
   />
 );
 
-const CardDescription: React.FC<ParagraphProps> = ({ className, ...props }) => (
-  <p className={`text-sm text-muted-foreground ${className}`} {...props} />
-);
+const CardDescription: React.FC<React.HTMLAttributes<HTMLParagraphElement>> = ({
+  className,
+  ...props
+}) => <p className={`text-sm text-muted-foreground ${className}`} {...props} />;
 
-const CardContent: React.FC<DivProps> = ({ className, ...props }) => (
-  <div className={`p-6 pt-0 ${className}`} {...props} />
-);
+const CardContent: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
+  className,
+  ...props
+}) => <div className={`p-6 pt-0 ${className}`} {...props} />;
 
 interface NavLink {
   name: string;
@@ -145,10 +154,12 @@ const App: React.FC = () => {
             </div>
             <div className="mt-16 mx-auto max-w-5xl">
               <div className="rounded-xl bg-background shadow-2xl ring-1 ring-ring/10">
-                <img
+                <Image
                   src="/dashboard.png"
                   alt="[Tampilan dashboard aplikasi MR & PO]"
                   className="rounded-xl object-cover"
+                  width={1920}
+                  height={1080}
                 />
               </div>
             </div>
