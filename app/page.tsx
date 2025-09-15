@@ -14,7 +14,7 @@ const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
   ...props
 }) => (
   <div
-    className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm ${className}`}
+    className={`bg-card text-card-foreground rounded-xl border border-border shadow-xs ${className}`}
     {...props}
   />
 );
@@ -135,7 +135,7 @@ const App: React.FC = () => {
       <main>
         {/* Hero Section */}
         <section className="relative py-20 md:py-32 bg-background">
-          <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(to_bottom,white_20%,transparent_100%)] dark:bg-grid-slate-700/40"></div>
+          <div className="absolute inset-0 bg-grid-slate-100 mask-[linear-gradient(to_bottom,white_20%,transparent_100%)] dark:bg-grid-slate-700/40"></div>
           <div className="container mx-auto px-4 md:px-6 text-center relative">
             <h1 className="text-4xl md:text-6xl font-extrabold tracking-tighter text-foreground leading-tight">
               Modernisasi Proses Pengadaan <br className="hidden md:block" />{" "}
