@@ -8,7 +8,7 @@ interface NavLink {
 }
 
 export default function MenuOpen() {
-  const { setMenuOpen } = useStore();
+  const { setMenuOpen, isMenuOpen } = useStore();
 
   const navLinks: NavLink[] = [
     { name: "Fitur Utama", href: "#fitur" },
@@ -17,7 +17,10 @@ export default function MenuOpen() {
   ];
 
   return (
-    <div className="md:hidden bg-background border-t border-border">
+    <div
+      className="md:hidden bg-background border-t border-border"
+      hidden={!isMenuOpen}
+    >
       <nav className="flex flex-col gap-4 p-4">
         {navLinks.map((link) => (
           <a
