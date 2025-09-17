@@ -17,28 +17,37 @@ import {
 } from "@/components/ui/sidebar";
 import { createClient } from "@/lib/supabase/client";
 import { redirect, usePathname } from "next/navigation";
-import { ReactNode, useEffect } from "react";
+import { Fragment, ReactNode, useEffect } from "react";
 import { toast } from "sonner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  function urlToBreadcrumb(urlPath: string) {
-    const parts = urlPath.split("/").filter(Boolean);
+  function urlToBreadcrumb(pathname: string) {
+    const parts = pathname.split("/").filter(Boolean);
+
     return parts.map((part, index) => {
       const isLast = index === parts.length - 1;
-      const readablePart = part
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (s) => s.toUpperCase());
+      const href = `/${parts.slice(0, index + 1).join("/")}`;
+
+      const readablePart = decodeURIComponent(
+        part.replace(/-/g, " ").replace(/\b\w/g, (s) => s.toUpperCase())
+      );
+
+      // 👉 skip kalau part terakhir adalah UUID
+      if (isLast && /^[0-9a-fA-F-]{36}$/.test(part)) {
+        return null;
+      }
 
       return (
-        <BreadcrumbItem key={index}>
-          {isLast ? (
-            <BreadcrumbPage>{decodeURIComponent(readablePart)}</BreadcrumbPage>
-          ) : (
-            <BreadcrumbLink href={`/${parts.slice(0, index + 1).join("/")}`}>
-              {readablePart}
-            </BreadcrumbLink>
-          )}
-        </BreadcrumbItem>
+        <Fragment key={index}>
+          <BreadcrumbItem>
+            {isLast ? (
+              <BreadcrumbPage>{readablePart}</BreadcrumbPage>
+            ) : (
+              <BreadcrumbLink href={href}>{readablePart}</BreadcrumbLink>
+            )}
+          </BreadcrumbItem>
+          {!isLast && <BreadcrumbSeparator />}
+        </Fragment>
       );
     });
   }

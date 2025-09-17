@@ -12,18 +12,72 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+import {
+  GalleryVerticalEnd,
+  Bot,
+  LayoutDashboard,
+  FileBox,
+  BaggageClaim,
+  Boxes,
+  BookOpen,
+  MessageSquareShare,
+  Info,
+} from "lucide-react";
+import Image from "next/image";
 
 const data = {
+  teams: [
+    {
+      name: "Lourdes Autoparts",
+      logo: GalleryVerticalEnd,
+      plan: "Versi 1.0.0",
+    },
+  ],
+  navAdmin: [
+    {
+      title: "User Management",
+      url: "/user-management",
+      icon: Bot,
+    },
+  ],
   navMain: [
-    { title: "Dashboard", url: "/dashboard" },
-    { title: "Material Request", url: "/material-request" },
-    { title: "Purchase Order", url: "/purchase-order" },
-    { title: "Barang", url: "/barang" },
+    {
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      title: "Material Request",
+      url: "/material-request",
+      icon: FileBox,
+    },
+    {
+      title: "Purchase Order",
+      url: "/purchase-order",
+      icon: BaggageClaim,
+    },
+    {
+      title: "Barang",
+      url: "/barang",
+      icon: Boxes,
+    },
   ],
   navSecondary: [
-    { title: "Dokumentasi", url: "/dokumentasi" },
-    { title: "Feedback", url: "/feedback" },
-    { title: "Tentang App", url: "/tentang-app" },
+    {
+      title: "Dokumentasi",
+      url: "/dokumentasi",
+      icon: BookOpen,
+    },
+    {
+      title: "Feedback",
+      url: "/feedback",
+      icon: MessageSquareShare,
+    },
+    {
+      title: "Tentang App",
+      url: "/tentang-app",
+      icon: Info,
+    },
   ],
 };
 
@@ -59,11 +113,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div>
-          <img src="lourdes.png" alt="lourdes.png" className="drop-shadow-md" />
+          <Image
+            src={"/lourdes.png"}
+            width={500}
+            height={500}
+            alt="Lourdes Autoparts"
+          />
         </div>
       </SidebarHeader>
 
       <SidebarContent>
+        {profile?.role === "admin" && (
+          <NavMain label="Admin" items={markActive(data.navAdmin)} />
+        )}
         <NavMain items={markActive(data.navMain)} />
         <NavMain label="About" items={markActive(data.navSecondary)} />
       </SidebarContent>

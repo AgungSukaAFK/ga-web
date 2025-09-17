@@ -56,3 +56,42 @@ export function formatTanggal(timestamp: number | string): string {
 
   return "Tanggal tidak valid";
 }
+
+export function parseCSV(csv: string): string[][] {
+  return csv
+    .trim()
+    .split("\n")
+    .map(
+      (line) => line.split(",").map((cell) => cell.replace(/^"|"$/g, "").trim()) // buang tanda kutip
+    );
+}
+
+export function validateCSV(csv: string) {
+  const rows = parseCSV(csv);
+  const [header, ...data] = rows;
+
+  const expected = ["part_number", "part_name", "category", "uom", "vendor"];
+  if (header.join(",") !== expected.join(",")) {
+    return { valid: false, errors: ["Header CSV tidak sesuai"], rows: [] };
+  }
+
+  const seen = new Set<string>();
+  const uniqueRows: string[][] = [];
+  const errors: string[] = [];
+
+  data.forEach((cols, i) => {
+    const partNumber = cols[0];
+    if (!partNumber) {
+      errors.push(`Baris ${i + 2}: part_number kosong`);
+      return;
+    }
+    if (seen.has(partNumber)) {
+      errors.push(`Duplikat di CSV pada baris ${i + 2}: ${partNumber}`);
+      return;
+    }
+    seen.add(partNumber);
+    uniqueRows.push(cols);
+  });
+
+  return { valid: errors.length === 0, errors, rows: uniqueRows };
+}
