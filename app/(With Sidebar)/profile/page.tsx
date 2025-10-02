@@ -33,7 +33,7 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
-export const dataDepartment: ComboboxData = [
+const dataDepartment: ComboboxData = [
   { label: "General Affair", value: "General Affair" },
   { label: "Marketing", value: "Marketing" },
   { label: "Manufacture", value: "Manufacture" },

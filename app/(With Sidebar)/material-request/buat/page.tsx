@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation"; // Import useRouter
 import { MaterialRequest, Order } from "../page";
 import { Combobox, ComboboxData } from "@/components/combobox";
-import { dataDepartment } from "../../profile/page";
 import { DatePicker } from "@/components/date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -51,6 +50,22 @@ type User = {
   role: string;
   department: string;
 };
+
+const dataDepartment: ComboboxData = [
+  { label: "General Affair", value: "General Affair" },
+  { label: "Marketing", value: "Marketing" },
+  { label: "Manufacture", value: "Manufacture" },
+  { label: "K3", value: "K3" },
+  { label: "Finance", value: "Finance" },
+  { label: "IT", value: "IT" },
+  { label: "Logistik", value: "Logistik" },
+  { label: "Purchasing", value: "Purchasing" },
+  { label: "Warehouse", value: "Warehouse" },
+  { label: "Service", value: "Service" },
+  { label: "General Manager", value: "General Manager" },
+  { label: "Executive Manager", value: "Executive Manager" },
+  { label: "Boards of Director", value: "Boards of Director" },
+];
 
 // Data untuk combobox kategori
 const kategoriData: ComboboxData = [
