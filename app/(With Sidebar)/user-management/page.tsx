@@ -49,7 +49,7 @@ export default async function UserManagement() {
                 <TableCell className="p-2">{user.lokasi}</TableCell>
                 <TableCell className="p-2">{user.department}</TableCell>
                 <TableCell className="p-2">
-                  <Button variant={"outline"} size="sm">
+                  <Button variant={"outline"} asChild size="sm">
                     <Link href={`/user-management/${user.id}`}>Edit</Link>
                   </Button>
                 </TableCell>

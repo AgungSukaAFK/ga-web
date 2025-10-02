@@ -106,7 +106,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const markActive = (items: typeof data.navMain) =>
     items.map((item) => ({
       ...item,
-      isActive: currentPath === item.url,
+      isActive: currentPath.includes(item.url),
     }));
 
   return (
