@@ -95,3 +95,35 @@ export function validateCSV(csv: string) {
 
   return { valid: errors.length === 0, errors, rows: uniqueRows };
 }
+
+/**
+ * Memformat tanggal menjadi format lengkap bahasa Indonesia.
+ * @param dateString Tanggal dalam format string atau Date
+ * @returns String tanggal yang diformat, cth: "Minggu, 12 Oktober 2025"
+ */
+export const formatDate = (dateString?: string | Date): string => {
+  if (!dateString) return "N/A";
+  return new Date(dateString).toLocaleDateString("id-ID", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+/**
+ * Memformat angka atau string angka menjadi format mata uang Rupiah.
+ * @param value Angka atau string yang akan diformat
+ * @returns String mata uang yang diformat, cth: "Rp 1.500.000"
+ */
+export const formatCurrency = (value?: string | number): string => {
+  const numericValue = Number(value);
+  if (value === null || value === undefined || isNaN(numericValue))
+    return "Rp 0";
+
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(numericValue);
+};
