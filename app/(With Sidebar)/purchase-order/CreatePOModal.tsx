@@ -13,12 +13,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  ApprovedMaterialRequest,
-  fetchApprovedMaterialRequests,
-} from "@/services/purchaseOrderService";
+import { fetchApprovedMaterialRequests } from "@/services/purchaseOrderService";
 import { Loader2, FilePlus2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { ApprovedMaterialRequest } from "@/type";
 
 interface CreatePOModalProps {
   isOpen: boolean;

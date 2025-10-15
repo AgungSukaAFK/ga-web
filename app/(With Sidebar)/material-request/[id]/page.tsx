@@ -1,6 +1,8 @@
+// src/app/(With Sidebar)/material-request/[id]/page.tsx
+
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -27,69 +29,17 @@ import {
   Loader2,
 } from "lucide-react";
 import Link from "next/link";
-import { DiscussionSection } from "./discussion-component"; // Sesuaikan path jika perlu
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { User } from "@supabase/supabase-js";
+import { MaterialRequest, Approval, Discussion } from "@/type"; // Menggunakan tipe dari file terpusat
+import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Menggunakan formatDateFriendly
+import { DiscussionSection } from "./discussion-component";
 
-// --- Tipe Data ---
-interface Approval {
-  userid: string;
-  nama: string;
-  status: "pending" | "approved" | "rejected";
-  type: string;
-}
+function DetailMRPageContent({ params }: { params: { id: string } }) {
+  const mrId = parseInt(params.id);
 
-interface MaterialRequest {
-  id: string;
-  kode_mr: string;
-  status: string;
-  remarks: string;
-  cost_estimation: string;
-  department: string;
-  kategori: string;
-  created_at: string;
-  due_date: string;
-  orders: {
-    name: string;
-    qty: string;
-    uom: string;
-    note?: string;
-    url?: string;
-  }[];
-  approvals: Approval[];
-  attachments: { name: string; url: string }[];
-  discussions: any[];
-  users_with_profiles: { nama: string } | null;
-}
-
-// --- Helper Functions ---
-const formatDate = (dateString?: string) => {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString("id-ID", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
-
-const formatCurrency = (value: string) => {
-  if (!value || isNaN(Number(value))) return "Rp 0";
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(Number(value));
-};
-
-// --- Komponen Utama Halaman ---
-export default function DetailMRPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
   const [mr, setMr] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,42 +48,40 @@ export default function DetailMRPage({
 
   const supabase = createClient();
 
-  const { id: paramsId } = use(params);
-
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
 
-      // Ambil data user dan MR secara bersamaan
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setCurrentUser(user);
 
+      if (isNaN(mrId)) {
+        setError("ID Material Request tidak valid.");
+        setLoading(false);
+        return;
+      }
+
       const { data: mrData, error: mrError } = await supabase
         .from("material_requests")
-        .select("*, users_with_profiles (nama)")
-        .eq("id", paramsId)
-        .single<MaterialRequest>();
+        .select("*, users_with_profiles!userid(nama)")
+        .eq("id", mrId)
+        .single();
 
       if (mrError) {
-        setError(
-          "Gagal memuat data Material Request. Mungkin data tidak ditemukan."
-        );
+        setError("Gagal memuat data MR.");
         toast.error("Gagal memuat data", { description: mrError.message });
       } else {
-        setMr(mrData);
+        setMr(mrData as any);
       }
       setLoading(false);
     };
 
-    if (paramsId) {
-      fetchData();
-    }
-  }, [supabase, paramsId]);
+    fetchData();
+  }, [supabase, mrId]);
 
-  // --- Logika untuk Aksi Approval ---
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!mr || !currentUser) return;
     setActionLoading(true);
@@ -149,7 +97,7 @@ export default function DetailMRPage({
       newMrStatus = "Rejected";
     } else if (decision === "approved") {
       const isLastApproval = updatedApprovals.every(
-        (app: { status: string }) => app.status === "approved"
+        (app: Approval) => app.status === "approved"
       );
       if (isLastApproval) {
         newMrStatus = "Approved";
@@ -176,9 +124,8 @@ export default function DetailMRPage({
     setActionLoading(false);
   };
 
-  // Komponen untuk menampilkan tombol aksi
   const ApprovalActions = () => {
-    if (!mr || !currentUser || mr.status !== "Pending") return null;
+    if (!mr || !currentUser || mr.status !== "Pending Approval") return null;
 
     const myApprovalIndex = mr.approvals.findIndex(
       (app) => app.userid === currentUser.id
@@ -187,7 +134,7 @@ export default function DetailMRPage({
       myApprovalIndex === -1 ||
       mr.approvals[myApprovalIndex].status !== "pending"
     ) {
-      return null; // Bukan approver atau sudah bertindak
+      return null;
     }
 
     const isMyTurn = mr.approvals
@@ -238,8 +185,10 @@ export default function DetailMRPage({
         return <Badge variant="outline">Approved</Badge>;
       case "rejected":
         return <Badge variant="destructive">Rejected</Badge>;
-      case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
+      case "pending approval":
+        return <Badge variant="secondary">Pending Approval</Badge>;
+      case "pending validation":
+        return <Badge variant="secondary">Pending Validation</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
@@ -270,26 +219,20 @@ export default function DetailMRPage({
     }
   };
 
-  if (loading) {
+  if (loading) return <DetailMRSkeleton />;
+  if (error || !mr)
     return (
-      <div className="col-span-12">
-        <DetailMRSkeleton />
-      </div>
+      <Content className="col-span-12">
+        <div className="flex flex-col items-center justify-center h-96 text-center">
+          <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+          <h1 className="text-2xl font-bold">Data Tidak Ditemukan</h1>
+          <p className="text-muted-foreground">{error}</p>
+          <Button asChild variant="outline" className="mt-6">
+            <Link href="/material-request">Kembali ke Daftar MR</Link>
+          </Button>
+        </div>
+      </Content>
     );
-  }
-
-  if (error || !mr) {
-    return (
-      <div className="col-span-12 flex flex-col items-center justify-center h-96 text-center">
-        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h1 className="text-2xl font-bold">Data Tidak Ditemukan</h1>
-        <p className="text-muted-foreground">{error}</p>
-        <Button asChild variant="outline" className="mt-6">
-          <Link href="/material-request">Kembali ke Daftar MR</Link>
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -312,7 +255,7 @@ export default function DetailMRPage({
             <InfoItem
               icon={CircleUser}
               label="Pembuat"
-              value={mr.users_with_profiles?.nama || "N/A"}
+              value={(mr as any).users_with_profiles?.nama || "N/A"}
             />
             <InfoItem
               icon={Building}
@@ -323,12 +266,12 @@ export default function DetailMRPage({
             <InfoItem
               icon={Calendar}
               label="Tanggal Dibuat"
-              value={formatDate(mr.created_at)}
+              value={formatDateFriendly(mr.created_at)}
             />
             <InfoItem
               icon={Calendar}
               label="Due Date"
-              value={formatDate(mr.due_date)}
+              value={formatDateFriendly(mr.due_date)}
             />
             <InfoItem
               icon={DollarSign}
@@ -345,17 +288,16 @@ export default function DetailMRPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>No</TableHead>
                   <TableHead>Nama Item</TableHead>
                   <TableHead>Qty</TableHead>
-                  <TableHead>UoM</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Link</TableHead>
                   <TableHead>Catatan</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mr.orders.map((item, index) => (
                   <TableRow key={index}>
-                    <TableCell>{index + 1}</TableCell>
                     <TableCell className="font-medium">
                       {item.name}
                       {item.url && (
@@ -368,8 +310,15 @@ export default function DetailMRPage({
                         </Link>
                       )}
                     </TableCell>
-                    <TableCell>{item.qty}</TableCell>
-                    <TableCell>{item.uom}</TableCell>
+                    <TableCell>
+                      {item.qty} {item.uom}
+                    </TableCell>
+                    <TableCell>{item.vendor || "-"}</TableCell>
+                    <TableCell>
+                      <Button asChild variant={"outline"}>
+                        <Link href={item.url}>View Link</Link>
+                      </Button>
+                    </TableCell>
                     <TableCell>{item.note || "-"}</TableCell>
                   </TableRow>
                 ))}
@@ -384,27 +333,35 @@ export default function DetailMRPage({
           <ApprovalActions />
         </Content>
         <Content title="Jalur Approval">
-          <ul className="space-y-4">
-            {mr.approvals.map((approver, index) => (
-              <li
-                key={index}
-                className="flex items-center justify-between gap-4"
-              >
-                <div>
-                  <p className="font-semibold">{approver.nama}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {approver.type}
-                  </p>
-                </div>
-                {getApprovalStatusBadge(approver.status)}
-              </li>
-            ))}
-          </ul>
+          {mr.approvals.length > 0 ? (
+            <ul className="space-y-4">
+              {mr.approvals.map((approver, index) => (
+                <li
+                  key={index}
+                  className="flex items-center justify-between gap-4"
+                >
+                  <div>
+                    <p className="font-semibold">{approver.nama}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {approver.type}
+                    </p>
+                  </div>
+                  {getApprovalStatusBadge(
+                    approver.status as "approved" | "rejected" | "pending"
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              Jalur approval belum ditentukan oleh GA.
+            </p>
+          )}
         </Content>
         <Content title="Lampiran">
-          <ul className="space-y-2">
-            {mr.attachments.length > 0 ? (
-              mr.attachments.map((file, index) => (
+          {mr.attachments.length > 0 ? (
+            <ul className="space-y-2">
+              {mr.attachments.map((file, index) => (
                 <li key={index}>
                   <Link
                     href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
@@ -415,24 +372,24 @@ export default function DetailMRPage({
                     <span>{file.name}</span>
                   </Link>
                 </li>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tidak ada lampiran.
-              </p>
-            )}
-          </ul>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
+          )}
         </Content>
       </div>
 
       <div className="col-span-12">
-        <DiscussionSection mrId={mr.id} initialDiscussions={mr.discussions} />
+        <DiscussionSection
+          mrId={String(mr.id)}
+          initialDiscussions={mr.discussions as Discussion[]}
+        />
       </div>
     </>
   );
 }
 
-// Komponen Helper
 const InfoItem = ({
   icon: Icon,
   label,
@@ -451,51 +408,30 @@ const InfoItem = ({
   </div>
 );
 
-// Komponen Skeleton
 const DetailMRSkeleton = () => (
-  <div className="col-span-12 animate-pulse">
-    <div className="flex justify-between items-center mb-6">
-      <div>
-        <Skeleton className="h-8 w-48 mb-2" />
-        <Skeleton className="h-4 w-64" />
-      </div>
-      <Skeleton className="h-8 w-24 rounded-full" />
+  <>
+    <div className="col-span-12">
+      <Skeleton className="h-12 w-1/2" />
     </div>
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 space-y-6">
-        <Content>
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-1/3 mb-4" />
-            <div className="grid grid-cols-2 gap-4">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          </div>
-        </Content>
-        <Content>
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-1/3 mb-4" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        </Content>
-      </div>
-      <div className="lg:col-span-1 space-y-6">
-        <Content>
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-1/2 mb-4" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        </Content>
-        <Content>
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-1/2 mb-4" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        </Content>
-      </div>
-    </div>
-  </div>
+    <Content className="col-span-12 lg:col-span-8">
+      <Skeleton className="h-64 w-full" />
+    </Content>
+    <Content className="col-span-12 lg:col-span-4">
+      <Skeleton className="h-64 w-full" />
+    </Content>
+  </>
 );
+
+// Bungkus dengan Suspense
+export default function DetailMRPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const resolvedParams = use(params);
+  return (
+    <Suspense fallback={<DetailMRSkeleton />}>
+      <DetailMRPageContent params={resolvedParams} />
+    </Suspense>
+  );
+}

@@ -127,3 +127,20 @@ export const formatCurrency = (value?: string | number): string => {
     minimumFractionDigits: 0,
   }).format(numericValue);
 };
+
+export const formatDateFriendly = (date?: Date | string): string => {
+  if (!date) return "N/A";
+
+  const dateObj = new Date(date);
+  // Cek apakah tanggal valid
+  if (isNaN(dateObj.getTime())) {
+    return "N/A";
+  }
+
+  return dateObj.toLocaleDateString("id-ID", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};

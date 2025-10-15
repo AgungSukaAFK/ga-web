@@ -22,6 +22,7 @@ import {
   BookOpen,
   MessageSquareShare,
   Info,
+  CheckCheck, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -91,23 +92,56 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   React.useEffect(() => {
     const getUser = async () => {
       const { data, error } = await supabase.auth.getUser();
-      if (!error) setUser(data.user);
-      if (!data.user) redirect("auth/login");
-      const profileRes = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", data.user.id)
-        .single();
-      if (profileRes.data) setProfile(profileRes.data);
+      if (!data.user && !error) {
+        redirect("/auth/login");
+        return;
+      }
+      if (data.user) {
+        setUser(data.user);
+        const profileRes = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.user.id)
+          .single();
+        if (profileRes.data) setProfile(profileRes.data);
+      }
     };
     getUser();
   }, [supabase]);
 
-  const markActive = (items: typeof data.navMain) =>
-    items.map((item) => ({
-      ...item,
-      isActive: currentPath.includes(item.url),
-    }));
+  const markActive = React.useCallback(
+    (items: typeof data.navMain) =>
+      items.map((item) => ({
+        ...item,
+        isActive:
+          currentPath === item.url ||
+          (item.url !== "/dashboard" && currentPath.startsWith(item.url)),
+      })),
+    [currentPath]
+  );
+
+  // EFFICIENT & FIX: Menggunakan useMemo untuk membuat menu navigasi secara kondisional
+  const mainNavItems = React.useMemo(() => {
+    const baseNav = data.navMain;
+
+    // Periksa apakah role adalah 'requester' atau 'approver' atau role lain yang relevan
+    if (profile?.role === "approver") {
+      // Buat array BARU, jangan ubah yang asli
+      const newNav = [
+        baseNav[0], // Item pertama (Dashboard)
+        {
+          title: "Approval & Validation",
+          url: "/approval-validation",
+          icon: CheckCheck,
+        },
+        ...baseNav.slice(1), // Sisa item dari index 1 dan seterusnya
+      ];
+      return markActive(newNav);
+    }
+
+    // Jika bukan role di atas, kembalikan menu standar
+    return markActive(baseNav);
+  }, [profile, markActive]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -118,6 +152,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             width={500}
             height={500}
             alt="Lourdes Autoparts"
+            priority // Tambahkan priority untuk LCP
           />
         </div>
       </SidebarHeader>
@@ -126,7 +161,10 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         {profile?.role === "admin" && (
           <NavMain label="Admin" items={markActive(data.navAdmin)} />
         )}
-        <NavMain items={markActive(data.navMain)} />
+
+        {/* FIX: Gunakan variabel yang sudah dihitung dengan useMemo */}
+        <NavMain items={mainNavItems} />
+
         <NavMain label="About" items={markActive(data.navSecondary)} />
       </SidebarContent>
 
@@ -134,7 +172,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         {user && (
           <NavUser
             user={{
-              avatar: `https://ui-avatars.com/api/?name=${user.email}`,
+              avatar: `https://ui-avatars.com/api/?name=${
+                profile?.nama || user.email
+              }`,
               email: user.email || "",
               name: profile?.nama || "-",
             }}

@@ -1,55 +1,5 @@
 "use client";
 
-export interface MaterialRequest {
-  id: string;
-  userid: string;
-  kode_mr: string;
-  kategori: string;
-  status: string;
-  remarks: string;
-  cost_estimation: string;
-  department: string;
-  created_at: Date;
-  due_date?: Date;
-  orders: Order[];
-  approvals: Approval[];
-  attachments: Attachment[];
-  discussions: {}[];
-}
-
-interface Approval {
-  type: string;
-  status: string;
-  userid: string;
-  nama: string;
-  email: string;
-  role: string;
-  department: string;
-}
-
-export interface Order {
-  name: string;
-  qty: string;
-  uom: string;
-  vendor: string;
-  vendor_contact: string;
-  note: string;
-  url: string;
-}
-
-export interface Attachment {
-  url: string;
-  name: string;
-}
-
-type User = {
-  id: string;
-  nama: string;
-  email: string;
-  role: string;
-  department: string;
-};
-
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +30,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
+import { MaterialRequest, User } from "@/type";
 
 // --- Helper & Constants ---
 const LIMIT_OPTIONS = [10, 25, 50, 100];

@@ -17,10 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import {
-  fetchPurchaseOrderById,
-  PurchaseOrderDetail,
-} from "@/services/purchaseOrderService";
+import { fetchPurchaseOrderById } from "@/services/purchaseOrderService";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   CircleUser,
@@ -32,6 +29,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
+import { PurchaseOrderDetail } from "@/type";
 
 export default function PurchaseOrderDetailPage({
   params,
@@ -285,18 +283,15 @@ export default function PurchaseOrderDetailPage({
         </div>
       </Content>
 
-      {/* ================================================================== */}
-      {/* BAGIAN 2: TAMPILAN KHUSUS UNTUK PRINT A4 (HILANG DI LAYAR) */}
-      {/* ================================================================== */}
       <div id="printable-po-a4" className="print-only col-span-12">
         <header className="flex justify-between items-start pb-4 border-b border-gray-300">
           <div>
-            <h1 className="text-2xl font-bold">Garuda Procure</h1>
+            <h1 className="text-xl font-bold">Garuda Mart Indonesia</h1>
             <p className="text-xs">Sakura Regency Blok J5-8A</p>
             <p className="text-xs">Jatiasih, Bekasi 17423 - Indonesia</p>
           </div>
           <div className="text-right">
-            <h2 className="text-3xl font-bold text-gray-800">PURCHASE ORDER</h2>
+            <h2 className="text-xl font-bold text-gray-800">PURCHASE ORDER</h2>
             <p className="mt-1">
               <b>No. PO:</b> {po.kode_po}
             </p>

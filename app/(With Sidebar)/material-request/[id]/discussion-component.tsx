@@ -10,13 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
-
-interface Discussion {
-  user_id: string;
-  user_name: string;
-  message: string;
-  timestamp: string;
-}
+import { Discussion } from "@/type";
 
 interface DiscussionSectionProps {
   mrId: string;

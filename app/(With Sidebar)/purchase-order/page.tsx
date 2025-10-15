@@ -21,12 +21,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   fetchPurchaseOrders,
-  PurchaseOrderListItem,
 } from "@/services/purchaseOrderService";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { CreatePOModal } from "./CreatePOModal";
 import { FileText, Newspaper, Printer, Search } from "lucide-react";
+import { PurchaseOrderListItem } from "@/type";
 
 const ITEMS_PER_PAGE = 10;
 

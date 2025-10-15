@@ -20,16 +20,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   fetchPurchaseOrderById,
-  POItem,
-  PurchaseOrderDetail,
-  PurchaseOrderPayload,
   updatePurchaseOrder,
-  Barang,
 } from "@/services/purchaseOrderService";
 import { formatCurrency } from "@/lib/utils";
 import { AlertTriangle, Save, Send, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { BarangSearchCombobox } from "../../BarangSearchCombobox";
+import {
+  PurchaseOrderDetail,
+  POItem,
+  Barang,
+  PurchaseOrderPayload,
+} from "@/type";
 
 function EditPOPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();

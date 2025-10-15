@@ -18,7 +18,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Barang, searchBarang } from "@/services/purchaseOrderService";
+import { searchBarang } from "@/services/purchaseOrderService";
+import { Barang } from "@/type";
 
 interface BarangSearchComboboxProps {
   onSelect: (barang: Barang) => void;
