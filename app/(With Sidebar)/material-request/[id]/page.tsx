@@ -3,6 +3,7 @@
 "use client";
 
 import { use, useEffect, useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -27,65 +28,149 @@ import {
   Check,
   X,
   Loader2,
+  Edit,
+  Save,
+  Plus,
+  Trash2,
+  Paperclip,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { User } from "@supabase/supabase-js";
-import { MaterialRequest, Approval, Discussion } from "@/type"; // Menggunakan tipe dari file terpusat
-import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Menggunakan formatDateFriendly
+import { User as AuthUser } from "@supabase/supabase-js";
+import {
+  MaterialRequest,
+  Approval,
+  Discussion,
+  Order,
+  User as Profile,
+} from "@/type";
+import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DiscussionSection } from "./discussion-component";
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const mrId = parseInt(params.id);
 
   const [mr, setMr] = useState<MaterialRequest | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // State untuk mode edit
+  const [isEditing, setIsEditing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [formattedCost, setFormattedCost] = useState("Rp 0");
+
   const supabase = createClient();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  // Fungsi untuk memuat data MR dari server
+  const fetchMrData = async () => {
+    if (isNaN(mrId)) {
+      setError("ID Material Request tidak valid.");
+      return null;
+    }
+    const { data: mrData, error: mrError } = await supabase
+      .from("material_requests")
+      .select("*, users_with_profiles!userid(nama)")
+      .eq("id", mrId)
+      .single();
 
+    if (mrError) {
+      setError("Gagal memuat data MR.");
+      toast.error("Gagal memuat data", { description: mrError.message });
+      return null;
+    } else {
+      setMr(mrData as any);
+      const initialCost = Number(mrData.cost_estimation) || 0;
+      setFormattedCost(
+        new Intl.NumberFormat("id-ID", {
+          style: "currency",
+          currency: "IDR",
+          minimumFractionDigits: 0,
+        }).format(initialCost)
+      );
+      return mrData;
+    }
+  };
+
+  useEffect(() => {
+    const initializePage = async () => {
+      setLoading(true);
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      if (isNaN(mrId)) {
-        setError("ID Material Request tidak valid.");
-        setLoading(false);
-        return;
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        setUserProfile(profile);
       }
 
-      const { data: mrData, error: mrError } = await supabase
-        .from("material_requests")
-        .select("*, users_with_profiles!userid(nama)")
-        .eq("id", mrId)
-        .single();
-
-      if (mrError) {
-        setError("Gagal memuat data MR.");
-        toast.error("Gagal memuat data", { description: mrError.message });
-      } else {
-        setMr(mrData as any);
-      }
+      await fetchMrData();
       setLoading(false);
     };
+    initializePage();
+  }, [mrId]);
 
-    fetchData();
-  }, [supabase, mrId]);
+  const isMyTurnForApproval =
+    mr && currentUser
+      ? mr.approvals
+          .slice(
+            0,
+            mr.approvals.findIndex((a) => a.userid === currentUser.id)
+          )
+          .every((a) => a.status === "approved")
+      : false;
+
+  const canEdit =
+    userProfile?.department === "Purchasing" &&
+    mr?.status === "Pending Approval" &&
+    isMyTurnForApproval;
+
+  const handleSaveChanges = async () => {
+    if (!mr) return;
+    setActionLoading(true);
+    const toastId = toast.loading("Menyimpan perubahan...");
+
+    const { error: updateError } = await supabase
+      .from("material_requests")
+      .update({
+        cost_estimation: mr.cost_estimation,
+        orders: mr.orders,
+        attachments: mr.attachments, // Simpan juga perubahan lampiran
+      })
+      .eq("id", mr.id);
+
+    setActionLoading(false);
+    if (updateError) {
+      toast.error("Gagal menyimpan perubahan", {
+        id: toastId,
+        description: updateError.message,
+      });
+    } else {
+      toast.success("Perubahan berhasil disimpan!", { id: toastId });
+      setIsEditing(false);
+    }
+  };
 
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!mr || !currentUser) return;
-    setActionLoading(true);
 
+    if (isEditing && decision === "approved") {
+      await handleSaveChanges();
+    }
+
+    setActionLoading(true);
     const approverIndex = mr.approvals.findIndex(
       (app) => app.userid === currentUser.id
     );
@@ -96,10 +181,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     if (decision === "rejected") {
       newMrStatus = "Rejected";
     } else if (decision === "approved") {
-      const isLastApproval = updatedApprovals.every(
-        (app: Approval) => app.status === "approved"
-      );
-      if (isLastApproval) {
+      if (
+        updatedApprovals.every((app: Approval) => app.status === "approved")
+      ) {
         newMrStatus = "Approved";
       }
     }
@@ -115,38 +199,128 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.success(
         `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
       );
-      setMr((prevMr) =>
-        prevMr
-          ? { ...prevMr, approvals: updatedApprovals, status: newMrStatus }
-          : null
-      );
+      await fetchMrData();
     }
     setActionLoading(false);
+    setIsEditing(false);
+  };
+
+  const handleItemChange = (
+    index: number,
+    field: keyof Order,
+    value: string
+  ) => {
+    if (!mr) return;
+    const newOrders = [...mr.orders];
+    (newOrders[index] as any)[field] = value;
+    setMr({ ...mr, orders: newOrders });
+  };
+  const addItem = () => {
+    if (!mr) return;
+    const newItem: Order = {
+      name: "",
+      qty: "1",
+      uom: "Pcs",
+      vendor: "",
+      url: "",
+      note: "",
+      vendor_contact: "",
+    };
+    setMr({ ...mr, orders: [...mr.orders, newItem] });
+  };
+  const removeItem = (index: number) => {
+    if (!mr) return;
+    setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
+  };
+  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/[^0-9]/g, "");
+    const numericValue = parseInt(rawValue, 10) || 0;
+    if (mr) setMr({ ...mr, cost_estimation: String(numericValue) });
+    setFormattedCost(
+      new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        minimumFractionDigits: 0,
+      }).format(numericValue)
+    );
+  };
+
+  const handleAttachmentUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !mr) return;
+
+    setIsUploading(true);
+    const toastId = toast.loading(`Mengunggah ${files.length} file...`);
+    const uploadPromises = Array.from(files).map(async (file) => {
+      const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
+        file.name
+      }`;
+      const { data, error } = await supabase.storage
+        .from("mr")
+        .upload(filePath, file);
+      if (error) return { error };
+      return { data: { ...data, name: file.name }, error: null };
+    });
+
+    const results = await Promise.all(uploadPromises);
+    const successfulUploads = results
+      .filter((r) => !r.error)
+      .map((r) => ({ url: r.data!.path, name: r.data!.name }));
+
+    if (successfulUploads.length > 0) {
+      setMr((prevMr) =>
+        prevMr
+          ? {
+              ...prevMr,
+              attachments: [...prevMr.attachments, ...successfulUploads],
+            }
+          : null
+      );
+      toast.success(`${successfulUploads.length} file berhasil ditambahkan.`, {
+        id: toastId,
+      });
+    }
+
+    setIsUploading(false);
+    e.target.value = "";
+  };
+
+  const removeAttachment = (indexToRemove: number) => {
+    if (!mr) return;
+    const attachmentToRemove = mr.attachments[indexToRemove];
+    setMr((prevMr) =>
+      prevMr
+        ? {
+            ...prevMr,
+            attachments: prevMr.attachments.filter(
+              (_, i) => i !== indexToRemove
+            ),
+          }
+        : null
+    );
+    toast.info(
+      `Lampiran "${attachmentToRemove.name}" dihapus dari daftar. Perubahan akan tersimpan saat Anda menyimpan.`
+    );
   };
 
   const ApprovalActions = () => {
     if (!mr || !currentUser || mr.status !== "Pending Approval") return null;
-
     const myApprovalIndex = mr.approvals.findIndex(
       (app) => app.userid === currentUser.id
     );
     if (
       myApprovalIndex === -1 ||
       mr.approvals[myApprovalIndex].status !== "pending"
-    ) {
+    )
       return null;
-    }
-
-    const isMyTurn = mr.approvals
-      .slice(0, myApprovalIndex)
-      .every((app) => app.status === "approved");
-    if (!isMyTurn) {
+    if (!isMyTurnForApproval)
       return (
         <p className="text-sm text-muted-foreground text-center">
           Menunggu persetujuan dari approver sebelumnya.
         </p>
       );
-    }
 
     return (
       <div className="flex gap-2">
@@ -243,6 +417,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <p className="text-muted-foreground">Detail Material Request</p>
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && !isEditing && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+              >
+                <Edit className="mr-2 h-4 w-4" /> Edit Rincian
+              </Button>
+            )}
             <span className="text-lg">Status:</span>
             {getStatusBadge(mr.status)}
           </div>
@@ -273,65 +456,178 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               label="Due Date"
               value={formatDateFriendly(mr.due_date)}
             />
-            <InfoItem
-              icon={DollarSign}
-              label="Estimasi Biaya"
-              value={formatCurrency(mr.cost_estimation)}
-            />
+
+            {isEditing ? (
+              <div className="space-y-1">
+                <Label>Estimasi Biaya</Label>
+                <Input
+                  type="text"
+                  value={formattedCost}
+                  onChange={handleCostChange}
+                  disabled={actionLoading}
+                />
+              </div>
+            ) : (
+              <InfoItem
+                icon={DollarSign}
+                label="Estimasi Biaya"
+                value={formatCurrency(mr.cost_estimation)}
+              />
+            )}
+
             <div className="md:col-span-2">
               <InfoItem icon={Info} label="Remarks" value={mr.remarks} />
             </div>
           </div>
         </Content>
+
         <Content title="Order Items">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nama Item</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Link</TableHead>
-                  <TableHead>Catatan</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mr.orders.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">
-                      {item.name}
-                      {item.url && (
-                        <Link
-                          href={item.url}
-                          target="_blank"
-                          className="ml-2 text-primary hover:underline"
-                        >
-                          <LinkIcon className="inline h-3 w-3" />
-                        </Link>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {item.qty} {item.uom}
-                    </TableCell>
-                    <TableCell>{item.vendor || "-"}</TableCell>
-                    <TableCell>
-                      <Button asChild variant={"outline"}>
-                        <Link href={item.url}>View Link</Link>
-                      </Button>
-                    </TableCell>
-                    <TableCell>{item.note || "-"}</TableCell>
+          {isEditing ? (
+            <div className="space-y-4">
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[800px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>UoM</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mr.orders.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Input
+                            value={item.name}
+                            onChange={(e) =>
+                              handleItemChange(index, "name", e.target.value)
+                            }
+                            disabled={actionLoading}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.qty}
+                            onChange={(e) =>
+                              handleItemChange(index, "qty", e.target.value)
+                            }
+                            className="w-20"
+                            type="number"
+                            disabled={actionLoading}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.uom}
+                            onChange={(e) =>
+                              handleItemChange(index, "uom", e.target.value)
+                            }
+                            className="w-24"
+                            disabled={actionLoading}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.vendor}
+                            onChange={(e) =>
+                              handleItemChange(index, "vendor", e.target.value)
+                            }
+                            disabled={actionLoading}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            onClick={() => removeItem(index)}
+                            disabled={actionLoading}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <Button
+                variant="outline"
+                onClick={addItem}
+                disabled={actionLoading}
+              >
+                <Plus className="mr-2 h-4 w-4" /> Tambah Item
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama Item</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Catatan</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {mr.orders.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        {item.name}
+                        {item.url && (
+                          <Link
+                            href={item.url}
+                            target="_blank"
+                            className="ml-2 text-primary hover:underline"
+                          >
+                            <LinkIcon className="inline h-3 w-3" />
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {item.qty} {item.uom}
+                      </TableCell>
+                      <TableCell>{item.vendor || "-"}</TableCell>
+                      <TableCell>{item.note || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </Content>
       </div>
 
       <div className="col-span-12 lg:col-span-4 space-y-6">
-        <Content title="Tindakan Persetujuan">
-          <ApprovalActions />
+        <Content title="Tindakan">
+          {isEditing ? (
+            <div className="flex flex-col gap-2">
+              <Button onClick={handleSaveChanges} disabled={actionLoading}>
+                {actionLoading ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}{" "}
+                Simpan Perubahan
+              </Button>
+              <ApprovalActions />
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setIsEditing(false);
+                  fetchMrData();
+                }}
+              >
+                Batal Edit
+              </Button>
+            </div>
+          ) : (
+            <ApprovalActions />
+          )}
         </Content>
+
         <Content title="Jalur Approval">
           {mr.approvals.length > 0 ? (
             <ul className="space-y-4">
@@ -359,7 +655,41 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           )}
         </Content>
         <Content title="Lampiran">
-          {mr.attachments.length > 0 ? (
+          {isEditing ? (
+            <div className="space-y-4">
+              <Label htmlFor="attachments">Tambah Lampiran</Label>
+              <Input
+                id="attachments"
+                type="file"
+                multiple
+                disabled={actionLoading || isUploading}
+                onChange={handleAttachmentUpload}
+              />
+              {mr.attachments.length > 0 && (
+                <ul className="space-y-2 mt-2">
+                  {mr.attachments.map((file, index) => (
+                    <li
+                      key={index}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <div className="flex items-center gap-2 truncate min-w-0">
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => removeAttachment(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : mr.attachments.length > 0 ? (
             <ul className="space-y-2">
               {mr.attachments.map((file, index) => (
                 <li key={index}>
@@ -422,7 +752,6 @@ const DetailMRSkeleton = () => (
   </>
 );
 
-// Bungkus dengan Suspense
 export default function DetailMRPage({
   params,
 }: {

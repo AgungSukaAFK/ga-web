@@ -7,8 +7,6 @@ import ToggleMenu from "@/components/toggle-menu";
 import MenuOpen from "@/components/menu-open";
 import Image from "next/image";
 
-// Menambahkan tipe untuk props komponen
-
 const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
   className,
   ...props

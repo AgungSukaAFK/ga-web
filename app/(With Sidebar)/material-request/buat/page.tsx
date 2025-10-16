@@ -560,15 +560,17 @@ export default function BuatMRPage() {
                     {order.note || "-"}
                   </TableCell>
                   <TableCell>
-                    <Button asChild variant="outline">
-                      <Link
-                        href={order.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Link <LinkIcon />
-                      </Link>
-                    </Button>
+                    {order.url && (
+                      <Button asChild variant="outline">
+                        <Link
+                          href={order.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Link <LinkIcon />
+                        </Link>
+                      </Button>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Button
