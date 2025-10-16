@@ -137,7 +137,7 @@ export default function ApprovalTemplatesPage() {
             <Plus className="mr-2 h-4 w-4" /> Buat Template Baru
           </Button>
         }
-        className="col-span-12 md:col-span-7"
+        size="md"
       >
         <div className="border rounded-md">
           <Table>

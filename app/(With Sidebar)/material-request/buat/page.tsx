@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { AlertDialogHeader } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import Link from "next/link";
 
 // Data kategori yang telah diperbarui
 const kategoriData: ComboboxData = [
@@ -505,6 +506,7 @@ export default function BuatMRPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">Link Ref.</Label>
                   <Input
+                    type="url"
                     className="col-span-3"
                     value={orderItem.url}
                     onChange={(e) =>
@@ -559,13 +561,13 @@ export default function BuatMRPage() {
                   </TableCell>
                   <TableCell>
                     <Button asChild variant="outline">
-                      <a
+                      <Link
                         href={order.url}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
                         Link <LinkIcon />
-                      </a>
+                      </Link>
                     </Button>
                   </TableCell>
                   <TableCell>
