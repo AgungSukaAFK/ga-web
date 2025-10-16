@@ -22,7 +22,9 @@ import {
   BookOpen,
   MessageSquareShare,
   Info,
-  CheckCheck, // Pastikan ikon ini sudah diimpor
+  CheckCheck,
+  FileSearch2,
+  PackageSearch, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -39,6 +41,16 @@ const data = {
       title: "User Management",
       url: "/user-management",
       icon: Bot,
+    },
+    {
+      title: "MR Management",
+      url: "/mr-management",
+      icon: FileSearch2,
+    },
+    {
+      title: "PO Management",
+      url: "/po-management",
+      icon: PackageSearch,
     },
   ],
   navMain: [
