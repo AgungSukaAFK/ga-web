@@ -33,7 +33,6 @@ import { AlertDialogHeader } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import Link from "next/link";
 
-// Data kategori yang telah diperbarui
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },

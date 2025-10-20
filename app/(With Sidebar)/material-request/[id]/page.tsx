@@ -3,7 +3,6 @@
 "use client";
 
 import { use, useEffect, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +51,6 @@ import { Label } from "@/components/ui/label";
 import { DiscussionSection } from "./discussion-component";
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
-  const router = useRouter();
   const mrId = parseInt(params.id);
 
   const [mr, setMr] = useState<MaterialRequest | null>(null);
