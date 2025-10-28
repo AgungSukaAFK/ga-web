@@ -82,7 +82,16 @@ export function TemplateForm({
     }
     setApprovalPath((prev) => [
       ...prev,
-      { ...user, userid: user.id, status: "pending", type: "" },
+      {
+        ...user,
+        userid: user.id,
+        status: "pending",
+        type: "",
+        nama: "",
+        department: "",
+        role: "",
+        email: "",
+      },
     ]);
     setSearchResults([]);
     setSearchQuery("");
@@ -173,7 +182,7 @@ export function TemplateForm({
                   <AvatarImage
                     src={`https://ui-avatars.com/api/?name=${user.nama}`}
                   />
-                  <AvatarFallback>{user.nama.charAt(0)}</AvatarFallback>
+                  <AvatarFallback>{user.nama?.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-grow min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

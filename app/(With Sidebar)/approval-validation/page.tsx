@@ -19,7 +19,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   fetchMyPendingMrApprovals,
-  fetchMyDraftPOs,
   fetchPendingValidationMRs,
   fetchPendingValidationPOs,
   fetchMyPendingPoApprovals,
@@ -75,10 +74,9 @@ function ApprovalValidationContent() {
           // REVISI: Logika fetch data disederhanakan
 
           // 1. Selalu fetch data yang relevan untuk semua user
-          const [myMrApprovals, myPoApprovals, myDrafts] = await Promise.all([
+          const [myMrApprovals, myPoApprovals] = await Promise.all([
             fetchMyPendingMrApprovals(user.id),
-            fetchMyPendingPoApprovals(user.id), // <-- Panggil fungsi baru
-            fetchMyDraftPOs(user.id),
+            fetchMyPendingPoApprovals(user.id),
           ]);
           setPendingApprovalMRs(myMrApprovals);
           setPendingApprovalPOs(myPoApprovals);

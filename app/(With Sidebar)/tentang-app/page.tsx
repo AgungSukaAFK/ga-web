@@ -52,9 +52,9 @@ export default function TentangAppPage() {
               <li>
                 <strong>Kurang Transparan:</strong> Sulit bagi peminta
                 (requester) untuk melacak status permintaan mereka. Pertanyaan
-                seperti <em>"MR saya sudah sampai mana?"</em> atau{" "}
-                <em>"PO-nya sudah dibuat atau belum?"</em> menjadi sangat umum
-                dan memakan waktu.
+                seperti <em>&quot;MR saya sudah sampai mana?&quot;</em> atau{" "}
+                <em>&quot;PO-nya sudah dibuat atau belum?&quot;</em> menjadi
+                sangat umum dan memakan waktu.
               </li>
               <li>
                 <strong>Lambat & Rawan Kesalahan:</strong> Proses persetujuan
@@ -120,17 +120,17 @@ export default function TentangAppPage() {
               Tidak ada lagi kebingungan status. Setiap pengguna memiliki{" "}
               <em>dashboard</em> tugas (<code>Approval & Validation</code>) yang
               menunjukkan dengan tepat apa yang perlu mereka kerjakan. Requester
-              dapat melacak progres MR mereka dari "Pending Validation" hingga
-              "Completed".
+              dapat melacak progres MR mereka dari &quot;Pending
+              Validation&quot; hingga &quot;Completed&quot;.
             </p>
 
             <h3>3. Akuntabilitas yang Jelas</h3>
             <p>
               Setiap langkah tercatat. Jalur approval yang diterapkan oleh GA
               terdokumentasi, dan proses persetujuan oleh setiap manajer
-              tercatat. Fitur <em>"Highlight Approver"</em> dan{" "}
-              <em>"Mode Edit"</em> untuk Purchasing memastikan setiap peran
-              bertanggung jawab atas datanya masing-masing.
+              tercatat. Fitur <em>&quot;Highlight Approver&quot;</em> dan{" "}
+              <em>&quot;Mode Edit&quot;</em> untuk Purchasing memastikan setiap
+              peran bertanggung jawab atas datanya masing-masing.
             </p>
 
             <h3>4. Sentralisasi Data</h3>

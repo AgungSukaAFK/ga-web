@@ -229,7 +229,7 @@ export default function BuatMRPage() {
     }
     setIsUploading(true);
     const toastId = toast.loading(`Mengunggah ${files.length} file...`);
-    let successfulUploads: Attachment[] = [];
+    const successfulUploads: Attachment[] = [];
     let failedUploads = 0;
 
     for (const file of files) {
