@@ -41,7 +41,7 @@ import {
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// Data kategori
+// Data kategori yang telah diperbarui
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },

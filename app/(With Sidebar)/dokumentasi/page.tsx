@@ -584,7 +584,7 @@ export default function DokumentasiPage() {
       const data = await res.json();
 
       if (data.success) {
-        toast.success("✅ Email sent successfully!");
+        toast.success("✅ Email sent successfully");
         console.log("Message ID:", data.messageId);
       } else {
         toast.error("❌ Failed to send email: " + data.error);
