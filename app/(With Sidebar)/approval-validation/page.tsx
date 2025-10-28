@@ -15,24 +15,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   fetchMyPendingMrApprovals,
   fetchMyDraftPOs,
   fetchPendingValidationMRs,
+  fetchPendingValidationPOs,
+  fetchMyPendingPoApprovals,
 } from "@/services/approvalService";
-import { MaterialRequest, User as Profile } from "@/type";
+import { MaterialRequest, User as Profile, PurchaseOrder } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 
-// Tipe sederhana untuk daftar PO
-interface DraftPO {
+// Tipe baru untuk daftar PO yang butuh validasi
+interface ValidationPO {
   id: number;
   kode_po: string;
-  status: string;
-  total_price: number;
   created_at: string;
+  total_price: number;
+  users_with_profiles: {
+    nama: string;
+  } | null;
 }
 
 function ApprovalValidationContent() {
@@ -40,10 +43,15 @@ function ApprovalValidationContent() {
   const [pendingValidationMRs, setPendingValidationMRs] = useState<
     MaterialRequest[]
   >([]);
+  const [pendingValidationPOs, setPendingValidationPOs] = useState<
+    ValidationPO[]
+  >([]);
   const [pendingApprovalMRs, setPendingApprovalMRs] = useState<
     MaterialRequest[]
   >([]);
-  const [draftPOs, setDraftPOs] = useState<DraftPO[]>([]);
+  const [pendingApprovalPOs, setPendingApprovalPOs] = useState<PurchaseOrder[]>(
+    []
+  ); // <-- State baru
   const [loading, setLoading] = useState(true);
 
   const s = createClient();
@@ -54,6 +62,7 @@ function ApprovalValidationContent() {
       const {
         data: { user },
       } = await s.auth.getUser();
+
       if (user) {
         const { data: profile } = await s
           .from("profiles")
@@ -63,24 +72,25 @@ function ApprovalValidationContent() {
         setUserProfile(profile);
 
         try {
-          const promises = [
+          // REVISI: Logika fetch data disederhanakan
+
+          // 1. Selalu fetch data yang relevan untuk semua user
+          const [myMrApprovals, myPoApprovals, myDrafts] = await Promise.all([
             fetchMyPendingMrApprovals(user.id),
+            fetchMyPendingPoApprovals(user.id), // <-- Panggil fungsi baru
             fetchMyDraftPOs(user.id),
-          ];
+          ]);
+          setPendingApprovalMRs(myMrApprovals);
+          setPendingApprovalPOs(myPoApprovals);
 
+          // 2. Fetch data tambahan KHUSUS jika user adalah General Affair
           if (profile?.department === "General Affair") {
-            promises.unshift(fetchPendingValidationMRs());
-          }
-
-          const results = await Promise.all(promises);
-
-          if (profile?.department === "General Affair") {
-            setPendingValidationMRs(results[0] as MaterialRequest[]);
-            setPendingApprovalMRs(results[1] as MaterialRequest[]);
-            setDraftPOs((results[2] as DraftPO[]) || []);
-          } else {
-            setPendingApprovalMRs(results[0] as MaterialRequest[]);
-            setDraftPOs((results[1] as DraftPO[]) || []);
+            const [validationMRs, validationPOs] = await Promise.all([
+              fetchPendingValidationMRs(),
+              fetchPendingValidationPOs(),
+            ]);
+            setPendingValidationMRs(validationMRs);
+            setPendingValidationPOs((validationPOs as ValidationPO[]) || []);
           }
         } catch (error: any) {
           toast.error("Gagal memuat data", { description: error.message });
@@ -107,61 +117,109 @@ function ApprovalValidationContent() {
   return (
     <>
       {userProfile?.department === "General Affair" && (
-        <Content
-          title="Menunggu Validasi Anda (Material Request)"
-          description="Daftar MR baru yang membutuhkan validasi dan penentuan alur approval."
-          className="col-span-12"
-          cardAction={
-            <Button asChild variant="outline">
-              <Link href="/approval-validation/templates">
-                Kelola Template Approval
-              </Link>
-            </Button>
-          }
-        >
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Kode MR</TableHead>
-                  <TableHead>Requester</TableHead>
-                  <TableHead>Departemen</TableHead>
-                  <TableHead>Tanggal Dibuat</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingValidationMRs.length > 0 ? (
-                  pendingValidationMRs.map((mr) => (
-                    <TableRow key={mr.id}>
-                      <TableCell className="font-medium">
-                        {mr.kode_mr}
-                      </TableCell>
-                      <TableCell>
-                        {(mr as any).users_with_profiles?.nama || "N/A"}
-                      </TableCell>
-                      <TableCell>{mr.department}</TableCell>
-                      <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild variant="default" size="sm">
-                          <Link href={`/material-request/validate/${mr.id}`}>
-                            Validasi
-                          </Link>
-                        </Button>
+        <>
+          <Content
+            title="Menunggu Validasi Anda (Material Request)"
+            description="Daftar MR baru yang membutuhkan validasi dan penentuan alur approval."
+            className="col-span-12"
+          >
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kode MR</TableHead>
+                    <TableHead>Requester</TableHead>
+                    <TableHead>Departemen</TableHead>
+                    <TableHead>Tanggal Dibuat</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingValidationMRs.length > 0 ? (
+                    pendingValidationMRs.map((mr) => (
+                      <TableRow key={`mr-val-${mr.id}`}>
+                        <TableCell className="font-medium">
+                          {mr.kode_mr}
+                        </TableCell>
+                        <TableCell>
+                          {(mr as any).users_with_profiles?.nama || "N/A"}
+                        </TableCell>
+                        <TableCell>{mr.department}</TableCell>
+                        <TableCell>
+                          {formatDateFriendly(mr.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button asChild variant="default" size="sm">
+                            <Link href={`/material-request/validate/${mr.id}`}>
+                              Validasi MR
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center h-24">
+                        Tidak ada Material Request yang menunggu validasi.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+
+          <Content
+            title="Menunggu Validasi Anda (Purchase Order)"
+            description="Daftar PO baru yang membutuhkan validasi dan penentuan alur approval."
+            className="col-span-12"
+          >
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
-                      Tidak ada Material Request yang menunggu validasi.
-                    </TableCell>
+                    <TableHead>Kode PO</TableHead>
+                    <TableHead>Pembuat</TableHead>
+                    <TableHead>Total Harga</TableHead>
+                    <TableHead>Tanggal Dibuat</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Content>
+                </TableHeader>
+                <TableBody>
+                  {pendingValidationPOs.length > 0 ? (
+                    pendingValidationPOs.map((po) => (
+                      <TableRow key={`po-val-${po.id}`}>
+                        <TableCell className="font-medium">
+                          {po.kode_po}
+                        </TableCell>
+                        <TableCell>
+                          {(po as any).users_with_profiles?.nama || "N/A"}
+                        </TableCell>
+                        <TableCell>{formatCurrency(po.total_price)}</TableCell>
+                        <TableCell>
+                          {formatDateFriendly(po.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button asChild variant="default" size="sm">
+                            <Link href={`/purchase-order/validate/${po.id}`}>
+                              Validasi PO
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center h-24">
+                        Tidak ada Purchase Order yang menunggu validasi.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        </>
       )}
 
       <Content
@@ -183,7 +241,7 @@ function ApprovalValidationContent() {
             <TableBody>
               {pendingApprovalMRs.length > 0 ? (
                 pendingApprovalMRs.map((mr) => (
-                  <TableRow key={mr.id}>
+                  <TableRow key={`mr-app-${mr.id}`}>
                     <TableCell className="font-medium">{mr.kode_mr}</TableCell>
                     <TableCell>
                       {(mr as any).users_with_profiles?.nama || "N/A"}
@@ -214,9 +272,10 @@ function ApprovalValidationContent() {
         </div>
       </Content>
 
+      {/* --- TABEL BARU UNTUK APPROVAL PO --- */}
       <Content
-        title="Draft Purchase Order Anda"
-        description="Daftar PO yang telah Anda buat namun belum difinalisasi."
+        title="Menunggu Persetujuan Anda (Purchase Order)"
+        description="Daftar PO berikut membutuhkan tindakan persetujuan dari Anda."
         className="col-span-12"
       >
         <div className="rounded-md border">
@@ -224,28 +283,29 @@ function ApprovalValidationContent() {
             <TableHeader>
               <TableRow>
                 <TableHead>Kode PO</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Ref. MR</TableHead>
+                <TableHead>Pembuat</TableHead>
                 <TableHead>Total Harga</TableHead>
-                <TableHead>Tanggal Dibuat</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {draftPOs.length > 0 ? (
-                draftPOs.map((po) => (
-                  <TableRow key={po.id}>
+              {pendingApprovalPOs.length > 0 ? (
+                pendingApprovalPOs.map((po) => (
+                  <TableRow key={`po-app-${po.id}`}>
                     <TableCell className="font-medium">{po.kode_po}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{po.status}</Badge>
+                      {(po as any).material_requests?.kode_mr || "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      {(po as any).users_with_profiles?.nama || "N/A"}
                     </TableCell>
                     <TableCell>{formatCurrency(po.total_price)}</TableCell>
-                    <TableCell>
-                      {formatDateFriendly(new Date(po.created_at))}
-                    </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/purchase-order/edit/${po.id}`}>
-                          Lanjutkan Draft
+                        {/* TODO: Buat halaman detail/respon untuk PO */}
+                        <Link href={`/purchase-order/${po.id}`}>
+                          Lihat & Respon
                         </Link>
                       </Button>
                     </TableCell>
@@ -254,7 +314,8 @@ function ApprovalValidationContent() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center h-24">
-                    Anda tidak memiliki Purchase Order dalam status Draft.
+                    Tidak ada Purchase Order yang menunggu persetujuan Anda saat
+                    ini.
                   </TableCell>
                 </TableRow>
               )}

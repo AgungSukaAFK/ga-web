@@ -164,7 +164,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             width={500}
             height={500}
             alt="Lourdes Autoparts"
-            priority // Tambahkan priority untuk LCP
           />
         </div>
       </SidebarHeader>

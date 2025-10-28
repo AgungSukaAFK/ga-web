@@ -2,29 +2,50 @@
 
 import { createClient } from "@/lib/supabase/client";
 import {
+  Approval,
   ApprovedMaterialRequest,
   Barang,
-  MaterialRequestForPO,
+  MaterialRequest,
   PurchaseOrderDetail,
   PurchaseOrderPayload,
+  PurchaseOrderListItem
 } from "@/type";
 
 const supabase = createClient();
+
+const toRoman = (num: number): string => {
+  const romanMap: { [key: string]: string } = {
+    "1": "I",
+    "2": "II",
+    "3": "III",
+    "4": "IV",
+    "5": "V",
+    "6": "VI",
+    "7": "VII",
+    "8": "VIII",
+    "9": "IX",
+    "10": "X",
+    "11": "XI",
+    "12": "XII",
+  };
+  return romanMap[String(num)] || "";
+};
 
 // --- Fungsi-fungsi ---
 export const fetchPurchaseOrders = async (
   page: number,
   limit: number,
-  searchQuery?: string | null
+  searchQuery: string | null,
+  company_code: string | null // <-- Tambahkan parameter company_code
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
   let query = supabase.from("purchase_orders").select(
     `
-      id, kode_po, status, total_price, created_at,
-      users_with_profiles (nama), 
-      material_requests (kode_mr)
+      id, kode_po, status, total_price, created_at, company_code,
+      users_with_profiles!user_id (nama), 
+      material_requests!mr_id (kode_mr)
     `,
     { count: "exact" }
   );
@@ -35,6 +56,13 @@ export const fetchPurchaseOrders = async (
       `kode_po.ilike.${searchTerm},status.ilike.${searchTerm},material_requests.kode_mr.ilike.${searchTerm}`
     );
   }
+
+  // REVISI: Terapkan filter company_code
+  // Jika company_code ada dan BUKAN LOURDES, filter berdasarkan kode tersebut
+  if (company_code && company_code !== "LOURDES") {
+    query = query.eq("company_code", company_code);
+  }
+  // Jika 'LOURDES' atau null, jangan filter (RLS akan menangani jika LOURDES)
 
   const {
     data: rawData,
@@ -58,14 +86,14 @@ export const fetchPurchaseOrders = async (
         : po.material_requests,
     })) || [];
 
-  return { data, count };
+  return { data: data as PurchaseOrderListItem[], count };
 };
 
 export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
   let query = supabase
     .from("material_requests")
     .select("id, kode_mr, remarks, department")
-    .eq("status", "Approved");
+    .eq("status", "Waiting PO");
 
   if (searchQuery) {
     const searchTerm = `%${searchQuery.trim()}%`;
@@ -86,47 +114,85 @@ export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
 export const fetchMaterialRequestById = async (mrId: number) => {
   const { data, error } = await supabase
     .from("material_requests")
-    .select("id, kode_mr, orders")
+    .select("*, users_with_profiles!userid(nama)")
     .eq("id", mrId)
-    .single<MaterialRequestForPO>();
+    .single<
+      MaterialRequest & { users_with_profiles: { nama: string } | null }
+    >();
 
   if (error) throw error;
   return data;
 };
 
-export const generatePoCode = async (): Promise<string> => {
-  const { data, error } = await supabase
+export const generatePoCode = async (
+  company_code: string,
+  lokasi: string
+): Promise<string> => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentYearYY = currentYear.toString().slice(-2);
+  const currentMonthRoman = toRoman(now.getMonth() + 1);
+
+  const { data: lastPo, error } = await supabase
     .from("purchase_orders")
     .select("kode_po")
+    .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
+    .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
     .order("id", { ascending: false })
     .limit(1)
     .single();
 
-  if (error && error.code !== "PGRST116") {
-    console.error("Unexpected error generating PO code:", error);
-    throw error;
-  }
+  if (error && error.code !== "PGRST116") throw error;
 
-  const currentYear = new Date().getFullYear().toString().slice(-2);
   let nextNumber = 1;
-
-  if (data) {
+  if (lastPo) {
     try {
-      const lastNum = parseInt(data.kode_po.split("/").pop() || "0");
+      const lastNum = parseInt(lastPo.kode_po.split("/").pop() || "0");
       nextNumber = isNaN(lastNum) ? 1 : lastNum + 1;
     } catch (e) {
-      console.error("Gagal parse kode PO terakhir, memulai dari 1:", e);
-      nextNumber = 1;
+      console.error("Gagal parse kode PO terakhir:", e);
     }
   }
 
-  return `GMI/PO/${currentYear}/${nextNumber}`;
+  const lokasiAbbreviations: { [key: string]: string } = {
+    "Tanjung Enim": "TE",
+    Balikpapan: "BPN",
+    "Site BA": "BA",
+    "Site TAL": "TAL",
+    "Site MIP": "MIP",
+    "Site MIFA": "MFA",
+    "Site BIB": "BIB",
+    "Site AMI": "AMI",
+    "Site Tabang": "TBG",
+    "Head Office": "HO",
+  };
+
+  const identifier = lokasiAbbreviations[lokasi] || lokasi;
+  const prefix = company_code || "GMI";
+
+  return `${prefix}/PO/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
 
-export const createPurchaseOrder = async (poData: PurchaseOrderPayload) => {
+export const createPurchaseOrder = async (
+  poData: Omit<
+    PurchaseOrderPayload,
+    "status" | "approvals" | "mr_id" | "user_id" | "company_code"
+  >,
+  mr_id: number | null,
+  user_id: string,
+  company_code: string
+) => {
+  const payload = {
+    ...poData,
+    mr_id,
+    user_id,
+    company_code,
+    status: "Pending Validation" as const,
+    approvals: [],
+  };
   const { data, error } = await supabase
     .from("purchase_orders")
-    .insert([poData])
+    .insert([payload])
     .select()
     .single();
 
@@ -139,7 +205,16 @@ export const fetchPurchaseOrderById = async (
 ): Promise<PurchaseOrderDetail | null> => {
   const { data, error } = await supabase
     .from("purchase_orders")
-    .select(`*, material_requests (kode_mr), users_with_profiles (nama)`)
+    .select(
+      `
+      *, 
+      material_requests!mr_id (
+        *, 
+        users_with_profiles!userid (nama)
+      ), 
+      users_with_profiles!user_id (nama, email)
+    `
+    )
     .eq("id", id)
     .single();
 
@@ -181,7 +256,7 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
 
   const { data, error } = await supabase
     .from("barang")
-    .select("id, part_number, part_name, uom")
+    .select("*")
     .or(`part_number.ilike.%${query}%,part_name.ilike.%${query}%`)
     .limit(10);
 
@@ -189,5 +264,32 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
     console.error("Error searching barang:", error);
     return [];
   }
+  return data;
+};
+
+export const validatePurchaseOrder = async (
+  id: number,
+  approvals: Approval[]
+) => {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .update({ approvals, status: "Pending Approval" })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const closePoWithBast = async (id: number, attachments: any[]) => {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .update({ attachments, status: "Completed" })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
   return data;
 };

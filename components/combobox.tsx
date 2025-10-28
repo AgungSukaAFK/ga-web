@@ -28,10 +28,14 @@ export function Combobox({
   data,
   onChange,
   defaultValue,
+  placeholder,
+  disabled = false,
 }: {
   data: ComboboxData;
   defaultValue?: string;
   onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [value, setValue] = React.useState(defaultValue || "");
@@ -53,7 +57,11 @@ export function Combobox({
       </PopoverTrigger>
       <PopoverContent className="w-full p-0">
         <Command>
-          <CommandInput placeholder="Cari data..." className="w-full h-9" />
+          <CommandInput
+            disabled
+            placeholder={placeholder || "Cari data..."}
+            className="w-full h-9"
+          />
           <CommandList>
             <CommandEmpty>Tidak ada data ditemukan.</CommandEmpty>
             <CommandGroup>

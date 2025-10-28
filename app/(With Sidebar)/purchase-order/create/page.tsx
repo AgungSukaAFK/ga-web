@@ -16,49 +16,75 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   createPurchaseOrder,
   fetchMaterialRequestById,
   generatePoCode,
-  fetchPurchaseOrderById,
 } from "@/services/purchaseOrderService";
 import { formatCurrency } from "@/lib/utils";
-import { AlertTriangle, Save, Send, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Send,
+  Trash2,
+  CircleUser,
+  Building,
+  Tag,
+  DollarSign,
+  Info,
+  Truck,
+  Building2,
+  Link as LinkIcon,
+} from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { BarangSearchCombobox } from "../BarangSearchCombobox";
-import {
-  Barang,
-  MaterialRequestForPO,
-  POItem,
-  PurchaseOrderPayload,
-} from "@/type";
+import { Barang, MaterialRequest, POItem, PurchaseOrderPayload } from "@/type";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
+// Tipe data MR yang diambil untuk halaman ini (termasuk relasi)
+type MRData = MaterialRequest & {
+  users_with_profiles: { nama: string } | null;
+};
 
 function CreatePOPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mrId = searchParams.get("mrId");
-  const repeatPoId = searchParams.get("repeatPoId");
 
-  const [mrData, setMrData] = useState<MaterialRequestForPO | null>(null);
+  const [mrData, setMrData] = useState<MRData | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // State untuk Payment Term
+  const [paymentTermType, setPaymentTermType] = useState("Termin");
+  const [paymentTermDays, setPaymentTermDays] = useState("30");
+
   const [poForm, setPoForm] = useState<
-    Omit<PurchaseOrderPayload, "mr_id" | "user_id">
+    Omit<
+      PurchaseOrderPayload,
+      "mr_id" | "user_id" | "status" | "approvals" | "company_code"
+    >
   >({
     kode_po: "Generating...",
-    status: "Draft",
     items: [],
     currency: "IDR",
     discount: 0,
     tax: 0,
     postage: 0,
     total_price: 0,
-    payment_term: "Net 30",
+    payment_term: "Termin 30 Hari", // Default
     shipping_address: "Kantor Pusat GMI, Jakarta",
     notes: "",
     vendor_details: { name: "", address: "", contact_person: "" },
@@ -68,6 +94,10 @@ function CreatePOPageContent() {
     const initializeForm = async () => {
       try {
         setLoading(true);
+        if (!mrId) {
+          throw new Error("ID Material Request tidak ditemukan di URL.");
+        }
+
         const supabase = createClient();
         const {
           data: { user },
@@ -75,31 +105,40 @@ function CreatePOPageContent() {
         if (!user) throw new Error("User tidak otentikasi");
         setCurrentUser(user);
 
-        const newPoCode = await generatePoCode();
-        let initialItems: POItem[] = [];
-        let originalPoId: number | null = null;
-        let fetchedMr: MaterialRequestForPO | null = null;
+        // REVISI: Ambil profil user (pembuat PO)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("department, lokasi, company")
+          .eq("id", user.id)
+          .single();
 
-        if (mrId) {
-          fetchedMr = await fetchMaterialRequestById(parseInt(mrId));
-          initialItems = []; // Dikosongkan, harus dipilih dari master data
-        } else if (repeatPoId) {
-          const oldPo = await fetchPurchaseOrderById(parseInt(repeatPoId));
-          if (!oldPo)
-            throw new Error("PO yang akan di-repeat tidak ditemukan.");
-          initialItems = oldPo.items;
-          originalPoId = oldPo.id;
-          toast.info(`Item dari ${oldPo.kode_po} telah dimuat.`);
-        } else {
-          throw new Error("Sumber untuk PO (MR atau PO lama) tidak ditemukan.");
+        if (
+          !profile ||
+          !profile.department ||
+          !profile.lokasi ||
+          !profile.company
+        ) {
+          throw new Error(
+            "Profil Anda tidak lengkap (departemen/lokasi/company). Harap hubungi admin."
+          );
         }
 
-        setMrData(fetchedMr);
+        // REVISI: Gunakan info profil untuk generate kode
+        const [newPoCode, fetchedMr] = await Promise.all([
+          generatePoCode(profile.company, profile.lokasi),
+          fetchMaterialRequestById(parseInt(mrId)),
+        ]);
+
+        if (!fetchedMr) {
+          throw new Error("Data Material Request tidak dapat ditemukan.");
+        }
+
+        setMrData(fetchedMr as MRData);
         setPoForm((prev) => ({
           ...prev,
           kode_po: newPoCode,
-          items: initialItems,
-          repeated_from_po_id: originalPoId,
+          items: [],
+          shipping_address: fetchedMr.tujuan_site || prev.shipping_address, // Ambil tujuan site dari MR
         }));
       } catch (err: any) {
         toast.error("Gagal memuat data", { description: err.message });
@@ -109,7 +148,7 @@ function CreatePOPageContent() {
       }
     };
     initializeForm();
-  }, [mrId, repeatPoId]);
+  }, [mrId]);
 
   useEffect(() => {
     const subtotal = poForm.items.reduce(
@@ -119,6 +158,17 @@ function CreatePOPageContent() {
     const grandTotal = subtotal - poForm.discount + poForm.tax + poForm.postage;
     setPoForm((prev) => ({ ...prev, total_price: grandTotal }));
   }, [poForm.items, poForm.discount, poForm.tax, poForm.postage]);
+
+  useEffect(() => {
+    if (paymentTermType === "Cash") {
+      setPoForm((p) => ({ ...p, payment_term: "Cash" }));
+    } else {
+      setPoForm((p) => ({
+        ...p,
+        payment_term: `Termin ${paymentTermDays} Hari`,
+      }));
+    }
+  }, [paymentTermType, paymentTermDays]);
 
   const handleItemChange = (
     index: number,
@@ -139,17 +189,16 @@ function CreatePOPageContent() {
     setPoForm((prev) => ({ ...prev, items: newItems }));
   };
 
-  // FIX: Fungsi 'addItem' sekarang menerima objek 'Barang'
   const addItem = (barang: Barang) => {
     const newItem: POItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
-      name: barang.part_name,
+      name: barang.part_name || "",
       qty: 1,
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: "", // Dikosongkan untuk diisi manual per item jika perlu
+      vendor_name: "",
     };
     setPoForm((prev) => ({ ...prev, items: [...prev.items, newItem] }));
   };
@@ -161,32 +210,42 @@ function CreatePOPageContent() {
     }));
   };
 
-  const handleSubmit = async (status: "Draft" | "Ordered") => {
-    if (!currentUser) {
+  const handleSubmit = async () => {
+    if (!currentUser || !mrData) {
       toast.error("Data tidak lengkap untuk membuat PO.");
       return;
     }
+    if (poForm.items.length === 0) {
+      toast.error("Harap tambahkan minimal satu item ke dalam PO.");
+      return;
+    }
+    if (!poForm.payment_term.trim()) {
+      toast.error("Payment term wajib diisi.");
+      return;
+    }
 
-    const payload: PurchaseOrderPayload = {
-      ...poForm,
-      status,
-      mr_id: mrData ? mrData.id : null,
-      user_id: currentUser.id,
-      discount: Number(poForm.discount) || 0,
-      tax: Number(poForm.tax) || 0,
-      postage: Number(poForm.postage) || 0,
-    };
+    setLoading(true);
+    const toastId = toast.loading("Mengajukan PO untuk validasi...");
 
-    const toastId = toast.loading(`Menyimpan PO sebagai ${status}...`);
     try {
-      await createPurchaseOrder(payload);
-      toast.success("Purchase Order berhasil dibuat!", { id: toastId });
+      // REVISI: Panggil createPurchaseOrder dengan 4 argumen
+      await createPurchaseOrder(
+        poForm,
+        parseInt(mrData.id),
+        currentUser.id,
+        mrData.company_code
+      );
+      toast.success("PO berhasil diajukan & menunggu validasi!", {
+        id: toastId,
+      });
       router.push("/purchase-order");
     } catch (err: any) {
       toast.error("Gagal membuat PO", {
         id: toastId,
         description: err.message,
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -228,35 +287,113 @@ function CreatePOPageContent() {
             PO:{" "}
             <span className="font-semibold text-primary">{poForm.kode_po}</span>
             {mrData && ` | Ref. MR: ${mrData.kode_mr}`}
-            {poForm.repeated_from_po_id && ` | Repeat Order`}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleSubmit("Draft")}>
-            <Save className="mr-2 h-4 w-4" /> Simpan Draft
-          </Button>
-          <Button onClick={() => handleSubmit("Ordered")}>
-            <Send className="mr-2 h-4 w-4" /> Buat PO
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Ajukan untuk Validasi
           </Button>
         </div>
       </div>
 
-      {mrData && (
-        <div className="col-span-12">
-          <Content title={`Referensi Item dari ${mrData.kode_mr}`}>
-            <ul className="list-disc list-inside text-sm text-muted-foreground">
-              {mrData.orders.map((order, index) => (
-                <li key={index}>
-                  {order.qty} {order.uom} - {order.name}
-                </li>
-              ))}
-            </ul>
+      <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+        {mrData && (
+          <Content title={`Informasi Referensi dari ${mrData.kode_mr}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              <InfoItem
+                icon={CircleUser}
+                label="Pembuat MR"
+                value={mrData.users_with_profiles?.nama || "N/A"}
+              />
+              <InfoItem
+                icon={Building}
+                label="Departemen MR"
+                value={mrData.department}
+              />
+              <InfoItem
+                icon={Tag}
+                label="Kategori MR"
+                value={mrData.kategori}
+              />
+              <InfoItem
+                icon={DollarSign}
+                label="Estimasi Biaya MR"
+                value={formatCurrency(mrData.cost_estimation)}
+              />
+              <InfoItem
+                icon={Building2}
+                label="Cost Center"
+                value={mrData.cost_center || "N/A"}
+              />
+              <InfoItem
+                icon={Truck}
+                label="Tujuan Site (MR)"
+                value={mrData.tujuan_site || "N/A"}
+              />
+              <div className="md:col-span-2">
+                <InfoItem
+                  icon={Info}
+                  label="Remarks MR"
+                  value={mrData.remarks}
+                />
+              </div>
+            </div>
           </Content>
-        </div>
-      )}
+        )}
 
-      <div className="col-span-12 lg:col-span-8 space-y-6">
-        <Content title="Detail Item Pesanan">
+        {mrData && (
+          <Content title="Item Referensi dari MR">
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama Item</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Catatan</TableHead>
+                    <TableHead>Link</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mrData.orders.map((order, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        {order.name}
+                      </TableCell>
+                      <TableCell>
+                        {order.qty} {order.uom}
+                      </TableCell>
+                      <TableCell>{order.vendor || "-"}</TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {order.note || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {order.url && (
+                          <Button asChild variant={"outline"} size="sm">
+                            <Link
+                              href={order.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <LinkIcon className="h-3 w-3" />
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        )}
+
+        <Content title="Input Item Purchase Order (Berdasarkan Master Barang)">
           <div className="overflow-x-auto">
             <Table className="min-w-[900px]">
               <TableHeader>
@@ -266,6 +403,7 @@ function CreatePOPageContent() {
                   <TableHead>Qty</TableHead>
                   <TableHead>Harga</TableHead>
                   <TableHead>Total</TableHead>
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -301,6 +439,7 @@ function CreatePOPageContent() {
                       />
                     </TableCell>
                     <TableCell>{formatCurrency(item.total_price)}</TableCell>
+                    <TableCell>{item.vendor_name}</TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
@@ -321,11 +460,11 @@ function CreatePOPageContent() {
         </Content>
       </div>
 
-      <div className="col-span-12 lg:col-span-4 space-y-6">
+      <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor Utama & Pengiriman">
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Nama Vendor Utama</label>
+              <Label className="text-sm font-medium">Nama Vendor Utama</Label>
               <Input
                 value={poForm.vendor_details?.name || ""}
                 onChange={(e) => handleVendorChange("name", e.target.value)}
@@ -333,9 +472,9 @@ function CreatePOPageContent() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">
+              <Label className="text-sm font-medium">
                 Kontak Person Vendor
-              </label>
+              </Label>
               <Input
                 value={poForm.vendor_details?.contact_person || ""}
                 onChange={(e) =>
@@ -345,7 +484,7 @@ function CreatePOPageContent() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Alamat Vendor</label>
+              <Label className="text-sm font-medium">Alamat Vendor</Label>
               <Textarea
                 value={poForm.vendor_details?.address || ""}
                 onChange={(e) => handleVendorChange("address", e.target.value)}
@@ -354,16 +493,39 @@ function CreatePOPageContent() {
             </div>
             <hr />
             <div>
-              <label className="text-sm font-medium">Payment Term</label>
-              <Input
-                value={poForm.payment_term}
-                onChange={(e) =>
-                  setPoForm((p) => ({ ...p, payment_term: e.target.value }))
-                }
-              />
+              <Label className="text-sm font-medium">Payment Term</Label>
+              <div className="flex gap-2 mt-1">
+                <Select
+                  value={paymentTermType}
+                  onValueChange={(value) => setPaymentTermType(value)}
+                >
+                  <SelectTrigger className="w-1/2">
+                    <SelectValue placeholder="Pilih tipe..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Termin">Termin</SelectItem>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                  </SelectContent>
+                </Select>
+                {paymentTermType === "Termin" && (
+                  <div className="w-1/2 relative">
+                    <Input
+                      type="number"
+                      value={paymentTermDays}
+                      onChange={(e) => setPaymentTermDays(e.target.value)}
+                      placeholder="... hari"
+                      className="pr-12"
+                      min="0"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      Hari
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div>
-              <label className="text-sm font-medium">Alamat Pengiriman</label>
+              <Label className="text-sm font-medium">Alamat Pengiriman</Label>
               <Textarea
                 value={poForm.shipping_address}
                 onChange={(e) =>
@@ -384,7 +546,7 @@ function CreatePOPageContent() {
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <label>Diskon</label>
+              <Label>Diskon</Label>
               <Input
                 type="number"
                 value={poForm.discount}
@@ -396,7 +558,7 @@ function CreatePOPageContent() {
               />
             </div>
             <div className="flex justify-between items-center">
-              <label>Pajak (PPN)</label>
+              <Label>Pajak (PPN)</Label>
               <Input
                 type="number"
                 value={poForm.tax}
@@ -408,7 +570,7 @@ function CreatePOPageContent() {
               />
             </div>
             <div className="flex justify-between items-center">
-              <label>Ongkos Kirim</label>
+              <Label>Ongkos Kirim</Label>
               <Input
                 type="number"
                 value={poForm.postage}
@@ -430,6 +592,25 @@ function CreatePOPageContent() {
     </>
   );
 }
+
+// Komponen helper
+const InfoItem = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+}) => (
+  <div className="flex items-start gap-3">
+    <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
+    <div>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="font-medium whitespace-pre-wrap">{value}</p>
+    </div>
+  </div>
+);
 
 export default function CreatePOPage() {
   return (

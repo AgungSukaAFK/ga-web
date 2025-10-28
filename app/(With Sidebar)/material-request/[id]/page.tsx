@@ -3,7 +3,6 @@
 "use client";
 
 import { use, useEffect, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +32,7 @@ import {
   Plus,
   Trash2,
   Paperclip,
+  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,13 +46,34 @@ import {
   Order,
   User as Profile,
 } from "@/type";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DiscussionSection } from "./discussion-component";
+import { Combobox, ComboboxData } from "@/components/combobox";
+
+const dataCostCenter: ComboboxData = [
+  { label: "APD - GMI", value: "APD - GMI" },
+  { label: "Bangunan - GMI", value: "Bangunan - GMI" },
+  { label: "Alat Berat - GIS", value: "Alat Berat - GIS" },
+  { label: "Operasional Kantor - HO", value: "Operasional Kantor - HO" },
+  { label: "Lainnya", value: "Lainnya" },
+];
+
+const dataLokasi: ComboboxData = [
+  { label: "Head Office", value: "Head Office" },
+  { label: "Tanjung Enim", value: "Tanjung Enim" },
+  { label: "Balikpapan", value: "Balikpapan" },
+  { label: "Site BA", value: "Site BA" },
+  { label: "Site TAL", value: "Site TAL" },
+  { label: "Site MIP", value: "Site MIP" },
+  { label: "Site MIFA", value: "Site MIFA" },
+  { label: "Site BIB", value: "Site BIB" },
+  { label: "Site AMI", value: "Site AMI" },
+  { label: "Site Tabang", value: "Site Tabang" },
+];
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
-  const router = useRouter();
   const mrId = parseInt(params.id);
 
   const [mr, setMr] = useState<MaterialRequest | null>(null);
@@ -62,14 +83,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // State untuk mode edit
   const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
 
   const supabase = createClient();
 
-  // Fungsi untuk memuat data MR dari server
   const fetchMrData = async () => {
     if (isNaN(mrId)) {
       setError("ID Material Request tidak valid.");
@@ -102,6 +121,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   useEffect(() => {
     const initializePage = async () => {
       setLoading(true);
+      setError(null);
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -113,9 +133,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           .select("*")
           .eq("id", user.id)
           .single();
-        setUserProfile(profile);
+        setUserProfile(profile as Profile | null);
       }
-
       await fetchMrData();
       setLoading(false);
     };
@@ -147,7 +166,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       .update({
         cost_estimation: mr.cost_estimation,
         orders: mr.orders,
-        attachments: mr.attachments, // Simpan juga perubahan lampiran
+        attachments: mr.attachments,
+        cost_center: mr.cost_center,
+        tujuan_site: mr.tujuan_site,
       })
       .eq("id", mr.id);
 
@@ -181,10 +202,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     if (decision === "rejected") {
       newMrStatus = "Rejected";
     } else if (decision === "approved") {
-      if (
-        updatedApprovals.every((app: Approval) => app.status === "approved")
-      ) {
-        newMrStatus = "Approved";
+      const isLastApproval = updatedApprovals.every(
+        (app: Approval) => app.status === "approved"
+      );
+      if (isLastApproval) {
+        newMrStatus = "Waiting PO";
       }
     }
 
@@ -215,6 +237,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     (newOrders[index] as any)[field] = value;
     setMr({ ...mr, orders: newOrders });
   };
+
   const addItem = () => {
     if (!mr) return;
     const newItem: Order = {
@@ -228,10 +251,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     };
     setMr({ ...mr, orders: [...mr.orders, newItem] });
   };
+
   const removeItem = (index: number) => {
     if (!mr) return;
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
   };
+
   const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value.replace(/[^0-9]/g, "");
     const numericValue = parseInt(rawValue, 10) || 0;
@@ -258,7 +283,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         file.name
       }`;
       const { data, error } = await supabase.storage
-        .from("mr")
+        .from("mr") // Pastikan bucket 'mr'
         .upload(filePath, file);
       if (error) return { error };
       return { data: { ...data, name: file.name }, error: null };
@@ -283,6 +308,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       });
     }
 
+    const failedUploads = results.filter((r) => r.error);
+    if (failedUploads.length > 0) {
+      toast.error(`Gagal mengunggah ${failedUploads.length} file.`, {
+        id: toastId,
+      });
+    } else if (successfulUploads.length === 0) {
+      toast.dismiss(toastId);
+    }
+
     setIsUploading(false);
     e.target.value = "";
   };
@@ -290,6 +324,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const removeAttachment = (indexToRemove: number) => {
     if (!mr) return;
     const attachmentToRemove = mr.attachments[indexToRemove];
+    // Hapus dari state
     setMr((prevMr) =>
       prevMr
         ? {
@@ -300,8 +335,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           }
         : null
     );
+    supabase.storage.from("mr").remove([attachmentToRemove.url]);
     toast.info(
-      `Lampiran "${attachmentToRemove.name}" dihapus dari daftar. Perubahan akan tersimpan saat Anda menyimpan.`
+      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menyimpan.`
     );
   };
 
@@ -408,6 +444,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       </Content>
     );
 
+  // REVISI: Logika untuk highlight approver
+  const currentTurnIndex = mr.approvals.findIndex(
+    (app) => app.status === "pending"
+  );
+  const allPreviousApproved =
+    currentTurnIndex === -1
+      ? false
+      : mr.approvals
+          .slice(0, currentTurnIndex)
+          .every((app) => app.status === "approved");
+
   return (
     <>
       <div className="col-span-12">
@@ -451,6 +498,19 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               label="Tanggal Dibuat"
               value={formatDateFriendly(mr.created_at)}
             />
+
+            {/* REVISI: Tambah Cost Center & Tujuan Site */}
+            <InfoItem
+              icon={Building}
+              label="Cost Center"
+              value={mr.cost_center || "N/A"}
+            />
+            <InfoItem
+              icon={Truck}
+              label="Tujuan (Site)"
+              value={mr.tujuan_site || "N/A"}
+            />
+
             <InfoItem
               icon={Calendar}
               label="Due Date"
@@ -475,6 +535,30 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               />
             )}
 
+            {/* REVISI: Tambah input untuk Cost Center & Tujuan di mode edit */}
+            {isEditing && (
+              <>
+                <div className="space-y-1">
+                  <Label>Cost Center</Label>
+                  <Combobox
+                    data={dataCostCenter}
+                    onChange={(value) => setMr({ ...mr, cost_center: value })}
+                    defaultValue={mr.cost_center}
+                    disabled={actionLoading}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Tujuan (Site)</Label>
+                  <Combobox
+                    data={dataLokasi}
+                    onChange={(value) => setMr({ ...mr, tujuan_site: value })}
+                    defaultValue={mr.tujuan_site}
+                    disabled={actionLoading}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="md:col-span-2">
               <InfoItem icon={Info} label="Remarks" value={mr.remarks} />
             </div>
@@ -485,13 +569,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           {isEditing ? (
             <div className="space-y-4">
               <div className="rounded-md border overflow-x-auto">
-                <Table className="min-w-[800px]">
+                {/* REVISI: Tabel Edit diperlengkap */}
+                <Table className="min-w-[1000px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nama</TableHead>
                       <TableHead>Qty</TableHead>
                       <TableHead>UoM</TableHead>
                       <TableHead>Vendor</TableHead>
+                      <TableHead>Catatan</TableHead>
+                      <TableHead>Link</TableHead>
                       <TableHead>Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -538,6 +625,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                           />
                         </TableCell>
                         <TableCell>
+                          <Input
+                            value={item.note}
+                            onChange={(e) =>
+                              handleItemChange(index, "note", e.target.value)
+                            }
+                            disabled={actionLoading}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.url}
+                            onChange={(e) =>
+                              handleItemChange(index, "url", e.target.value)
+                            }
+                            disabled={actionLoading}
+                            type="url"
+                          />
+                        </TableCell>
+                        <TableCell>
                           <Button
                             variant="destructive"
                             size="icon"
@@ -561,36 +667,42 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               </Button>
             </div>
           ) : (
-            <div className="rounded-md border">
-              <Table>
+            <div className="rounded-md border overflow-x-auto">
+              {/* REVISI: Tabel Baca diperlengkap */}
+              <Table className="min-w-[800px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nama Item</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Vendor</TableHead>
                     <TableHead>Catatan</TableHead>
+                    <TableHead>Link</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {mr.orders.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-medium">
-                        {item.name}
-                        {item.url && (
-                          <Link
-                            href={item.url}
-                            target="_blank"
-                            className="ml-2 text-primary hover:underline"
-                          >
-                            <LinkIcon className="inline h-3 w-3" />
-                          </Link>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell>
                         {item.qty} {item.uom}
                       </TableCell>
                       <TableCell>{item.vendor || "-"}</TableCell>
-                      <TableCell>{item.note || "-"}</TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {item.note || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {item.url && (
+                          <Button asChild variant={"outline"} size="sm">
+                            <Link
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <LinkIcon className="h-3 w-3" />
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -630,23 +742,32 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
         <Content title="Jalur Approval">
           {mr.approvals.length > 0 ? (
-            <ul className="space-y-4">
-              {mr.approvals.map((approver, index) => (
-                <li
-                  key={index}
-                  className="flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <p className="font-semibold">{approver.nama}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {approver.type}
-                    </p>
-                  </div>
-                  {getApprovalStatusBadge(
-                    approver.status as "approved" | "rejected" | "pending"
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-2">
+              {mr.approvals.map((approver, index) => {
+                // REVISI: Logika untuk menentukan highlight
+                const isMyTurn =
+                  currentTurnIndex === index &&
+                  (currentTurnIndex === 0 || allPreviousApproved);
+                return (
+                  <li
+                    key={index}
+                    className={cn(
+                      "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
+                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50" // <-- Kelas highlight
+                    )}
+                  >
+                    <div>
+                      <p className="font-semibold">{approver.nama}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {approver.type}
+                      </p>
+                    </div>
+                    {getApprovalStatusBadge(
+                      approver.status as "approved" | "rejected" | "pending"
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground text-center">
@@ -665,6 +786,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 disabled={actionLoading || isUploading}
                 onChange={handleAttachmentUpload}
               />
+              {isUploading && (
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                  Mengunggah...
+                </div>
+              )}
               {mr.attachments.length > 0 && (
                 <ul className="space-y-2 mt-2">
                   {mr.attachments.map((file, index) => (
@@ -733,7 +860,7 @@ const InfoItem = ({
     <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
     <div>
       <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
+      <p className="font-medium whitespace-pre-wrap">{value}</p>
     </div>
   </div>
 );

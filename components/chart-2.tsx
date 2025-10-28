@@ -15,7 +15,7 @@ const Chart2 = () => {
     { departemen: "IT", "Material Request": 237 },
     { departemen: "Service", "Material Request": 73 },
     { departemen: "Warehouse", "Material Request": 209 },
-    { departemen: "Manufaktur", "Material Request": 214 },
+    { departemen: "Produksi", "Material Request": 214 },
     { departemen: "Finance", "Material Request": 214 },
     { departemen: "Marketing", "Material Request": 214 },
     { departemen: "Purchasing", "Material Request": 214 },

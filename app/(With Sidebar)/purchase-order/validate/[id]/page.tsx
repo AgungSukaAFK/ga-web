@@ -1,4 +1,4 @@
-// src/app/(With Sidebar)/material-request/validate/[id]/page.tsx
+// src/app/(With Sidebar)/purchase-order/validate/[id]/page.tsx
 
 "use client";
 
@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { MaterialRequest, Approval, Discussion } from "@/type";
+import { PurchaseOrderDetail, Approval } from "@/type";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -22,9 +22,16 @@ import {
   Download,
   Loader2,
   XCircle,
-  Building2,
-  Truck,
   CircleUser,
+  Building,
+  Tag,
+  Calendar,
+  DollarSign,
+  Info,
+  Truck,
+  Building2,
+  Link as LinkIcon,
+  Wallet,
 } from "lucide-react";
 import {
   Table,
@@ -39,14 +46,58 @@ import {
   fetchTemplateById,
   fetchTemplateList,
 } from "@/services/approvalTemplateService";
+import {
+  fetchPurchaseOrderById,
+  validatePurchaseOrder,
+} from "@/services/purchaseOrderService";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 
-function ValidateMRPageContent({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const mrId = parseInt(params.id);
+// Komponen helper kecil untuk menampilkan info
+const InfoItem = ({
+  icon: Icon,
+  label,
+  value,
+  isBlock = false,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  isBlock?: boolean;
+}) => (
+  <div
+    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
+  >
+    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+      <Icon className="h-4 w-4" />
+      {label}
+    </dt>
+    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+      {value}
+    </dd>
+  </div>
+);
 
-  const [mr, setMr] = useState<MaterialRequest | null>(null);
+// Komponen Skeleton untuk loading
+const ValidatePOSkeleton = () => (
+  <>
+    <div className="col-span-12">
+      <Skeleton className="h-12 w-1/2" />
+    </div>
+    <Content className="col-span-12 lg:col-span-7">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+    <Content className="col-span-12 lg:col-span-5">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+  </>
+);
+
+function ValidatePOPageContent({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const poId = parseInt(params.id);
+
+  const [po, setPo] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,10 +110,9 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
   const s = createClient();
 
-  // Fetch data MR dan daftar template
   useEffect(() => {
-    if (isNaN(mrId)) {
-      setError("ID Material Request tidak valid.");
+    if (isNaN(poId)) {
+      setError("ID Purchase Order tidak valid.");
       setLoading(false);
       return;
     }
@@ -70,20 +120,16 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     const fetchInitialData = async () => {
       setLoading(true);
       try {
-        const [mrDataResult, templatesResult] = await Promise.all([
-          s
-            .from("material_requests")
-            .select("*, users_with_profiles!userid(nama, email)") // Ambil email juga
-            .eq("id", mrId)
-            .single(),
+        const [poDataResult, templatesResult] = await Promise.all([
+          fetchPurchaseOrderById(poId),
           fetchTemplateList(),
         ]);
 
-        if (mrDataResult.error) throw mrDataResult.error;
-        if (mrDataResult.data.status !== "Pending Validation") {
-          setError("Material Request ini tidak lagi menunggu validasi.");
+        if (!poDataResult) throw new Error("Data PO tidak ditemukan.");
+        if (poDataResult.status !== "Pending Validation") {
+          setError("Purchase Order ini tidak lagi menunggu validasi.");
         }
-        setMr(mrDataResult.data as any);
+        setPo(poDataResult);
 
         const templateOptions = templatesResult.map((t) => ({
           label: t.template_name,
@@ -91,7 +137,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
         }));
         setTemplateList(templateOptions);
       } catch (err: any) {
-        setError("Gagal memuat data.");
+        setError("Gagal memuat data: " + err.message);
         toast.error("Gagal memuat data", { description: err.message });
       } finally {
         setLoading(false);
@@ -99,27 +145,23 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     };
 
     fetchInitialData();
-  }, [mrId, s]);
+  }, [poId]);
 
-  // Efek untuk menerapkan template saat dipilih
   const handleTemplateChange = async (templateId: string) => {
     setSelectedTemplateId(templateId);
     if (!templateId) {
-      setNewApprovals([]); // Kosongkan jika tidak ada template dipilih
+      setNewApprovals([]);
       return;
     }
     try {
       const template = await fetchTemplateById(Number(templateId));
-
-      // REVISI: Pastikan tipe data benar saat mapping
       const approvalsFromTemplate = (template.approval_path as any[]).map(
         (app: any): Approval => ({
           ...app,
-          status: "pending" as const, // Paksa status menjadi literal type
+          status: "pending" as const,
           type: app.type || "",
         })
       );
-
       setNewApprovals(approvalsFromTemplate);
       toast.success(
         `Template "${template.template_name}" berhasil diterapkan.`
@@ -129,7 +171,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // --- FUNGSI UNTUK MENGELOLA APPROVAL PATH ---
   const removeApprover = (userId: string) =>
     setNewApprovals((prev) => prev.filter((a) => a.userid !== userId));
 
@@ -147,23 +188,19 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  // --- FUNGSI UNTUK AKSI ---
   const handleValidate = async () => {
-    if (!mr || newApprovals.length === 0 || newApprovals.some((a) => !a.type)) {
-      toast.error("Jalur approval belum lengkap atau MR tidak ditemukan.");
+    if (!po || newApprovals.length === 0 || newApprovals.some((a) => !a.type)) {
+      toast.error("Jalur approval belum lengkap atau PO tidak ditemukan.");
       return;
     }
     setActionLoading(true);
-    const toastId = toast.loading("Memvalidasi MR...");
+    const toastId = toast.loading("Memvalidasi PO...");
 
-    const { error: updateError } = await s
-      .from("material_requests")
-      .update({ approvals: newApprovals, status: "Pending Approval" })
-      .eq("id", mrId);
-
-    if (updateError) {
+    try {
+      await validatePurchaseOrder(poId, newApprovals);
+    } catch (updateError: any) {
       setActionLoading(false);
-      toast.error("Gagal memvalidasi", {
+      toast.error("Gagal memvalidasi PO", {
         id: toastId,
         description: updateError.message,
       });
@@ -171,7 +208,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     }
 
     try {
-      const requesterEmail = (mr as any).users_with_profiles?.email;
+      const requesterEmail = (po as any).users_with_profiles?.email;
       const firstApprover = newApprovals[0];
       const emailPromises = [];
 
@@ -182,8 +219,8 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: requesterEmail,
-              subject: `[VALIDATED] MR Anda (${mr.kode_mr}) telah divalidasi`,
-              html: `<h1>Material Request Divalidasi</h1><p>Halo,</p><p>Material Request Anda dengan kode <strong>${mr.kode_mr}</strong> telah berhasil divalidasi oleh General Affair dan sekarang sedang dalam proses persetujuan.</p><a href="${window.location.origin}/material-request/${mr.id}">Lihat Detail MR</a>`,
+              subject: `[VALIDATED] PO Anda (${po.kode_po}) telah divalidasi`,
+              html: `<h1>Purchase Order Divalidasi</h1><p>Purchase Order Anda dengan kode <strong>${po.kode_po}</strong> telah divalidasi dan sekarang dalam proses persetujuan.</p><a href="${window.location.origin}/purchase-order/${po.id}">Lihat Detail PO</a>`,
             }),
           })
         );
@@ -196,19 +233,19 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: firstApprover.email,
-              subject: `[ACTION REQUIRED] Persetujuan MR Baru (${mr.kode_mr})`,
-              html: `<h1>Tugas Persetujuan Baru</h1><p>Halo ${firstApprover.nama},</p><p>Anda memiliki Material Request baru dengan kode <strong>${mr.kode_mr}</strong> yang menunggu persetujuan Anda.</p><a href="${window.location.origin}/approval-validation">Buka Halaman Approval</a>`,
+              subject: `[ACTION REQUIRED] Persetujuan PO Baru (${po.kode_po})`,
+              html: `<h1>Tugas Persetujuan Baru</h1><p>Halo ${firstApprover.nama},</p><p>Anda memiliki Purchase Order baru dengan kode <strong>${po.kode_po}</strong> yang menunggu persetujuan Anda.</p><a href="${window.location.origin}/approval-validation">Buka Halaman Approval</a>`,
             }),
           })
         );
       }
 
       await Promise.all(emailPromises);
-      toast.success("MR berhasil divalidasi dan notifikasi email terkirim!", {
+      toast.success("PO berhasil divalidasi dan notifikasi email terkirim!", {
         id: toastId,
       });
     } catch (emailError: any) {
-      toast.warning("MR divalidasi, namun gagal mengirim notifikasi email.", {
+      toast.warning("PO divalidasi, namun gagal mengirim notifikasi email.", {
         id: toastId,
         description: emailError.message,
       });
@@ -224,44 +261,58 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       return;
     }
     setActionLoading(true);
-    const newDiscussion = {
-      user: "System (Validation)",
-      message: `MR Ditolak oleh GA dengan alasan: ${rejectionReason}`,
-      timestamp: new Date().toISOString(),
-    };
-    const updatedDiscussions = mr?.discussions
-      ? [...(mr.discussions as Discussion[]), newDiscussion]
-      : [newDiscussion];
+    const toastId = toast.loading("Menolak PO...");
+
     const { error } = await s
-      .from("material_requests")
-      .update({ status: "Rejected", discussions: updatedDiscussions })
-      .eq("id", mrId);
+      .from("purchase_orders")
+      .update({
+        status: "Rejected",
+        notes: `Ditolak oleh GA dengan alasan: ${rejectionReason}`,
+      })
+      .eq("id", poId);
+
     setActionLoading(false);
     if (error) {
-      toast.error("Gagal menolak MR", { description: error.message });
+      toast.error("Gagal menolak PO", {
+        id: toastId,
+        description: error.message,
+      });
     } else {
-      toast.success("MR telah ditolak.");
+      toast.success("PO telah ditolak.");
       router.push("/approval-validation");
     }
   };
 
-  if (loading)
-    return (
-      <div className="col-span-12">
-        <Skeleton className="h-[80vh] w-full" />
-      </div>
-    );
-  if (error || !mr)
+  if (loading) return <ValidatePOSkeleton />;
+
+  if (error || !po)
     return (
       <Content className="col-span-12">
         <div className="text-center">
           <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-          <p className="mt-4">{error || "Data MR tidak ditemukan."}</p>
+          <p className="mt-4">{error || "Data PO tidak ditemukan."}</p>
         </div>
       </Content>
     );
 
-  // REVISI: Logika untuk highlight approver
+  if (po.status !== "Pending Validation") {
+    return (
+      <Content className="col-span-12">
+        <div className="text-center">
+          <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
+          <h1 className="text-2xl font-bold mt-4">Sudah Ditindaklanjuti</h1>
+          <p className="mt-2 text-muted-foreground">
+            Purchase Order ini sudah tidak lagi menunggu validasi. Status saat
+            ini: <strong>{po.status}</strong>
+          </p>
+          <Button asChild variant="outline" className="mt-6">
+            <Link href="/approval-validation">Kembali ke Daftar Validasi</Link>
+          </Button>
+        </div>
+      </Content>
+    );
+  }
+
   const currentTurnIndex = newApprovals.findIndex(
     (app) => app.status === "pending"
   );
@@ -278,102 +329,133 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       <div className="col-span-12">
         <div className="flex flex-wrap justify-between items-start gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Validasi Material Request</h1>
+            <h1 className="text-3xl font-bold">Validasi Purchase Order</h1>
             <p className="text-muted-foreground">
-              MR:{" "}
-              <span className="font-semibold text-primary">{mr.kode_mr}</span>
+              PO:{" "}
+              <span className="font-semibold text-primary">{po.kode_po}</span>
             </p>
           </div>
-          <Badge variant="secondary">{mr.status}</Badge>
+          <Badge variant="secondary">{po.status}</Badge>
         </div>
       </div>
 
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-        <Content title="Detail Pengajuan" size="sm">
+        <Content title="Detail Pengajuan PO" size="sm">
           <div className="space-y-4">
             <InfoItem
               icon={CircleUser}
-              label="Requester"
-              value={(mr as any).users_with_profiles?.nama || "N/A"}
+              label="Pembuat PO"
+              value={po.users_with_profiles?.nama || "N/A"}
             />
             <InfoItem
-              icon={CircleUser}
-              label="Departemen"
-              value={mr.department}
-            />
-            <InfoItem icon={CircleUser} label="Kategori" value={mr.kategori} />
-            <InfoItem
-              icon={CircleUser}
-              label="Due Date"
-              value={formatDateFriendly(mr.due_date)}
+              icon={Tag}
+              label="Ref. MR"
+              value={po.material_requests?.kode_mr || "Tidak ada"}
             />
             <InfoItem
-              icon={Building2}
-              label="Cost Center"
-              value={mr.cost_center || "N/A"}
+              icon={Calendar}
+              label="Tanggal Dibuat"
+              value={formatDateFriendly(po.created_at)}
+            />
+            <InfoItem
+              icon={DollarSign}
+              label="Total Biaya"
+              value={formatCurrency(po.total_price)}
+            />
+            <InfoItem
+              icon={Wallet}
+              label="Payment Term"
+              value={po.payment_term}
             />
             <InfoItem
               icon={Truck}
-              label="Tujuan Site"
-              value={mr.tujuan_site || "N/A"}
+              label="Tujuan Pengiriman"
+              value={po.shipping_address}
             />
             <InfoItem
-              icon={CircleUser}
-              label="Estimasi Biaya"
-              value={formatCurrency(mr.cost_estimation)}
-            />
-            <InfoItem
-              icon={CircleUser}
-              label="Remarks"
-              value={mr.remarks}
+              icon={Info}
+              label="Catatan PO"
+              value={po.notes || "N/A"}
               isBlock
             />
           </div>
         </Content>
 
-        <Content title="Item yang Diminta" size="sm">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama Item</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Vendor</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mr.orders.map((item, i) => (
-                <TableRow key={i}>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>
-                    {item.qty} {item.uom}
-                  </TableCell>
-                  <TableCell>{item.vendor || "-"}</TableCell>
+        <Content title="Item yang Dipesan (PO)" size="sm">
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Part Number</TableHead>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Qty</TableHead>
+                  <TableHead>Harga</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {po.items.map((item, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs">
+                      {item.part_number}
+                    </TableCell>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell>
+                      {item.qty} {item.uom}
+                    </TableCell>
+                    <TableCell>{formatCurrency(item.price)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </Content>
 
-        <Content title="Lampiran" size="sm">
-          {mr.attachments.length > 0 ? (
-            <ul className="space-y-2">
-              {mr.attachments.map((file, index) => (
-                <li key={index}>
-                  <Link
-                    href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
-                    target="_blank"
-                    className="flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>{file.name}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
-          )}
-        </Content>
+        {po.material_requests && (
+          <Content
+            title={`Informasi Referensi dari ${po.material_requests.kode_mr}`}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              <InfoItem
+                icon={CircleUser}
+                label="Pembuat MR"
+                value={po.material_requests.users_with_profiles?.nama || "N/A"}
+              />
+              <InfoItem
+                icon={Building}
+                label="Departemen MR"
+                value={po.material_requests.department}
+              />
+              <InfoItem
+                icon={Tag}
+                label="Kategori MR"
+                value={po.material_requests.kategori}
+              />
+              <InfoItem
+                icon={DollarSign}
+                label="Estimasi Biaya MR"
+                value={formatCurrency(po.material_requests.cost_estimation)}
+              />
+              <InfoItem
+                icon={Building2}
+                label="Cost Center"
+                value={po.material_requests.cost_center || "N/A"}
+              />
+              <InfoItem
+                icon={Truck}
+                label="Tujuan Site (MR)"
+                value={po.material_requests.tujuan_site || "N/A"}
+              />
+              <div className="md:col-span-2">
+                <InfoItem
+                  icon={Info}
+                  label="Remarks MR"
+                  value={po.material_requests.remarks}
+                  isBlock
+                />
+              </div>
+            </div>
+          </Content>
+        )}
       </div>
 
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
@@ -382,7 +464,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           size="sm"
           cardAction={
             <Button asChild size={"sm"} variant={"outline"}>
-              <Link target="_blank" href={"/settings/approval-templates"}>
+              <Link target="_blank" href={"/approval-validation/templates"}>
                 Kelola Template
               </Link>
             </Button>
@@ -423,7 +505,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                     return (
                       <TableRow
                         key={app.userid}
-                        className={cn(isMyTurn && "bg-primary/10")} // <-- HIGHLIGHT
+                        className={cn(isMyTurn && "bg-primary/10")}
                       >
                         <TableCell
                           className="font-medium max-w-[150px] truncate"
@@ -431,9 +513,8 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                         >
                           <div className="flex items-center gap-2">
                             {isMyTurn && (
-                              <Clock className="h-4 w-4 text-primary" />
-                            )}{" "}
-                            {/* Indikator */}
+                              <Clock className="h-4 w-4 text-primary animate-pulse" />
+                            )}
                             {app.nama}
                           </div>
                         </TableCell>
@@ -496,7 +577,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
-        <Content title="Tolak Permintaan" size="sm">
+        <Content title="Tolak Purchase Order" size="sm">
           <div className="space-y-4">
             <Textarea
               placeholder="Tuliskan alasan penolakan di sini..."
@@ -514,7 +595,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               ) : (
                 <XCircle className="mr-2 h-4 w-4" />
               )}
-              Tolak Material Request
+              Tolak Purchase Order
             </Button>
           </div>
         </Content>
@@ -523,31 +604,8 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-const InfoItem = ({
-  label,
-  value,
-  icon: Icon,
-  isBlock,
-}: {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  isBlock?: boolean;
-}) => (
-  <div
-    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
-  >
-    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
-      <Icon className="h-4 w-4" />
-      {label}
-    </dt>
-    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
-      {value}
-    </dd>
-  </div>
-);
-
-export default function ValidateMRPage({
+// Ini adalah satu-satunya default export
+export default function ValidatePOPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -557,11 +615,11 @@ export default function ValidateMRPage({
     <Suspense
       fallback={
         <div className="col-span-12">
-          <Skeleton className="h-[80vh] w-full" />
+          <ValidatePOSkeleton />
         </div>
       }
     >
-      <ValidateMRPageContent params={resolvedParams} />
+      <ValidatePOPageContent params={resolvedParams} />
     </Suspense>
   );
 }

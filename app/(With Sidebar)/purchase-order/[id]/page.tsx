@@ -2,8 +2,9 @@
 
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, Suspense } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,31 +18,101 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchPurchaseOrderById } from "@/services/purchaseOrderService";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  fetchPurchaseOrderById,
+  closePoWithBast,
+  updatePurchaseOrder, // Pastikan service ini ada
+} from "@/services/purchaseOrderService";
+import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import {
   CircleUser,
   Download,
   Edit,
   Printer,
-  Repeat,
   Truck,
   Wallet,
+  AlertTriangle,
+  Building,
+  Tag,
+  Calendar,
+  DollarSign,
+  Info,
+  Building2,
+  Link as LinkIcon,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Loader2,
+  Check, // <-- Tambahkan
+  X, // <-- Tambahkan
 } from "lucide-react";
-import { AlertTriangle } from "lucide-react";
-import { PurchaseOrderDetail } from "@/type";
+// REVISI: Tipe diimpor dengan alias untuk menghindari tabrakan
+import { User as AuthUser } from "@supabase/supabase-js";
+import {
+  PurchaseOrderDetail,
+  Approval,
+  User as Profile,
+  Attachment,
+} from "@/type";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
-export default function PurchaseOrderDetailPage({
-  params,
+// Komponen helper kecil untuk menampilkan info
+const InfoItem = ({
+  icon: Icon,
+  label,
+  value,
+  isBlock = false,
 }: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: poIdString } = use(params);
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  isBlock?: boolean;
+}) => (
+  <div
+    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
+  >
+    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+      <Icon className="h-4 w-4" />
+      {label}
+    </dt>
+    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+      {value}
+    </dd>
+  </div>
+);
+
+// Komponen Skeleton untuk loading
+const DetailPOSkeleton = () => (
+  <>
+    <div className="col-span-12">
+      <Skeleton className="h-12 w-1/2" />
+    </div>
+    <Content className="col-span-12 lg:col-span-7">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+    <Content className="col-span-12 lg:col-span-5">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+  </>
+);
+
+// ==================================================================
+// KONTEN UTAMA HALAMAN (CLIENT COMPONENT)
+// ==================================================================
+function DetailPOPageContent({ params }: { params: { id: string } }) {
+  const { id: poIdString } = params;
 
   const [po, setPo] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false); // State untuk tombol approval
 
-  useEffect(() => {
+  const supabase = createClient(); // Pindahkan inisialisasi ke atas
+
+  // Fungsi untuk memuat data
+  const loadData = async () => {
     const poId = parseInt(poIdString);
     if (isNaN(poId)) {
       toast.error("ID Purchase Order tidak valid.");
@@ -50,30 +121,161 @@ export default function PurchaseOrderDetailPage({
     }
 
     setLoading(true);
-    fetchPurchaseOrderById(poId)
-      .then((data) => setPo(data))
-      .catch((err) => {
-        toast.error("Gagal memuat detail PO", { description: err.message });
-        setPo(null);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+
+      const poData = await fetchPurchaseOrderById(poId);
+      setPo(poData);
+    } catch (err: any) {
+      toast.error("Gagal memuat detail PO", { description: err.message });
+      setPo(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
   }, [poIdString]);
 
   const handlePrintA4 = () => {
     window.print();
   };
 
+  const handleBastUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !po) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      // 5MB limit
+      toast.error("File BAST terlalu besar", {
+        description: "Ukuran maksimal file adalah 5MB.",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    const toastId = toast.loading("Mengunggah BAST...");
+
+    const supabase = createClient();
+    const filePath = `po/${po.kode_po}/BAST_${file.name}`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("mr") // Pastikan bucket 'mr' bisa diakses
+      .upload(filePath, file);
+
+    if (uploadError) {
+      toast.error("Gagal mengunggah file BAST", {
+        id: toastId,
+        description: uploadError.message,
+      });
+      setIsUploading(false);
+      return;
+    }
+
+    try {
+      const newAttachment: Attachment = {
+        name: file.name,
+        url: uploadData.path,
+      };
+      const updatedAttachments = [...(po.attachments || []), newAttachment];
+
+      // Update PO menjadi 'Completed'
+      await closePoWithBast(po.id, updatedAttachments);
+
+      // Update MR terkait menjadi 'Completed'
+      if (po.mr_id) {
+        const { error: mrError } = await supabase
+          .from("material_requests")
+          .update({ status: "Completed" })
+          .eq("id", po.mr_id);
+        if (mrError) throw mrError;
+      }
+
+      toast.success("BAST berhasil diunggah! MR & PO telah ditutup.", {
+        id: toastId,
+      });
+      await loadData(); // Muat ulang data halaman
+    } catch (error: any) {
+      toast.error("Gagal memperbarui status", {
+        id: toastId,
+        description: error.message,
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // --- FUNGSI UNTUK AKSI APPROVAL ---
+  const handleApprovalAction = async (decision: "approved" | "rejected") => {
+    // Pastikan po dan approvals ada
+    if (!po || !po.approvals || !currentUser) return;
+
+    setActionLoading(true);
+    const toastId = toast.loading(`Sedang memproses ${decision}...`);
+
+    try {
+      const approverIndex = po.approvals.findIndex(
+        (app) => app.userid === currentUser.id
+      );
+      if (approverIndex === -1) {
+        throw new Error("Anda tidak terdaftar dalam jalur approval PO ini.");
+      }
+
+      const updatedApprovals = JSON.parse(JSON.stringify(po.approvals));
+      updatedApprovals[approverIndex].status = decision;
+
+      let newPoStatus: PurchaseOrderDetail["status"] = po.status;
+      if (decision === "rejected") {
+        newPoStatus = "Rejected";
+      } else if (decision === "approved") {
+        // Cek apakah ini approver terakhir
+        const isLastApproval = updatedApprovals.every(
+          (app: Approval) => app.status === "approved"
+        );
+        if (isLastApproval) {
+          newPoStatus = "Pending BAST"; // Status baru setelah semua approve
+        }
+      }
+
+      // Kirim update ke service
+      await updatePurchaseOrder(po.id, {
+        approvals: updatedApprovals,
+        status: newPoStatus,
+      });
+
+      toast.success(`PO berhasil di-${decision}!`, { id: toastId });
+      await loadData(); // Muat ulang data untuk merefleksikan perubahan
+    } catch (error: any) {
+      toast.error("Aksi gagal", { id: toastId, description: error.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "completed":
+        return <Badge variant="outline">Completed</Badge>;
+      case "rejected":
+        return <Badge variant="destructive">Rejected</Badge>;
+      case "pending bast":
+        return <Badge variant="secondary">Pending BAST</Badge>;
+      case "pending approval":
+        return <Badge variant="secondary">Pending Approval</Badge>;
+      case "pending validation":
+        return <Badge variant="secondary">Pending Validation</Badge>;
+      case "draft":
+        return <Badge variant="secondary">Draft</Badge>;
+      default:
+        return <Badge>{status}</Badge>;
+    }
+  };
+
   if (loading) {
-    return (
-      <>
-        <Content className="col-span-12 lg:col-span-8">
-          <Skeleton className="h-64 w-full" />
-        </Content>
-        <Content className="col-span-12 lg:col-span-4">
-          <Skeleton className="h-64 w-full" />
-        </Content>
-      </>
-    );
+    return <DetailPOSkeleton />;
   }
 
   if (!po) {
@@ -94,6 +296,84 @@ export default function PurchaseOrderDetailPage({
   }
 
   const subtotal = po.items.reduce((acc, item) => acc + item.total_price, 0);
+
+  // Cek apakah user saat ini adalah requester asli dari MR terkait
+  const isRequester = currentUser?.id === po.material_requests?.userid;
+
+  // Logika untuk highlight approver (dengan null check)
+  const currentTurnIndex = po.approvals?.findIndex(
+    (app) => app.status === "pending"
+  );
+  const allPreviousApproved = !po.approvals
+    ? false
+    : currentTurnIndex === -1
+    ? false
+    : currentTurnIndex === 0 ||
+      po.approvals
+        .slice(0, currentTurnIndex)
+        .every((app) => app.status === "approved");
+
+  // --- KOMPONEN UNTUK TOMBOL AKSI ---
+  const ApprovalActions = () => {
+    // Pastikan po.approvals ada
+    if (
+      !po ||
+      !po.approvals ||
+      !currentUser ||
+      po.status !== "Pending Approval"
+    )
+      return null;
+
+    const myApprovalIndex = po.approvals.findIndex(
+      (app) => app.userid === currentUser.id
+    );
+    if (
+      myApprovalIndex === -1 ||
+      po.approvals[myApprovalIndex].status !== "pending"
+    ) {
+      return null; // Bukan approver atau sudah bertindak
+    }
+
+    const isMyTurn =
+      currentTurnIndex === myApprovalIndex && allPreviousApproved;
+    if (!isMyTurn) {
+      return (
+        <p className="text-sm text-muted-foreground text-center">
+          Menunggu persetujuan dari approver sebelumnya.
+        </p>
+      );
+    }
+
+    return (
+      <div className="flex gap-2">
+        <Button
+          className="w-full"
+          onClick={() => handleApprovalAction("approved")}
+          disabled={actionLoading}
+        >
+          {actionLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Check className="mr-2 h-4 w-4" />
+          )}{" "}
+          Setujui
+        </Button>
+        <Button
+          variant="destructive"
+          className="w-full"
+          onClick={() => handleApprovalAction("rejected")}
+          disabled={actionLoading}
+        >
+          {actionLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <X className="mr-2 h-4 w-4" />
+          )}{" "}
+          Tolak
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -116,32 +396,14 @@ export default function PurchaseOrderDetailPage({
                   </Link>
                 </>
               )}
-              {po.repeated_from_po_id && (
-                <>
-                  Repeat dari:{" "}
-                  <Link
-                    href={`/purchase-order/${po.repeated_from_po_id}`}
-                    className="text-primary hover:underline"
-                  >
-                    PO #{po.repeated_from_po_id}
-                  </Link>
-                </>
-              )}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <Badge variant={po.status === "Draft" ? "secondary" : "outline"}>
-              {po.status}
-            </Badge>
+            {getStatusBadge(po.status)}
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
                 <Link href={`/purchase-order/edit/${po.id}`}>
                   <Edit className="mr-2 h-4 w-4" /> Edit
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/purchase-order/create?repeatPoId=${po.id}`}>
-                  <Repeat className="mr-2 h-4 w-4" /> Repeat Order
                 </Link>
               </Button>
               <Button onClick={handlePrintA4} variant="outline" size="sm">
@@ -152,45 +414,224 @@ export default function PurchaseOrderDetailPage({
         </div>
       </div>
 
-      <Content
-        title="Detail Item Pesanan"
-        className="col-span-12 lg:col-span-8 no-print"
-      >
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Part Number</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Harga Satuan</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {po.items.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell className="font-mono text-xs">
-                    {item.part_number}
-                  </TableCell>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="text-right">
-                    {item.qty} {item.uom}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(item.price)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(item.total_price)}
-                  </TableCell>
+      <div className="col-span-12 lg:col-span-7 flex flex-col gap-6 no-print">
+        <Content title="Detail Item Pesanan (PO)">
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Part Number</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Harga Satuan</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Content>
+              </TableHeader>
+              <TableBody>
+                {po.items.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-mono text-xs">
+                      {item.part_number}
+                    </TableCell>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="text-right">
+                      {item.qty} {item.uom}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(item.price)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatCurrency(item.total_price)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
 
-      <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 no-print">
+        {po.material_requests && (
+          <>
+            <Content
+              title={`Informasi Referensi dari ${po.material_requests.kode_mr}`}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <InfoItem
+                  icon={CircleUser}
+                  label="Pembuat MR"
+                  value={
+                    po.material_requests.users_with_profiles?.nama || "N/A"
+                  }
+                />
+                <InfoItem
+                  icon={Building}
+                  label="Departemen MR"
+                  value={po.material_requests.department}
+                />
+                <InfoItem
+                  icon={Tag}
+                  label="Kategori MR"
+                  value={po.material_requests.kategori}
+                />
+                <InfoItem
+                  icon={DollarSign}
+                  label="Estimasi Biaya MR"
+                  value={formatCurrency(po.material_requests.cost_estimation)}
+                />
+                <InfoItem
+                  icon={Building2}
+                  label="Cost Center"
+                  value={po.material_requests.cost_center || "N/A"}
+                />
+                <InfoItem
+                  icon={Truck}
+                  label="Tujuan Site (MR)"
+                  value={po.material_requests.tujuan_site || "N/A"}
+                />
+                <div className="md:col-span-2">
+                  <InfoItem
+                    icon={Info}
+                    label="Remarks MR"
+                    value={po.material_requests.remarks}
+                    isBlock
+                  />
+                </div>
+              </div>
+            </Content>
+
+            <Content title="Item Asli dari Material Request">
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama Item</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Catatan</TableHead>
+                      <TableHead>Link</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {po.material_requests.orders.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          {item.name}
+                        </TableCell>
+                        <TableCell>
+                          {item.qty} {item.uom}
+                        </TableCell>
+                        <TableCell>{item.vendor || "-"}</TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {item.note || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {item.url && (
+                            <Button asChild variant={"outline"} size="sm">
+                              <Link
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <LinkIcon className="h-3 w-3" />
+                              </Link>
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Content>
+          </>
+        )}
+      </div>
+
+      <div className="col-span-12 lg:col-span-5 flex flex-col gap-6 no-print">
+        {po.status === "Pending Approval" && (
+          <Content title="Tindakan Persetujuan">
+            <ApprovalActions />
+          </Content>
+        )}
+
+        {po.status === "Pending BAST" && isRequester && (
+          <Content title="Konfirmasi Penerimaan (BAST)">
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Silakan unggah dokumen Berita Acara Serah Terima (BAST) atau
+                bukti penerimaan barang untuk menutup permintaan ini.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="bast-upload">Upload File BAST</Label>
+                <Input
+                  id="bast-upload"
+                  type="file"
+                  onChange={handleBastUpload}
+                  disabled={isUploading}
+                />
+                {isUploading && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Mengunggah...
+                  </div>
+                )}
+              </div>
+            </div>
+          </Content>
+        )}
+
+        <Content title="Jalur Approval PO">
+          {po.approvals && po.approvals.length > 0 ? (
+            <ul className="space-y-2">
+              {po.approvals.map((approver, index) => {
+                const isMyTurn =
+                  currentTurnIndex === index && allPreviousApproved;
+                return (
+                  <li
+                    key={index}
+                    className={cn(
+                      "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
+                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {approver.status === "approved" ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                      ) : approver.status === "rejected" ? (
+                        <XCircle className="h-5 w-5 text-destructive" />
+                      ) : (
+                        <Clock className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      <div>
+                        <p className="font-semibold">{approver.nama}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {approver.type}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        approver.status === "approved"
+                          ? "outline"
+                          : approver.status === "rejected"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                      className="capitalize"
+                    >
+                      {approver.status}
+                    </Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              PO ini menunggu validasi dari GA.
+            </p>
+          )}
+        </Content>
+
         <Content title="Vendor Utama & Pengiriman">
           <div className="space-y-3">
             <InfoItem
@@ -221,6 +662,7 @@ export default function PurchaseOrderDetailPage({
             />
           </div>
         </Content>
+
         <Content title="Ringkasan Biaya">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
@@ -246,16 +688,15 @@ export default function PurchaseOrderDetailPage({
             </div>
           </div>
         </Content>
-      </div>
 
-      <Content title="Catatan & Lampiran" className="col-span-12 no-print">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Content title="Catatan & Lampiran">
           <div>
             <h4 className="font-semibold mb-2">Catatan Internal</h4>
             <p className="text-sm text-muted-foreground">
               {po.notes || "Tidak ada catatan."}
             </p>
           </div>
+          <hr className="my-4" />
           <div>
             <h4 className="font-semibold mb-2">Lampiran PO</h4>
             {po.attachments && po.attachments.length > 0 ? (
@@ -280,15 +721,20 @@ export default function PurchaseOrderDetailPage({
               </p>
             )}
           </div>
-        </div>
-      </Content>
+        </Content>
+      </div>
 
-      <div id="printable-po-a4" className="print-only col-span-12">
+      {/* ================================================================== */}
+      {/* BAGIAN 2: TAMPILAN KHUSUS UNTUK PRINT A4 (HILANG DI LAYAR) */}
+      {/* ================================================================== */}
+      <div id="printable-po-a4" className="print-only">
         <header className="flex justify-between items-start pb-4 border-b border-gray-300">
           <div>
-            <h1 className="text-xl font-bold">Garuda Mart Indonesia</h1>
-            <p className="text-xs">Sakura Regency Blok J5-8A</p>
-            <p className="text-xs">Jatiasih, Bekasi 17423 - Indonesia</p>
+            <h1 className="text-2xl font-bold">PT. Garuda Mart Indonesia</h1>
+            <p className="text-xs">
+              Sakura Regency, Kecamatan Jatiasih, Bekasi
+            </p>
+            <p className="text-xs">Provinsi Jawa Barat, Indonesia</p>
           </div>
           <div className="text-right">
             <h2 className="text-xl font-bold text-gray-800">PURCHASE ORDER</h2>
@@ -296,7 +742,7 @@ export default function PurchaseOrderDetailPage({
               <b>No. PO:</b> {po.kode_po}
             </p>
             <p>
-              <b>Tanggal:</b> {formatDate(po.created_at)}
+              <b>Tanggal:</b> {formatDateFriendly(po.created_at)}
             </p>
             {po.material_requests && (
               <p>
@@ -315,7 +761,7 @@ export default function PurchaseOrderDetailPage({
           </div>
           <div className="space-y-1">
             <h3 className="font-semibold text-gray-500 mb-1">KIRIM KE</h3>
-            {/* <p className="font-bold">GMI Gudang Pusat</p> */}
+            <p className="font-bold">GMI Gudang Pusat</p>
             <p className="whitespace-pre-wrap">{po.shipping_address}</p>
           </div>
         </section>
@@ -400,7 +846,9 @@ export default function PurchaseOrderDetailPage({
             <div>
               <p className="font-semibold">Tanda Tangan & Stempel Vendor,</p>
               <div className="mt-20 border-b border-gray-400"></div>
-              <p className="text-[10px]">({po.vendor_details?.name || ""})</p>
+              <p className="text-[10px]">
+                ({po.vendor_details?.name || "Nama Jelas"})
+              </p>
             </div>
           </div>
         </footer>
@@ -409,20 +857,16 @@ export default function PurchaseOrderDetailPage({
   );
 }
 
-const InfoItem = ({
-  icon: Icon,
-  label,
-  value,
+// Ini adalah satu-satunya default export
+export default function DetailPOPage({
+  params,
 }: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) => (
-  <div className="flex items-start gap-3">
-    <Icon className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium text-sm whitespace-pre-wrap">{value}</p>
-    </div>
-  </div>
-);
+  params: Promise<{ id: string }>;
+}) {
+  const resolvedParams = use(params);
+  return (
+    <Suspense fallback={<DetailPOSkeleton />}>
+      <DetailPOPageContent params={resolvedParams} />
+    </Suspense>
+  );
+}

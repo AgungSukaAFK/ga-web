@@ -16,6 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -23,7 +30,20 @@ import {
   updatePurchaseOrder,
 } from "@/services/purchaseOrderService";
 import { formatCurrency } from "@/lib/utils";
-import { AlertTriangle, Save, Send, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Save,
+  Trash2,
+  CircleUser,
+  Building,
+  Tag,
+  DollarSign,
+  Info,
+  Truck,
+  Building2,
+  LinkIcon,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { BarangSearchCombobox } from "../../BarangSearchCombobox";
 import {
@@ -31,7 +51,33 @@ import {
   POItem,
   Barang,
   PurchaseOrderPayload,
+  Attachment,
 } from "@/type";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
+// Komponen helper kecil untuk menampilkan info
+const InfoItem = ({
+  icon: Icon,
+  label,
+  value,
+  isBlock = false,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  isBlock?: boolean;
+}) => (
+  <div className={isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2"}>
+    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+      <Icon className="h-4 w-4" />
+      {label}
+    </dt>
+    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+      {value}
+    </dd>
+  </div>
+);
 
 function EditPOPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -40,7 +86,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false); // Mengganti nama state agar lebih jelas
   const [error, setError] = useState<string | null>(null);
+
+  // State untuk Payment Term
+  const [paymentTermType, setPaymentTermType] = useState("Termin");
+  const [paymentTermDays, setPaymentTermDays] = useState("30");
 
   useEffect(() => {
     if (isNaN(poId)) {
@@ -52,6 +103,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     fetchPurchaseOrderById(poId)
       .then((data) => {
         setPoForm(data);
+        // Inisialisasi state payment term dari data yang di-load
+        if (data && data.payment_term) {
+          if (data.payment_term.toLowerCase() === "cash") {
+            setPaymentTermType("Cash");
+            setPaymentTermDays("");
+          } else {
+            setPaymentTermType("Termin");
+            const days = data.payment_term.match(/\d+/);
+            setPaymentTermDays(days ? days[0] : "30");
+          }
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -70,6 +132,18 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       (poForm.postage || 0);
     setPoForm((prev) => (prev ? { ...prev, total_price: grandTotal } : null));
   }, [poForm?.items, poForm?.discount, poForm?.tax, poForm?.postage]);
+
+  // Efek untuk update payment_term string
+  useEffect(() => {
+    if (!poForm) return; // Jangan jalankan jika poForm belum terisi
+    let newPaymentTerm = "";
+    if (paymentTermType === "Cash") {
+      newPaymentTerm = "Cash";
+    } else {
+      newPaymentTerm = `Termin ${paymentTermDays} Hari`;
+    }
+    setPoForm((p) => (p ? { ...p, payment_term: newPaymentTerm } : null));
+  }, [paymentTermType, paymentTermDays]);
 
   const handleItemChange = (
     index: number,
@@ -94,7 +168,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const newItem: POItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
-      name: barang.part_name,
+      name: barang.part_name || "",
       qty: 1,
       uom: barang.uom || "Pcs",
       price: 0,
@@ -113,16 +187,18 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  const handleSubmit = async (status: "Draft" | "Ordered") => {
+  const handleSubmit = async () => {
     if (!poForm) return;
 
-    const payload: Partial<PurchaseOrderPayload> = { ...poForm, status };
+    const payload: Partial<PurchaseOrderPayload> = { ...poForm };
+    // Hapus data relasi sebelum mengirim update
     delete (payload as any).material_requests;
     delete (payload as any).users_with_profiles;
     delete (payload as any).created_at;
     delete (payload as any).updated_at;
     delete (payload as any).id;
 
+    setActionLoading(true);
     const toastId = toast.loading(`Memperbarui PO...`);
     try {
       await updatePurchaseOrder(poId, payload);
@@ -133,6 +209,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         id: toastId,
         description: err.message,
       });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -165,8 +243,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const supabase = createClient();
     const filePath = `po/${poForm.kode_po}/${Date.now()}_${file.name}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("mr")
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("mr") // Pastikan ini nama bucket yang benar
       .upload(filePath, file);
 
     if (uploadError) {
@@ -178,7 +256,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    const newAttachment = { name: file.name, url: filePath };
+    const newAttachment: Attachment = { name: file.name, url: uploadData.path };
     const updatedAttachments = [...(poForm.attachments || []), newAttachment];
 
     setPoForm({ ...poForm, attachments: updatedAttachments });
@@ -189,12 +267,20 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const removeAttachment = (indexToRemove: number) => {
     if (!poForm) return;
+    const attachmentToRemove = poForm.attachments?.[indexToRemove];
+    if (!attachmentToRemove) return;
+
     const updatedAttachments = poForm.attachments?.filter(
       (_, index) => index !== indexToRemove
     );
     setPoForm({ ...poForm, attachments: updatedAttachments });
-    toast.success(
-      "Lampiran dihapus dari daftar. Perubahan akan tersimpan saat Anda menyimpan PO."
+
+    // Hapus dari storage di background
+    const supabase = createClient();
+    supabase.storage.from("mr").remove([attachmentToRemove.url]);
+
+    toast.info(
+      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`
     );
   };
 
@@ -220,19 +306,122 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           <p className="text-muted-foreground">
             PO:{" "}
             <span className="font-semibold text-primary">{poForm.kode_po}</span>
+            {poForm.material_requests &&
+              ` | Ref. MR: ${poForm.material_requests.kode_mr}`}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleSubmit("Draft")}>
-            <Save className="mr-2 h-4 w-4" /> Simpan Draft
-          </Button>
-          <Button onClick={() => handleSubmit("Ordered")}>
-            <Send className="mr-2 h-4 w-4" /> Finalisasi PO
+          <Button
+            onClick={handleSubmit}
+            disabled={actionLoading || isUploading}
+          >
+            {actionLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Simpan Perubahan
           </Button>
         </div>
       </div>
 
-      <div className="col-span-12 lg:col-span-8 space-y-6">
+      <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+        {poForm.material_requests && (
+          <Content
+            title={`Informasi Referensi dari ${poForm.material_requests.kode_mr}`}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              <InfoItem
+                icon={CircleUser}
+                label="Pembuat MR"
+                value={
+                  poForm.material_requests.users_with_profiles?.nama || "N/A"
+                }
+              />
+              <InfoItem
+                icon={Building}
+                label="Departemen MR"
+                value={poForm.material_requests.department}
+              />
+              <InfoItem
+                icon={Tag}
+                label="Kategori MR"
+                value={poForm.material_requests.kategori}
+              />
+              <InfoItem
+                icon={DollarSign}
+                label="Estimasi Biaya MR"
+                value={formatCurrency(poForm.material_requests.cost_estimation)}
+              />
+              <InfoItem
+                icon={Building2}
+                label="Cost Center"
+                value={poForm.material_requests.cost_center || "N/A"}
+              />
+              <InfoItem
+                icon={Truck}
+                label="Tujuan Site (MR)"
+                value={poForm.material_requests.tujuan_site || "N/A"}
+              />
+              <div className="md:col-span-2">
+                <InfoItem
+                  icon={Info}
+                  label="Remarks MR"
+                  value={poForm.material_requests.remarks}
+                  isBlock
+                />
+              </div>
+            </div>
+          </Content>
+        )}
+
+        {poForm.material_requests && (
+          <Content title="Item Referensi dari MR">
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama Item</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Catatan</TableHead>
+                    <TableHead>Link</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {poForm.material_requests.orders.map((order, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        {order.name}
+                      </TableCell>
+                      <TableCell>
+                        {order.qty} {order.uom}
+                      </TableCell>
+                      <TableCell>{order.vendor || "-"}</TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {order.note || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {order.url && (
+                          <Button asChild variant={"outline"} size="sm">
+                            <Link
+                              href={order.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <LinkIcon className="h-3 w-3" />
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        )}
+
         <Content title="Detail Item Pesanan">
           <div className="overflow-x-auto">
             <Table className="min-w-[900px]">
@@ -299,9 +488,9 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
         <Content title="Catatan Internal">
           <div>
-            <label className="text-sm font-medium sr-only">
+            <Label className="text-sm font-medium sr-only">
               Catatan Internal
-            </label>
+            </Label>
             <Textarea
               value={poForm.notes || ""}
               onChange={(e) =>
@@ -314,20 +503,20 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         </Content>
       </div>
 
-      <div className="col-span-12 lg:col-span-4 space-y-6">
+      <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor Utama & Pengiriman">
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Nama Vendor Utama</label>
+              <Label className="text-sm font-medium">Nama Vendor Utama</Label>
               <Input
                 value={poForm.vendor_details?.name || ""}
                 onChange={(e) => handleVendorChange("name", e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm font-medium">
+              <Label className="text-sm font-medium">
                 Kontak Person Vendor
-              </label>
+              </Label>
               <Input
                 value={poForm.vendor_details?.contact_person || ""}
                 onChange={(e) =>
@@ -336,7 +525,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Alamat Vendor</label>
+              <Label className="text-sm font-medium">Alamat Vendor</Label>
               <Textarea
                 value={poForm.vendor_details?.address || ""}
                 onChange={(e) => handleVendorChange("address", e.target.value)}
@@ -344,18 +533,39 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <hr />
             <div>
-              <label className="text-sm font-medium">Payment Term</label>
-              <Input
-                value={poForm.payment_term}
-                onChange={(e) =>
-                  setPoForm((p) =>
-                    p ? { ...p, payment_term: e.target.value } : null
-                  )
-                }
-              />
+              <Label className="text-sm font-medium">Payment Term</Label>
+              <div className="flex gap-2 mt-1">
+                <Select
+                  value={paymentTermType}
+                  onValueChange={(value) => setPaymentTermType(value)}
+                >
+                  <SelectTrigger className="w-1/2">
+                    <SelectValue placeholder="Pilih tipe..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Termin">Termin</SelectItem>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                  </SelectContent>
+                </Select>
+                {paymentTermType === "Termin" && (
+                  <div className="w-1/2 relative">
+                    <Input
+                      type="number"
+                      value={paymentTermDays}
+                      onChange={(e) => setPaymentTermDays(e.target.value)}
+                      placeholder="... hari"
+                      className="pr-12"
+                      min="0"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      Hari
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div>
-              <label className="text-sm font-medium">Alamat Pengiriman</label>
+              <Label className="text-sm font-medium">Alamat Pengiriman</Label>
               <Textarea
                 value={poForm.shipping_address}
                 onChange={(e) =>
@@ -374,6 +584,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               onChange={handleAttachmentUpload}
               disabled={isUploading}
             />
+            {isUploading && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Mengunggah...
+              </div>
+            )}
             {poForm.attachments && poForm.attachments.length > 0 && (
               <ul className="space-y-2">
                 {poForm.attachments.map((att, index) => (
@@ -407,10 +623,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <label>Diskon</label>
+              <Label>Diskon</Label>
               <Input
                 type="number"
-                value={poForm.discount}
+                value={poForm.discount || 0}
                 onChange={(e) =>
                   setPoForm((p) =>
                     p ? { ...p, discount: Number(e.target.value) } : null
@@ -421,10 +637,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               />
             </div>
             <div className="flex justify-between items-center">
-              <label>Pajak (PPN)</label>
+              <Label>Pajak (PPN)</Label>
               <Input
                 type="number"
-                value={poForm.tax}
+                value={poForm.tax || 0}
                 onChange={(e) =>
                   setPoForm((p) =>
                     p ? { ...p, tax: Number(e.target.value) } : null
@@ -435,10 +651,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               />
             </div>
             <div className="flex justify-between items-center">
-              <label>Ongkos Kirim</label>
+              <Label>Ongkos Kirim</Label>
               <Input
                 type="number"
-                value={poForm.postage}
+                value={poForm.postage || 0}
                 onChange={(e) =>
                   setPoForm((p) =>
                     p ? { ...p, postage: Number(e.target.value) } : null

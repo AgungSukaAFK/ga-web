@@ -69,8 +69,11 @@ export function PaginationComponent({
 
         {pagesToRender.map((page) => (
           <PaginationItem key={page}>
-            <PaginationLink isActive={page === currentPage}>
-              <Link href={generatePageLink(page)}>{page}</Link>
+            <PaginationLink
+              isActive={page === currentPage}
+              href={generatePageLink(page)}
+            >
+              {page}
             </PaginationLink>
           </PaginationItem>
         ))}
@@ -79,8 +82,8 @@ export function PaginationComponent({
           <>
             {endPage < totalPages - 1 && <PaginationEllipsis />}
             <PaginationItem>
-              <PaginationLink>
-                <Link href={generatePageLink(totalPages)}>{totalPages}</Link>
+              <PaginationLink href={generatePageLink(totalPages)}>
+                {totalPages}
               </PaginationLink>
             </PaginationItem>
           </>
@@ -88,8 +91,8 @@ export function PaginationComponent({
 
         {currentPage < totalPages && (
           <PaginationItem>
-            <PaginationNext>
-              <Link href={generatePageLink(currentPage + 1)}>Next</Link>
+            <PaginationNext href={generatePageLink(currentPage + 1)}>
+              Next
             </PaginationNext>
           </PaginationItem>
         )}

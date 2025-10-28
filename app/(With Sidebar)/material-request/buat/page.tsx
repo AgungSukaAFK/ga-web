@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MaterialRequest, Order } from "@/type";
+import { MaterialRequest, Order, Attachment } from "@/type";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/table";
 import { LinkIcon, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
@@ -32,8 +31,17 @@ import {
 import { AlertDialogHeader } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import {
+  getActiveUserProfile,
+  generateMRCode,
+  uploadAttachment,
+  removeAttachment,
+  createMaterialRequest,
+} from "@/services/mrService";
+import { Checkbox } from "@/components/ui/checkbox";
 
-// Data kategori yang telah diperbarui
+// Data kategori
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },
@@ -41,40 +49,28 @@ const kategoriData: ComboboxData = [
   { label: "Upgrade", value: "Upgrade" },
 ];
 
-const deptAbbreviations: { [key: string]: string } = {
-  "General Affair": "GA",
-  Marketing: "MKT",
-  Manufacture: "MAN",
-  K3: "HSE",
-  Finance: "FIN",
-  IT: "IT",
-  Logistik: "LOG",
-  Purchasing: "PUR",
-  Warehouse: "WH",
-  Service: "SVC",
-  "General Manager": "GM",
-  "Executive Manager": "EM",
-  "Boards of Director": "BOD",
-};
+const dataCostCenter: ComboboxData = [
+  { label: "APD", value: "APD" },
+  { label: "Bangunan", value: "Bangunan" },
+  { label: "Alat Berat", value: "Alat Berat" },
+  { label: "Operasional Kantor", value: "Operasional Kantor" },
+  { label: "Lainnya", value: "Lainnya" },
+];
 
-const toRoman = (num: number): string => {
-  const romanMap: { [key: number]: string } = {
-    1: "I",
-    2: "II",
-    3: "III",
-    4: "IV",
-    5: "V",
-    6: "VI",
-    7: "VII",
-    8: "VIII",
-    9: "IX",
-    10: "X",
-    11: "XI",
-    12: "XII",
-  };
-  return romanMap[num] || "";
-};
+const dataLokasi: ComboboxData = [
+  { label: "Head Office", value: "Head Office" },
+  { label: "Tanjung Enim", value: "Tanjung Enim" },
+  { label: "Balikpapan", value: "Balikpapan" },
+  { label: "Site BA", value: "Site BA" },
+  { label: "Site TAL", value: "Site TAL" },
+  { label: "Site MIP", value: "Site MIP" },
+  { label: "Site MIFA", value: "Site MIFA" },
+  { label: "Site BIB", value: "Site BIB" },
+  { label: "Site AMI", value: "Site AMI" },
+  { label: "Site Tabang", value: "Site Tabang" },
+];
 
+// Helper format tanggal (asumsi ada di utils)
 const formatDateFriendly = (date?: Date): string => {
   if (!date) return "";
   return new Date(date).toLocaleDateString("id-ID", {
@@ -86,9 +82,9 @@ const formatDateFriendly = (date?: Date): string => {
 };
 
 export default function BuatMRPage() {
-  const s = createClient();
   const router = useRouter();
 
+  // REVISI: Inisialisasi state agar sesuai dengan tipe (string, bukan null/undefined)
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
     {
       userid: "",
@@ -98,6 +94,9 @@ export default function BuatMRPage() {
       remarks: "",
       cost_estimation: "",
       department: "",
+      company_code: "",
+      cost_center: "",
+      tujuan_site: "",
       created_at: new Date(),
       due_date: new Date(),
       orders: [],
@@ -107,107 +106,77 @@ export default function BuatMRPage() {
     }
   );
 
+  const [userLokasi, setUserLokasi] = useState(""); // State untuk menyimpan lokasi user
   const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
 
   useEffect(() => {
     const fetchUserData = async () => {
-      const {
-        data: { user },
-      } = await s.auth.getUser();
-      if (user) {
-        const { data: profile, error } = await s
-          .from("profiles")
-          .select("department")
-          .eq("id", user.id)
-          .single();
-        if (error) {
-          toast.error("Gagal mengambil profil user", {
-            description: error.message,
-          });
-          return;
-        }
-        if (profile && profile.department) {
+      try {
+        const profile = await getActiveUserProfile();
+        if (
+          profile &&
+          profile.department &&
+          profile.lokasi &&
+          profile.company
+        ) {
+          const newKodeMR = await generateMRCode(
+            profile.department,
+            profile.lokasi
+          );
+          setUserLokasi(profile.lokasi); // Simpan lokasi user
+
+          // REVISI: Pastikan semua nilai adalah string, bukan null
           setFormCreateMR((prev) => ({
             ...prev,
-            department: profile.department,
+            department: profile.department || "",
+            company_code: profile.company || "",
+            tujuan_site: profile.lokasi || "", // Set tujuan awal sama dengan lokasi
+            kode_mr: newKodeMR,
           }));
         } else {
-          toast.warning("Departemen tidak ditemukan.", {
-            description: "Harap lengkapi profil Anda.",
+          toast.warning("Profil belum lengkap.", {
+            description: "Departemen, Lokasi, atau Company tidak ditemukan.",
           });
         }
+      } catch (error: any) {
+        toast.error("Gagal mengambil profil user", {
+          description: error.message,
+        });
       }
     };
     fetchUserData();
-  }, [s]);
-
-  useEffect(() => {
-    const generateKodeMR = async () => {
-      if (!formCreateMR.department) {
-        setFormCreateMR((prev) => ({
-          ...prev,
-          kode_mr: "Menunggu data departemen...",
-        }));
-        return;
-      }
-
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentYearYY = currentYear.toString().slice(-2);
-      const currentMonthRoman = toRoman(now.getMonth() + 1);
-
-      const { data: lastMr, error } = await s
-        .from("material_requests")
-        .select("kode_mr")
-        .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
-        .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
-        .order("id", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (error && error.code !== "PGRST116") {
-        toast.error("Gagal men-generate Kode MR.");
-        console.error("Error fetching last MR of the year:", error);
-        return;
-      }
-
-      let nextNumber = 1;
-      if (lastMr) {
-        try {
-          const parts = lastMr.kode_mr.split("/");
-          const lastNumberStr = parts[parts.length - 1];
-          if (lastNumberStr) {
-            nextNumber = parseInt(lastNumberStr, 10) + 1;
-          }
-        } catch (e) {
-          console.error("Error parsing last MR code:", e);
-        }
-      }
-
-      const deptAbbr =
-        deptAbbreviations[formCreateMR.department] || formCreateMR.department;
-      const newKodeMR = `GMI/MR/${currentMonthRoman}/${currentYearYY}/${deptAbbr}/${nextNumber}`;
-      setFormCreateMR((prev) => ({ ...prev, kode_mr: newKodeMR }));
-    };
-
-    generateKodeMR();
-  }, [formCreateMR.department, s]);
+  }, []); // Hanya perlu dijalankan sekali
 
   const handleCBKategori = (value: string) => {
     setFormCreateMR({ ...formCreateMR, kategori: value });
   };
 
+  const handleCBCostCenter = (value: string) => {
+    setFormCreateMR({ ...formCreateMR, cost_center: value });
+  };
+
+  const handleCBTujuanSite = (value: string) => {
+    setFormCreateMR({ ...formCreateMR, tujuan_site: value });
+  };
+
+  useEffect(() => {
+    if (tujuanSamaDenganLokasi) {
+      setFormCreateMR((prev) => ({ ...prev, tujuan_site: userLokasi }));
+    } else {
+      setFormCreateMR((prev) => ({ ...prev, tujuan_site: "" })); // Kosongkan agar user memilih
+    }
+  }, [tujuanSamaDenganLokasi, userLokasi]);
+
   const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value.replace(/[^0-9]/g, "");
     const numericValue = parseInt(rawValue, 10) || 0;
-
     setFormCreateMR((prev) => ({
       ...prev,
       cost_estimation: String(numericValue),
     }));
-
     const formatted = new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
@@ -254,25 +223,27 @@ export default function BuatMRPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
+      toast.warning("Kode MR belum siap, tunggu sebentar.");
+      return;
+    }
     setIsUploading(true);
     const toastId = toast.loading(`Mengunggah ${files.length} file...`);
+    let successfulUploads: Attachment[] = [];
+    let failedUploads = 0;
 
-    const uploadPromises = Array.from(files).map(async (file) => {
-      const filePath = `${formCreateMR.kode_mr.replace(
-        /\//g,
-        "-"
-      )}/${Date.now()}_${file.name}`;
-      const { data, error } = await s.storage.from("mr").upload(filePath, file);
-      if (error) return { error, file };
-      return { data: { ...data, name: file.name }, error: null, file };
-    });
-
-    const results = await Promise.all(uploadPromises);
-    const successfulUploads = results
-      .filter((r) => !r.error)
-      .map((r) => ({ url: r.data!.path, name: r.data!.name }));
-    const failedUploads = results.filter((r) => r.error);
+    for (const file of files) {
+      try {
+        const newAttachment = await uploadAttachment(
+          file,
+          formCreateMR.kode_mr
+        );
+        successfulUploads.push(newAttachment);
+      } catch (error) {
+        console.error("Gagal unggah satu file:", error);
+        failedUploads++;
+      }
+    }
 
     if (successfulUploads.length > 0) {
       setFormCreateMR((prev) => ({
@@ -283,11 +254,8 @@ export default function BuatMRPage() {
         id: toastId,
       });
     }
-    if (failedUploads.length > 0) {
-      toast.error(`Gagal mengunggah ${failedUploads.length} file.`, {
-        id: toastId,
-      });
-      console.error("Failed uploads:", failedUploads);
+    if (failedUploads > 0) {
+      toast.error(`Gagal mengunggah ${failedUploads} file.`, { id: toastId });
     } else if (successfulUploads.length === 0) {
       toast.dismiss(toastId);
     }
@@ -298,20 +266,16 @@ export default function BuatMRPage() {
 
   const handleRemoveAttachment = async (index: number, path: string) => {
     const toastId = toast.loading("Menghapus file...");
-    const { error: removeError } = await s.storage.from("mr").remove([path]);
-
-    if (removeError) {
-      toast.error(`Gagal menghapus file: ${removeError.message}`, {
-        id: toastId,
-      });
-      return;
+    try {
+      await removeAttachment(path);
+      const updatedAttachments = formCreateMR.attachments.filter(
+        (_, i) => i !== index
+      );
+      setFormCreateMR((prev) => ({ ...prev, attachments: updatedAttachments }));
+      toast.success("File berhasil dihapus.", { id: toastId });
+    } catch (error: any) {
+      toast.error(`Gagal menghapus file: ${error.message}`, { id: toastId });
     }
-
-    const updatedAttachments = formCreateMR.attachments.filter(
-      (_, i) => i !== index
-    );
-    setFormCreateMR((prev) => ({ ...prev, attachments: updatedAttachments }));
-    toast.success("File berhasil dihapus.", { id: toastId });
   };
 
   const [ajukanAlert, setAjukanAlert] = useState<string>("");
@@ -321,9 +285,15 @@ export default function BuatMRPage() {
     if (
       !formCreateMR.kategori ||
       !formCreateMR.remarks ||
-      !formCreateMR.cost_estimation
+      !formCreateMR.cost_estimation ||
+      !formCreateMR.department ||
+      !formCreateMR.cost_center ||
+      !formCreateMR.tujuan_site ||
+      !formCreateMR.company_code
     ) {
-      setAjukanAlert("Kategori, Remarks, dan Estimasi Biaya wajib diisi.");
+      setAjukanAlert(
+        "Semua data utama (Kategori, Remarks, Estimasi Biaya, Cost Center, dan Tujuan) wajib diisi."
+      );
       return;
     }
     if (formCreateMR.orders.length === 0) {
@@ -336,7 +306,7 @@ export default function BuatMRPage() {
       formCreateMR.attachments.length === 0
     ) {
       setAjukanAlert(
-        `Kategori '${formCreateMR.kategori}' wajib menyertakan lampiran foto atau dokumen.`
+        `Kategori '${formCreateMR.kategori}' wajib menyertakan lampiran.`
       );
       return;
     }
@@ -345,15 +315,16 @@ export default function BuatMRPage() {
     const toastId = toast.loading("Mengajukan MR...");
 
     try {
+      const s = createClient();
       const {
         data: { user },
       } = await s.auth.getUser();
       if (!user) throw new Error("User tidak ditemukan.");
 
-      const payload = { ...formCreateMR, userid: user.id, approvals: [] };
+      // REVISI: Pisahkan company_code dari payload utama
+      const { company_code, ...payload } = formCreateMR;
 
-      const { error } = await s.from("material_requests").insert([payload]);
-      if (error) throw error;
+      await createMaterialRequest(payload, user.id, company_code);
 
       toast.success("Material Request berhasil dibuat dan menunggu validasi!", {
         id: toastId,
@@ -371,14 +342,22 @@ export default function BuatMRPage() {
     <>
       <Content
         title="Buat Material Request Baru"
-        description="Isi data pada form di bawah ini. Departemen Anda akan terisi otomatis."
+        description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
         <div className="grid grid-cols-12 gap-4">
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+          <div className="flex flex-col gap-2 col-span-12">
             <Label>Kode MR</Label>
             <Input readOnly disabled value={formCreateMR.kode_mr} />
           </div>
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+            <Label>Perusahaan</Label>
+            <Input
+              readOnly
+              disabled
+              value={formCreateMR.company_code || "Memuat..."}
+            />
+          </div>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
             <Label>Departemen</Label>
             <Input
               readOnly
@@ -386,10 +365,29 @@ export default function BuatMRPage() {
               value={formCreateMR.department || "Memuat..."}
             />
           </div>
-          <div className="flex flex-col gap-2 col-span-12">
-            <Label>Kategori</Label>
-            <Combobox data={kategoriData} onChange={handleCBKategori} />
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+            <Label>Lokasi Saya (Pengaju)</Label>
+            <Input readOnly disabled value={userLokasi || "Memuat..."} />
           </div>
+
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+            <Label>Kategori</Label>
+            <Combobox
+              data={kategoriData}
+              onChange={handleCBKategori}
+              placeholder="Pilih kategori..."
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+            <Label>Cost Center</Label>
+            <Combobox
+              data={dataCostCenter}
+              onChange={handleCBCostCenter}
+              placeholder="Pilih cost center..."
+            />
+          </div>
+
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Remarks (Tujuan & Latar Belakang)</Label>
             <Textarea
@@ -401,15 +399,35 @@ export default function BuatMRPage() {
               }
             />
           </div>
+
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Estimasi Biaya</Label>
-            <Input
-              type="text"
-              placeholder="Rp 500.000"
-              value={formattedCost}
-              onChange={handleCostChange}
-            />
+            <Label>Tujuan Pengiriman (Site)</Label>
+            <div className="flex items-center space-x-2 mt-2">
+              <Checkbox
+                id="tujuan-sama"
+                checked={tujuanSamaDenganLokasi}
+                onCheckedChange={(checked) =>
+                  setTujuanSamaDenganLokasi(checked as boolean)
+                }
+              />
+              <label
+                htmlFor="tujuan-sama"
+                className="text-sm font-medium leading-none"
+              >
+                Tujuan sama dengan lokasi saya
+              </label>
+            </div>
+            {!tujuanSamaDenganLokasi && (
+              <div className="mt-2 animate-in fade-in">
+                <Combobox
+                  data={dataLokasi}
+                  onChange={handleCBTujuanSite}
+                  placeholder="Pilih lokasi tujuan..."
+                />
+              </div>
+            )}
           </div>
+
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Due Date</Label>
             <Input
@@ -434,6 +452,16 @@ export default function BuatMRPage() {
                 {formatDateFriendly(formCreateMR.due_date)}
               </p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-2 col-span-12">
+            <Label>Estimasi Biaya</Label>
+            <Input
+              type="text"
+              placeholder="Rp 500.000"
+              value={formattedCost}
+              onChange={handleCostChange}
+            />
           </div>
         </div>
       </Content>
@@ -472,6 +500,7 @@ export default function BuatMRPage() {
                         { label: "Unit", value: "Unit" },
                         { label: "Set", value: "Set" },
                         { label: "Box", value: "Box" },
+                        { label: "Rim", value: "Rim" },
                         { label: "Roll", value: "Roll" },
                       ]}
                       onChange={(value) =>
@@ -561,13 +590,14 @@ export default function BuatMRPage() {
                   </TableCell>
                   <TableCell>
                     {order.url && (
-                      <Button asChild variant="outline">
+                      <Button asChild variant="outline" size="sm">
                         <Link
                           href={order.url}
                           target="_blank"
                           rel="noopener noreferrer"
+                          className="flex items-center gap-1"
                         >
-                          Link <LinkIcon />
+                          Link <LinkIcon className="h-3 w-3" />
                         </Link>
                       </Button>
                     )}

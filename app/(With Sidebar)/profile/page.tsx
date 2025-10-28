@@ -36,7 +36,7 @@ const dataLokasi: ComboboxData = [
 const dataDepartment: ComboboxData = [
   { label: "General Affair", value: "General Affair" },
   { label: "Marketing", value: "Marketing" },
-  { label: "Manufacture", value: "Manufacture" },
+  { label: "Produksi", value: "Produksi" },
   { label: "K3", value: "K3" },
   { label: "Finance", value: "Finance" },
   { label: "IT", value: "IT" },
