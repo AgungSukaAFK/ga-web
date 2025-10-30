@@ -33,6 +33,8 @@ import {
   Trash2,
   Paperclip,
   Truck,
+  Building2, // Impor ikon
+  ExternalLink, // Impor ikon
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,33 +47,18 @@ import {
   Discussion,
   Order,
   User as Profile,
+  Attachment, // Pastikan Attachment diimpor
 } from "@/type";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Combobox, ComboboxData } from "@/components/combobox";
+import { CurrencyInput } from "@/components/ui/currency-input"; // Impor CurrencyInput
 
-const dataCostCenter: ComboboxData = [
-  { label: "APD - GMI", value: "APD - GMI" },
-  { label: "Bangunan - GMI", value: "Bangunan - GMI" },
-  { label: "Alat Berat - GIS", value: "Alat Berat - GIS" },
-  { label: "Operasional Kantor - HO", value: "Operasional Kantor - HO" },
-  { label: "Lainnya", value: "Lainnya" },
-];
-
-const dataLokasi: ComboboxData = [
-  { label: "Head Office", value: "Head Office" },
-  { label: "Tanjung Enim", value: "Tanjung Enim" },
-  { label: "Balikpapan", value: "Balikpapan" },
-  { label: "Site BA", value: "Site BA" },
-  { label: "Site TAL", value: "Site TAL" },
-  { label: "Site MIP", value: "Site MIP" },
-  { label: "Site MIFA", value: "Site MIFA" },
-  { label: "Site BIB", value: "Site BIB" },
-  { label: "Site AMI", value: "Site AMI" },
-  { label: "Site Tabang", value: "Site Tabang" },
-];
+// Hapus dataLokasi dan dataCostCenter yang di-hardcode
+// const dataCostCenter: ComboboxData = [ ... ];
+// const dataLokasi: ComboboxData = [ ... ];
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
@@ -87,6 +74,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [isUploading, setIsUploading] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
 
+  // REVISI: State untuk cost center name (hasil join)
+  const [costCenterName, setCostCenterName] = useState<string | null>(null);
+
   const supabase = createClient();
 
   const fetchMrData = async () => {
@@ -94,9 +84,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       setError("ID Material Request tidak valid.");
       return null;
     }
+
+    // REVISI: Query di-join dengan cost_centers
     const { data: mrData, error: mrError } = await supabase
       .from("material_requests")
-      .select("*, users_with_profiles!userid(nama)")
+      .select(
+        `
+        *, 
+        users_with_profiles!userid(nama),
+        cost_centers!cost_center_id(name) 
+      `
+      )
       .eq("id", mrId)
       .single();
 
@@ -105,16 +103,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.error("Gagal memuat data", { description: mrError.message });
       return null;
     } else {
-      setMr(mrData as any);
-      const initialCost = Number(mrData.cost_estimation) || 0;
-      setFormattedCost(
-        new Intl.NumberFormat("id-ID", {
-          style: "currency",
-          currency: "IDR",
-          minimumFractionDigits: 0,
-        }).format(initialCost)
-      );
-      return mrData;
+      const initialData = {
+        ...mrData,
+        attachments: Array.isArray(mrData.attachments)
+          ? mrData.attachments
+          : [],
+        discussions: Array.isArray(mrData.discussions)
+          ? mrData.discussions
+          : [],
+        approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
+        orders: Array.isArray(mrData.orders) ? mrData.orders : [],
+      };
+      setMr(initialData as any);
+
+      // Simpan nama cost center dari data join
+      const ccName = (mrData.cost_centers as any)?.name;
+      setCostCenterName(ccName || "N/A");
+
+      // Set formatted cost akan di-handle oleh useEffect [mr.orders]
+      return initialData;
     }
   };
 
@@ -139,10 +146,29 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       setLoading(false);
     };
     initializePage();
-  }, [mrId]);
+  }, [mrId]); // Hanya fetch ulang jika ID berubah
+
+  // --- REVISI: useEffect untuk Auto-Sum Estimasi Biaya ---
+  useEffect(() => {
+    if (mr) {
+      const total = mr.orders.reduce((acc, item) => {
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.estimasi_harga) || 0;
+        return acc + qty * price;
+      }, 0);
+
+      // Update state MR (hanya jika isEditing) dan state tampilan
+      if (isEditing) {
+        setMr((prevMr) =>
+          prevMr ? { ...prevMr, cost_estimation: String(total) } : null
+        );
+      }
+      setFormattedCost(formatCurrency(total));
+    }
+  }, [mr?.orders, isEditing]); // Dijalankan saat 'orders' berubah atau mode edit berubah
 
   const isMyTurnForApproval =
-    mr && currentUser
+    mr && currentUser && mr.approvals // Pastikan approvals ada
       ? mr.approvals
           .slice(
             0,
@@ -161,14 +187,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan perubahan...");
 
+    // REVISI: Hanya update 'orders' dan 'attachments'.
+    // cost_estimation di-trigger auto-sum, cost_center_id di-set GA
     const { error: updateError } = await supabase
       .from("material_requests")
       .update({
-        cost_estimation: mr.cost_estimation,
+        // cost_estimation: mr.cost_estimation, // Dihapus, di-handle auto-sum
         orders: mr.orders,
         attachments: mr.attachments,
-        cost_center: mr.cost_center,
-        tujuan_site: mr.tujuan_site,
+        // cost_center: mr.cost_center, // Dihapus
+        // tujuan_site: mr.tujuan_site, // Dihapus, tidak boleh diedit di sini
       })
       .eq("id", mr.id);
 
@@ -181,6 +209,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     } else {
       toast.success("Perubahan berhasil disimpan!", { id: toastId });
       setIsEditing(false);
+      await fetchMrData(); // Fetch ulang data untuk sinkronisasi
     }
   };
 
@@ -195,6 +224,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     const approverIndex = mr.approvals.findIndex(
       (app) => app.userid === currentUser.id
     );
+
+    if (approverIndex === -1) {
+      toast.error("Anda tidak ada dalam daftar approval.");
+      setActionLoading(false);
+      return;
+    }
+
     const updatedApprovals = JSON.parse(JSON.stringify(mr.approvals));
     updatedApprovals[approverIndex].status = decision;
 
@@ -227,10 +263,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setIsEditing(false);
   };
 
+  // REVISI: handleItemChange
   const handleItemChange = (
     index: number,
     field: keyof Order,
-    value: string
+    value: string | number // Terima number untuk estimasi_harga
   ) => {
     if (!mr) return;
     const newOrders = [...mr.orders];
@@ -238,16 +275,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, orders: newOrders });
   };
 
+  // REVISI: addItem
   const addItem = () => {
     if (!mr) return;
     const newItem: Order = {
       name: "",
       qty: "1",
       uom: "Pcs",
-      vendor: "",
+      estimasi_harga: 0,
       url: "",
       note: "",
-      vendor_contact: "",
     };
     setMr({ ...mr, orders: [...mr.orders, newItem] });
   };
@@ -257,22 +294,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
   };
 
-  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/[^0-9]/g, "");
-    const numericValue = parseInt(rawValue, 10) || 0;
-    if (mr) setMr({ ...mr, cost_estimation: String(numericValue) });
-    setFormattedCost(
-      new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        minimumFractionDigits: 0,
-      }).format(numericValue)
-    );
-  };
+  // HAPUS handleCostChange
+  // const handleCostChange = ...
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
+    // ... (Fungsi ini tetap sama)
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
 
@@ -283,7 +311,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         file.name
       }`;
       const { data, error } = await supabase.storage
-        .from("mr") // Pastikan bucket 'mr'
+        .from("mr")
         .upload(filePath, file);
       if (error) return { error };
       return { data: { ...data, name: file.name }, error: null };
@@ -292,14 +320,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     const results = await Promise.all(uploadPromises);
     const successfulUploads = results
       .filter((r) => !r.error)
-      .map((r) => ({ url: r.data!.path, name: r.data!.name }));
+      .map((r) => ({ url: r.data!.path, name: r.data!.name } as Attachment));
 
     if (successfulUploads.length > 0) {
       setMr((prevMr) =>
         prevMr
           ? {
               ...prevMr,
-              attachments: [...prevMr.attachments, ...successfulUploads],
+              attachments: [
+                ...(prevMr.attachments || []),
+                ...successfulUploads,
+              ],
             }
           : null
       );
@@ -322,9 +353,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const removeAttachment = (indexToRemove: number) => {
-    if (!mr) return;
+    // ... (Fungsi ini tetap sama)
+    if (!mr || !Array.isArray(mr.attachments)) return;
     const attachmentToRemove = mr.attachments[indexToRemove];
-    // Hapus dari state
+    if (!attachmentToRemove) return;
+
     setMr((prevMr) =>
       prevMr
         ? {
@@ -342,6 +375,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const ApprovalActions = () => {
+    // ... (Fungsi ini tetap sama)
     if (!mr || !currentUser || mr.status !== "Pending Approval") return null;
     const myApprovalIndex = mr.approvals.findIndex(
       (app) => app.userid === currentUser.id
@@ -389,8 +423,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     );
   };
 
+  // REVISI: getStatusBadge diperbarui
   const getStatusBadge = (status: string) => {
-    switch (status.toLowerCase()) {
+    switch (status?.toLowerCase()) {
       case "approved":
         return <Badge variant="outline">Approved</Badge>;
       case "rejected":
@@ -399,14 +434,19 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="secondary">Pending Approval</Badge>;
       case "pending validation":
         return <Badge variant="secondary">Pending Validation</Badge>;
+      case "waiting po":
+        return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
+      case "completed":
+        return <Badge className="bg-green-500 text-white">Completed</Badge>;
       default:
-        return <Badge>{status}</Badge>;
+        return <Badge>{status || "N/A"}</Badge>;
     }
   };
 
   const getApprovalStatusBadge = (
     status: "pending" | "approved" | "rejected"
   ) => {
+    // ... (Fungsi ini tetap sama)
     switch (status) {
       case "approved":
         return (
@@ -444,14 +484,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       </Content>
     );
 
-  // REVISI: Logika untuk highlight approver
   const currentTurnIndex = mr.approvals.findIndex(
     (app) => app.status === "pending"
   );
   const allPreviousApproved =
     currentTurnIndex === -1
       ? false
-      : mr.approvals
+      : currentTurnIndex === 0 || // Jika ini approver pertama
+        mr.approvals
           .slice(0, currentTurnIndex)
           .every((app) => app.status === "approved");
 
@@ -499,11 +539,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               value={formatDateFriendly(mr.created_at)}
             />
 
-            {/* REVISI: Tambah Cost Center & Tujuan Site */}
+            {/* REVISI: Tampilkan Cost Center & Tujuan Site */}
             <InfoItem
-              icon={Building}
+              icon={Building2}
               label="Cost Center"
-              value={mr.cost_center || "N/A"}
+              value={
+                costCenterName ||
+                (mr.cost_center_id
+                  ? `ID: ${mr.cost_center_id}`
+                  : "Belum Ditentukan GA")
+              }
             />
             <InfoItem
               icon={Truck}
@@ -517,47 +562,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               value={formatDateFriendly(mr.due_date)}
             />
 
-            {isEditing ? (
-              <div className="space-y-1">
-                <Label>Estimasi Biaya</Label>
-                <Input
-                  type="text"
-                  value={formattedCost}
-                  onChange={handleCostChange}
-                  disabled={actionLoading}
-                />
-              </div>
-            ) : (
-              <InfoItem
-                icon={DollarSign}
-                label="Estimasi Biaya"
-                value={formatCurrency(mr.cost_estimation)}
-              />
-            )}
+            {/* REVISI: Estimasi Biaya (selalu read-only) */}
+            <InfoItem
+              icon={DollarSign}
+              label="Total Estimasi Biaya"
+              value={formattedCost}
+            />
 
-            {/* REVISI: Tambah input untuk Cost Center & Tujuan di mode edit */}
-            {isEditing && (
-              <>
-                <div className="space-y-1">
-                  <Label>Cost Center</Label>
-                  <Combobox
-                    data={dataCostCenter}
-                    onChange={(value) => setMr({ ...mr, cost_center: value })}
-                    defaultValue={mr.cost_center}
-                    disabled={actionLoading}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Tujuan (Site)</Label>
-                  <Combobox
-                    data={dataLokasi}
-                    onChange={(value) => setMr({ ...mr, tujuan_site: value })}
-                    defaultValue={mr.tujuan_site}
-                    disabled={actionLoading}
-                  />
-                </div>
-              </>
-            )}
+            {/* Hapus blok isEditing untuk Cost Center dan Tujuan Site */}
 
             <div className="md:col-span-2">
               <InfoItem icon={Info} label="Remarks" value={mr.remarks} />
@@ -569,14 +581,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           {isEditing ? (
             <div className="space-y-4">
               <div className="rounded-md border overflow-x-auto">
-                {/* REVISI: Tabel Edit diperlengkap */}
+                {/* REVISI: Tabel Edit Item */}
                 <Table className="min-w-[1000px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nama</TableHead>
                       <TableHead>Qty</TableHead>
                       <TableHead>UoM</TableHead>
-                      <TableHead>Vendor</TableHead>
+                      <TableHead>Estimasi Harga</TableHead>
+                      <TableHead>Total</TableHead>
                       <TableHead>Catatan</TableHead>
                       <TableHead>Link</TableHead>
                       <TableHead>Aksi</TableHead>
@@ -615,14 +628,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                             disabled={actionLoading}
                           />
                         </TableCell>
+                        {/* REVISI: CurrencyInput untuk Estimasi Harga */}
                         <TableCell>
-                          <Input
-                            value={item.vendor}
-                            onChange={(e) =>
-                              handleItemChange(index, "vendor", e.target.value)
+                          <CurrencyInput
+                            value={item.estimasi_harga}
+                            onValueChange={(value) =>
+                              handleItemChange(index, "estimasi_harga", value)
                             }
                             disabled={actionLoading}
+                            className="w-32"
                           />
+                        </TableCell>
+                        <TableCell>
+                          {formatCurrency(
+                            Number(item.qty) * item.estimasi_harga
+                          )}
                         </TableCell>
                         <TableCell>
                           <Input
@@ -668,13 +688,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
-              {/* REVISI: Tabel Baca diperlengkap */}
+              {/* REVISI: Tabel Baca Item */}
               <Table className="min-w-[800px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nama Item</TableHead>
                     <TableHead>Qty</TableHead>
-                    <TableHead>Vendor</TableHead>
+                    <TableHead className="text-right">Estimasi Harga</TableHead>
+                    <TableHead className="text-right">Total Estimasi</TableHead>
                     <TableHead>Catatan</TableHead>
                     <TableHead>Link</TableHead>
                   </TableRow>
@@ -686,7 +707,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                       <TableCell>
                         {item.qty} {item.uom}
                       </TableCell>
-                      <TableCell>{item.vendor || "-"}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.estimasi_harga)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(Number(item.qty) * item.estimasi_harga)}
+                      </TableCell>
                       <TableCell className="max-w-xs truncate">
                         {item.note || "-"}
                       </TableCell>
@@ -744,7 +770,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           {mr.approvals.length > 0 ? (
             <ul className="space-y-2">
               {mr.approvals.map((approver, index) => {
-                // REVISI: Logika untuk menentukan highlight
                 const isMyTurn =
                   currentTurnIndex === index &&
                   (currentTurnIndex === 0 || allPreviousApproved);
@@ -753,7 +778,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     key={index}
                     className={cn(
                       "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
-                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50" // <-- Kelas highlight
+                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50"
                     )}
                   >
                     <div>
@@ -816,17 +841,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </ul>
               )}
             </div>
-          ) : mr.attachments.length > 0 ? (
+          ) : (mr.attachments || []).length > 0 ? (
             <ul className="space-y-2">
-              {mr.attachments.map((file, index) => (
+              {(mr.attachments as Attachment[]).map((file, index) => (
                 <li key={index}>
                   <Link
                     href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
                     target="_blank"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
-                    <Download className="h-4 w-4" />
+                    <Paperclip className="h-4 w-4" />
                     <span>{file.name}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
                   </Link>
                 </li>
               ))}
@@ -837,6 +863,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </Content>
       </div>
 
+      {/* REVISI: Aktifkan Diskusi */}
       <div className="col-span-12">
         <DiscussionSection
           mrId={String(mr.id)}
@@ -847,23 +874,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-const InfoItem = ({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) => (
-  <div className="flex items-start gap-3">
-    <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
-    <div>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="font-medium whitespace-pre-wrap">{value}</p>
-    </div>
-  </div>
-);
+// Komponen InfoItem (disalin ke atas, di dalam ValidateMRPageContent)
+// const InfoItem = ...
 
 const DetailMRSkeleton = () => (
   <>
@@ -891,3 +903,21 @@ export default function DetailMRPage({
     </Suspense>
   );
 }
+
+const InfoItem = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+}) => (
+  <div className="flex items-start gap-3">
+    <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
+    <div>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="font-medium whitespace-pre-wrap">{value}</p>
+    </div>
+  </div>
+);
