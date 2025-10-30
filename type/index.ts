@@ -16,8 +16,7 @@ export interface Order {
   name: string;
   qty: string;
   uom: string;
-  vendor: string;
-  vendor_contact: string;
+  estimasi_harga: number;
   note: string;
   url: string;
 }
@@ -123,6 +122,7 @@ export interface PurchaseOrderPayload {
 export interface MaterialRequestListItem {
   id: string; // Atau number jika ID Anda number
   kode_mr: string;
+  cost_estimation: string;
   kategori: string;
   status: string;
   department: string;

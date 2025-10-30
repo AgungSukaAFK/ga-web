@@ -204,7 +204,6 @@ export default function ApprovalTemplatesPage() {
         <Content
           title={activeForm === "new" ? "Buat Template Baru" : "Edit Template"}
           size="md"
-          className="col-span-12 md:col-span-5"
         >
           <TemplateForm
             key={activeForm === "new" ? "new" : activeForm.id} // Kunci unik untuk mereset form

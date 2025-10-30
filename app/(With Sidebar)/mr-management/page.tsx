@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MrManagementClientContent } from "./MrManagementClient"; // Komponen klien yang akan kita buat
+import { MrManagementClientContent } from "./MrManagementClient";
 
 export default function MrManagementPage() {
   return (

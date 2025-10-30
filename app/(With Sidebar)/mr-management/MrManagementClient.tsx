@@ -29,8 +29,8 @@ import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { MaterialRequestListItem, Profile } from "@/type"; // Gunakan tipe yang sudah ada atau buat baru jika perlu
-import { formatDateFriendly } from "@/lib/utils";
+import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order diimpor
+import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Pastikan formatCurrency diimpor
 import { Badge } from "@/components/ui/badge";
 
 const LIMIT_OPTIONS = [10, 25, 50, 100];
@@ -122,9 +122,10 @@ export function MrManagementClientContent() {
       const from = (currentPage - 1) * limit;
       const to = from + limit - 1;
 
+      // REVISI: Ambil juga cost_estimation
       let query = s.from("material_requests").select(
         `
-            id, kode_mr, kategori, status, department, created_at, due_date, company_code,
+            id, kode_mr, kategori, status, department, created_at, due_date, company_code, cost_estimation,
             users_with_profiles!userid (nama)
           `,
         { count: "exact" }
@@ -133,12 +134,11 @@ export function MrManagementClientContent() {
       // Filter Pencarian
       if (searchTerm)
         query = query.or(
-          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%` // Tambahkan filter lain jika perlu
+          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%`
         );
       if (statusFilter) query = query.eq("status", statusFilter);
-      if (companyFilter) query = query.eq("company_code", companyFilter); // Terapkan filter company
+      if (companyFilter) query = query.eq("company_code", companyFilter);
 
-      // Admin Lourdes bisa melihat semua, admin GMI/GIS hanya perusahaannya
       if (profileData.company && profileData.company !== "LOURDES") {
         query = query.eq("company_code", profileData.company);
       }
@@ -154,7 +154,6 @@ export function MrManagementClientContent() {
         const transformedData =
           data?.map((mr) => ({
             ...mr,
-            // Pastikan users_with_profiles adalah objek tunggal atau null
             users_with_profiles: Array.isArray(mr.users_with_profiles)
               ? mr.users_with_profiles[0] ?? null
               : mr.users_with_profiles,
@@ -165,7 +164,7 @@ export function MrManagementClientContent() {
       setLoading(false);
     }
     fetchMRsAndAdminProfile();
-  }, [s, currentPage, searchTerm, statusFilter, companyFilter, limit, router]); // Tambahkan companyFilter
+  }, [s, currentPage, searchTerm, statusFilter, companyFilter, limit, router]);
 
   // Efek untuk debounce pencarian
   useEffect(() => {
@@ -190,15 +189,18 @@ export function MrManagementClientContent() {
     });
   };
 
+  // --- REVISI: handleDownloadExcel ---
   const handleDownloadExcel = async () => {
     if (!adminProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
+      // 1. Ambil kolom 'orders' (JSON) dari database
       let query = s.from("material_requests").select(`
-            kode_mr, kategori, department, status, remarks, cost_estimation, company_code, created_at, due_date,
-            users_with_profiles!userid (nama)
+          kode_mr, kategori, department, status, remarks, cost_estimation, company_code, created_at, due_date,
+          orders, 
+          users_with_profiles!userid (nama)
         `);
 
       // Terapkan semua filter aktif
@@ -224,19 +226,55 @@ export function MrManagementClientContent() {
         return;
       }
 
-      const formattedData = data.map((mr: any) => ({
-        "Kode MR": mr.kode_mr,
-        Kategori: mr.kategori,
-        Departemen: mr.department,
-        Status: mr.status,
-        Requester: mr.users_with_profiles?.nama || "N/A",
-        Perusahaan: mr.company_code,
-        Remarks: mr.remarks,
-        "Estimasi Biaya": Number(mr.cost_estimation),
-        "Tanggal Dibuat": formatDateFriendly(mr.created_at),
-        "Due Date": formatDateFriendly(mr.due_date),
-      }));
+      // 2. Gunakan .flatMap() untuk "meledakkan" data
+      const formattedData = data.flatMap((mr: any) => {
+        // Simpan info MR dasar yang akan diulang
+        const baseMrInfo = {
+          "Kode MR": mr.kode_mr,
+          Kategori: mr.kategori,
+          Departemen: mr.department,
+          Status: mr.status,
+          Requester: mr.users_with_profiles?.nama || "N/A",
+          Perusahaan: mr.company_code,
+          Remarks: mr.remarks,
+          "Total Estimasi Biaya (MR)": Number(mr.cost_estimation), // Ini adalah total auto-sum
+          "Tanggal Dibuat": formatDateFriendly(mr.created_at),
+          "Due Date": formatDateFriendly(mr.due_date),
+        };
 
+        // Cek apakah 'orders' ada dan merupakan array
+        if (Array.isArray(mr.orders) && mr.orders.length > 0) {
+          // Jika ada item, buat satu baris untuk setiap item
+          return mr.orders.map((item: Order) => ({
+            ...baseMrInfo,
+            // Tambahkan kolom item di sini
+            "Nama Item": item.name,
+            Qty: Number(item.qty) || 0,
+            UoM: item.uom,
+            "Estimasi Harga Item": Number(item.estimasi_harga) || 0,
+            "Total Estimasi Item":
+              (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0),
+            "Catatan Item": item.note || "-",
+            "URL Referensi": item.url || "-",
+          }));
+        } else {
+          // Jika MR tidak punya item, kembalikan satu baris
+          return [
+            {
+              ...baseMrInfo,
+              "Nama Item": "N/A",
+              Qty: 0,
+              UoM: "N/A",
+              "Estimasi Harga Item": 0,
+              "Total Estimasi Item": 0,
+              "Catatan Item": "N/A",
+              "URL Referensi": "N/A",
+            },
+          ];
+        }
+      });
+
+      // 3. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Material Requests");
@@ -330,12 +368,10 @@ export function MrManagementClientContent() {
                     <SelectItem value="GMI">GMI</SelectItem>
                     <SelectItem value="GIS">GIS</SelectItem>
                     <SelectItem value="LOURDES">LOURDES</SelectItem>
-                    {/* Tambahkan kode perusahaan lain jika ada */}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            {/* Tambahkan filter lain jika perlu (misal Departemen, Requester) */}
           </div>
         </div>
       </div>
@@ -343,18 +379,17 @@ export function MrManagementClientContent() {
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto">
         <Table className="min-w-[1200px]">
-          {" "}
-          {/* Lebarkan sedikit tabel */}
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Departemen</TableHead>
-              <TableHead>Perusahaan</TableHead> {/* Kolom baru */}
+              <TableHead>Perusahaan</TableHead>
               <TableHead>Status</TableHead>
+              {/* REVISI: Tampilkan Total Estimasi Biaya */}
+              <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
-              <TableHead>Due Date</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -362,8 +397,6 @@ export function MrManagementClientContent() {
             {loading || isPending ? (
               <TableRow>
                 <TableCell colSpan={9} className="text-center h-24">
-                  {" "}
-                  {/* Sesuaikan colSpan */}
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -380,19 +413,18 @@ export function MrManagementClientContent() {
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{mr.company_code || "N/A"}</Badge>{" "}
-                    {/* Tampilkan company code */}
+                    <Badge variant="outline">{mr.company_code || "N/A"}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
                   </TableCell>
-                  <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
-                  <TableCell>
-                    {formatDateFriendly(mr.due_date || mr.created_at)}
+                  {/* REVISI: Tampilkan Total Estimasi Biaya */}
+                  <TableCell className="text-right font-medium">
+                    {formatCurrency(mr.cost_estimation)}
                   </TableCell>
+                  <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" asChild>
-                      {/* Arahkan ke halaman edit admin */}
                       <Link href={`/mr-management/edit/${mr.id}`}>
                         <Edit className="mr-2 h-3 w-3" />
                         Edit/View
@@ -404,8 +436,6 @@ export function MrManagementClientContent() {
             ) : (
               <TableRow>
                 <TableCell colSpan={9} className="text-center h-24">
-                  {" "}
-                  {/* Sesuaikan colSpan */}
                   Tidak ada Material Request yang ditemukan.
                 </TableCell>
               </TableRow>
@@ -437,7 +467,7 @@ export function MrManagementClientContent() {
         </div>
         <PaginationComponent
           currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / limit)} // Gunakan totalItems
+          totalPages={Math.ceil(totalItems / limit)}
           limit={limit}
           basePath={pathname}
         />

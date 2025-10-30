@@ -8,8 +8,9 @@ const supabase = createClient();
 // Peta untuk singkatan departemen (untuk user HO)
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
+  "Human Resource": "HR",
   Marketing: "MKT",
-  Produksi: "PRO",
+  Produksi: "PROD",
   K3: "HSE",
   Finance: "FIN",
   IT: "IT",

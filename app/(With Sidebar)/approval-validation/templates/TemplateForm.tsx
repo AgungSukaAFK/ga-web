@@ -76,6 +76,7 @@ export function TemplateForm({
   };
 
   const addApprover = (user: User) => {
+    console.log(user);
     if (approvalPath.some((a) => a.userid === user.id)) {
       toast.warning(`${user.nama} sudah ada di daftar.`);
       return;
@@ -87,10 +88,10 @@ export function TemplateForm({
         userid: user.id,
         status: "pending",
         type: "",
-        nama: "",
-        department: "",
-        role: "",
-        email: "",
+        nama: user.nama || "",
+        department: user.department || "",
+        role: user.role || "",
+        email: user.email || "",
       },
     ]);
     setSearchResults([]);

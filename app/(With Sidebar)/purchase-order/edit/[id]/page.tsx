@@ -29,7 +29,7 @@ import {
   fetchPurchaseOrderById,
   updatePurchaseOrder,
 } from "@/services/purchaseOrderService";
-import { formatCurrency, cn } from "@/lib/utils"; // Hapus formatDateFriendly jika tidak dipakai
+import { formatCurrency, cn } from "@/lib/utils";
 import {
   AlertTriangle,
   Loader2,
@@ -43,7 +43,8 @@ import {
   Truck,
   Building2,
   Link as LinkIcon,
-  Paperclip, // Tambahkan ikon paperclip
+  Paperclip,
+  ExternalLink, // Impor ikon
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { BarangSearchCombobox } from "../../BarangSearchCombobox";
@@ -53,10 +54,12 @@ import {
   Barang,
   PurchaseOrderPayload,
   Attachment,
+  Order, // <-- Impor tipe Order
 } from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CurrencyInput } from "@/components/ui/currency-input"; // <-- Impor CurrencyInput
 
 // Komponen helper kecil untuk menampilkan info
 const InfoItem = ({
@@ -87,8 +90,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isUploadingPO, setIsUploadingPO] = useState(false); // State upload terpisah
-  const [isUploadingFinance, setIsUploadingFinance] = useState(false); // State upload terpisah
+  const [isUploadingPO, setIsUploadingPO] = useState(false);
+  const [isUploadingFinance, setIsUploadingFinance] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,14 +116,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           setLoading(false);
           return;
         }
-        // Pastikan attachments adalah array
         const initialData = {
           ...data,
           attachments: Array.isArray(data.attachments) ? data.attachments : [],
         };
         setPoForm(initialData);
 
-        // Init payment term
         if (initialData.payment_term) {
           if (initialData.payment_term.toLowerCase() === "cash") {
             setPaymentTermType("Cash");
@@ -132,7 +133,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           }
         }
 
-        // Init Tax state
         if (initialData.tax === 0 && initialData.items.length > 0) {
           setIsTaxIncluded(true);
           setTaxMode("manual");
@@ -144,7 +144,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           );
           if (
             subtotalSaatLoad > 0 &&
-            Math.abs(initialData.tax - subtotalSaatLoad * 0.11) < 1
+            Math.abs((initialData.tax ?? 0) - subtotalSaatLoad * 0.11) < 1 // Tambah nullish coalescing
           ) {
             setTaxMode("percentage");
             setTaxPercentage(11);
@@ -157,9 +157,9 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       .finally(() => setLoading(false));
   }, [poId]);
 
+  // --- REVISI: Logika Kalkulasi Pajak/Total ---
   useEffect(() => {
     if (!poForm) return;
-
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
       0
@@ -179,17 +179,19 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const grandTotal =
       subtotal - (poForm.discount || 0) + calculatedTax + (poForm.postage || 0);
 
-    if (poForm.tax !== calculatedTax || poForm.total_price !== grandTotal) {
-      setPoForm((prev) =>
-        prev
-          ? {
-              ...prev,
-              tax: calculatedTax,
-              total_price: grandTotal,
-            }
-          : null
-      );
-    }
+    setPoForm((prev) => {
+      if (!prev) return null;
+      const newTax =
+        taxMode !== "manual" || isTaxIncluded ? calculatedTax : prev.tax;
+      if (prev.tax !== newTax || prev.total_price !== grandTotal) {
+        return {
+          ...prev,
+          tax: newTax,
+          total_price: grandTotal,
+        };
+      }
+      return prev;
+    });
   }, [
     poForm?.items,
     poForm?.discount,
@@ -197,9 +199,26 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     taxMode,
     taxPercentage,
     isTaxIncluded,
-    poForm?.tax,
-    poForm?.total_price,
   ]);
+
+  useEffect(() => {
+    if (!poForm || taxMode !== "manual" || isTaxIncluded) return;
+
+    const subtotal = poForm.items.reduce(
+      (acc, item) => acc + item.qty * item.price,
+      0
+    );
+    const grandTotal =
+      subtotal -
+      (poForm.discount || 0) +
+      (poForm.tax || 0) +
+      (poForm.postage || 0);
+
+    if (poForm.total_price !== grandTotal) {
+      setPoForm((prev) => (prev ? { ...prev, total_price: grandTotal } : null));
+    }
+  }, [poForm?.tax, taxMode, isTaxIncluded]);
+  // --- AKHIR REVISI LOGIKA KALKULASI ---
 
   useEffect(() => {
     if (!poForm) return;
@@ -242,7 +261,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: barang.vendor || "", // Tambahkan vendor dari master barang
+      vendor_name: barang.vendor || "",
     };
     setPoForm((prev) =>
       prev ? { ...prev, items: [...prev.items, newItem] } : null
@@ -302,11 +321,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         },
       };
     });
-  };
-
-  const handleManualTaxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9]/g, "");
-    setPoForm((prev) => (prev ? { ...prev, tax: Number(value) } : null));
   };
 
   const handleAttachmentUpload = async (
@@ -462,7 +476,11 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               <InfoItem
                 icon={Building2}
                 label="Cost Center"
-                value={poForm.material_requests.cost_center || "N/A"}
+                value={
+                  poForm.material_requests.cost_center_id?.toString() ||
+                  (poForm.material_requests as any).cost_center || // Fallback ke field lama jika ada
+                  "N/A"
+                }
               />
               <InfoItem
                 icon={Truck}
@@ -481,6 +499,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </Content>
         )}
 
+        {/* --- REVISI: Tabel Item Referensi MR --- */}
         {poForm.material_requests && (
           <Content title="Item Referensi dari MR">
             <div className="rounded-md border overflow-x-auto">
@@ -489,44 +508,51 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   <TableRow>
                     <TableHead>Nama Item</TableHead>
                     <TableHead>Qty</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Catatan</TableHead>
+                    <TableHead className="text-right">Estimasi Harga</TableHead>
+                    <TableHead className="text-right">Total Estimasi</TableHead>
                     <TableHead>Link</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {poForm.material_requests.orders.map((order, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">
-                        {order.name}
-                      </TableCell>
-                      <TableCell>
-                        {order.qty} {order.uom}
-                      </TableCell>
-                      <TableCell>{order.vendor || "-"}</TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {order.note || "-"}
-                      </TableCell>
-                      <TableCell>
-                        {order.url && (
-                          <Button asChild variant={"outline"} size="sm">
-                            <Link
-                              href={order.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <LinkIcon className="h-3 w-3" />
-                            </Link>
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {(poForm.material_requests.orders as Order[]).map(
+                    (order, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          {order.name}
+                        </TableCell>
+                        <TableCell>
+                          {order.qty} {order.uom}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(order.estimasi_harga)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(
+                            Number(order.qty) * order.estimasi_harga
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {order.url && (
+                            <Button asChild variant={"outline"} size="sm">
+                              <Link
+                                href={order.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <LinkIcon className="h-3 w-3" />
+                              </Link>
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  )}
                 </TableBody>
               </Table>
             </div>
           </Content>
         )}
+        {/* --- AKHIR REVISI --- */}
 
         <Content title="Detail Item Pesanan">
           <div className="overflow-x-auto">
@@ -562,15 +588,15 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         min="1"
                       />
                     </TableCell>
+                    {/* --- REVISI: CurrencyInput untuk Harga --- */}
                     <TableCell>
-                      <Input
-                        type="number"
+                      <CurrencyInput
                         value={item.price}
-                        onChange={(e) =>
-                          handleItemChange(index, "price", e.target.value)
+                        onValueChange={(numValue) =>
+                          handleItemChange(index, "price", numValue)
                         }
-                        placeholder="Harga"
-                        min="0"
+                        placeholder="Rp 0"
+                        className="w-32" // Sesuaikan lebar
                       />
                     </TableCell>
                     <TableCell>{formatCurrency(item.total_price)}</TableCell>
@@ -621,50 +647,64 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor Utama & Pengiriman">
+          {/* ... (Konten Vendor & Pengiriman tetap sama) ... */}
           <div className="space-y-4">
+            {" "}
             <div>
-              <Label className="text-sm font-medium">Nama Vendor Utama</Label>
+              {" "}
+              <Label className="text-sm font-medium">
+                Nama Vendor Utama
+              </Label>{" "}
               <Input
                 value={poForm.vendor_details?.name || ""}
                 onChange={(e) => handleVendorChange("name", e.target.value)}
-              />
-            </div>
+              />{" "}
+            </div>{" "}
             <div>
+              {" "}
               <Label className="text-sm font-medium">
-                Kontak Person Vendor
-              </Label>
+                {" "}
+                Kontak Person Vendor{" "}
+              </Label>{" "}
               <Input
                 value={poForm.vendor_details?.contact_person || ""}
                 onChange={(e) =>
                   handleVendorChange("contact_person", e.target.value)
                 }
-              />
-            </div>
+              />{" "}
+            </div>{" "}
             <div>
-              <Label className="text-sm font-medium">Alamat Vendor</Label>
+              {" "}
+              <Label className="text-sm font-medium">Alamat Vendor</Label>{" "}
               <Textarea
                 value={poForm.vendor_details?.address || ""}
                 onChange={(e) => handleVendorChange("address", e.target.value)}
-              />
-            </div>
-            <hr />
+              />{" "}
+            </div>{" "}
+            <hr />{" "}
             <div>
-              <Label className="text-sm font-medium">Payment Term</Label>
+              {" "}
+              <Label className="text-sm font-medium">Payment Term</Label>{" "}
               <div className="flex gap-2 mt-1">
+                {" "}
                 <Select
                   value={paymentTermType}
                   onValueChange={(value) => setPaymentTermType(value)}
                 >
+                  {" "}
                   <SelectTrigger className="w-1/2">
-                    <SelectValue placeholder="Pilih tipe..." />
-                  </SelectTrigger>
+                    {" "}
+                    <SelectValue placeholder="Pilih tipe..." />{" "}
+                  </SelectTrigger>{" "}
                   <SelectContent>
-                    <SelectItem value="Termin">Termin</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                  </SelectContent>
-                </Select>
+                    {" "}
+                    <SelectItem value="Termin">Termin</SelectItem>{" "}
+                    <SelectItem value="Cash">Cash</SelectItem>{" "}
+                  </SelectContent>{" "}
+                </Select>{" "}
                 {paymentTermType === "Termin" && (
                   <div className="w-1/2 relative">
+                    {" "}
                     <Input
                       type="number"
                       value={paymentTermDays}
@@ -672,28 +712,33 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                       placeholder="... hari"
                       className="pr-12"
                       min="0"
-                    />
+                    />{" "}
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      Hari
-                    </span>
+                      {" "}
+                      Hari{" "}
+                    </span>{" "}
                   </div>
-                )}
-              </div>
-            </div>
+                )}{" "}
+              </div>{" "}
+            </div>{" "}
             <div>
-              <Label className="text-sm font-medium">Alamat Pengiriman</Label>
+              {" "}
+              <Label className="text-sm font-medium">
+                Alamat Pengiriman
+              </Label>{" "}
               <Textarea
-                value={poForm.shipping_address || ""} // Handle null case
+                value={poForm.shipping_address || ""}
                 onChange={(e) =>
                   setPoForm((p) =>
                     p ? { ...p, shipping_address: e.target.value } : null
                   )
                 }
-              />
-            </div>
+              />{" "}
+            </div>{" "}
           </div>
         </Content>
 
+        {/* --- REVISI: Konten Lampiran PO & Finance --- */}
         <Content title="Lampiran PO">
           <div className="space-y-4">
             <Label htmlFor="po-attachment-upload">Tambah Lampiran PO</Label>
@@ -705,13 +750,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             />
             {isUploadingPO && (
               <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Mengunggah...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
               </div>
             )}
             {poAttachments.length > 0 ? (
               <ul className="space-y-2">
-                {poAttachments.map((att) => {
+                {poAttachments.map((att, index) => {
                   const originalIndex =
                     poForm.attachments?.findIndex((a) => a.url === att.url) ??
                     -1;
@@ -766,13 +810,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             />
             {isUploadingFinance && (
               <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Mengunggah...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
               </div>
             )}
             {financeAttachments.length > 0 ? (
               <ul className="space-y-2">
-                {financeAttachments.map((att) => {
+                {financeAttachments.map((att, index) => {
                   const originalIndex =
                     poForm.attachments?.findIndex((a) => a.url === att.url) ??
                     -1;
@@ -814,6 +857,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
+        {/* --- REVISI: Ringkasan Biaya dengan CurrencyInput --- */}
         <Content title="Ringkasan Biaya">
           <div className="space-y-4">
             <div className="flex justify-between">
@@ -822,29 +866,21 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="flex justify-between items-center">
               <Label>Diskon</Label>
-              <Input
-                type="number"
-                value={poForm.discount || 0}
-                onChange={(e) =>
-                  setPoForm((p) =>
-                    p ? { ...p, discount: Number(e.target.value) || 0 } : null
-                  )
+              <CurrencyInput
+                value={poForm.discount}
+                onValueChange={(numValue) =>
+                  setPoForm((p) => (p ? { ...p, discount: numValue } : null))
                 }
-                className="w-32 text-right"
-                min="0"
+                className="w-32"
                 disabled={actionLoading || isUploadingPO || isUploadingFinance}
               />
             </div>
-
-            {/* Opsi Pajak */}
             <div className="space-y-2 pt-2 border-t">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="include-tax-edit"
                   checked={isTaxIncluded}
-                  onCheckedChange={(checked) =>
-                    setIsTaxIncluded(checked as boolean)
-                  }
+                  onCheckedChange={(c) => setIsTaxIncluded(c as boolean)}
                   disabled={
                     actionLoading || isUploadingPO || isUploadingFinance
                   }
@@ -856,7 +892,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   Harga Item Sudah Termasuk Pajak (PPN)?
                 </Label>
               </div>
-
               {!isTaxIncluded && (
                 <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
                   <Label className="text-sm font-medium">
@@ -864,22 +899,19 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   </Label>
                   <Select
                     value={taxMode}
-                    onValueChange={(value) =>
-                      setTaxMode(value as "percentage" | "manual")
-                    }
+                    onValueChange={(v) => setTaxMode(v as any)}
                     disabled={
                       actionLoading || isUploadingPO || isUploadingFinance
                     }
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih metode pajak..." />
+                      <SelectValue placeholder="Pilih metode..." />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="percentage">Persentase (%)</SelectItem>
                       <SelectItem value="manual">Manual (Rp)</SelectItem>
                     </SelectContent>
                   </Select>
-
                   {taxMode === "percentage" && (
                     <div className="relative animate-in fade-in">
                       <Input
@@ -902,15 +934,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   )}
                   {taxMode === "manual" && (
                     <div className="relative animate-in fade-in">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                        Rp
-                      </span>
-                      <Input
-                        type="text"
-                        value={poForm.tax || 0}
-                        onChange={handleManualTaxChange}
-                        className="w-full text-right pl-6"
-                        min="0"
+                      <CurrencyInput
+                        value={poForm.tax}
+                        onValueChange={(numValue) =>
+                          setPoForm((p) => (p ? { ...p, tax: numValue } : null))
+                        }
+                        className="w-full"
                         disabled={
                           actionLoading || isUploadingPO || isUploadingFinance
                         }
@@ -920,20 +949,14 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 </div>
               )}
             </div>
-            {/* Akhir Opsi Pajak */}
-
             <div className="flex justify-between items-center pt-2 border-t">
               <Label>Ongkos Kirim</Label>
-              <Input
-                type="number"
-                value={poForm.postage || 0}
-                onChange={(e) =>
-                  setPoForm((p) =>
-                    p ? { ...p, postage: Number(e.target.value) || 0 } : null
-                  )
+              <CurrencyInput
+                value={poForm.postage}
+                onValueChange={(numValue) =>
+                  setPoForm((p) => (p ? { ...p, postage: numValue } : null))
                 }
-                className="w-32 text-right"
-                min="0"
+                className="w-32"
                 disabled={actionLoading || isUploadingPO || isUploadingFinance}
               />
             </div>

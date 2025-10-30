@@ -120,6 +120,13 @@ function ApprovalValidationContent() {
             title="Menunggu Validasi Anda (Material Request)"
             description="Daftar MR baru yang membutuhkan validasi dan penentuan alur approval."
             className="col-span-12"
+            cardAction={
+              <Button asChild variant={"outline"} size={"sm"}>
+                <Link href={"/approval-validation/templates"}>
+                  Kelola Template
+                </Link>
+              </Button>
+            }
           >
             <div className="rounded-md border">
               <Table>

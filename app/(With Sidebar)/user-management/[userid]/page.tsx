@@ -57,6 +57,7 @@ const dataRole: ComboboxData = [
 
 const dataDepartment: ComboboxData = [
   { label: "General Affair", value: "General Affair" },
+  { label: "Human Resource", value: "Human Resource" },
   { label: "Marketing", value: "Marketing" },
   { label: "Produksi", value: "Produksi" },
   { label: "K3", value: "K3" },

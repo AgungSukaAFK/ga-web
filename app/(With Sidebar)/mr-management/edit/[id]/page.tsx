@@ -37,6 +37,8 @@ import {
   CheckCheck,
   XCircle,
   Clock,
+  Building2, // Impor ikon yang hilang
+  ExternalLink, // Impor ikon yang hilang
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,8 +72,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-// --- DEFINISI YANG HILANG DITAMBAHKAN DI SINI ---
+import { CurrencyInput } from "@/components/ui/currency-input"; // Impor CurrencyInput
+import { fetchActiveCostCenters } from "@/services/mrService"; // Impor fetcher Cost Center
 
 // 1. Definisi Komponen InfoItem
 const InfoItem = ({
@@ -108,8 +110,6 @@ const dataUoM: ComboboxData = [
   { label: "Roll", value: "Roll" },
 ];
 
-// --- AKHIR PENAMBAHAN DEFINISI ---
-
 // Data lain yang dibutuhkan untuk edit
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -117,13 +117,9 @@ const kategoriData: ComboboxData = [
   { label: "Fix & Repair", value: "Fix & Repair" },
   { label: "Upgrade", value: "Upgrade" },
 ];
-const dataCostCenter: ComboboxData = [
-  { label: "APD", value: "APD" },
-  { label: "Bangunan", value: "Bangunan" },
-  { label: "Alat Berat", value: "Alat Berat" },
-  { label: "Operasional Kantor", value: "Operasional Kantor" },
-  { label: "Lainnya", value: "Lainnya" },
-];
+
+// HAPUS dataCostCenter
+
 const dataLokasi: ComboboxData = [
   { label: "Head Office", value: "Head Office" },
   { label: "Tanjung Enim", value: "Tanjung Enim" },
@@ -163,7 +159,27 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const [isUploading, setIsUploading] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
 
+  // State untuk Cost Center
+  const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+
   const supabase = createClient();
+
+  // REVISI: useEffect untuk auto-sum cost_estimation
+  useEffect(() => {
+    if (mr) {
+      const total = mr.orders.reduce((acc, item) => {
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.estimasi_harga) || 0;
+        return acc + qty * price;
+      }, 0);
+
+      // Update state MR dan state tampilan
+      setMr((prevMr) =>
+        prevMr ? { ...prevMr, cost_estimation: String(total) } : null
+      );
+      setFormattedCost(formatCurrency(total));
+    }
+  }, [mr?.orders]); // Dijalankan setiap kali item di 'orders' berubah
 
   const fetchMrData = async () => {
     if (isNaN(mrId)) {
@@ -192,14 +208,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
       };
       setMr(initialData as any);
-      const initialCost = Number(initialData.cost_estimation) || 0;
-      setFormattedCost(
-        new Intl.NumberFormat("id-ID", {
-          style: "currency",
-          currency: "IDR",
-          minimumFractionDigits: 0,
-        }).format(initialCost)
-      );
+      // setFormattedCost tidak di-set di sini lagi, akan di-handle oleh useEffect
       return initialData;
     }
   };
@@ -212,6 +221,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         data: { user },
       } = await supabase.auth.getUser();
       setCurrentUser(user);
+
+      let adminCompany = ""; // Variabel untuk menyimpan company admin
 
       if (user) {
         const { data: profile } = await supabase
@@ -226,39 +237,53 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           return;
         }
         setUserProfile(profile as Profile | null);
+        adminCompany = profile.company || ""; // Simpan company admin
       } else {
         router.push("/auth/login");
         return;
       }
 
-      await fetchMrData();
+      await fetchMrData(); // Fetch MR dulu
+
+      // Fetch Cost Center
+      try {
+        // Fetch CC berdasarkan company admin (Lourdes bisa lihat semua)
+        const costCenters = await fetchActiveCostCenters(adminCompany);
+        const costCenterOptions = costCenters.map((cc) => ({
+          label: `${cc.name} (${formatCurrency(cc.current_budget)})`,
+          value: cc.id.toString(), // Gunakan ID sebagai value
+        }));
+        setCostCenterList(costCenterOptions);
+      } catch (ccError: any) {
+        toast.error("Gagal memuat data Cost Center", {
+          description: ccError.message,
+        });
+      }
+
       setLoading(false);
     };
     initializePage();
-  }, [mrId, router]);
+  }, [mrId, router]); // 'mr' dihapus dari dependency
 
   const handleSaveChanges = async () => {
     if (!mr) return;
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan semua perubahan...");
 
+    // REVISI: Pastikan cost_center_id dikirim, bukan cost_center
+    const { cost_center, ...restOfData } = mr as any; // Hapus properti 'cost_center' lama
+
     const updateData: Partial<MaterialRequest> = {
-      kategori: mr.kategori,
-      remarks: mr.remarks,
-      cost_estimation: mr.cost_estimation,
-      department: mr.department,
-      cost_center: mr.cost_center,
-      tujuan_site: mr.tujuan_site,
-      due_date: mr.due_date,
-      orders: mr.orders,
-      approvals: mr.approvals,
-      attachments: mr.attachments,
-      status: mr.status,
+      ...restOfData,
+      cost_estimation: String(mr.cost_estimation), // Pastikan ini adalah string angka
+      cost_center_id: mr.cost_center_id, // Kirim ID
+      // Hapus properti yang tidak seharusnya diupdate
+      users_with_profiles: undefined,
     };
 
     const { error: updateError } = await supabase
       .from("material_requests")
-      .update(updateData)
+      .update(updateData as any) // 'as any' untuk bypass type-check sementara
       .eq("id", mr.id);
 
     setActionLoading(false);
@@ -280,13 +305,21 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     const { name, value } = e.target;
     setMr({ ...mr, [name]: value });
   };
+
+  // REVISI: Handler Combobox
   const handleComboboxChange = (
-    field: keyof MaterialRequest,
+    field: "kategori" | "tujuan_site" | "cost_center_id",
     value: string
   ) => {
     if (!mr) return;
-    setMr({ ...mr, [field]: value });
+
+    if (field === "cost_center_id") {
+      setMr({ ...mr, cost_center_id: value ? Number(value) : null });
+    } else {
+      setMr({ ...mr, [field]: value });
+    }
   };
+
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!mr) return;
     setMr({
@@ -294,27 +327,20 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       due_date: e.target.value ? new Date(e.target.value) : undefined,
     });
   };
-  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/[^0-9]/g, "");
-    const numericValue = parseInt(rawValue, 10) || 0;
-    if (mr) setMr({ ...mr, cost_estimation: String(numericValue) });
-    setFormattedCost(
-      new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        minimumFractionDigits: 0,
-      }).format(numericValue)
-    );
-  };
+
+  // HAPUS handleCostChange
 
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [orderItem, setOrderItem] = useState<Order>({
+
+  // REVISI: Tipe state Order
+  const [orderItem, setOrderItem] = useState<
+    Omit<Order, "vendor" | "vendor_contact">
+  >({
     name: "",
-    qty: "",
-    uom: "",
-    vendor: "",
-    vendor_contact: "",
+    qty: "1",
+    uom: "Pcs",
+    estimasi_harga: 0,
     url: "",
     note: "",
   });
@@ -325,8 +351,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       name: "",
       qty: "1",
       uom: "Pcs",
-      vendor: "",
-      vendor_contact: "",
+      estimasi_harga: 0,
       url: "",
       note: "",
     });
@@ -351,11 +376,17 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     }
     if (!mr) return;
 
+    // Pastikan estimasi_harga adalah angka
+    const itemToSave: Order = {
+      ...orderItem,
+      estimasi_harga: Number(orderItem.estimasi_harga) || 0,
+    };
+
     const updatedOrders = [...mr.orders];
     if (editingItemIndex !== null) {
-      updatedOrders[editingItemIndex] = orderItem;
+      updatedOrders[editingItemIndex] = itemToSave;
     } else {
-      updatedOrders.push(orderItem);
+      updatedOrders.push(itemToSave);
     }
     setMr({ ...mr, orders: updatedOrders });
     setOpenItemDialog(false);
@@ -369,6 +400,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
+    // ... (Fungsi ini tetap sama)
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
 
@@ -423,6 +455,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const removeAttachment = (indexToRemove: number) => {
+    // ... (Fungsi ini tetap sama)
     if (!mr || !Array.isArray(mr.attachments)) return;
     const attachmentToRemove = mr.attachments[indexToRemove];
     if (!attachmentToRemove) return;
@@ -457,6 +490,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const getStatusBadge = (status: string) => {
+    // ... (Fungsi ini tetap sama)
     switch (status?.toLowerCase()) {
       case "approved":
         return <Badge variant="outline">Approved</Badge>;
@@ -560,16 +594,19 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 defaultValue={mr.kategori}
               />
             </div>
+
+            {/* REVISI: Combobox Cost Center (Admin bisa edit) */}
             <div className="space-y-1">
-              <Label htmlFor="cost_center">Cost Center</Label>
+              <Label htmlFor="cost_center_id">Cost Center</Label>
               <Combobox
-                id="cost_center"
-                data={dataCostCenter}
-                onChange={(v) => handleComboboxChange("cost_center", v)}
-                defaultValue={mr.cost_center}
+                id="cost_center_id"
+                data={costCenterList}
+                onChange={(v) => handleComboboxChange("cost_center_id", v)}
+                defaultValue={mr.cost_center_id?.toString() ?? ""}
                 placeholder="Pilih Cost Center..."
               />
             </div>
+
             <div className="space-y-1">
               <Label htmlFor="tujuan_site">Tujuan (Site)</Label>
               <Combobox
@@ -585,7 +622,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               <Input
                 id="due_date"
                 type="date"
-                min={new Date().toISOString().slice(0, 10)}
                 value={
                   mr.due_date
                     ? new Date(mr.due_date).toISOString().slice(0, 10)
@@ -594,15 +630,20 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 onChange={handleDateChange}
               />
             </div>
+
+            {/* REVISI: Estimasi Biaya (Read Only) */}
             <div className="space-y-1">
-              <Label htmlFor="cost_estimation">Estimasi Biaya</Label>
+              <Label htmlFor="cost_estimation">Estimasi Biaya (Otomatis)</Label>
               <Input
                 id="cost_estimation"
                 type="text"
                 value={formattedCost}
-                onChange={handleCostChange}
+                disabled
+                readOnly
+                className="font-bold"
               />
             </div>
+
             <div className="md:col-span-2 space-y-1">
               <Label htmlFor="remarks">Remarks</Label>
               <Textarea
@@ -631,12 +672,14 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           <div className="space-y-4">
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[1000px]">
+                {/* REVISI: Header Tabel Item */}
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nama</TableHead>
                     <TableHead className="w-[80px]">Qty</TableHead>
                     <TableHead className="w-[120px]">UoM</TableHead>
-                    <TableHead>Vendor</TableHead>
+                    <TableHead>Estimasi Harga</TableHead>
+                    <TableHead>Total Estimasi</TableHead>
                     <TableHead>Catatan</TableHead>
                     <TableHead>Link</TableHead>
                     <TableHead className="w-[100px]">Aksi</TableHead>
@@ -648,7 +691,13 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       <TableCell>{item.name}</TableCell>
                       <TableCell>{item.qty}</TableCell>
                       <TableCell>{item.uom}</TableCell>
-                      <TableCell>{item.vendor}</TableCell>
+                      {/* REVISI: Tampilkan Harga */}
+                      <TableCell>
+                        {formatCurrency(item.estimasi_harga)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(Number(item.qty) * item.estimasi_harga)}
+                      </TableCell>
                       <TableCell className="max-w-[150px] truncate">
                         {item.note}
                       </TableCell>
@@ -688,7 +737,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                   {mr.orders.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={8} // REVISI: Sesuaikan colSpan
                         className="text-center h-24 text-muted-foreground"
                       >
                         Belum ada item.
@@ -702,36 +751,42 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         </Content>
 
         <Content title="Lampiran">
+          {/* ... (Kode lampiran tetap sama) ... */}
           <div className="space-y-4">
-            <Label htmlFor="attachments">Tambah Lampiran</Label>
+            {" "}
+            <Label htmlFor="attachments">Tambah Lampiran</Label>{" "}
             <Input
               id="attachments"
               type="file"
               multiple
               disabled={actionLoading || isUploading}
               onChange={handleAttachmentUpload}
-            />
+            />{" "}
             {isUploading && (
               <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+                {" "}
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...{" "}
               </div>
-            )}
+            )}{" "}
             {Array.isArray(mr.attachments) && mr.attachments.length > 0 && (
               <ul className="space-y-2 mt-2">
+                {" "}
                 {mr.attachments.map((file, index) => (
                   <li
                     key={index}
                     className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                   >
+                    {" "}
                     <a
                       href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 truncate hover:underline text-primary"
                     >
-                      <Paperclip className="h-4 w-4 flex-shrink-0" />
-                      <span className="truncate">{file.name}</span>
-                    </a>
+                      {" "}
+                      <Paperclip className="h-4 w-4 flex-shrink-0" />{" "}
+                      <span className="truncate">{file.name}</span>{" "}
+                    </a>{" "}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -739,40 +794,48 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       onClick={() => removeAttachment(index)}
                       disabled={actionLoading || isUploading}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                      {" "}
+                      <Trash2 className="h-4 w-4 text-destructive" />{" "}
+                    </Button>{" "}
                   </li>
-                ))}
+                ))}{" "}
               </ul>
-            )}
+            )}{" "}
             {(!Array.isArray(mr.attachments) ||
               mr.attachments.length === 0) && (
               <p className="text-sm text-muted-foreground text-center pt-2">
-                Belum ada lampiran.
+                {" "}
+                Belum ada lampiran.{" "}
               </p>
-            )}
+            )}{" "}
           </div>
         </Content>
       </div>
 
       <div className="col-span-12 lg:col-span-4 space-y-6">
         <Content title="Jalur Approval">
+          {/* ... (Kode Jalur Approval tetap sama) ... */}
           {Array.isArray(mr.approvals) && mr.approvals.length > 0 ? (
             <div className="space-y-2">
+              {" "}
               <Label className="text-xs text-muted-foreground">
-                Admin dapat mengubah status approval:
-              </Label>
+                {" "}
+                Admin dapat mengubah status approval:{" "}
+              </Label>{" "}
               {mr.approvals.map((approver, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between gap-4 p-3 rounded-md border bg-card"
                 >
+                  {" "}
                   <div>
-                    <p className="font-semibold">{approver.nama}</p>
+                    {" "}
+                    <p className="font-semibold">{approver.nama}</p>{" "}
                     <p className="text-sm text-muted-foreground">
-                      {approver.type}
-                    </p>
-                  </div>
+                      {" "}
+                      {approver.type}{" "}
+                    </p>{" "}
+                  </div>{" "}
                   <Select
                     value={approver.status}
                     onValueChange={(newStatus) =>
@@ -782,32 +845,50 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       )
                     }
                   >
+                    {" "}
                     <SelectTrigger className="w-[120px] capitalize">
-                      <SelectValue placeholder="Status..." />
-                    </SelectTrigger>
+                      {" "}
+                      <SelectValue placeholder="Status..." />{" "}
+                    </SelectTrigger>{" "}
                     <SelectContent>
+                      {" "}
                       {APPROVAL_STATUS_OPTIONS.map((opt) => (
                         <SelectItem
                           key={opt}
                           value={opt}
                           className="capitalize"
                         >
-                          {opt}
+                          {" "}
+                          {opt}{" "}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      ))}{" "}
+                    </SelectContent>{" "}
+                  </Select>{" "}
                 </div>
-              ))}
+              ))}{" "}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground text-center">
-              Jalur approval belum ditentukan.
+              {" "}
+              Jalur approval belum ditentukan.{" "}
             </p>
           )}
         </Content>
+
+        {/* REVISI: Aktifkan Diskusi */}
+        <Content title="Diskusi">
+          <p className="text-sm text-muted-foreground">
+            Fitur diskusi akan muncul di sini.
+          </p>
+          {/* Anda dapat mengimpor dan menggunakan <DiscussionSection /> di sini jika sudah siap */}
+          {/* <DiscussionSection
+              mrId={String(mr.id)}
+              initialDiscussions={mr.discussions as Discussion[]}
+            /> */}
+        </Content>
       </div>
 
+      {/* REVISI: Dialog Item */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -858,20 +939,22 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
+
+            {/* REVISI: Ganti Vendor dengan Estimasi Harga */}
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemVendorDlg" className="text-right">
-                Vendor
+              <Label htmlFor="estimasi_harga" className="text-right">
+                Estimasi Harga
               </Label>
-              <Input
-                id="itemVendorDlg"
+              <CurrencyInput
+                id="estimasi_harga"
                 className="col-span-3"
-                value={orderItem.vendor}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, vendor: e.target.value })
+                value={orderItem.estimasi_harga}
+                onValueChange={(value) =>
+                  setOrderItem({ ...orderItem, estimasi_harga: value })
                 }
-                placeholder="(Opsional)"
               />
             </div>
+
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="itemUrlDlg" className="text-right">
                 Link Ref.
@@ -916,16 +999,13 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
 const DetailMRSkeleton = () => (
   <>
     <div className="col-span-12">
-      {" "}
-      <Skeleton className="h-12 w-1/2" />{" "}
+      <Skeleton className="h-12 w-1/2" />
     </div>
     <Content className="col-span-12 lg:col-span-8">
-      {" "}
-      <Skeleton className="h-96 w-full" />{" "}
+      <Skeleton className="h-96 w-full" />
     </Content>
     <Content className="col-span-12 lg:col-span-4">
-      {" "}
-      <Skeleton className="h-64 w-full" />{" "}
+      <Skeleton className="h-64 w-full" />
     </Content>
   </>
 );
