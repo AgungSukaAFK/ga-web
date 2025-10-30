@@ -51,6 +51,10 @@ import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import { Barang, MaterialRequest, POItem, PurchaseOrderPayload } from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+// Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox";
+// Import RadioGroup jika ingin menggunakan radio button
+// import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 // Tipe data MR yang diambil untuk halaman ini (termasuk relasi)
 type MRData = MaterialRequest & {
@@ -67,7 +71,6 @@ function CreatePOPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // State untuk Payment Term
   const [paymentTermType, setPaymentTermType] = useState("Termin");
   const [paymentTermDays, setPaymentTermDays] = useState("30");
 
@@ -81,17 +84,23 @@ function CreatePOPageContent() {
     items: [],
     currency: "IDR",
     discount: 0,
-    tax: 0,
+    tax: 0, // Nilai pajak dalam Rupiah
     postage: 0,
     total_price: 0,
-    payment_term: "Termin 30 Hari", // Default
+    payment_term: "Termin 30 Hari",
     shipping_address: "Kantor Pusat GMI, Jakarta",
     notes: "",
     vendor_details: { name: "", address: "", contact_person: "" },
   });
 
+  // --- State Baru untuk Pajak ---
+  const [taxMode, setTaxMode] = useState<"percentage" | "manual">("percentage"); // Default ke persentase
+  const [taxPercentage, setTaxPercentage] = useState<number>(11); // Default PPN 11%
+  const [isTaxIncluded, setIsTaxIncluded] = useState<boolean>(false); // Default tidak include
+
   useEffect(() => {
     const initializeForm = async () => {
+      // ... (kode inisialisasi form lainnya tetap sama) ...
       try {
         setLoading(true);
         if (!mrId) {
@@ -105,7 +114,6 @@ function CreatePOPageContent() {
         if (!user) throw new Error("User tidak otentikasi");
         setCurrentUser(user);
 
-        // REVISI: Ambil profil user (pembuat PO)
         const { data: profile } = await supabase
           .from("profiles")
           .select("department, lokasi, company")
@@ -123,7 +131,6 @@ function CreatePOPageContent() {
           );
         }
 
-        // REVISI: Gunakan info profil untuk generate kode
         const [newPoCode, fetchedMr] = await Promise.all([
           generatePoCode(profile.company, profile.lokasi),
           fetchMaterialRequestById(parseInt(mrId)),
@@ -138,7 +145,7 @@ function CreatePOPageContent() {
           ...prev,
           kode_po: newPoCode,
           items: [],
-          shipping_address: fetchedMr.tujuan_site || prev.shipping_address, // Ambil tujuan site dari MR
+          shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
         }));
       } catch (err: any) {
         toast.error("Gagal memuat data", { description: err.message });
@@ -150,14 +157,43 @@ function CreatePOPageContent() {
     initializeForm();
   }, [mrId]);
 
+  // --- REVISI: useEffect untuk kalkulasi total dan pajak ---
   useEffect(() => {
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
       0
     );
-    const grandTotal = subtotal - poForm.discount + poForm.tax + poForm.postage;
-    setPoForm((prev) => ({ ...prev, total_price: grandTotal }));
-  }, [poForm.items, poForm.discount, poForm.tax, poForm.postage]);
+
+    let calculatedTax = 0;
+    if (isTaxIncluded) {
+      calculatedTax = 0; // Jika include, pajak dianggap 0
+    } else {
+      if (taxMode === "percentage") {
+        calculatedTax = subtotal * (taxPercentage / 100);
+      } else {
+        // Jika manual, nilai poForm.tax sudah diupdate langsung oleh input manual
+        calculatedTax = poForm.tax || 0;
+      }
+    }
+
+    const grandTotal =
+      subtotal - (poForm.discount || 0) + calculatedTax + (poForm.postage || 0);
+
+    // Update state poForm dengan pajak yang sudah dihitung (jika mode persentase atau include)
+    // atau gunakan nilai yang sudah ada (jika mode manual dan tidak include)
+    setPoForm((prev) => ({
+      ...prev,
+      tax: calculatedTax, // Update nilai tax di state utama
+      total_price: grandTotal,
+    }));
+  }, [
+    poForm.items,
+    poForm.discount,
+    poForm.postage,
+    taxMode,
+    taxPercentage,
+    isTaxIncluded,
+  ]); // Tambahkan dependency baru
 
   useEffect(() => {
     if (paymentTermType === "Cash") {
@@ -198,7 +234,7 @@ function CreatePOPageContent() {
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: "",
+      vendor_name: "", // Anda mungkin ingin mengisinya dari data barang jika ada
     };
     setPoForm((prev) => ({ ...prev, items: [...prev.items, newItem] }));
   };
@@ -211,6 +247,7 @@ function CreatePOPageContent() {
   };
 
   const handleSubmit = async () => {
+    // ... (validasi submit tetap sama) ...
     if (!currentUser || !mrData) {
       toast.error("Data tidak lengkap untuk membuat PO.");
       return;
@@ -224,11 +261,10 @@ function CreatePOPageContent() {
       return;
     }
 
-    setLoading(true);
+    setLoading(true); // Ganti jadi setLoading, karena ini proses utama
     const toastId = toast.loading("Mengajukan PO untuk validasi...");
 
     try {
-      // REVISI: Panggil createPurchaseOrder dengan 4 argumen
       await createPurchaseOrder(
         poForm,
         parseInt(mrData.id),
@@ -245,7 +281,7 @@ function CreatePOPageContent() {
         description: err.message,
       });
     } finally {
-      setLoading(false);
+      setLoading(false); // Ganti jadi setLoading
     }
   };
 
@@ -264,6 +300,12 @@ function CreatePOPageContent() {
     }));
   };
 
+  // --- Handler untuk input pajak manual ---
+  const handleManualTaxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/[^0-9]/g, ""); // Hanya angka
+    setPoForm((prev) => ({ ...prev, tax: Number(value) }));
+  };
+
   if (loading)
     return (
       <div className="col-span-12">
@@ -278,8 +320,15 @@ function CreatePOPageContent() {
       </div>
     );
 
+  // Hitung subtotal di sini agar bisa dipakai di kalkulasi pajak
+  const subtotal = poForm.items.reduce(
+    (acc, item) => acc + item.total_price,
+    0
+  );
+
   return (
     <>
+      {/* ... (Header dan Detail MR tetap sama) ... */}
       <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Buat Purchase Order Baru</h1>
@@ -394,6 +443,7 @@ function CreatePOPageContent() {
         )}
 
         <Content title="Input Item Purchase Order (Berdasarkan Master Barang)">
+          {/* ... (Tabel Item PO tetap sama) ... */}
           <div className="overflow-x-auto">
             <Table className="min-w-[900px]">
               <TableHeader>
@@ -461,6 +511,7 @@ function CreatePOPageContent() {
       </div>
 
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
+        {/* ... (Vendor & Pengiriman tetap sama) ... */}
         <Content title="Vendor Utama & Pengiriman">
           <div className="space-y-4">
             <div>
@@ -535,15 +586,15 @@ function CreatePOPageContent() {
             </div>
           </div>
         </Content>
+
+        {/* --- REVISI: Bagian Ringkasan Biaya --- */}
         <Content title="Ringkasan Biaya">
-          <div className="space-y-2">
+          <div className="space-y-4">
+            {" "}
+            {/* Tambahkan wrapper space-y-4 */}
             <div className="flex justify-between">
               <span>Subtotal</span>
-              <span>
-                {formatCurrency(
-                  poForm.items.reduce((acc, item) => acc + item.total_price, 0)
-                )}
-              </span>
+              <span>{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between items-center">
               <Label>Diskon</Label>
@@ -551,39 +602,129 @@ function CreatePOPageContent() {
                 type="number"
                 value={poForm.discount}
                 onChange={(e) =>
-                  setPoForm((p) => ({ ...p, discount: Number(e.target.value) }))
+                  setPoForm((p) => ({
+                    ...p,
+                    discount: Number(e.target.value) || 0,
+                  }))
                 }
                 className="w-32 text-right"
                 min="0"
+                disabled={loading} // Disable saat loading
               />
             </div>
-            <div className="flex justify-between items-center">
-              <Label>Pajak (PPN)</Label>
-              <Input
-                type="number"
-                value={poForm.tax}
-                onChange={(e) =>
-                  setPoForm((p) => ({ ...p, tax: Number(e.target.value) }))
-                }
-                className="w-32 text-right"
-                min="0"
-              />
+            {/* --- Opsi Pajak --- */}
+            <div className="space-y-2 pt-2 border-t">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-tax"
+                  checked={isTaxIncluded}
+                  onCheckedChange={(checked) =>
+                    setIsTaxIncluded(checked as boolean)
+                  }
+                  disabled={loading}
+                />
+                <Label
+                  htmlFor="include-tax"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Harga Item Sudah Termasuk Pajak (PPN)?
+                </Label>
+              </div>
+
+              {/* Tampilkan Opsi Mode Pajak jika "Include Tax" TIDAK diceklis */}
+              {!isTaxIncluded && (
+                <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
+                  <Label className="text-sm font-medium">
+                    Metode Pajak (PPN)
+                  </Label>
+                  {/* Opsi 1: Select Dropdown */}
+                  <Select
+                    value={taxMode}
+                    onValueChange={(value) =>
+                      setTaxMode(value as "percentage" | "manual")
+                    }
+                    disabled={loading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih metode pajak..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentage">Persentase (%)</SelectItem>
+                      <SelectItem value="manual">Manual (Rp)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Opsi 2: Radio Button (jika preferensi) */}
+                  {/*
+                        <RadioGroup defaultValue={taxMode} onValueChange={(value) => setTaxMode(value as "percentage" | "manual")} className="flex space-x-4">
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="percentage" id="tax-percentage" />
+                                <Label htmlFor="tax-percentage">Persentase (%)</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="manual" id="tax-manual" />
+                                <Label htmlFor="tax-manual">Manual (Rp)</Label>
+                            </div>
+                        </RadioGroup>
+                        */}
+
+                  {taxMode === "percentage" && (
+                    <div className="relative animate-in fade-in">
+                      <Input
+                        type="number"
+                        value={taxPercentage}
+                        onChange={(e) =>
+                          setTaxPercentage(Number(e.target.value) || 0)
+                        }
+                        className="w-full text-right pr-6"
+                        min="0"
+                        step="0.01" // Untuk persentase desimal jika perlu
+                        disabled={loading}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  )}
+                  {taxMode === "manual" && (
+                    <div className="relative animate-in fade-in">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        Rp
+                      </span>
+                      <Input
+                        type="text" // Gunakan text agar bisa format Rupiah saat input jika mau (atau number biasa)
+                        value={poForm.tax || 0} // Gunakan nilai dari state utama
+                        onChange={handleManualTaxChange} // Handler khusus untuk manual
+                        className="w-full text-right pl-6"
+                        min="0"
+                        disabled={loading}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex justify-between items-center">
+            {/* --- Akhir Opsi Pajak --- */}
+            <div className="flex justify-between items-center pt-2 border-t">
               <Label>Ongkos Kirim</Label>
               <Input
                 type="number"
                 value={poForm.postage}
                 onChange={(e) =>
-                  setPoForm((p) => ({ ...p, postage: Number(e.target.value) }))
+                  setPoForm((p) => ({
+                    ...p,
+                    postage: Number(e.target.value) || 0,
+                  }))
                 }
                 className="w-32 text-right"
                 min="0"
+                disabled={loading}
               />
             </div>
             <hr className="my-2" />
             <div className="flex justify-between font-bold text-lg">
               <span>Grand Total</span>
+              {/* Tampilkan total yang sudah dihitung di useEffect */}
               <span>{formatCurrency(poForm.total_price)}</span>
             </div>
           </div>
@@ -593,7 +734,7 @@ function CreatePOPageContent() {
   );
 }
 
-// Komponen helper
+// Komponen helper InfoItem tetap sama
 const InfoItem = ({
   icon: Icon,
   label,

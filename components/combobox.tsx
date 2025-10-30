@@ -25,12 +25,14 @@ export type ComboboxData = {
 }[];
 
 export function Combobox({
+  id,
   data,
   onChange,
   defaultValue,
   placeholder,
   disabled = false,
 }: {
+  id?: string;
   data: ComboboxData;
   defaultValue?: string;
   onChange: (value: string) => void;
@@ -58,6 +60,7 @@ export function Combobox({
       <PopoverContent className="w-full p-0">
         <Command>
           <CommandInput
+            id={id || ""}
             disabled
             placeholder={placeholder || "Cari data..."}
             className="w-full h-9"

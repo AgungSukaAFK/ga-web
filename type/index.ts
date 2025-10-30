@@ -25,6 +25,7 @@ export interface Order {
 export interface Attachment {
   url: string;
   name: string;
+  type?: "po" | "finance";
 }
 
 export interface Discussion {
@@ -114,12 +115,25 @@ export interface PurchaseOrderPayload {
 
 // --- Tipe Data View & Helper ---
 
+export interface MaterialRequestListItem {
+  id: string; // Atau number jika ID Anda number
+  kode_mr: string;
+  kategori: string;
+  status: string;
+  department: string;
+  created_at: Date | string; // Bisa Date atau string ISO
+  due_date?: Date | string | null; // Opsional dan bisa null
+  company_code: string | null; // Ditambahkan untuk MR Management
+  users_with_profiles: { nama: string } | null; // Nama requester
+}
+
 export interface PurchaseOrderListItem {
   id: number;
   kode_po: string;
   status: string;
   total_price: number;
   created_at: string;
+  company_code: string | null; // Tambahkan company_code
   users_with_profiles: { nama: string } | null;
   material_requests: { kode_mr: string } | null;
 }

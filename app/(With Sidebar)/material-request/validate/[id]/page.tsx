@@ -382,7 +382,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           size="sm"
           cardAction={
             <Button asChild size={"sm"} variant={"outline"}>
-              <Link target="_blank" href={"/settings/approval-templates"}>
+              <Link target="_blank" href={"/approval-validation/templates"}>
                 Kelola Template
               </Link>
             </Button>

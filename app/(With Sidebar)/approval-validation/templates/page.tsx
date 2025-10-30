@@ -1,4 +1,4 @@
-// src/app/(With Sidebar)/settings/approval-templates/page.tsx
+// src/app/(With Sidebar)/approval-validation/templates/page.tsx
 
 "use client";
 
