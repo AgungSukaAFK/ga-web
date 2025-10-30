@@ -64,10 +64,15 @@ export interface MaterialRequest {
   orders: Order[];
   approvals: Approval[];
   attachments: Attachment[];
-  discussions: Discussion[]; // Diperbarui dari {}[]
+  discussions: Discussion[];
   company_code: string;
   tujuan_site: string;
-  cost_center: string;
+
+  // --- REVISI DI SINI ---
+  cost_center_id: number | null; // Ganti/tambahkan ini (pastikan 'number')
+  cost_center?: string; // Hapus baris ini jika Anda menghapus kolom 'cost_center text'
+  // --- AKHIR REVISI ---
+
   // Properti relasi (opsional, tergantung query)
   users_with_profiles?: { nama: string; email?: string } | null;
 }
@@ -232,4 +237,36 @@ export interface PurchaseOrder {
         users_with_profiles: { nama: string } | null;
       })
     | null;
+}
+
+export interface CostCenter {
+  id: number;
+  name: string;
+  code: string | null;
+  company_code: string;
+  initial_budget: number;
+  current_budget: number;
+  created_at?: string | Date;
+  updated_at?: string | Date;
+}
+
+export interface CostCenterHistory {
+  id: number;
+  cost_center_id: number;
+  mr_id: number | null;
+  user_id: string | null;
+  change_amount: number;
+  previous_budget: number;
+  new_budget: number;
+  description: string;
+  created_at: string | Date;
+
+  // Relasi opsional untuk menampilkan nama
+  material_requests?: {
+    kode_mr: string;
+  } | null;
+  profiles?: {
+    // Asumsi relasi dari user_id ke profiles
+    nama: string;
+  } | null;
 }

@@ -1,7 +1,7 @@
 // src/services/mrService.ts
 
 import { createClient } from "@/lib/supabase/client";
-import { MaterialRequest, Order, Attachment, Profile } from "@/type"; // Pastikan path tipe data Anda benar
+import { MaterialRequest, Order, Attachment, Profile } from "@/type";
 
 const supabase = createClient();
 
@@ -33,7 +33,7 @@ const lokasiAbbreviations: { [key: string]: string } = {
   "Site BIB": "BIB",
   "Site AMI": "AMI",
   "Site Tabang": "TBG",
-  "Head Office": "HO", // Tambahkan HO jika diperlukan fallback
+  "Head Office": "HO",
 };
 
 const toRoman = (num: number): string => {
@@ -65,7 +65,7 @@ export const getActiveUserProfile = async (): Promise<Profile | null> => {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("department, lokasi, company") // Ambil juga company
+    .select("department, lokasi, company")
     .eq("id", user.id)
     .single();
 
@@ -110,7 +110,6 @@ export const generateMRCode = async (
     }
   }
 
-  // REVISI: Logika identifier berdasarkan lokasi
   const identifier =
     lokasi === "Head Office"
       ? deptAbbreviations[department] || department
@@ -129,7 +128,7 @@ export const uploadAttachment = async (
   const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
 
   const { data, error } = await supabase.storage
-    .from("mr") // Pastikan nama bucket Anda adalah 'mr'
+    .from("mr")
     .upload(filePath, file);
 
   if (error) throw error;
@@ -141,9 +140,7 @@ export const uploadAttachment = async (
  * Menghapus satu file lampiran dari storage.
  */
 export const removeAttachment = async (path: string): Promise<void> => {
-  const { error } = await supabase.storage
-    .from("mr") // Pastikan nama bucket Anda adalah 'mr'
-    .remove([path]);
+  const { error } = await supabase.storage.from("mr").remove([path]);
 
   if (error) throw error;
 };
@@ -152,6 +149,7 @@ export const removeAttachment = async (path: string): Promise<void> => {
  * Menyimpan data Material Request baru ke database.
  */
 export const createMaterialRequest = async (
+  // REVISI: Pastikan tipe formData sekarang MUNGKIN memiliki cost_center_id
   formData: Omit<
     MaterialRequest,
     | "id"
@@ -162,19 +160,21 @@ export const createMaterialRequest = async (
     | "company_code"
   >,
   userId: string,
-  company_code: string // Tambahkan company_code
+  company_code: string
 ): Promise<MaterialRequest> => {
+  // Hapus properti 'cost_center' (text) jika masih ada di state
+  // Dan pastikan 'cost_center_id' (number) yang dikirim
+  const { cost_center, ...restOfData } = formData as any;
+
   const payload = {
-    ...formData,
+    ...restOfData,
+    cost_center_id: formData.cost_center_id, // Pastikan ini terkirim
     userid: userId,
-    company_code: company_code, // <-- Simpan company_code
+    company_code: company_code,
     status: "Pending Validation" as const,
     approvals: [],
     discussions: [],
   };
-
-  // Hapus properti yang mungkin tidak ada di skema DB saat insert (jika ada)
-  delete (payload as any).lokasi;
 
   const { data, error } = await supabase
     .from("material_requests")
@@ -184,8 +184,36 @@ export const createMaterialRequest = async (
 
   if (error) {
     console.error("Error creating MR:", error);
+    // Cek error spesifik jika kolom 'cost_center_id' tidak ada
+    if (error.code === "42703") {
+      // "column ... does not exist"
+      throw new Error(
+        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database (Langkah 1)."
+      );
+    }
     throw error;
   }
 
   return data as MaterialRequest;
+};
+
+/**
+ * Mengambil daftar Cost Center yang aktif (misal budget > 0)
+ */
+export const fetchActiveCostCenters = async (company_code: string) => {
+  let query = supabase
+    .from("cost_centers")
+    .select("id, name, code, current_budget")
+    .gt("current_budget", 0); // Hanya tampilkan yg budgetnya masih ada
+
+  if (company_code !== "LOURDES") {
+    query = query.eq("company_code", company_code);
+  }
+
+  const { data, error } = await query.order("name", { ascending: true });
+  if (error) {
+    console.error("Error fetching cost centers:", error);
+    throw error;
+  }
+  return data;
 };

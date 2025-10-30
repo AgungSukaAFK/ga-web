@@ -81,6 +81,14 @@ export default function LoginPage() {
                 disabled={loading}
               />
             </div>
+            <div className="w-full flex justify-end">
+              <Link
+                href={"/auth/forgot-password"}
+                className="text-end text-sm bg-blac"
+              >
+                Lupa password?
+              </Link>
+            </div>
             {error && (
               <Alert variant="destructive">
                 <AlertTitle>Login Gagal</AlertTitle>

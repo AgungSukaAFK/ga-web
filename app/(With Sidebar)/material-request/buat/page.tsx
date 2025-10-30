@@ -18,7 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-// Import EditIcon
 import { LinkIcon, Loader2, Trash2, Edit as EditIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -39,8 +38,11 @@ import {
   uploadAttachment,
   removeAttachment,
   createMaterialRequest,
+  fetchActiveCostCenters, // Impor fungsi baru
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
+import { formatCurrency } from "@/lib/utils";
+import { CurrencyInput } from "@/components/ui/currency-input"; // Impor CurrencyInput
 
 // Data kategori yang telah diperbarui
 const kategoriData: ComboboxData = [
@@ -50,13 +52,7 @@ const kategoriData: ComboboxData = [
   { label: "Upgrade", value: "Upgrade" },
 ];
 
-const dataCostCenter: ComboboxData = [
-  { label: "APD", value: "APD" },
-  { label: "Bangunan", value: "Bangunan" },
-  { label: "Alat Berat", value: "Alat Berat" },
-  { label: "Operasional Kantor", value: "Operasional Kantor" },
-  { label: "Lainnya", value: "Lainnya" },
-];
+// HAPUS dataCostCenter yang di-hardcode
 
 const dataLokasi: ComboboxData = [
   { label: "Head Office", value: "Head Office" },
@@ -71,7 +67,6 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
-// Data UoM untuk Combobox di Dialog
 const dataUoM: ComboboxData = [
   { label: "Pcs", value: "Pcs" },
   { label: "Unit", value: "Unit" },
@@ -81,7 +76,6 @@ const dataUoM: ComboboxData = [
   { label: "Roll", value: "Roll" },
 ];
 
-// Helper format tanggal (asumsi ada di utils)
 const formatDateFriendly = (date?: Date): string => {
   if (!date) return "";
   return new Date(date).toLocaleDateString("id-ID", {
@@ -95,6 +89,7 @@ const formatDateFriendly = (date?: Date): string => {
 export default function BuatMRPage() {
   const router = useRouter();
 
+  // REVISI: Sesuaikan state dengan tipe data yang baru
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
     {
       userid: "",
@@ -102,10 +97,10 @@ export default function BuatMRPage() {
       kategori: "",
       status: "Pending Validation",
       remarks: "",
-      cost_estimation: "",
+      cost_estimation: "0", // Default ke string "0"
       department: "",
       company_code: "",
-      cost_center: "",
+      cost_center_id: null, // <-- REVISI: Gunakan cost_center_id
       tujuan_site: "",
       created_at: new Date(),
       due_date: new Date(),
@@ -117,23 +112,15 @@ export default function BuatMRPage() {
   );
 
   const [userLokasi, setUserLokasi] = useState("");
-  const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
 
-  // --- State untuk Dialog Tambah/Edit Item ---
-  const [openItemDialog, setOpenItemDialog] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null); // State baru untuk melacak index yang diedit
-  const [orderItem, setOrderItem] = useState<Order>({
-    name: "",
-    qty: "",
-    uom: "", // Default UoM bisa diset di sini jika diinginkan
-    vendor: "",
-    vendor_contact: "",
-    url: "",
-    note: "",
-  });
+  // State baru untuk Cost Center
+  const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+  const [selectedCostCenterBudget, setSelectedCostCenterBudget] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -151,6 +138,14 @@ export default function BuatMRPage() {
           );
           setUserLokasi(profile.lokasi);
 
+          // Fetch Cost Center
+          const costCenters = await fetchActiveCostCenters(profile.company);
+          const costCenterOptions = costCenters.map((cc) => ({
+            label: `${cc.name} (${formatCurrency(cc.current_budget)})`,
+            value: cc.id.toString(), // Gunakan ID sebagai value
+          }));
+          setCostCenterList(costCenterOptions);
+
           setFormCreateMR((prev) => ({
             ...prev,
             department: profile.department || "",
@@ -164,7 +159,7 @@ export default function BuatMRPage() {
           });
         }
       } catch (error: any) {
-        toast.error("Gagal mengambil profil user", {
+        toast.error("Gagal mengambil data awal", {
           description: error.message,
         });
       }
@@ -176,8 +171,27 @@ export default function BuatMRPage() {
     setFormCreateMR({ ...formCreateMR, kategori: value });
   };
 
+  // REVISI: Handler untuk menyimpan ID cost center
   const handleCBCostCenter = (value: string) => {
-    setFormCreateMR({ ...formCreateMR, cost_center: value });
+    // value adalah ID (string), ubah ke number saat disimpan
+    setFormCreateMR({
+      ...formCreateMR,
+      cost_center_id: value ? Number(value) : null,
+    });
+
+    // Cek sisa budget untuk ditampilkan
+    const selected = costCenterList.find((cc) => cc.value === value);
+    if (selected) {
+      try {
+        const budgetStr = selected.label.match(/\(Rp\s(.+)\)/)?.[1] || "0";
+        const budget = parseFloat(budgetStr.replace(/\./g, ""));
+        setSelectedCostCenterBudget(budget);
+      } catch (e) {
+        setSelectedCostCenterBudget(null);
+      }
+    } else {
+      setSelectedCostCenterBudget(null);
+    }
   };
 
   const handleCBTujuanSite = (value: string) => {
@@ -188,33 +202,39 @@ export default function BuatMRPage() {
     if (tujuanSamaDenganLokasi) {
       setFormCreateMR((prev) => ({ ...prev, tujuan_site: userLokasi }));
     } else {
-      setFormCreateMR((prev) => ({ ...prev, tujuan_site: "" }));
+      if (userLokasi) {
+        // Hanya reset jika userLokasi sudah ada
+        setFormCreateMR((prev) => ({ ...prev, tujuan_site: "" }));
+      }
     }
   }, [tujuanSamaDenganLokasi, userLokasi]);
 
-  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/[^0-9]/g, "");
-    const numericValue = parseInt(rawValue, 10) || 0;
+  // REVISI: Handler untuk CurrencyInput Estimasi Biaya
+  const handleCostChange = (numericValue: number) => {
     setFormCreateMR((prev) => ({
       ...prev,
-      cost_estimation: String(numericValue),
+      cost_estimation: String(numericValue), // Simpan sebagai string angka
     }));
-    const formatted = new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0,
-    }).format(numericValue);
-    setFormattedCost(formatted);
   };
 
-  // --- Logika Buka Dialog ---
+  const [openItemDialog, setOpenItemDialog] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [orderItem, setOrderItem] = useState<Order>({
+    name: "",
+    qty: "",
+    uom: "Pcs", // Default
+    vendor: "",
+    vendor_contact: "",
+    url: "",
+    note: "",
+  });
+
   const handleOpenAddItemDialog = () => {
-    setEditingIndex(null); // Pastikan mode tambah
+    setEditingIndex(null);
     setOrderItem({
-      // Reset form item
       name: "",
-      qty: "",
-      uom: "",
+      qty: "1",
+      uom: "Pcs",
       vendor: "",
       vendor_contact: "",
       url: "",
@@ -224,12 +244,11 @@ export default function BuatMRPage() {
   };
 
   const handleOpenEditItemDialog = (index: number) => {
-    setEditingIndex(index); // Set index yang akan diedit
-    setOrderItem(formCreateMR.orders[index]); // Isi form dengan data item yang ada
+    setEditingIndex(index);
+    setOrderItem(formCreateMR.orders[index]);
     setOpenItemDialog(true);
   };
 
-  // --- Logika Simpan/Update Item ---
   const handleSaveOrUpdateItem = () => {
     if (
       !orderItem.name.trim() ||
@@ -243,20 +262,18 @@ export default function BuatMRPage() {
     setFormCreateMR((prevForm) => {
       const updatedOrders = [...prevForm.orders];
       if (editingIndex !== null) {
-        // Mode Edit: Update item pada index yang disimpan
         updatedOrders[editingIndex] = orderItem;
       } else {
-        // Mode Tambah: Tambahkan item baru
         updatedOrders.push(orderItem);
       }
       return { ...prevForm, orders: updatedOrders };
     });
 
-    setOpenItemDialog(false); // Tutup dialog
-    // Reset state editing dan form item tidak perlu di sini karena sudah ditangani saat buka dialog
+    setOpenItemDialog(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // ... (Fungsi ini tetap sama)
     const files = e.target.files;
     if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
       toast.warning("Kode MR belum siap, tunggu sebentar.");
@@ -283,7 +300,7 @@ export default function BuatMRPage() {
     if (successfulUploads.length > 0) {
       setFormCreateMR((prev) => ({
         ...prev,
-        attachments: [...prev.attachments, ...successfulUploads],
+        attachments: [...(prev.attachments || []), ...successfulUploads],
       }));
       toast.success(`${successfulUploads.length} file berhasil diunggah.`, {
         id: toastId,
@@ -300,10 +317,11 @@ export default function BuatMRPage() {
   };
 
   const handleRemoveAttachment = async (index: number, path: string) => {
+    // ... (Fungsi ini tetap sama)
     const toastId = toast.loading("Menghapus file...");
     try {
       await removeAttachment(path);
-      const updatedAttachments = formCreateMR.attachments.filter(
+      const updatedAttachments = (formCreateMR.attachments || []).filter(
         (_, i) => i !== index
       );
       setFormCreateMR((prev) => ({ ...prev, attachments: updatedAttachments }));
@@ -317,20 +335,44 @@ export default function BuatMRPage() {
 
   const handleAjukanMR = async () => {
     setAjukanAlert("");
+
+    // REVISI: Cek cost_center_id
     if (
       !formCreateMR.kategori ||
       !formCreateMR.remarks ||
       !formCreateMR.cost_estimation ||
+      Number(formCreateMR.cost_estimation) <= 0 || // Cek estimasi > 0
       !formCreateMR.department ||
-      !formCreateMR.cost_center ||
+      !formCreateMR.cost_center_id || // Cek ID
       !formCreateMR.tujuan_site ||
       !formCreateMR.company_code
     ) {
       setAjukanAlert(
-        "Semua data utama (Kategori, Remarks, Estimasi Biaya, Cost Center, dan Tujuan) wajib diisi."
+        "Semua data utama (Kategori, Remarks, Estimasi Biaya > 0, Cost Center, dan Tujuan) wajib diisi."
       );
       return;
     }
+
+    // Peringatan budget (jika ada)
+    if (
+      selectedCostCenterBudget !== null &&
+      parseFloat(formCreateMR.cost_estimation) > selectedCostCenterBudget
+    ) {
+      if (
+        !window.confirm(
+          `Peringatan: Estimasi biaya (Rp ${parseFloat(
+            formCreateMR.cost_estimation
+          ).toLocaleString(
+            "id-ID"
+          )}) melebihi sisa budget cost center (Rp ${selectedCostCenterBudget.toLocaleString(
+            "id-ID"
+          )}).\n\nApakah Anda yakin ingin tetap melanjutkan?`
+        )
+      ) {
+        return; // Batal jika user menekan 'Cancel'
+      }
+    }
+
     if (formCreateMR.orders.length === 0) {
       setAjukanAlert("Minimal harus ada satu order item.");
       return;
@@ -338,7 +380,7 @@ export default function BuatMRPage() {
     const wajibLampiran = ["Replace Item", "Fix & Repair", "Upgrade"];
     if (
       wajibLampiran.includes(formCreateMR.kategori) &&
-      formCreateMR.attachments.length === 0
+      (formCreateMR.attachments || []).length === 0
     ) {
       setAjukanAlert(
         `Kategori '${formCreateMR.kategori}' wajib menyertakan lampiran.`
@@ -357,7 +399,14 @@ export default function BuatMRPage() {
       if (!user) throw new Error("User tidak ditemukan.");
 
       const { company_code, ...payload } = formCreateMR;
-      await createMaterialRequest(payload, user.id, company_code);
+
+      // Pastikan cost_estimation adalah angka sebelum kirim (walaupun di state string)
+      const finalPayload = {
+        ...payload,
+        cost_estimation: Number(payload.cost_estimation),
+      };
+
+      await createMaterialRequest(finalPayload as any, user.id, company_code);
 
       toast.success("Material Request berhasil dibuat dan menunggu validasi!", {
         id: toastId,
@@ -377,7 +426,6 @@ export default function BuatMRPage() {
         title="Buat Material Request Baru"
         description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
-        {/* ... (Kode form MR lainnya tetap sama) ... */}
         <div className="grid grid-cols-12 gap-4">
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Kode MR</Label>
@@ -410,16 +458,32 @@ export default function BuatMRPage() {
               data={kategoriData}
               onChange={handleCBKategori}
               placeholder="Pilih kategori..."
+              defaultValue={formCreateMR.kategori}
             />
           </div>
 
+          {/* REVISI: Combobox Cost Center */}
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Cost Center</Label>
             <Combobox
-              data={dataCostCenter}
-              onChange={handleCBCostCenter}
-              placeholder="Pilih cost center..."
+              data={costCenterList} // Gunakan data dari state
+              onChange={handleCBCostCenter} // Handler yg menyimpan ID
+              placeholder={
+                costCenterList.length > 0
+                  ? "Pilih cost center..."
+                  : "Memuat cost center..."
+              }
+              defaultValue={formCreateMR.cost_center_id?.toString() ?? ""} // Gunakan ID
+              disabled={costCenterList.length === 0}
             />
+            {selectedCostCenterBudget !== null &&
+              parseFloat(formCreateMR.cost_estimation) >
+                selectedCostCenterBudget && (
+                <p className="text-xs text-destructive font-medium mt-1">
+                  Estimasi biaya melebihi sisa budget (
+                  {formatCurrency(selectedCostCenterBudget)})
+                </p>
+              )}
           </div>
 
           <div className="flex flex-col gap-2 col-span-12">
@@ -457,6 +521,7 @@ export default function BuatMRPage() {
                   data={dataLokasi}
                   onChange={handleCBTujuanSite}
                   placeholder="Pilih lokasi tujuan..."
+                  defaultValue={formCreateMR.tujuan_site}
                 />
               </div>
             )}
@@ -488,13 +553,13 @@ export default function BuatMRPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-2 col-span-12">
+          {/* REVISI: Gunakan CurrencyInput untuk Estimasi Biaya */}
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Estimasi Biaya</Label>
-            <Input
-              type="text"
-              placeholder="Rp 500.000"
-              value={formattedCost}
-              onChange={handleCostChange}
+            <CurrencyInput
+              value={Number(formCreateMR.cost_estimation) || 0}
+              onValueChange={handleCostChange}
+              placeholder="Rp 0"
             />
           </div>
         </div>
@@ -504,7 +569,6 @@ export default function BuatMRPage() {
         title="Order Item"
         size="lg"
         cardAction={
-          // Tombol "Tambah Order Item" sekarang memanggil handleOpenAddItemDialog
           <Button
             variant="outline"
             disabled={loading}
@@ -554,12 +618,11 @@ export default function BuatMRPage() {
                     )}
                   </TableCell>
                   <TableCell className="space-x-1">
-                    {/* Tombol Edit Baru */}
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8" // Samakan ukuran dengan tombol hapus
-                      onClick={() => handleOpenEditItemDialog(index)} // Panggil handler edit
+                      className="h-8 w-8"
+                      onClick={() => handleOpenEditItemDialog(index)}
                     >
                       <EditIcon className="w-4 h-4" />
                     </Button>
@@ -582,16 +645,24 @@ export default function BuatMRPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {formCreateMR.orders.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="text-center h-24 text-muted-foreground"
+                  >
+                    Belum ada item ditambahkan.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
       </Content>
 
-      {/* --- Dialog untuk Tambah/Edit Item --- */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <AlertDialogHeader>
-            {/* Judul dinamis */}
             <DialogTitle>
               {editingIndex !== null ? "Edit Order Item" : "Tambah Order Item"}
             </DialogTitle>
@@ -616,11 +687,11 @@ export default function BuatMRPage() {
               </Label>
               <div className="col-span-3">
                 <Combobox
-                  data={dataUoM} // Gunakan dataUoM yang sudah didefinisikan
+                  data={dataUoM}
                   onChange={(value) =>
                     setOrderItem({ ...orderItem, uom: value })
                   }
-                  defaultValue={orderItem.uom} // Gunakan state orderItem
+                  defaultValue={orderItem.uom}
                   placeholder="Pilih UoM..."
                 />
               </div>
@@ -684,7 +755,6 @@ export default function BuatMRPage() {
             </div>
           </div>
           <DialogFooter>
-            {/* Tombol Simpan/Update */}
             <Button onClick={handleSaveOrUpdateItem}>
               {editingIndex !== null ? "Simpan Perubahan" : "Tambah"}
             </Button>
@@ -692,7 +762,6 @@ export default function BuatMRPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ... (Kode Lampiran File dan Tombol Ajukan MR tetap sama) ... */}
       <Content title="Lampiran File" size="sm">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -712,7 +781,7 @@ export default function BuatMRPage() {
               </div>
             )}
           </div>
-          {formCreateMR.attachments.length > 0 && (
+          {(formCreateMR.attachments || []).length > 0 && (
             <Table>
               <TableHeader>
                 <TableRow>

@@ -49,13 +49,15 @@ export function ForgotPasswordForm({
       {success ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Check Your Email</CardTitle>
-            <CardDescription>Password reset instructions sent</CardDescription>
+            <CardTitle className="text-2xl">Check Email anda</CardTitle>
+            <CardDescription>
+              Instruksi untuk reset passowrd telah dikirim
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              If you registered using your email and password, you will receive
-              a password reset email.
+              Jika email anda sudah terdaftar, anda akan menerima email reset
+              password.
             </p>
           </CardContent>
         </Card>

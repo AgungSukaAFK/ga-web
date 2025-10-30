@@ -24,7 +24,8 @@ import {
   Info,
   CheckCheck,
   FileSearch2,
-  PackageSearch, // Pastikan ikon ini sudah diimpor
+  PackageSearch,
+  BadgeDollarSign, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -51,6 +52,11 @@ const data = {
       title: "PO Management",
       url: "/po-management",
       icon: PackageSearch,
+    },
+    {
+      title: "Cost Center Management",
+      url: "/cost-center-management",
+      icon: BadgeDollarSign,
     },
   ],
   navMain: [

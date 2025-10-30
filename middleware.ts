@@ -36,12 +36,21 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Halaman publik yang selalu bisa diakses
-  const publicPaths = ["/auth/login", "/auth/sign-up", "/pending-approval"];
+  const publicPaths = [
+    "/auth/login",
+    "/auth/sign-up",
+    "/auth/forgot-password",
+    "/auth/error",
+    "/auth/sign-up-success",
+    "/auth/confirm",
+    "/auth/update-password",
+    "/pending-approval",
+  ];
 
   // Jika user BELUM login
   if (!session) {
-    // Jika mencoba akses halaman selain halaman publik, redirect ke login
-    if (!publicPaths.includes(pathname)) {
+    // Jika mencoba akses halaman selain halaman publik, redirect ke login, diperbolehkan jika akses root url (landing page)
+    if (!publicPaths.includes(pathname) && pathname !== "/") {
       return NextResponse.redirect(new URL("/auth/login", request.url));
     }
     // Jika sudah di halaman publik, biarkan
