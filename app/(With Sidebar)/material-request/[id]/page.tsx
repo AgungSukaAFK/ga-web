@@ -49,7 +49,12 @@ import {
   User as Profile,
   Attachment, // Pastikan Attachment diimpor
 } from "@/type";
-import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDateFriendly,
+  cn,
+  formatDateWithTime,
+} from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -233,6 +238,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
     const updatedApprovals = JSON.parse(JSON.stringify(mr.approvals));
     updatedApprovals[approverIndex].status = decision;
+    updatedApprovals[approverIndex].processed_at = new Date().toISOString();
 
     let newMrStatus = mr.status;
     if (decision === "rejected") {
@@ -786,6 +792,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                       <p className="text-sm text-muted-foreground">
                         {approver.type}
                       </p>
+                      {approver.status !== "pending" &&
+                        approver.processed_at && (
+                          <p className="text-xs text-muted-foreground italic mt-1">
+                            {formatDateWithTime(approver.processed_at)}
+                          </p>
+                        )}
                     </div>
                     {getApprovalStatusBadge(
                       approver.status as "approved" | "rejected" | "pending"

@@ -47,8 +47,8 @@ import {
 } from "@/services/costCenterService";
 import { User } from "@supabase/supabase-js";
 import { CurrencyInput } from "@/components/ui/currency-input"; // <-- IMPORT KOMPONEN BARU
+import { LIMIT_OPTIONS } from "@/type/enum";
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 
 // --- Komponen Dialog untuk Create/Edit ---
 function CostCenterDialog({

@@ -36,8 +36,8 @@ import { Barang } from "@/type";
 import { Search, Plus, Edit, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 
 export function BarangClientContent() {
   const s = createClient();

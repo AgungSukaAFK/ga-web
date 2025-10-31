@@ -30,13 +30,13 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type
 import { formatDateFriendly } from "@/lib/utils";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
 // Tipe data spesifik untuk tabel ini
 interface UserForTable extends Profile {
   email: string; // Pastikan email ada
 }
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 const dataRole: string[] = ["admin", "approver", "requester", "user"];
 const dataLokasi: string[] = [
   "Head Office",

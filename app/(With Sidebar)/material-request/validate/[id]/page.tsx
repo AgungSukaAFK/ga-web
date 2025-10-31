@@ -265,6 +265,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       email: profile.email || "",
       role: profile.role || "user",
       department: profile.department || "General Affair",
+      processed_at: new Date().toISOString(),
     };
 
     const finalApprovals = [validationApproval, ...newApprovals];

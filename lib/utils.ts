@@ -144,3 +144,18 @@ export const formatDateFriendly = (date?: Date | string): string => {
     day: "numeric",
   });
 };
+
+// --- TAMBAHKAN FUNGSI BARU DI BAWAH INI ---
+export const formatDateWithTime = (date?: Date | string | null): string => {
+  if (!date) return "";
+  return (
+    new Date(date).toLocaleString("id-ID", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta", // Pastikan zona waktu WIB
+    }) + " WIB"
+  );
+};

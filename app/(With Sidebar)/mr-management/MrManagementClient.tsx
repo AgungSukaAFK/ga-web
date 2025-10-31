@@ -32,8 +32,8 @@ import * as XLSX from "xlsx";
 import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order diimpor
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Pastikan formatCurrency diimpor
 import { Badge } from "@/components/ui/badge";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 const STATUS_OPTIONS = [
   // Opsi status untuk filter
   "Pending Validation",

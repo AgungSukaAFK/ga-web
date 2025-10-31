@@ -32,8 +32,8 @@ import * as XLSX from "xlsx";
 import { PurchaseOrderListItem, Profile } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 const STATUS_OPTIONS = [
   "Pending Validation",
   "Pending Approval",

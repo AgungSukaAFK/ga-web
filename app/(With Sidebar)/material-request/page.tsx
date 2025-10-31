@@ -46,6 +46,7 @@ import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components"; // Path sudah dikoreksi
 import { formatDateFriendly } from "@/lib/utils"; // Menggunakan helper yang konsisten
 import { Badge } from "@/components/ui/badge";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
 // --- Tipe Data ---
 interface MaterialRequestListItem {
@@ -59,7 +60,6 @@ interface MaterialRequestListItem {
   users_with_profiles: { nama: string } | null; // Nama requester
 }
 
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 
 function MaterialRequestContent() {
   const s = createClient();
@@ -464,7 +464,7 @@ function MaterialRequestContent() {
         </div>
         <PaginationComponent
           currentPage={currentPage}
-          totalPages={totalItems / limit}
+          totalPages={Math.ceil(totalItems / limit)}
           limit={limit}
           basePath={pathname}
         />

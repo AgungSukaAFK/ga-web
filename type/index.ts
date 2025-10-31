@@ -10,6 +10,7 @@ export interface Approval {
   email: string;
   role: string;
   department: string;
+  processed_at?: string | null; // <-- TAMBAHKAN BARIS INI
 }
 
 export interface Order {

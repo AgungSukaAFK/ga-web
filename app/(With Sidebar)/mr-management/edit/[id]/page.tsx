@@ -481,6 +481,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     if (!mr) return;
     const updatedApprovals = [...mr.approvals];
     updatedApprovals[index].status = newStatus;
+    updatedApprovals[index].processed_at = new Date().toISOString();
     setMr({ ...mr, approvals: updatedApprovals });
   };
 

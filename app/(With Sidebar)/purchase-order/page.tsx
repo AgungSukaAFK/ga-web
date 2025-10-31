@@ -42,9 +42,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
 const ITEMS_PER_PAGE = 10;
-const LIMIT_OPTIONS = [10, 25, 50, 100];
 
 // ==================================================================
 // KOMPONEN ANAK YANG BERISI SEMUA LOGIKA
