@@ -83,11 +83,11 @@ export default function DokumentasiPage() {
             Pembaruan Alur Kerja Cost Center!
           </AlertTitle>
           <AlertDescription className="text-blue-600">
-            Sesuai pembaruan terbaru, **Requester (Pembuat MR) tidak lagi
-            memilih Cost Center**. Penentuan Cost Center kini menjadi tanggung
-            jawab **General Affair (GA)** pada saat proses validasi. Estimasi
-            Biaya MR juga sekarang dihitung otomatis berdasarkan total estimasi
-            harga per item.
+            Sesuai pembaruan terbaru, Requester (Pembuat MR) tidak lagi memilih
+            Cost Center. Penentuan Cost Center kini menjadi tanggung jawab
+            General Affair (GA) pada saat proses validasi. Estimasi Biaya MR
+            juga sekarang dihitung otomatis berdasarkan total estimasi harga per
+            item.
           </AlertDescription>
         </Alert>
       </Content>
@@ -110,26 +110,29 @@ export default function DokumentasiPage() {
                 baru.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
-                    Klik menu "Material Request" lalu "Buat MR Baru".
+                    Klik menu &quot;Material Request&quot; lalu &quot;Buat MR
+                    Baru&quot;.
                   </ListItem>
                   <ListItem>
                     Isi Kategori, Remarks (alasan), Due Date, dan Tujuan Site.
                   </ListItem>
                   <ListItem>
-                    Klik "Tambah Order Item" untuk memasukkan barang yang
-                    diminta.
+                    Klik &quot;Tambah Order Item&quot; untuk memasukkan barang
+                    yang diminta.
                   </ListItem>
                   <ListItem>
-                    **PENTING:** Setiap item **wajib** diisi{" "}
+                    PENTING: Setiap item wajib diisi{" "}
                     <strong>Estimasi Harga</strong>. Total Estimasi Biaya MR
                     akan terhitung otomatis (auto-sum).
                   </ListItem>
                   <ListItem>
-                    Lampirkan file pendukung jika Kategori MR adalah "Replace",
-                    "Fix & Repair", atau "Upgrade".
+                    Lampirkan file pendukung jika Kategori MR adalah
+                    &quot;Replace&quot;, &quot;Fix & Repair&quot;, atau
+                    &quot;Upgrade&quot;.
                   </ListItem>
                   <ListItem>
-                    Klik "Buat Material Request". Status MR akan menjadi{" "}
+                    Klik &quot;Buat Material Request&quot;. Status MR akan
+                    menjadi{" "}
                     <Badge variant="secondary">Pending Validation</Badge>.
                   </ListItem>
                 </ul>
@@ -142,26 +145,28 @@ export default function DokumentasiPage() {
                 GA me-review semua MR yang masuk untuk memastikan kelengkapan
                 dan menentukan alur persetujuan.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
-                  <ListItem>GA membuka menu "Approval & Validation".</ListItem>
+                  <ListItem>
+                    GA membuka menu &quot;Approval & Validation&quot;.
+                  </ListItem>
                   <ListItem>
                     GA memilih MR yang berstatus{" "}
                     <Badge variant="secondary">Pending Validation</Badge>.
                   </ListItem>
                   <ListItem>
-                    **TUGAS WAJIB GA:** Memilih **Cost Center** yang akan
-                    menanggung biaya MR ini. Sisa budget akan terlihat saat
-                    pemilihan.
+                    TUGAS WAJIB GA: Memilih Cost Center yang akan menanggung
+                    biaya MR ini. Sisa budget akan terlihat saat pemilihan.
                   </ListItem>
                   <ListItem>
-                    GA memilih "Template Approval" yang sesuai (misal: "Untuk
-                    Dept. Produksi").
+                    GA memilih &quot;Template Approval&quot; yang sesuai (misal:
+                    &quot;Untuk Dept. Produksi&quot;).
                   </ListItem>
                   <ListItem>
                     GA dapat menyesuaikan jalur approval (menambah/mengurangi
                     approver) jika perlu.
                   </ListItem>
                   <ListItem>
-                    Klik "Validasi & Mulai Approval". Status MR berubah menjadi{" "}
+                    Klik &quot;Validasi & Mulai Approval&quot;. Status MR
+                    berubah menjadi{" "}
                     <Badge variant="secondary">Pending Approval</Badge>.
                   </ListItem>
                 </ul>
@@ -176,15 +181,15 @@ export default function DokumentasiPage() {
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
                     Approver yang mendapat giliran akan melihat MR di halaman
-                    "Approval & Validation".
+                    &quot;Approval & Validation&quot;.
                   </ListItem>
                   <ListItem>
-                    Approver dapat menyetujui ("Approve") atau menolak
-                    ("Reject") MR.
+                    Approver dapat menyetujui (&quot;Approve&quot;) atau menolak
+                    (&quot;Reject&quot;) MR.
                   </ListItem>
                   <ListItem>
-                    Requester dan Approver dapat menggunakan kolom **Diskusi**
-                    untuk tanya jawab terkait MR tersebut.
+                    Requester dan Approver dapat menggunakan kolom Diskusi untuk
+                    tanya jawab terkait MR tersebut.
                   </ListItem>
                   <ListItem>
                     Jika semua approver telah menyetujui, status MR berubah
@@ -204,7 +209,7 @@ export default function DokumentasiPage() {
                   <ListItem>
                     Saat status MR berubah menjadi{" "}
                     <Badge className="bg-blue-500 text-white">Waiting PO</Badge>
-                    , sistem akan otomatis **mengurangi**{" "}
+                    , sistem akan otomatis mengurangi{" "}
                     <code>current_budget</code> pada Cost Center yang telah
                     dipilih GA.
                   </ListItem>
@@ -212,8 +217,8 @@ export default function DokumentasiPage() {
                     Besar pengurangan budget = Total Estimasi Biaya MR.
                   </ListItem>
                   <ListItem>
-                    Semua transaksi ini dicatat di "Cost Center Management"
-                    (hanya bisa diakses Admin).
+                    Semua transaksi ini dicatat di &quot;Cost Center
+                    Management&quot; (hanya bisa diakses Admin).
                   </ListItem>
                 </ul>
               </Step>
@@ -234,7 +239,9 @@ export default function DokumentasiPage() {
               <Step icon={Edit} title="1. Pembuatan PO (Oleh Purchasing)">
                 Setelah MR disetujui, Purchasing akan membuat PO.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
-                  <ListItem>Purchasing membuka menu "Purchase Order".</ListItem>
+                  <ListItem>
+                    Purchasing membuka menu &quot;Purchase Order&quot;.
+                  </ListItem>
                   <ListItem>
                     MR yang siap diproses akan muncul di daftar{" "}
                     <Badge className="bg-blue-500 text-white">Waiting PO</Badge>
@@ -244,14 +251,15 @@ export default function DokumentasiPage() {
                     Purchasing memilih MR dan mulai membuat PO baru.
                   </ListItem>
                   <ListItem>
-                    Purchasing mencari barang di Master Data ("Barang") dan
-                    memasukkan **harga beli final** dari vendor.
+                    Purchasing mencari barang di Master Data
+                    (&quot;Barang&quot;) dan memasukkan harga beli final dari
+                    vendor.
                   </ListItem>
                   <ListItem>
                     Mengisi detail Vendor, Payment Term, dan Pajak (PPN).
                   </ListItem>
                   <ListItem>
-                    Klik "Ajukan". Status PO akan menjadi{" "}
+                    Klik &quot;Ajukan&quot;. Status PO akan menjadi{" "}
                     <Badge variant="secondary">Pending Validation</Badge>.
                   </ListItem>
                 </ul>
@@ -264,15 +272,15 @@ export default function DokumentasiPage() {
                 GA kembali bertugas menentukan jalur approval untuk PO.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
-                    GA membuka "Approval & Validation", memilih PO yang baru
-                    dibuat.
+                    GA membuka &quot;Approval & Validation&quot;, memilih PO
+                    yang baru dibuat.
                   </ListItem>
                   <ListItem>
-                    GA menerapkan "Template Approval" yang sesuai (misal:
-                    "Approval PO Finance").
+                    GA menerapkan &quot;Template Approval&quot; yang sesuai
+                    (misal: &quot;Approval PO Finance&quot;).
                   </ListItem>
                   <ListItem>
-                    Klik "Validasi". Status PO berubah menjadi{" "}
+                    Klik &quot;Validasi&quot;. Status PO berubah menjadi{" "}
                     <Badge variant="secondary">Pending Approval</Badge>.
                   </ListItem>
                 </ul>
@@ -297,7 +305,7 @@ export default function DokumentasiPage() {
                 awal.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
-                    **Requester (pembuat MR)** membuka halaman detail PO yang
+                    Requester (pembuat MR) membuka halaman detail PO yang
                     statusnya <Badge variant="secondary">Pending BAST</Badge>.
                   </ListItem>
                   <ListItem>
@@ -340,30 +348,30 @@ export default function DokumentasiPage() {
                 <Badge>Approver</Badge>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Manager, GM, Direksi. Bertanggung jawab memantau antrian
-                  "Approval & Validation" dan memberikan persetujuan atau
-                  penolakan tepat waktu.
+                  &quot;Approval & Validation&quot; dan memberikan persetujuan
+                  atau penolakan tepat waktu.
                 </p>
               </div>
               <div>
                 <Badge>General Affair (GA)</Badge>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Bertindak sebagai **Validator Pusat**. Meninjau semua MR & PO,
-                  menentukan **Cost Center** untuk setiap MR, dan menerapkan
-                  jalur approval (template) untuk MR & PO.
+                  Bertindak sebagai Validator Pusat. Meninjau semua MR & PO,
+                  menentukan Cost Center untuk setiap MR, dan menerapkan jalur
+                  approval (template) untuk MR & PO.
                 </p>
               </div>
               <div>
                 <Badge>Purchasing</Badge>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Bertanggung jawab mengeksekusi MR yang berstatus "Waiting PO".
-                  Membuat PO, memilih barang dari master data, menginput harga
-                  final, dan mengelola data master barang.
+                  Bertanggung jawab mengeksekusi MR yang berstatus &quot;Waiting
+                  PO&quot;. Membuat PO, memilih barang dari master data,
+                  menginput harga final, dan mengelola data master barang.
                 </p>
               </div>
               <div>
                 <Badge variant="destructive">Admin</Badge>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  **Super User**. Mengelola akun pengguna (User Management),
+                  Super User. Mengelola akun pengguna (User Management),
                   mengelola budget (Cost Center Management), dan memiliki hak
                   akses penuh untuk memperbaiki/mengedit semua data MR dan PO
                   jika terjadi kesalahan.
@@ -393,13 +401,14 @@ export default function DokumentasiPage() {
               </p>
 
               <h5 className="font-semibold">
-                T: Mengapa input "Estimasi Biaya" saya nonaktif (disabled)?
+                T: Mengapa input &quot;Estimasi Biaya&quot; saya nonaktif
+                (disabled)?
               </h5>
               <p className="text-sm text-muted-foreground -mt-2">
                 J: Total Estimasi Biaya kini dihitung otomatis dari{" "}
                 <strong>(Qty x Estimasi Harga)</strong> pada setiap item yang
-                Anda tambahkan di "Order Items". Anda tidak perlu mengisinya
-                secara manual.
+                Anda tambahkan di &quot;Order Items&quot;. Anda tidak perlu
+                mengisinya secara manual.
               </p>
 
               <h5 className="font-semibold">
@@ -408,8 +417,8 @@ export default function DokumentasiPage() {
               <p className="text-sm text-muted-foreground -mt-2">
                 J: Budget berkurang secara otomatis oleh sistem{" "}
                 <strong>setelah semua approver menyetujui MR Anda</strong>,
-                yaitu saat status MR berubah dari "Pending Approval" menjadi
-                "Waiting PO".
+                yaitu saat status MR berubah dari &quot;Pending Approval&quot;
+                menjadi &quot;Waiting PO&quot;.
               </p>
 
               <h5 className="font-semibold">
@@ -418,8 +427,8 @@ export default function DokumentasiPage() {
               </h5>
               <p className="text-sm text-muted-foreground -mt-2">
                 J: Setelah divalidasi, GA tidak bisa mengubah Cost Center. Harap
-                segera hubungi **Admin** untuk memperbaikinya melalui menu "MR
-                Management".
+                segera hubungi Admin untuk memperbaikinya melalui menu &quot;MR
+                Management&quot;.
               </p>
 
               <h5 className="font-semibold">
@@ -429,9 +438,9 @@ export default function DokumentasiPage() {
               <p className="text-sm text-muted-foreground -mt-2">
                 J: Pastikan status PO sudah{" "}
                 <Badge variant="secondary">Pending BAST</Badge>. Jika statusnya
-                masih "Pending Approval", artinya PO tersebut belum disetujui
-                oleh Finance/Direksi. Hanya Requester asli yang membuat MR yang
-                dapat mengunggah BAST.
+                masih &quot;Pending Approval&quot;, artinya PO tersebut belum
+                disetujui oleh Finance/Direksi. Hanya Requester asli yang
+                membuat MR yang dapat mengunggah BAST.
               </p>
             </AccordionContent>
           </AccordionItem>
