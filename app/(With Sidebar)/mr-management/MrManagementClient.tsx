@@ -198,7 +198,7 @@ export function MrManagementClientContent() {
     try {
       // 1. Ambil kolom 'orders' (JSON) dari database
       let query = s.from("material_requests").select(`
-          kode_mr, kategori, department, status, remarks, cost_estimation, company_code, created_at, due_date,
+          kode_mr, kategori, department, status, remarks, cost_estimation, tujuan_site, company_code, created_at, due_date,
           orders, 
           users_with_profiles!userid (nama)
         `);
@@ -233,6 +233,7 @@ export function MrManagementClientContent() {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
           Departemen: mr.department,
+          Tujuan: mr.tujuan_site,
           Status: mr.status,
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
