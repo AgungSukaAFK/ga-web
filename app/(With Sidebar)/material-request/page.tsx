@@ -47,6 +47,7 @@ import { PaginationComponent } from "@/components/pagination-components"; // Pat
 import { formatDateFriendly } from "@/lib/utils"; // Menggunakan helper yang konsisten
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS } from "@/type/enum";
+import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
 interface MaterialRequestListItem {
@@ -55,11 +56,57 @@ interface MaterialRequestListItem {
   kategori: string;
   status: string;
   department: string;
+  tujuan_site: string; // Ditambahkan
   created_at: Date;
   due_date?: Date;
   users_with_profiles: { nama: string } | null; // Nama requester
 }
 
+// --- Konstanta untuk Filter ---
+const dataDepartment: ComboboxData = [
+  { label: "Human Resources", value: "Human Resources" },
+  { label: "General Affair", value: "General Affair" },
+  { label: "Marketing", value: "Marketing" },
+  { label: "Produksi", value: "Produksi" },
+  { label: "K3", value: "K3" },
+  { label: "Finance", value: "Finance" },
+  { label: "IT", value: "IT" },
+  { label: "Logistik", value: "Logistik" },
+  { label: "Purchasing", value: "Purchasing" },
+  { label: "Warehouse", value: "Warehouse" },
+  { label: "Service", value: "Service" },
+  { label: "General Manager", value: "General Manager" },
+  { label: "Executive Manager", value: "Executive Manager" },
+  { label: "Boards of Director", value: "Boards of Director" },
+];
+
+const dataLokasi: ComboboxData = [
+  { label: "Head Office", value: "Head Office" },
+  { label: "Tanjung Enim", value: "Tanjung Enim" },
+  { label: "Balikpapan", value: "Balikpapan" },
+  { label: "Site BA", value: "Site BA" },
+  { label: "Site TAL", value: "Site TAL" },
+  { label: "Site MIP", value: "Site MIP" },
+  { label: "Site MIFA", value: "Site MIFA" },
+  { label: "Site BIB", value: "Site BIB" },
+  { label: "Site AMI", value: "Site AMI" },
+  { label: "Site Tabang", value: "Site Tabang" },
+];
+
+const STATUS_OPTIONS = [
+  "Pending Validation",
+  "Pending Approval",
+  "Waiting PO",
+  "Completed",
+  "Rejected",
+];
+
+const SORT_OPTIONS = [
+  { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
+  { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
+  { label: "Due Date (Mendesak)", value: "due_date.asc" },
+  { label: "Due Date (Lama)", value: "due_date.desc" },
+];
 
 function MaterialRequestContent() {
   const s = createClient();
@@ -84,6 +131,10 @@ function MaterialRequestContent() {
   const statusFilter = searchParams.get("status") || "";
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
+  // REVISI: State filter dan sort baru
+  const departmentFilter = searchParams.get("department") || "";
+  const siteFilter = searchParams.get("tujuan_site") || "";
+  const sortFilter = searchParams.get("sort") || "created_at.desc"; // Default sort
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -141,7 +192,8 @@ function MaterialRequestContent() {
       try {
         let query = s.from("material_requests").select(
           `
-            id, kode_mr, kategori, status, department, created_at, due_date,
+            id, kode_mr, kategori, status, department, created_at, due_date, 
+            tujuan_site, 
             users_with_profiles!userid (nama)
           `,
           { count: "exact" }
@@ -157,15 +209,20 @@ function MaterialRequestContent() {
         if (endDate)
           query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
-        // 4. REVISI: Terapkan filter berdasarkan ROLE
-        // Jika user adalah requester, hanya tampilkan MR miliknya
+        // REVISI: Terapkan filter baru
+        if (departmentFilter) query = query.eq("department", departmentFilter);
+        if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
+        // 4. Terapkan filter berdasarkan ROLE
         if (userProfile.role === "requester") {
           query = query.eq("userid", user.id);
         }
-        // Jika admin, approver, GA, dll (selain requester), tidak perlu filter userid
-        // RLS perusahaan akan otomatis diterapkan oleh Supabase
 
-        query = query.order("created_at", { ascending: false }).range(from, to);
+        // REVISI: Terapkan sorting
+        const [sortBy, sortOrder] = sortFilter.split(".");
+        query = query
+          .order(sortBy, { ascending: sortOrder === "asc" })
+          .range(from, to);
 
         const { data, error, count } = await query;
         if (error) throw error;
@@ -188,7 +245,18 @@ function MaterialRequestContent() {
     };
 
     fetchData();
-  }, [s, currentPage, limit, searchTerm, statusFilter, startDate, endDate]);
+  }, [
+    s,
+    currentPage,
+    limit,
+    searchTerm,
+    statusFilter,
+    startDate,
+    endDate,
+    departmentFilter, // REVISI: Tambah dependency
+    siteFilter, // REVISI: Tambah dependency
+    sortFilter, // REVISI: Tambah dependency
+  ]);
 
   // Efek debounce pencarian
   useEffect(() => {
@@ -222,6 +290,7 @@ function MaterialRequestContent() {
     try {
       let query = s.from("material_requests").select(`
             kode_mr, kategori, department, status, remarks, cost_estimation, created_at, due_date,
+            tujuan_site, // <-- REVISI: Tambahkan
             users_with_profiles!userid (nama)
         `);
 
@@ -234,13 +303,19 @@ function MaterialRequestContent() {
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
-      // REVISI: Terapkan filter role yang sama seperti di fetch utama
+      // REVISI: Terapkan filter baru
+      if (departmentFilter) query = query.eq("department", departmentFilter);
+      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
+      // REVISI: Terapkan filter role
       if (currentUser.role === "requester") {
         query = query.eq("userid", currentUser.id);
       }
 
-      const { data, error } = await query.order("created_at", {
-        ascending: false,
+      // REVISI: Terapkan sorting
+      const [sortBy, sortOrder] = sortFilter.split(".");
+      const { data, error } = await query.order(sortBy, {
+        ascending: sortOrder === "asc",
       });
       if (error) throw error;
 
@@ -248,6 +323,7 @@ function MaterialRequestContent() {
         "Kode MR": mr.kode_mr,
         Kategori: mr.kategori,
         Departemen: mr.department,
+        "Tujuan Site": mr.tujuan_site, // <-- REVISI: Tambahkan
         Status: mr.status,
         Requester: mr.users_with_profiles?.nama || "N/A",
         Remarks: mr.remarks,
@@ -277,7 +353,6 @@ function MaterialRequestContent() {
       title="Daftar Material Request"
       description="Kelola seluruh data Material Request"
       cardAction={
-        // Tombol Buat MR sekarang juga dicek berdasarkan role
         currentUser &&
         (currentUser.role === "requester" || currentUser.role === "admin") && (
           <Button asChild>
@@ -321,7 +396,8 @@ function MaterialRequestContent() {
         </div>
 
         <div className="p-4 border rounded-lg bg-muted/50">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {/* REVISI: Grid layout diubah untuk 5 filter */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
               <Select
@@ -337,18 +413,65 @@ function MaterialRequestContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Status</SelectItem>
-                  <SelectItem value="Pending Validation">
-                    Pending Validation
-                  </SelectItem>
-                  <SelectItem value="Pending Approval">
-                    Pending Approval
-                  </SelectItem>
-                  <SelectItem value="Waiting PO">Waiting PO</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Rejected">Rejected</SelectItem>
+                  {STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* REVISI: Filter Departemen */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Departemen</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    department: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={departmentFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter departemen..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Departemen</SelectItem>
+                  {dataDepartment.map((dept) => (
+                    <SelectItem key={dept.value} value={dept.value}>
+                      {dept.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* REVISI: Filter Tujuan Site */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Tujuan Site</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    tujuan_site: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={siteFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter site..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Site</SelectItem>
+                  {dataLokasi.map((lok) => (
+                    <SelectItem key={lok.value} value={lok.value}>
+                      {lok.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Dari Tanggal</label>
               <Input
@@ -384,13 +507,15 @@ function MaterialRequestContent() {
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
-        <Table className="min-w-[1000px]">
+        <Table className="min-w-[1200px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead>Departemen</TableHead>
+              <TableHead>Tujuan Site</TableHead>
+              {/* REVISI: Kolom baru */}
               <TableHead>Requester</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
@@ -401,7 +526,8 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                {/* REVISI: colSpan + 1 */}
+                <TableCell colSpan={10} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -417,6 +543,8 @@ function MaterialRequestContent() {
                   <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
                   <TableCell>{mr.kategori}</TableCell>
                   <TableCell>{mr.department}</TableCell>
+                  <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
+                  {/* REVISI: Cell baru */}
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
@@ -432,7 +560,8 @@ function MaterialRequestContent() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                {/* REVISI: colSpan + 1 */}
+                <TableCell colSpan={10} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
               </TableRow>
@@ -443,25 +572,49 @@ function MaterialRequestContent() {
 
       {/* --- Pagination & Limit Section --- */}
       <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(value) => handleFilterChange({ limit: value })}
-          >
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {totalItems} hasil.</span>
+        {/* REVISI: Bungkus limit dan sort dalam flex */}
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <Select
+              value={String(limit)}
+              onValueChange={(value) => handleFilterChange({ limit: value })}
+            >
+              <SelectTrigger className="w-[70px]">
+                <SelectValue placeholder={limit} />
+              </SelectTrigger>
+              <SelectContent>
+                {LIMIT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span>dari {totalItems} hasil.</span>
+          </div>
+
+          {/* REVISI: Tambahkan Sortir */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Urutkan</span>
+            <Select
+              value={sortFilter}
+              onValueChange={(value) => handleFilterChange({ sort: value })}
+            >
+              <SelectTrigger className="w-full sm:w-[240px]">
+                <SelectValue placeholder="Urutkan berdasarkan..." />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
         <PaginationComponent
           currentPage={currentPage}
           totalPages={Math.ceil(totalItems / limit)}

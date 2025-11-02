@@ -35,7 +35,7 @@ import {
   AlertTriangle,
   Loader2,
   Send,
-  Trash2,
+  Trash2, // REVISI: Impor ikon
   CircleUser,
   Building,
   Tag,
@@ -44,7 +44,8 @@ import {
   Truck,
   Building2,
   Link as LinkIcon,
-  ExternalLink, // Impor ikon
+  ExternalLink,
+  Paperclip, // REVISI: Impor ikon
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -55,11 +56,12 @@ import {
   POItem,
   PurchaseOrderPayload,
   Order,
-} from "@/type"; // Impor Order
+  Attachment, // REVISI: Impor tipe Attachment
+} from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CurrencyInput } from "@/components/ui/currency-input"; // Impor CurrencyInput
+import { CurrencyInput } from "@/components/ui/currency-input";
 
 // Tipe data MR yang diambil untuk halaman ini (termasuk relasi)
 type MRData = MaterialRequest & {
@@ -70,11 +72,16 @@ function CreatePOPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mrId = searchParams.get("mrId");
+  const supabase = createClient(); // REVISI: Definisikan supabase di scope atas
 
   const [mrData, setMrData] = useState<MRData | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // REVISI: Tambahkan state uploading
+  const [isUploadingPO, setIsUploadingPO] = useState(false);
+  const [isUploadingFinance, setIsUploadingFinance] = useState(false);
 
   const [paymentTermType, setPaymentTermType] = useState("Termin");
   const [paymentTermDays, setPaymentTermDays] = useState("30");
@@ -96,6 +103,7 @@ function CreatePOPageContent() {
     shipping_address: "Kantor Pusat GMI, Jakarta",
     notes: "",
     vendor_details: { name: "", address: "", contact_person: "" },
+    attachments: [], // REVISI: Inisialisasi sebagai array kosong
   });
 
   const [taxMode, setTaxMode] = useState<"percentage" | "manual">("percentage");
@@ -110,7 +118,6 @@ function CreatePOPageContent() {
           throw new Error("ID Material Request tidak ditemukan di URL.");
         }
 
-        const supabase = createClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -149,6 +156,7 @@ function CreatePOPageContent() {
           kode_po: newPoCode,
           items: [],
           shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
+          attachments: [], // Pastikan attachments di-reset
         }));
       } catch (err: any) {
         toast.error("Gagal memuat data", { description: err.message });
@@ -160,7 +168,7 @@ function CreatePOPageContent() {
     initializeForm();
   }, [mrId]);
 
-  // --- REVISI: Logika Kalkulasi Pajak/Total ---
+  // Logika Kalkulasi Pajak/Total
   useEffect(() => {
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
@@ -220,7 +228,7 @@ function CreatePOPageContent() {
     poForm.discount,
     poForm.postage,
   ]);
-  // --- AKHIR REVISI LOGIKA ---
+  // --- Akhir Logika Kalkulasi ---
 
   useEffect(() => {
     if (paymentTermType === "Cash") {
@@ -261,7 +269,7 @@ function CreatePOPageContent() {
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: barang.vendor || "", // Ambil vendor dari master barang
+      vendor_name: barang.vendor || "",
     };
     setPoForm((prev) => ({ ...prev, items: [...prev.items, newItem] }));
   };
@@ -287,6 +295,12 @@ function CreatePOPageContent() {
       return;
     }
 
+    // REVISI: Cek apakah kode PO sudah ter-generate
+    if (poForm.kode_po === "Generating...") {
+      toast.error("Kode PO belum selesai dibuat, harap tunggu sebentar.");
+      return;
+    }
+
     setLoading(true);
     const toastId = toast.loading("Mengajukan PO untuk validasi...");
 
@@ -296,6 +310,7 @@ function CreatePOPageContent() {
     }
 
     try {
+      // poForm sudah berisi array attachments
       await createPurchaseOrder(
         poForm,
         parseInt(mrId),
@@ -331,7 +346,81 @@ function CreatePOPageContent() {
     }));
   };
 
-  if (loading)
+  // --- REVISI: Fungsi Upload Attachment (adaptasi dari edit page) ---
+  const handleAttachmentUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "po" | "finance"
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Pastikan kode PO sudah ada
+    if (poForm.kode_po === "Generating...") {
+      toast.error("Kode PO belum siap, tunggu sebentar.");
+      return;
+    }
+
+    const setIsLoading =
+      type === "po" ? setIsUploadingPO : setIsUploadingFinance;
+    setIsLoading(true);
+
+    const toastId = toast.loading(
+      `Mengunggah lampiran ${type.toUpperCase()}...`
+    );
+    const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("mr") // Pastikan 'mr' adalah bucket yang benar
+      .upload(filePath, file);
+
+    if (uploadError) {
+      toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
+        id: toastId,
+        description: uploadError.message,
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    const newAttachment: Attachment = {
+      name: file.name,
+      url: uploadData.path,
+      type: type,
+    };
+
+    setPoForm((prev) => ({
+      ...prev,
+      attachments: [...(prev.attachments || []), newAttachment],
+    }));
+
+    toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
+      id: toastId,
+    });
+    setIsLoading(false);
+    e.target.value = ""; // Reset input file
+  };
+
+  // --- REVISI: Fungsi Remove Attachment (adaptasi dari edit page) ---
+  const removeAttachment = (indexToRemove: number) => {
+    const attachmentToRemove = poForm.attachments?.[indexToRemove];
+    if (!attachmentToRemove) return;
+
+    // Hapus dari state
+    setPoForm((prev) => ({
+      ...prev,
+      attachments: (prev.attachments || []).filter(
+        (_, index) => index !== indexToRemove
+      ),
+    }));
+
+    // Hapus dari storage
+    supabase.storage.from("mr").remove([attachmentToRemove.url]);
+
+    toast.info(`Lampiran "${attachmentToRemove.name}" dihapus.`);
+  };
+
+  if (loading && !mrData)
+    // Tampilkan skeleton hanya jika MR data belum ada
     return (
       <div className="col-span-12">
         <Skeleton className="h-[80vh] w-full" />
@@ -350,6 +439,12 @@ function CreatePOPageContent() {
     0
   );
 
+  // REVISI: Filter attachment untuk UI
+  const poAttachments =
+    poForm.attachments?.filter((att) => !att.type || att.type === "po") || [];
+  const financeAttachments =
+    poForm.attachments?.filter((att) => att.type === "finance") || [];
+
   return (
     <>
       <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
@@ -362,7 +457,10 @@ function CreatePOPageContent() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || isUploadingPO || isUploadingFinance} // REVISI: Cek uploading
+          >
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -374,6 +472,7 @@ function CreatePOPageContent() {
       </div>
 
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+        {/* ... (Konten Info MR dan Item MR tetap sama) ... */}
         {mrData && (
           <Content title={`Informasi Referensi dari ${mrData.kode_mr}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -422,7 +521,6 @@ function CreatePOPageContent() {
           </Content>
         )}
 
-        {/* --- REVISI: Tabel Item Referensi MR --- */}
         {mrData && (
           <Content title="Item Referensi dari MR">
             <div className="rounded-md border overflow-x-auto">
@@ -473,7 +571,6 @@ function CreatePOPageContent() {
             </div>
           </Content>
         )}
-        {/* --- AKHIR REVISI --- */}
 
         <Content title="Input Item Purchase Order (Berdasarkan Master Barang)">
           <div className="overflow-x-auto">
@@ -509,7 +606,6 @@ function CreatePOPageContent() {
                         min="1"
                       />
                     </TableCell>
-                    {/* --- REVISI: Gunakan CurrencyInput untuk Harga --- */}
                     <TableCell>
                       <CurrencyInput
                         value={item.price}
@@ -552,7 +648,6 @@ function CreatePOPageContent() {
 
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor Utama & Pengiriman">
-          {/* ... (Konten Vendor & Pengiriman tetap sama) ... */}
           <div className="space-y-4">
             {" "}
             <div>
@@ -644,7 +739,117 @@ function CreatePOPageContent() {
           </div>
         </Content>
 
-        {/* --- REVISI: Bagian Ringkasan Biaya dengan CurrencyInput --- */}
+        {/* --- REVISI: Tambahkan Blok Lampiran PO --- */}
+        <Content title="Lampiran PO">
+          <div className="space-y-4">
+            <Label htmlFor="po-attachment-upload">
+              Tambah Lampiran PO (Mis: Penawaran)
+            </Label>
+            <Input
+              id="po-attachment-upload"
+              type="file"
+              onChange={(e) => handleAttachmentUpload(e, "po")}
+              disabled={isUploadingPO || isUploadingFinance || loading}
+            />
+            {isUploadingPO && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+              </div>
+            )}
+            {poAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {poAttachments.map((att, index) => {
+                  const originalIndex =
+                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
+                    -1;
+                  return (
+                    <li
+                      key={originalIndex}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <span className="flex items-center gap-2 truncate min-w-0">
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => removeAttachment(originalIndex)}
+                        disabled={
+                          loading || isUploadingPO || isUploadingFinance
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                Belum ada lampiran PO.
+              </p>
+            )}
+          </div>
+        </Content>
+
+        {/* --- REVISI: Tambahkan Blok Lampiran Finance --- */}
+        <Content title="Lampiran Finance">
+          <div className="space-y-4">
+            <Label htmlFor="finance-attachment-upload">
+              Tambah Lampiran Finance (Mis: Invoice)
+            </Label>
+            <Input
+              id="finance-attachment-upload"
+              type="file"
+              onChange={(e) => handleAttachmentUpload(e, "finance")}
+              disabled={isUploadingPO || isUploadingFinance || loading}
+            />
+            {isUploadingFinance && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+              </div>
+            )}
+            {financeAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {financeAttachments.map((att, index) => {
+                  const originalIndex =
+                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
+                    -1;
+                  return (
+                    <li
+                      key={originalIndex}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <span className="flex items-center gap-2 truncate min-w-0">
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => removeAttachment(originalIndex)}
+                        disabled={
+                          loading || isUploadingPO || isUploadingFinance
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                Belum ada lampiran finance.
+              </p>
+            )}
+          </div>
+        </Content>
+
+        {/* --- Blok Ringkasan Biaya (Tetap Sama) --- */}
         <Content title="Ringkasan Biaya">
           <div className="space-y-4">
             <div className="flex justify-between">
@@ -759,7 +964,7 @@ function CreatePOPageContent() {
   );
 }
 
-// Komponen helper InfoItem tetap sama
+// Komponen helper InfoItem
 const InfoItem = ({
   icon: Icon,
   label,

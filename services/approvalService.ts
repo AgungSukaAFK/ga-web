@@ -30,7 +30,10 @@ export const fetchPendingValidationMRs = async (): Promise<
 > => {
   const { data, error } = await supabase
     .from("material_requests")
-    .select("*, users_with_profiles!userid(nama)")
+    // REVISI: Tambahkan join ke cost_centers
+    .select(
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)"
+    )
     .eq("status", "Pending Validation")
     .order("created_at", { ascending: false });
 
@@ -50,7 +53,10 @@ export const fetchMyPendingMrApprovals = async (
 ): Promise<MaterialRequest[]> => {
   const { data: allPendingMRs, error } = await supabase
     .from("material_requests")
-    .select("*, users_with_profiles!userid(nama)")
+    // REVISI: Tambahkan join ke cost_centers
+    .select(
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)"
+    )
     .eq("status", "Pending Approval");
 
   if (error) {
@@ -62,18 +68,22 @@ export const fetchMyPendingMrApprovals = async (
 
   const myTurnMRs = allPendingMRs.filter((mr) => {
     if (!mr.approvals) return false; // Pengaman jika approvals null
-    const myApproval = mr.approvals.find(
+
+    // REVISI: Logika findIndex diubah untuk mencari task pending pertama
+    const myApprovalIndex = mr.approvals.findIndex(
       (app: any) => app.userid === userId && app.status === "pending"
     );
-    if (!myApproval) {
-      return false;
+
+    if (myApprovalIndex === -1) {
+      return false; // User tidak punya task pending di MR ini
     }
-    const myIndex = mr.approvals.findIndex((app: any) => app.userid === userId);
-    if (myIndex === 0) {
-      return true;
-    }
-    const previousApprovers = mr.approvals.slice(0, myIndex);
-    return previousApprovers.every((app: any) => app.status === "approved");
+
+    // Cek apakah semua approver SEBELUM task pending ini sudah 'approved'
+    const isMyTurn = mr.approvals
+      .slice(0, myApprovalIndex)
+      .every((app: any) => app.status === "approved");
+
+    return isMyTurn;
   });
 
   return myTurnMRs as MaterialRequest[];
@@ -83,6 +93,7 @@ export const fetchMyPendingMrApprovals = async (
  * Mengambil semua Purchase Order berstatus 'Draft' yang dibuat oleh user tertentu.
  */
 export const fetchMyDraftPOs = async (userId: string) => {
+  // ... (fungsi ini tetap sama)
   const { data, error } = await supabase
     .from("purchase_orders")
     .select("id, kode_po, status, total_price, created_at")
@@ -105,6 +116,7 @@ export const fetchMyDraftPOs = async (userId: string) => {
 export const fetchMyPendingPoApprovals = async (
   userId: string
 ): Promise<PurchaseOrder[]> => {
+  // ... (fungsi ini tetap sama)
   const { data: allPendingPOs, error } = await supabase
     .from("purchase_orders")
     .select(
@@ -122,18 +134,22 @@ export const fetchMyPendingPoApprovals = async (
   // Filter di sisi klien
   const myTurnPOs = allPendingPOs.filter((po) => {
     if (!po.approvals) return false; // Pengaman jika approvals null
-    const myApproval = po.approvals.find(
+
+    // REVISI: Logika findIndex diubah untuk mencari task pending pertama
+    const myApprovalIndex = po.approvals.findIndex(
       (app: any) => app.userid === userId && app.status === "pending"
     );
-    if (!myApproval) {
-      return false;
+
+    if (myApprovalIndex === -1) {
+      return false; // User tidak punya task pending di PO ini
     }
-    const myIndex = po.approvals.findIndex((app: any) => app.userid === userId);
-    if (myIndex === 0) {
-      return true;
-    }
-    const previousApprovers = po.approvals.slice(0, myIndex);
-    return previousApprovers.every((app: any) => app.status === "approved");
+
+    // Cek apakah semua approver SEBELUM task pending ini sudah 'approved'
+    const isMyTurn = po.approvals
+      .slice(0, myApprovalIndex)
+      .every((app: any) => app.status === "approved");
+
+    return isMyTurn;
   });
 
   return myTurnPOs as PurchaseOrder[];

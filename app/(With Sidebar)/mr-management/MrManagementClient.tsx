@@ -29,10 +29,11 @@ import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order diimpor
+import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order dan ComboboxData diimpor
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Pastikan formatCurrency diimpor
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS } from "@/type/enum";
+import { ComboboxData } from "@/components/combobox";
 
 const STATUS_OPTIONS = [
   // Opsi status untuk filter
@@ -41,6 +42,44 @@ const STATUS_OPTIONS = [
   "Waiting PO",
   "Completed",
   "Rejected",
+];
+
+// --- Konstanta untuk Filter ---
+const dataDepartment: ComboboxData = [
+  { label: "Human Resources", value: "Human Resources" },
+  { label: "General Affair", value: "General Affair" },
+  { label: "Marketing", value: "Marketing" },
+  { label: "Produksi", value: "Produksi" },
+  { label: "K3", value: "K3" },
+  { label: "Finance", value: "Finance" },
+  { label: "IT", value: "IT" },
+  { label: "Logistik", value: "Logistik" },
+  { label: "Purchasing", value: "Purchasing" },
+  { label: "Warehouse", value: "Warehouse" },
+  { label: "Service", value: "Service" },
+  { label: "General Manager", value: "General Manager" },
+  { label: "Executive Manager", value: "Executive Manager" },
+  { label: "Boards of Director", value: "Boards of Director" },
+];
+
+const dataLokasi: ComboboxData = [
+  { label: "Head Office", value: "Head Office" },
+  { label: "Tanjung Enim", value: "Tanjung Enim" },
+  { label: "Balikpapan", value: "Balikpapan" },
+  { label: "Site BA", value: "Site BA" },
+  { label: "Site TAL", value: "Site TAL" },
+  { label: "Site MIP", value: "Site MIP" },
+  { label: "Site MIFA", value: "Site MIFA" },
+  { label: "Site BIB", value: "Site BIB" },
+  { label: "Site AMI", value: "Site AMI" },
+  { label: "Site Tabang", value: "Site Tabang" },
+];
+
+const SORT_OPTIONS = [
+  { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
+  { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
+  { label: "Due Date (Mendesak)", value: "due_date.asc" },
+  { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
 export function MrManagementClientContent() {
@@ -63,6 +102,10 @@ export function MrManagementClientContent() {
   const statusFilter = searchParams.get("status") || "";
   const companyFilter = searchParams.get("company") || ""; // Filter company baru
   const limit = Number(searchParams.get("limit") || 25);
+  // REVISI: State filter dan sort baru
+  const departmentFilter = searchParams.get("department") || "";
+  const siteFilter = searchParams.get("tujuan_site") || "";
+  const sortFilter = searchParams.get("sort") || "created_at.desc";
 
   // State untuk input form
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -122,10 +165,11 @@ export function MrManagementClientContent() {
       const from = (currentPage - 1) * limit;
       const to = from + limit - 1;
 
-      // REVISI: Ambil juga cost_estimation
+      // REVISI: Ambil juga cost_estimation dan tujuan_site
       let query = s.from("material_requests").select(
         `
             id, kode_mr, kategori, status, department, created_at, due_date, company_code, cost_estimation,
+            tujuan_site,
             users_with_profiles!userid (nama)
           `,
         { count: "exact" }
@@ -139,11 +183,19 @@ export function MrManagementClientContent() {
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
 
+      // REVISI: Terapkan filter baru
+      if (departmentFilter) query = query.eq("department", departmentFilter);
+      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
       if (profileData.company && profileData.company !== "LOURDES") {
         query = query.eq("company_code", profileData.company);
       }
 
-      query = query.order("created_at", { ascending: false }).range(from, to);
+      // REVISI: Terapkan sorting
+      const [sortBy, sortOrder] = sortFilter.split(".");
+      query = query
+        .order(sortBy, { ascending: sortOrder === "asc" })
+        .range(from, to);
 
       const { data, error, count } = await query;
 
@@ -164,7 +216,18 @@ export function MrManagementClientContent() {
       setLoading(false);
     }
     fetchMRsAndAdminProfile();
-  }, [s, currentPage, searchTerm, statusFilter, companyFilter, limit, router]);
+  }, [
+    s,
+    currentPage,
+    searchTerm,
+    statusFilter,
+    companyFilter,
+    limit,
+    router,
+    departmentFilter, // REVISI: Tambah dependency
+    siteFilter, // REVISI: Tambah dependency
+    sortFilter, // REVISI: Tambah dependency
+  ]);
 
   // Efek untuk debounce pencarian
   useEffect(() => {
@@ -211,12 +274,18 @@ export function MrManagementClientContent() {
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
 
+      // REVISI: Terapkan filter baru
+      if (departmentFilter) query = query.eq("department", departmentFilter);
+      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
       if (adminProfile.company && adminProfile.company !== "LOURDES") {
         query = query.eq("company_code", adminProfile.company);
       }
 
-      const { data, error } = await query.order("created_at", {
-        ascending: false,
+      // REVISI: Terapkan sorting
+      const [sortBy, sortOrder] = sortFilter.split(".");
+      const { data, error } = await query.order(sortBy, {
+        ascending: sortOrder === "asc",
       });
       if (error) throw error;
 
@@ -324,7 +393,8 @@ export function MrManagementClientContent() {
         </div>
 
         <div className="p-4 border rounded-lg bg-muted/50">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {/* REVISI: Grid layout diubah untuk 4-5 filter */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Filter Status */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
@@ -349,6 +419,7 @@ export function MrManagementClientContent() {
                 </SelectContent>
               </Select>
             </div>
+
             {/* Filter Company (hanya untuk admin Lourdes) */}
             {adminProfile?.company === "LOURDES" && (
               <div className="flex flex-col gap-2">
@@ -373,22 +444,74 @@ export function MrManagementClientContent() {
                 </Select>
               </div>
             )}
+
+            {/* REVISI: Filter Departemen */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Departemen</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    department: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={departmentFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter departemen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Departemen</SelectItem>
+                  {dataDepartment.map((dept) => (
+                    <SelectItem key={dept.value} value={dept.value}>
+                      {dept.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* REVISI: Filter Tujuan Site */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Tujuan Site</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    tujuan_site: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={siteFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter site" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Site</SelectItem>
+                  {dataLokasi.map((lok) => (
+                    <SelectItem key={lok.value} value={lok.value}>
+                      {lok.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto">
-        <Table className="min-w-[1200px]">
+        {/* REVISI: Tambah min-w */}
+        <Table className="min-w-[1300px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Departemen</TableHead>
+              <TableHead>Tujuan Site</TableHead>
+              {/* REVISI: Kolom baru */}
               <TableHead>Perusahaan</TableHead>
               <TableHead>Status</TableHead>
-              {/* REVISI: Tampilkan Total Estimasi Biaya */}
               <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
@@ -397,7 +520,8 @@ export function MrManagementClientContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                {/* REVISI: ColSpan + 1 */}
+                <TableCell colSpan={10} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -413,13 +537,14 @@ export function MrManagementClientContent() {
                   <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>{mr.department}</TableCell>
+                  <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
+                  {/* REVISI: Cell baru */}
                   <TableCell>
                     <Badge variant="outline">{mr.company_code || "N/A"}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
                   </TableCell>
-                  {/* REVISI: Tampilkan Total Estimasi Biaya */}
                   <TableCell className="text-right font-medium">
                     {formatCurrency(mr.cost_estimation)}
                   </TableCell>
@@ -436,7 +561,8 @@ export function MrManagementClientContent() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                {/* REVISI: ColSpan + 1 */}
+                <TableCell colSpan={10} className="text-center h-24">
                   Tidak ada Material Request yang ditemukan.
                 </TableCell>
               </TableRow>
@@ -447,25 +573,49 @@ export function MrManagementClientContent() {
 
       {/* --- Pagination & Limit Section --- */}
       <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(value) => handleFilterChange({ limit: value })}
-          >
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {totalItems} MR.</span>
+        {/* REVISI: Wrapper untuk limit dan sort */}
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <Select
+              value={String(limit)}
+              onValueChange={(value) => handleFilterChange({ limit: value })}
+            >
+              <SelectTrigger className="w-[70px]">
+                <SelectValue placeholder={limit} />
+              </SelectTrigger>
+              <SelectContent>
+                {LIMIT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span>dari {totalItems} MR.</span>
+          </div>
+
+          {/* REVISI: Tambahkan Sortir */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Urutkan</span>
+            <Select
+              value={sortFilter}
+              onValueChange={(value) => handleFilterChange({ sort: value })}
+            >
+              <SelectTrigger className="w-full sm:w-[240px]">
+                <SelectValue placeholder="Urutkan berdasarkan..." />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
         <PaginationComponent
           currentPage={currentPage}
           totalPages={Math.ceil(totalItems / limit)}

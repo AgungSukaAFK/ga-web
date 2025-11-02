@@ -25,7 +25,8 @@ import {
   CheckCheck,
   FileSearch2,
   PackageSearch,
-  BadgeDollarSign, // Pastikan ikon ini sudah diimpor
+  BadgeDollarSign,
+  DollarSign, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -112,7 +113,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       const { data, error } = await supabase.auth.getUser();
       if (!data.user && !error) {
         redirect("/auth/login");
-        return;
       }
       if (data.user) {
         setUser(data.user);
@@ -138,27 +138,37 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     [currentPath]
   );
 
-  // EFFICIENT & FIX: Menggunakan useMemo untuk membuat menu navigasi secara kondisional
   const mainNavItems = React.useMemo(() => {
     const baseNav = data.navMain;
 
-    // Periksa apakah role adalah 'requester' atau 'approver' atau role lain yang relevan
+    let newNav = [...baseNav];
     if (profile?.role === "approver") {
-      // Buat array BARU, jangan ubah yang asli
-      const newNav = [
-        baseNav[0], // Item pertama (Dashboard)
+      newNav = [
+        baseNav[0],
         {
           title: "Approval & Validation",
           url: "/approval-validation",
           icon: CheckCheck,
         },
-        ...baseNav.slice(1), // Sisa item dari index 1 dan seterusnya
+        ...newNav.slice(1),
       ];
-      return markActive(newNav);
     }
 
-    // Jika bukan role di atas, kembalikan menu standar
-    return markActive(baseNav);
+    if (
+      profile?.department === "General Manager" ||
+      profile?.department === "General Affair"
+    ) {
+      newNav = [
+        {
+          title: "Cost Center Management",
+          url: "/cost-center-management",
+          icon: BadgeDollarSign,
+        },
+        ...newNav.slice(1),
+      ];
+    }
+
+    return markActive(newNav);
   }, [profile, markActive]);
 
   return (

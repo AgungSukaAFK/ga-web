@@ -67,11 +67,12 @@ export interface MaterialRequest {
   discussions: Discussion[];
   company_code: string;
   tujuan_site: string;
-
-  // --- REVISI DI SINI ---
-  cost_center_id: number | null; // Ganti/tambahkan ini (pastikan 'number')
-  cost_center?: string; // Hapus baris ini jika Anda menghapus kolom 'cost_center text'
-  // --- AKHIR REVISI ---
+  cost_center_id: number | null;
+  cost_center?: string;
+  cost_centers?: {
+    name: string;
+    current_budget: number;
+  } | null;
 
   // Properti relasi (opsional, tergantung query)
   users_with_profiles?: { nama: string; email?: string } | null;
@@ -127,6 +128,10 @@ export interface MaterialRequestListItem {
   kategori: string;
   status: string;
   department: string;
+  tujuan_site: string;
+  orders: Order[];
+  approvals: Approval[];
+  attachments: Attachment[];
   created_at: Date | string; // Bisa Date atau string ISO
   due_date?: Date | string | null; // Opsional dan bisa null
   company_code: string | null; // Ditambahkan untuk MR Management

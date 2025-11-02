@@ -49,7 +49,6 @@ import { User } from "@supabase/supabase-js";
 import { CurrencyInput } from "@/components/ui/currency-input"; // <-- IMPORT KOMPONEN BARU
 import { LIMIT_OPTIONS } from "@/type/enum";
 
-
 // --- Komponen Dialog untuk Create/Edit ---
 function CostCenterDialog({
   open,
@@ -416,7 +415,11 @@ export function CostCenterClientContent() {
         .select("*")
         .eq("id", user.id)
         .single();
-      if (!profileData || profileData.role !== "admin") {
+      const allowedDepartments = ["General Affair", "General Manager", "Admin"];
+      if (
+        !profileData ||
+        !allowedDepartments.includes(profileData.department)
+      ) {
         toast.error("Akses ditolak.");
         router.push("/dashboard");
         return;
