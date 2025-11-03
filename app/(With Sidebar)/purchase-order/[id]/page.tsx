@@ -32,7 +32,8 @@ import {
   Paperclip,
   ExternalLink,
   Wallet,
-  Eye, // REVISI: Impor ikon Eye
+  Eye,
+  Edit as EditIcon, // REVISI: Impor ikon Edit
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,7 +46,7 @@ import {
   Order,
   Profile,
   Attachment,
-  Discussion, // REVISI: Impor Discussion
+  Discussion,
 } from "@/type";
 import {
   formatCurrency,
@@ -54,7 +55,6 @@ import {
   formatDateWithTime,
 } from "@/lib/utils";
 import { fetchPurchaseOrderById } from "@/services/purchaseOrderService";
-// REVISI: Impor Dialog
 import {
   Dialog,
   DialogContent,
@@ -114,7 +114,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // REVISI: State untuk dialog budget
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
 
   const fetchPoData = async () => {
@@ -130,7 +129,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       const initialData = {
         ...data,
         attachments: Array.isArray(data.attachments) ? data.attachments : [],
-        // REVISI: Pastikan discussions dari MR juga di-load
         material_requests: data.material_requests
           ? {
               ...data.material_requests,
@@ -176,7 +174,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   // --- Logika Approval ---
 
-  // Cari task PENDING pertama untuk user ini
   const myApprovalIndex =
     po && currentUser && po.approvals
       ? po.approvals.findIndex(
@@ -184,13 +181,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         )
       : -1;
 
-  // Cek apakah giliran user ini
   const isMyTurnForApproval =
     myApprovalIndex !== -1 && po && po.approvals
       ? po.approvals
           .slice(0, myApprovalIndex)
           .every((a) => a.status === "approved")
       : false;
+
+  // REVISI: Logika untuk menentukan apakah tombol Edit boleh muncul
+  const canEditPO = userProfile?.role === "approver";
+  // const canEditPO =
+  //   userProfile?.role === "approver" &&
+  //   userProfile?.department === "Purchasing";
 
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
@@ -209,7 +211,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         (app: Approval) => app.status === "approved"
       );
       if (isLastApproval) {
-        newPoStatus = "Pending BAST"; // Status setelah semua approval PO
+        newPoStatus = "Pending BAST";
       }
     }
 
@@ -224,7 +226,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       toast.success(
         `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
       );
-      await fetchPoData(); // Muat ulang data
+      await fetchPoData();
     }
     setActionLoading(false);
   };
@@ -232,7 +234,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // Komponen Tombol Aksi
   const ApprovalActions = () => {
     if (!po || !currentUser || po.status !== "Pending Approval") return null;
-    if (myApprovalIndex === -1) return null; // Bukan approver
+    if (myApprovalIndex === -1) return null;
     if (!isMyTurnForApproval)
       return (
         <p className="text-sm text-muted-foreground text-center">
@@ -331,7 +333,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       </Content>
     );
 
-  // Bagian untuk menampilkan lampiran (dipisah agar rapi)
   const poAttachments =
     po.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
@@ -350,7 +351,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             .slice(0, currentTurnIndex)
             .every((app) => app.status === "approved"));
 
-  // REVISI: Hitung subtotal untuk dialog
   const subtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
     0
@@ -359,12 +359,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   return (
     <>
       <div className="col-span-12">
+        {/* REVISI: Tambahkan wrapper div dan tombol Edit */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold">{po.kode_po}</h1>
             <p className="text-muted-foreground">Detail Purchase Order</p>
           </div>
-          {getStatusBadge(po.status)}
+          <div className="flex items-center gap-2">
+            {/* Tombol Edit hanya muncul jika user adalah Purchasing Approver */}
+            {canEditPO && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/purchase-order/edit/${po.id}`}>
+                  <EditIcon className="mr-2 h-4 w-4" />
+                  Edit PO
+                </Link>
+              </Button>
+            )}
+            {getStatusBadge(po.status)}
+          </div>
         </div>
       </div>
 
@@ -387,7 +399,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               label="Tanggal Dibuat"
               value={formatDateFriendly(po.created_at)}
             />
-            {/* REVISI: Tambahkan tombol detail budget */}
             <InfoItem
               icon={DollarSign}
               label="Grand Total"
