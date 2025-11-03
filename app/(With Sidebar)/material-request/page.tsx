@@ -41,7 +41,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
-import { Profile } from "@/type";
+import { Profile, Order } from "@/type"; // REVISI: Impor Tipe 'Order'
 import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components"; // Path sudah dikoreksi
 import { formatDateFriendly } from "@/lib/utils"; // Menggunakan helper yang konsisten
@@ -131,10 +131,9 @@ function MaterialRequestContent() {
   const statusFilter = searchParams.get("status") || "";
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
-  // REVISI: State filter dan sort baru
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
-  const sortFilter = searchParams.get("sort") || "created_at.desc"; // Default sort
+  const sortFilter = searchParams.get("sort") || "created_at.desc";
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -209,7 +208,6 @@ function MaterialRequestContent() {
         if (endDate)
           query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
-        // REVISI: Terapkan filter baru
         if (departmentFilter) query = query.eq("department", departmentFilter);
         if (siteFilter) query = query.eq("tujuan_site", siteFilter);
 
@@ -218,7 +216,6 @@ function MaterialRequestContent() {
           query = query.eq("userid", user.id);
         }
 
-        // REVISI: Terapkan sorting
         const [sortBy, sortOrder] = sortFilter.split(".");
         query = query
           .order(sortBy, { ascending: sortOrder === "asc" })
@@ -253,9 +250,9 @@ function MaterialRequestContent() {
     statusFilter,
     startDate,
     endDate,
-    departmentFilter, // REVISI: Tambah dependency
-    siteFilter, // REVISI: Tambah dependency
-    sortFilter, // REVISI: Tambah dependency
+    departmentFilter,
+    siteFilter,
+    sortFilter,
   ]);
 
   // Efek debounce pencarian
@@ -281,17 +278,18 @@ function MaterialRequestContent() {
     });
   };
 
-  // Handler Download Excel
+  // REVISI: Handler Download Excel
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
+      // 1. Ambil kolom 'orders' (JSON) dan 'company_code' dari database
       let query = s.from("material_requests").select(`
-            kode_mr, kategori, department, status, remarks, cost_estimation, created_at, due_date,
-            tujuan_site, // <-- REVISI: Tambahkan
-            users_with_profiles!userid (nama)
+          kode_mr, kategori, department, status, remarks, cost_estimation, tujuan_site, company_code, created_at, due_date,
+          orders, 
+          users_with_profiles!userid (nama)
         `);
 
       // Terapkan semua filter aktif
@@ -302,36 +300,72 @@ function MaterialRequestContent() {
       if (statusFilter) query = query.eq("status", statusFilter);
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-
-      // REVISI: Terapkan filter baru
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
 
-      // REVISI: Terapkan filter role
+      // Terapkan filter role
       if (currentUser.role === "requester") {
         query = query.eq("userid", currentUser.id);
       }
 
-      // REVISI: Terapkan sorting
+      // Terapkan sorting
       const [sortBy, sortOrder] = sortFilter.split(".");
       const { data, error } = await query.order(sortBy, {
         ascending: sortOrder === "asc",
       });
       if (error) throw error;
 
-      const formattedData = data.map((mr: any) => ({
-        "Kode MR": mr.kode_mr,
-        Kategori: mr.kategori,
-        Departemen: mr.department,
-        "Tujuan Site": mr.tujuan_site, // <-- REVISI: Tambahkan
-        Status: mr.status,
-        Requester: mr.users_with_profiles?.nama || "N/A",
-        Remarks: mr.remarks,
-        "Estimasi Biaya": Number(mr.cost_estimation),
-        "Tanggal Dibuat": formatDateFriendly(mr.created_at),
-        "Due Date": formatDateFriendly(mr.due_date),
-      }));
+      if (!data || data.length === 0) {
+        toast.warning("Tidak ada data MR untuk diekspor sesuai filter.");
+        setIsExporting(false);
+        return;
+      }
 
+      // 2. Gunakan .flatMap() untuk "meledakkan" data (sama seperti di Admin)
+      const formattedData = data.flatMap((mr: any) => {
+        const baseMrInfo = {
+          "Kode MR": mr.kode_mr,
+          Kategori: mr.kategori,
+          Departemen: mr.department,
+          Tujuan: mr.tujuan_site,
+          Status: mr.status,
+          Requester: mr.users_with_profiles?.nama || "N/A",
+          Perusahaan: mr.company_code,
+          Remarks: mr.remarks,
+          "Total Estimasi Biaya (MR)": Number(mr.cost_estimation),
+          "Tanggal Dibuat": formatDateFriendly(mr.created_at),
+          "Due Date": formatDateFriendly(mr.due_date),
+        };
+
+        if (Array.isArray(mr.orders) && mr.orders.length > 0) {
+          return mr.orders.map((item: Order) => ({
+            ...baseMrInfo,
+            "Nama Item": item.name,
+            Qty: Number(item.qty) || 0,
+            UoM: item.uom,
+            "Estimasi Harga Item": Number(item.estimasi_harga) || 0,
+            "Total Estimasi Item":
+              (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0),
+            "Catatan Item": item.note || "-",
+            "URL Referensi": item.url || "-",
+          }));
+        } else {
+          return [
+            {
+              ...baseMrInfo,
+              "Nama Item": "N/A",
+              Qty: 0,
+              UoM: "N/A",
+              "Estimasi Harga Item": 0,
+              "Total Estimasi Item": 0,
+              "Catatan Item": "N/A",
+              "URL Referensi": "N/A",
+            },
+          ];
+        }
+      });
+
+      // 3. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Material Requests");
@@ -339,12 +373,14 @@ function MaterialRequestContent() {
         workbook,
         `Material_Requests_${new Date().toISOString().split("T")[0]}.xlsx`
       );
+      toast.success("Data MR berhasil diunduh!");
     } catch (error: any) {
       toast.error("Gagal mengunduh data", { description: error.message });
     } finally {
       setIsExporting(false);
     }
   };
+  // --- AKHIR REVISI ---
 
   const handlePrint = () => window.print();
 
@@ -396,7 +432,6 @@ function MaterialRequestContent() {
         </div>
 
         <div className="p-4 border rounded-lg bg-muted/50">
-          {/* REVISI: Grid layout diubah untuk 5 filter */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
@@ -422,7 +457,6 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            {/* REVISI: Filter Departemen */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Departemen</label>
               <Select
@@ -447,7 +481,6 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            {/* REVISI: Filter Tujuan Site */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Tujuan Site</label>
               <Select
@@ -515,7 +548,6 @@ function MaterialRequestContent() {
               <TableHead>Kategori</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>
-              {/* REVISI: Kolom baru */}
               <TableHead>Requester</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
@@ -526,7 +558,6 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                {/* REVISI: colSpan + 1 */}
                 <TableCell colSpan={10} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -544,7 +575,6 @@ function MaterialRequestContent() {
                   <TableCell>{mr.kategori}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
-                  {/* REVISI: Cell baru */}
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
@@ -560,7 +590,6 @@ function MaterialRequestContent() {
               ))
             ) : (
               <TableRow>
-                {/* REVISI: colSpan + 1 */}
                 <TableCell colSpan={10} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
@@ -572,7 +601,6 @@ function MaterialRequestContent() {
 
       {/* --- Pagination & Limit Section --- */}
       <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
-        {/* REVISI: Bungkus limit dan sort dalam flex */}
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Tampilkan</span>
@@ -594,7 +622,6 @@ function MaterialRequestContent() {
             <span>dari {totalItems} hasil.</span>
           </div>
 
-          {/* REVISI: Tambahkan Sortir */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Urutkan</span>
             <Select

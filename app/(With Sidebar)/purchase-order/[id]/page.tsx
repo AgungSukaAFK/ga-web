@@ -1,13 +1,12 @@
-// src/app/(With Sidebar)/purchase-order/edit/[id]/page.tsx
+// src/app/(With Sidebar)/purchase-order/[id]/page.tsx
 
 "use client";
 
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -17,61 +16,54 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
-import {
-  fetchPurchaseOrderById,
-  updatePurchaseOrder,
-} from "@/services/purchaseOrderService";
-import { formatCurrency, cn } from "@/lib/utils";
-import {
-  AlertTriangle,
-  Loader2,
-  Save,
-  Trash2,
   CircleUser,
   Building,
   Tag,
+  Calendar,
   DollarSign,
   Info,
   Truck,
   Building2,
   Link as LinkIcon,
+  AlertTriangle,
+  Check,
+  X,
+  Loader2,
   Paperclip,
-  Edit as EditIcon, // <-- Impor ikon
-  Plus, // <-- Impor ikon
-  ExternalLink, // <-- Impor ikon
+  ExternalLink,
+  Wallet,
+  Eye, // REVISI: Impor ikon Eye
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { User as AuthUser } from "@supabase/supabase-js";
 import {
   PurchaseOrderDetail,
-  POItem,
-  Barang,
-  PurchaseOrderPayload,
+  Approval,
+  Order,
+  Profile,
   Attachment,
-  Order, // <-- Impor Tipe Order
+  Discussion, // REVISI: Impor Discussion
 } from "@/type";
-import { Label } from "@/components/ui/label";
-import Link from "next/link";
-import { Checkbox } from "@/components/ui/checkbox";
-import { CurrencyInput } from "@/components/ui/currency-input"; // <-- Impor CurrencyInput
+import {
+  formatCurrency,
+  formatDateFriendly,
+  cn,
+  formatDateWithTime,
+} from "@/lib/utils";
+import { fetchPurchaseOrderById } from "@/services/purchaseOrderService";
+// REVISI: Impor Dialog
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"; // <-- Impor Dialog
-import { Combobox, ComboboxData } from "@/components/combobox"; // <-- Impor Combobox
-import { BarangSearchCombobox } from "../BarangSearchCombobox";
+} from "@/components/ui/dialog";
+import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 
-// Komponen helper kecil untuk menampilkan info
+// REVISI: Ubah tipe 'value' menjadi React.ReactNode
 const InfoItem = ({
   icon: Icon,
   label,
@@ -80,7 +72,7 @@ const InfoItem = ({
 }: {
   icon: React.ElementType;
   label: string;
-  value: string;
+  value: React.ReactNode; // Diubah dari string
   isBlock?: boolean;
 }) => (
   <div
@@ -96,1015 +88,575 @@ const InfoItem = ({
   </div>
 );
 
-// Data UoM untuk Dialog Item
-const dataUoM: ComboboxData = [
-  { label: "Pcs", value: "Pcs" },
-  { label: "Unit", value: "Unit" },
-  { label: "Set", value: "Set" },
-  { label: "Box", value: "Box" },
-  { label: "Rim", value: "Rim" },
-  { label: "Roll", value: "Roll" },
-];
+// Komponen Skeleton untuk loading
+const DetailPOSkeleton = () => (
+  <>
+    <div className="col-span-12">
+      <Skeleton className="h-12 w-1/2" />
+    </div>
+    <Content className="col-span-12 lg:col-span-8">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+    <Content className="col-span-12 lg:col-span-4">
+      <Skeleton className="h-96 w-full" />
+    </Content>
+  </>
+);
 
-function EditPOPageContent({ params }: { params: { id: string } }) {
-  const router = useRouter();
+function DetailPOPageContent({ params }: { params: { id: string } }) {
   const poId = parseInt(params.id);
+  const router = useRouter();
+  const supabase = createClient();
 
-  const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
+  const [po, setPo] = useState<PurchaseOrderDetail | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isUploadingPO, setIsUploadingPO] = useState(false);
-  const [isUploadingFinance, setIsUploadingFinance] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // REVISI: State untuk dialog budget
+  const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
 
-  const [paymentTermType, setPaymentTermType] = useState("Termin");
-  const [paymentTermDays, setPaymentTermDays] = useState("30");
-
-  const [taxMode, setTaxMode] = useState<"percentage" | "manual">("percentage");
-  const [taxPercentage, setTaxPercentage] = useState<number>(11);
-  const [isTaxIncluded, setIsTaxIncluded] = useState<boolean>(false);
-
-  // --- State untuk Dialog Edit Item PO ---
-  const [openItemDialog, setOpenItemDialog] = useState(false);
-  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [itemFormData, setItemFormData] = useState<POItem>({
-    barang_id: 0,
-    part_number: "",
-    name: "",
-    qty: 1,
-    uom: "Pcs",
-    price: 0,
-    total_price: 0,
-    vendor_name: "",
-  });
-
-  useEffect(() => {
+  const fetchPoData = async () => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
-      setLoading(false);
-      return;
+      return null;
     }
 
-    fetchPurchaseOrderById(poId)
-      .then((data) => {
-        if (!data) {
-          setError("Data PO tidak ditemukan.");
-          setLoading(false);
-          return;
-        }
-        const initialData = {
-          ...data,
-          attachments: Array.isArray(data.attachments) ? data.attachments : [],
-        };
-        setPoForm(initialData);
+    try {
+      const data = await fetchPurchaseOrderById(poId);
+      if (!data) throw new Error("Data PO tidak ditemukan.");
 
-        if (initialData.payment_term) {
-          if (initialData.payment_term.toLowerCase() === "cash") {
-            setPaymentTermType("Cash");
-            setPaymentTermDays("");
-          } else {
-            setPaymentTermType("Termin");
-            const days = initialData.payment_term.match(/\d+/);
-            setPaymentTermDays(days ? days[0] : "30");
-          }
-        }
+      const initialData = {
+        ...data,
+        attachments: Array.isArray(data.attachments) ? data.attachments : [],
+        // REVISI: Pastikan discussions dari MR juga di-load
+        material_requests: data.material_requests
+          ? {
+              ...data.material_requests,
+              discussions: Array.isArray(data.material_requests.discussions)
+                ? data.material_requests.discussions
+                : [],
+            }
+          : null,
+        approvals: Array.isArray(data.approvals) ? data.approvals : [],
+        items: Array.isArray(data.items) ? data.items : [],
+      };
+      setPo(initialData as any);
+      return initialData;
+    } catch (poError: any) {
+      setError("Gagal memuat data PO.");
+      toast.error("Gagal memuat data", { description: poError.message });
+      return null;
+    }
+  };
 
-        if (initialData.tax === 0 && initialData.items.length > 0) {
-          setIsTaxIncluded(true);
-          setTaxMode("manual");
-        } else {
-          setIsTaxIncluded(false);
-          const subtotalSaatLoad = initialData.items.reduce(
-            (acc, item) => acc + item.qty * item.price,
-            0
-          );
-          if (
-            subtotalSaatLoad > 0 &&
-            Math.abs((initialData.tax ?? 0) - subtotalSaatLoad * 0.11) < 1
-          ) {
-            setTaxMode("percentage");
-            setTaxPercentage(11);
-          } else {
-            setTaxMode("manual");
-          }
-        }
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    const initializePage = async () => {
+      setLoading(true);
+      setError(null);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        setUserProfile(profile as Profile | null);
+      }
+      await fetchPoData();
+      setLoading(false);
+    };
+    initializePage();
   }, [poId]);
 
-  // --- REVISI: Logika Kalkulasi Pajak/Total ---
-  useEffect(() => {
-    if (!poForm) return;
-    const subtotal = poForm.items.reduce(
-      (acc, item) => acc + item.qty * item.price,
-      0
-    );
+  // --- Logika Approval ---
 
-    let calculatedTax = 0;
-    if (isTaxIncluded) {
-      calculatedTax = 0;
-    } else {
-      if (taxMode === "percentage") {
-        calculatedTax = subtotal * (taxPercentage / 100);
-      } else {
-        calculatedTax = poForm.tax || 0;
-      }
-    }
+  // Cari task PENDING pertama untuk user ini
+  const myApprovalIndex =
+    po && currentUser && po.approvals
+      ? po.approvals.findIndex(
+          (a) => a.userid === currentUser.id && a.status === "pending"
+        )
+      : -1;
 
-    const grandTotal =
-      subtotal - (poForm.discount || 0) + calculatedTax + (poForm.postage || 0);
+  // Cek apakah giliran user ini
+  const isMyTurnForApproval =
+    myApprovalIndex !== -1 && po && po.approvals
+      ? po.approvals
+          .slice(0, myApprovalIndex)
+          .every((a) => a.status === "approved")
+      : false;
 
-    setPoForm((prev) => {
-      if (!prev) return null;
-      const newTax =
-        taxMode !== "manual" || isTaxIncluded ? calculatedTax : prev.tax;
-      if (prev.tax !== newTax || prev.total_price !== grandTotal) {
-        return {
-          ...prev,
-          tax: newTax,
-          total_price: grandTotal,
-        };
-      }
-      return prev;
-    });
-  }, [
-    poForm?.items,
-    poForm?.discount,
-    poForm?.postage,
-    taxMode,
-    taxPercentage,
-    isTaxIncluded,
-  ]);
-
-  useEffect(() => {
-    if (!poForm || taxMode !== "manual" || isTaxIncluded) return;
-
-    const subtotal = poForm.items.reduce(
-      (acc, item) => acc + item.qty * item.price,
-      0
-    );
-    const grandTotal =
-      subtotal -
-      (poForm.discount || 0) +
-      (poForm.tax || 0) +
-      (poForm.postage || 0);
-
-    if (poForm.total_price !== grandTotal) {
-      setPoForm((prev) => (prev ? { ...prev, total_price: grandTotal } : null));
-    }
-  }, [poForm?.tax, taxMode, isTaxIncluded]);
-  // --- AKHIR REVISI LOGIKA ---
-
-  useEffect(() => {
-    if (!poForm) return;
-    let newPaymentTerm = "";
-    if (paymentTermType === "Cash") {
-      newPaymentTerm = "Cash";
-    } else {
-      newPaymentTerm = `Termin ${paymentTermDays} Hari`;
-    }
-    if (poForm.payment_term !== newPaymentTerm) {
-      setPoForm((p) => (p ? { ...p, payment_term: newPaymentTerm } : null));
-    }
-  }, [paymentTermType, paymentTermDays, poForm?.payment_term]);
-
-  const handleItemChange = (
-    index: number,
-    field: keyof POItem,
-    value: string | number
-  ) => {
-    if (!poForm) return;
-    const newItems = [...poForm.items];
-    const itemToUpdate = { ...newItems[index] };
-
-    if (field === "qty" || field === "price")
-      (itemToUpdate[field] as number) = Number(value) < 0 ? 0 : Number(value);
-    else (itemToUpdate[field] as string) = String(value);
-
-    itemToUpdate.total_price = itemToUpdate.qty * itemToUpdate.price;
-    newItems[index] = itemToUpdate;
-    setPoForm((prev) => (prev ? { ...prev, items: newItems } : null));
-  };
-
-  const addItem = (barang: Barang) => {
-    if (!poForm) return;
-    const newItem: POItem = {
-      barang_id: barang.id,
-      part_number: barang.part_number,
-      name: barang.part_name || "",
-      qty: 1,
-      uom: barang.uom || "Pcs",
-      price: 0,
-      total_price: 0,
-      vendor_name: barang.vendor || "",
-    };
-    setPoForm((prev) =>
-      prev ? { ...prev, items: [...prev.items, newItem] } : null
-    );
-  };
-
-  const removeItem = (index: number) => {
-    if (!poForm) return;
-    setPoForm((prev) =>
-      prev ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : null
-    );
-  };
-
-  // --- Handler Dialog Item ---
-  const handleOpenEditItemDialog = (index: number) => {
-    if (!poForm) return;
-    setEditingItemIndex(index);
-    setItemFormData(poForm.items[index]);
-    setOpenItemDialog(true);
-  };
-
-  const handleSaveItemChanges = () => {
-    if (!poForm || editingItemIndex === null) return;
-    if (
-      !itemFormData.name.trim() ||
-      itemFormData.qty <= 0 ||
-      !itemFormData.uom.trim() ||
-      itemFormData.price < 0
-    ) {
-      toast.error("Nama, Qty (>0), UoM, dan Harga (>=0) harus valid.");
-      return;
-    }
-
-    const updatedItems = [...poForm.items];
-    const updatedItem = {
-      ...itemFormData,
-      total_price: itemFormData.qty * itemFormData.price,
-    };
-    updatedItems[editingItemIndex] = updatedItem;
-
-    setPoForm({ ...poForm, items: updatedItems });
-    setOpenItemDialog(false);
-    setEditingItemIndex(null);
-  };
-  // --- Akhir Handler Dialog ---
-
-  const handleSubmit = async () => {
-    if (!poForm) return;
-
-    const payload: Partial<PurchaseOrderPayload> = {
-      ...poForm,
-      attachments: Array.isArray(poForm.attachments) ? poForm.attachments : [],
-    };
-    delete (payload as any).material_requests;
-    delete (payload as any).users_with_profiles;
-    delete (payload as any).created_at;
-    delete (payload as any).updated_at;
-    delete (payload as any).id;
+  const handleApprovalAction = async (decision: "approved" | "rejected") => {
+    if (!po || !currentUser || myApprovalIndex === -1) return;
 
     setActionLoading(true);
-    const toastId = toast.loading(`Memperbarui PO...`);
-    try {
-      await updatePurchaseOrder(poId, payload);
-      toast.success("Purchase Order berhasil diperbarui!", { id: toastId });
-      router.push(`/purchase-order/${poId}`);
-      router.refresh();
-    } catch (err: any) {
-      toast.error("Gagal memperbarui PO", {
-        id: toastId,
-        description: err.message,
-      });
-    } finally {
-      setActionLoading(false);
+
+    const updatedApprovals = JSON.parse(JSON.stringify(po.approvals));
+    updatedApprovals[myApprovalIndex].status = decision;
+    updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
+
+    let newPoStatus = po.status;
+    if (decision === "rejected") {
+      newPoStatus = "Rejected";
+    } else if (decision === "approved") {
+      const isLastApproval = updatedApprovals.every(
+        (app: Approval) => app.status === "approved"
+      );
+      if (isLastApproval) {
+        newPoStatus = "Pending BAST"; // Status setelah semua approval PO
+      }
+    }
+
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({ approvals: updatedApprovals, status: newPoStatus })
+      .eq("id", po.id);
+
+    if (error) {
+      toast.error("Aksi gagal", { description: error.message });
+    } else {
+      toast.success(
+        `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
+      );
+      await fetchPoData(); // Muat ulang data
+    }
+    setActionLoading(false);
+  };
+
+  // Komponen Tombol Aksi
+  const ApprovalActions = () => {
+    if (!po || !currentUser || po.status !== "Pending Approval") return null;
+    if (myApprovalIndex === -1) return null; // Bukan approver
+    if (!isMyTurnForApproval)
+      return (
+        <p className="text-sm text-muted-foreground text-center">
+          Menunggu persetujuan dari approver sebelumnya.
+        </p>
+      );
+
+    return (
+      <div className="flex gap-2">
+        <Button
+          className="w-full"
+          onClick={() => handleApprovalAction("approved")}
+          disabled={actionLoading}
+        >
+          {actionLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Check className="mr-2 h-4 w-4" />
+          )}{" "}
+          Setujui PO
+        </Button>
+        <Button
+          variant="destructive"
+          className="w-full"
+          onClick={() => handleApprovalAction("rejected")}
+          disabled={actionLoading}
+        >
+          {actionLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <X className="mr-2 h-4 w-4" />
+          )}{" "}
+          Tolak PO
+        </Button>
+      </div>
+    );
+  };
+
+  // --- Helper Badge Status ---
+  const getStatusBadge = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "pending approval":
+        return <Badge variant="secondary">Pending Approval</Badge>;
+      case "pending validation":
+        return <Badge variant="secondary">Pending Validation</Badge>;
+      case "pending bast":
+        return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
+      case "completed":
+        return <Badge className="bg-green-500 text-white">Completed</Badge>;
+      case "rejected":
+        return <Badge variant="destructive">Rejected</Badge>;
+      default:
+        return <Badge>{status || "N/A"}</Badge>;
     }
   };
 
-  const handleVendorChange = (
-    field: "name" | "address" | "contact_person",
-    value: string
+  const getApprovalStatusBadge = (
+    status: "pending" | "approved" | "rejected"
   ) => {
-    setPoForm((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        vendor_details: {
-          name: prev.vendor_details?.name || "",
-          address: prev.vendor_details?.address || "",
-          contact_person: prev.vendor_details?.contact_person || "",
-          [field]: value,
-        },
-      };
-    });
-  };
-
-  const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance"
-  ) => {
-    // ... (Fungsi ini tetap sama)
-    const file = e.target.files?.[0];
-    if (!file || !poForm) return;
-
-    const setIsLoading =
-      type === "po" ? setIsUploadingPO : setIsUploadingFinance;
-    setIsLoading(true);
-
-    const toastId = toast.loading(
-      `Mengunggah lampiran ${type.toUpperCase()}...`
-    );
-    const supabase = createClient();
-    const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
-
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("mr")
-      .upload(filePath, file);
-
-    if (uploadError) {
-      toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
-        id: toastId,
-        description: uploadError.message,
-      });
-      setIsLoading(false);
-      return;
+    switch (status) {
+      case "approved":
+        return (
+          <Badge variant="outline" className="capitalize">
+            {status}
+          </Badge>
+        );
+      case "rejected":
+        return (
+          <Badge variant="destructive" className="capitalize">
+            {status}
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="secondary" className="capitalize">
+            {status}
+          </Badge>
+        );
     }
-
-    const newAttachment: Attachment = {
-      name: file.name,
-      url: uploadData.path,
-      type: type,
-    };
-
-    const currentAttachments = Array.isArray(poForm.attachments)
-      ? poForm.attachments
-      : [];
-    const updatedAttachments = [...currentAttachments, newAttachment];
-
-    setPoForm((prev) =>
-      prev ? { ...prev, attachments: updatedAttachments } : null
-    );
-    toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
-      id: toastId,
-    });
-    setIsLoading(false);
-    e.target.value = "";
   };
 
-  const removeAttachment = (indexToRemove: number) => {
-    // ... (Fungsi ini tetap sama)
-    if (!poForm || !Array.isArray(poForm.attachments)) return;
-    const attachmentToRemove = poForm.attachments?.[indexToRemove];
-    if (!attachmentToRemove) return;
+  // --- Render ---
+  if (loading) return <DetailPOSkeleton />;
 
-    const updatedAttachments = poForm.attachments?.filter(
-      (_, index) => index !== indexToRemove
+  if (error || !po)
+    return (
+      <Content className="col-span-12">
+        <div className="flex flex-col items-center justify-center h-96 text-center">
+          <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+          <h1 className="text-2xl font-bold">Data Tidak Ditemukan</h1>
+          <p className="text-muted-foreground">{error}</p>
+          <Button asChild variant="outline" className="mt-6">
+            <Link href="/purchase-order">Kembali ke Daftar PO</Link>
+          </Button>
+        </div>
+      </Content>
     );
-    setPoForm((prev) =>
-      prev ? { ...prev, attachments: updatedAttachments } : null
-    );
 
-    const supabase = createClient();
-    supabase.storage.from("mr").remove([attachmentToRemove.url]);
-
-    toast.info(
-      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`
-    );
-  };
-
+  // Bagian untuk menampilkan lampiran (dipisah agar rapi)
   const poAttachments =
-    poForm?.attachments?.filter((att) => !att.type || att.type === "po") || [];
+    po.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
-    poForm?.attachments?.filter((att) => att.type === "finance") || [];
+    po.attachments?.filter((att) => att.type === "finance") || [];
 
-  if (loading)
-    return (
-      <div className="col-span-12">
-        <Skeleton className="h-[80vh] w-full" />
-      </div>
-    );
-  if (error || !poForm)
-    return (
-      <div className="col-span-12 text-center">
-        <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-        <p className="mt-4">{error || "Data PO tidak ditemukan."}</p>
-      </div>
-    );
+  const currentTurnIndex = po.approvals?.findIndex(
+    (app) => app.status === "pending"
+  );
+  const allPreviousApproved =
+    currentTurnIndex === -1
+      ? false
+      : currentTurnIndex === 0 ||
+        (po.approvals &&
+          po.approvals.length > 0 &&
+          po.approvals
+            .slice(0, currentTurnIndex)
+            .every((app) => app.status === "approved"));
 
-  const subtotal = poForm.items.reduce(
-    (acc, item) => acc + item.qty * item.price,
+  // REVISI: Hitung subtotal untuk dialog
+  const subtotal = po.items.reduce(
+    (acc, item) => acc + item.price * item.qty,
     0
   );
 
   return (
     <>
-      <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Edit Purchase Order</h1>
-          <p className="text-muted-foreground">
-            PO:{" "}
-            <span className="font-semibold text-primary">{poForm.kode_po}</span>
-            {poForm.material_requests &&
-              ` | Ref. MR: ${poForm.material_requests.kode_mr}`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={handleSubmit}
-            disabled={actionLoading || isUploadingPO || isUploadingFinance}
-          >
-            {actionLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Simpan Perubahan
-          </Button>
+      <div className="col-span-12">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-3xl font-bold">{po.kode_po}</h1>
+            <p className="text-muted-foreground">Detail Purchase Order</p>
+          </div>
+          {getStatusBadge(po.status)}
         </div>
       </div>
 
-      <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-        {poForm.material_requests && (
-          <Content
-            title={`Informasi Referensi dari ${poForm.material_requests.kode_mr}`}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              <InfoItem
-                icon={CircleUser}
-                label="Pembuat MR"
-                value={
-                  poForm.material_requests.users_with_profiles?.nama || "N/A"
-                }
-              />
-              <InfoItem
-                icon={Building}
-                label="Departemen MR"
-                value={poForm.material_requests.department}
-              />
-              <InfoItem
-                icon={Tag}
-                label="Kategori MR"
-                value={poForm.material_requests.kategori}
-              />
-              <InfoItem
-                icon={DollarSign}
-                label="Estimasi Biaya MR"
-                value={formatCurrency(poForm.material_requests.cost_estimation)}
-              />
+      <div className="col-span-12 lg:col-span-8 space-y-6">
+        {/* --- Info Utama PO --- */}
+        <Content title="Informasi Utama">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <InfoItem
+              icon={CircleUser}
+              label="Pembuat PO"
+              value={po.users_with_profiles?.nama || "N/A"}
+            />
+            <InfoItem
+              icon={Building}
+              label="Perusahaan"
+              value={po.company_code}
+            />
+            <InfoItem
+              icon={Calendar}
+              label="Tanggal Dibuat"
+              value={formatDateFriendly(po.created_at)}
+            />
+            {/* REVISI: Tambahkan tombol detail budget */}
+            <InfoItem
+              icon={DollarSign}
+              label="Grand Total"
+              value={
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">
+                    {formatCurrency(po.total_price)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setIsBudgetDialogOpen(true)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </div>
+              }
+            />
+            <InfoItem
+              icon={Wallet}
+              label="Payment Term"
+              value={po.payment_term}
+            />
+            <InfoItem
+              icon={Truck}
+              label="Alamat Pengiriman"
+              value={po.shipping_address}
+            />
+            <div className="md:col-span-2">
+              <InfoItem icon={Info} label="Catatan PO" value={po.notes} />
+            </div>
+            <hr className="md:col-span-2" />
+            <InfoItem
+              icon={CircleUser}
+              label="Vendor"
+              value={po.vendor_details?.name || "N/A"}
+            />
+            <InfoItem
+              icon={Info}
+              label="Kontak Vendor"
+              value={po.vendor_details?.contact_person || "N/A"}
+            />
+            <div className="md:col-span-2">
               <InfoItem
                 icon={Building2}
-                label="Cost Center"
-                value={
-                  poForm.material_requests.cost_center_id?.toString() ||
-                  (poForm.material_requests as any).cost_center || // Fallback
-                  "N/A"
-                }
+                label="Alamat Vendor"
+                value={po.vendor_details?.address || "N/A"}
               />
-              <InfoItem
-                icon={Truck}
-                label="Tujuan Site (MR)"
-                value={poForm.material_requests.tujuan_site || "N/A"}
-              />
-              <div className="md:col-span-2">
-                <InfoItem
-                  icon={Info}
-                  label="Remarks MR"
-                  value={poForm.material_requests.remarks}
-                  isBlock
-                />
-              </div>
             </div>
-          </Content>
-        )}
+          </div>
+        </Content>
 
-        {/* --- REVISI: Tabel Item Referensi MR --- */}
-        {poForm.material_requests && (
-          <Content title="Item Referensi dari MR">
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Item</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead className="text-right">Estimasi Harga</TableHead>
-                    <TableHead className="text-right">Total Estimasi</TableHead>
-                    <TableHead>Link</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(poForm.material_requests.orders as Order[]).map(
-                    (order, index) => (
-                      <TableRow key={index}>
-                        <TableCell className="font-medium">
-                          {order.name}
-                        </TableCell>
-                        <TableCell>
-                          {order.qty} {order.uom}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(order.estimasi_harga)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(
-                            Number(order.qty) * order.estimasi_harga
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {order.url && (
-                            <Button asChild variant={"outline"} size="sm">
-                              <Link
-                                href={order.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                <LinkIcon className="h-3 w-3" />
-                              </Link>
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </Content>
-        )}
-        {/* --- AKHIR REVISI --- */}
-
-        <Content title="Detail Item Pesanan">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[900px]">
+        {/* --- Info Item PO --- */}
+        <Content title="Order Items (PO)">
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Nama Item</TableHead>
                   <TableHead>Part Number</TableHead>
-                  <TableHead>Nama Barang</TableHead>
                   <TableHead>Qty</TableHead>
-                  <TableHead>Harga</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Aksi</TableHead>
+                  <TableHead className="text-right">Harga Satuan</TableHead>
+                  <TableHead className="text-right">Total Harga</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {poForm.items.map((item, index) => (
+                {po.items.map((item, index) => (
                   <TableRow key={index}>
-                    <TableCell>
-                      <span className="font-mono text-xs">
-                        {item.part_number}
-                      </span>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {item.part_number}
                     </TableCell>
-                    <TableCell>{item.name}</TableCell>
                     <TableCell>
-                      {/* Qty tidak bisa diedit di sini, hanya di dialog */}
                       {item.qty} {item.uom}
                     </TableCell>
-                    {/* Harga tidak bisa diedit di sini, hanya di dialog */}
-                    <TableCell>{formatCurrency(item.price)}</TableCell>
-                    <TableCell>{formatCurrency(item.total_price)}</TableCell>
-                    <TableCell>{item.vendor_name}</TableCell>
-                    <TableCell className="space-x-1">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleOpenEditItemDialog(index)}
-                      >
-                        <EditIcon className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => removeItem(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <TableCell className="text-right">
+                      {formatCurrency(item.price)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(item.total_price)}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          <div className="mt-4">
-            <BarangSearchCombobox onSelect={addItem} />
-          </div>
         </Content>
 
-        <Content title="Catatan Internal">
-          <div>
-            <Label className="text-sm font-medium sr-only">
-              Catatan Internal
-            </Label>
-            <Textarea
-              value={poForm.notes || ""}
-              onChange={(e) =>
-                setPoForm((p) => (p ? { ...p, notes: e.target.value } : null))
-              }
-              placeholder="Masukkan catatan internal untuk tim purchasing..."
-              rows={4}
-            />
-          </div>
-        </Content>
+        {/* --- Info Referensi MR (jika ada) --- */}
+        {po.material_requests && (
+          <Content title={`Referensi dari ${po.material_requests.kode_mr}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              <InfoItem
+                icon={CircleUser}
+                label="Pembuat MR"
+                value={po.material_requests.users_with_profiles?.nama || "N/A"}
+              />
+              <InfoItem
+                icon={Building}
+                label="Departemen MR"
+                value={po.material_requests.department}
+              />
+              <InfoItem
+                icon={DollarSign}
+                label="Estimasi Biaya MR"
+                value={formatCurrency(po.material_requests.cost_estimation)}
+              />
+              <InfoItem
+                icon={Building2}
+                label="Cost Center"
+                value={
+                  po.material_requests.cost_center_id?.toString() ||
+                  (po.material_requests as any).cost_center ||
+                  "N/A"
+                }
+              />
+            </div>
+          </Content>
+        )}
       </div>
 
-      <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
-        <Content title="Vendor Utama & Pengiriman">
-          <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium">Nama Vendor Utama</Label>
-              <Input
-                value={poForm.vendor_details?.name || ""}
-                onChange={(e) => handleVendorChange("name", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label className="text-sm font-medium">
-                Kontak Person Vendor
-              </Label>
-              <Input
-                value={poForm.vendor_details?.contact_person || ""}
-                onChange={(e) =>
-                  handleVendorChange("contact_person", e.target.value)
-                }
-              />
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Alamat Vendor</Label>
-              <Textarea
-                value={poForm.vendor_details?.address || ""}
-                onChange={(e) => handleVendorChange("address", e.target.value)}
-              />
-            </div>
-            <hr />
-            <div>
-              <Label className="text-sm font-medium">Payment Term</Label>
-              <div className="flex gap-2 mt-1">
-                <Select
-                  value={paymentTermType}
-                  onValueChange={(value) => setPaymentTermType(value)}
-                >
-                  <SelectTrigger className="w-1/2">
-                    <SelectValue placeholder="Pilih tipe..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Termin">Termin</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                  </SelectContent>
-                </Select>
-                {paymentTermType === "Termin" && (
-                  <div className="w-1/2 relative">
-                    <Input
-                      type="number"
-                      value={paymentTermDays}
-                      onChange={(e) => setPaymentTermDays(e.target.value)}
-                      placeholder="... hari"
-                      className="pr-12"
-                      min="0"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      Hari
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Alamat Pengiriman</Label>
-              <Textarea
-                value={poForm.shipping_address || ""}
-                onChange={(e) =>
-                  setPoForm((p) =>
-                    p ? { ...p, shipping_address: e.target.value } : null
-                  )
-                }
-              />
-            </div>
-          </div>
+      <div className="col-span-12 lg:col-span-4 space-y-6">
+        {/* --- Blok Tindakan --- */}
+        <Content title="Tindakan">
+          <ApprovalActions />
         </Content>
 
-        {/* --- REVISI: Konten Lampiran (terpisah) --- */}
-        <Content title="Lampiran PO">
-          <div className="space-y-4">
-            <Label htmlFor="po-attachment-upload">Tambah Lampiran PO</Label>
-            <Input
-              id="po-attachment-upload"
-              type="file"
-              onChange={(e) => handleAttachmentUpload(e, "po")}
-              disabled={isUploadingPO || isUploadingFinance || actionLoading}
-            />
-            {isUploadingPO && (
-              <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
-              </div>
-            )}
-            {poAttachments.length > 0 ? (
-              <ul className="space-y-2">
-                {poAttachments.map((att, index) => {
-                  const originalIndex =
-                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
-                    -1;
-                  if (originalIndex === -1) return null;
-                  return (
-                    <li
-                      key={originalIndex}
-                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
-                    >
-                      <a
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 truncate hover:underline text-primary"
-                      >
-                        <Paperclip className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">{att.name}</span>
-                      </a>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={() => removeAttachment(originalIndex)}
-                        disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
-                        }
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center pt-2">
-                Belum ada lampiran PO.
-              </p>
-            )}
-          </div>
-        </Content>
-
-        <Content title="Lampiran Finance">
-          <div className="space-y-4">
-            <Label htmlFor="finance-attachment-upload">
-              Tambah Lampiran Finance
-            </Label>
-            <Input
-              id="finance-attachment-upload"
-              type="file"
-              onChange={(e) => handleAttachmentUpload(e, "finance")}
-              disabled={isUploadingPO || isUploadingFinance || actionLoading}
-            />
-            {isUploadingFinance && (
-              <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
-              </div>
-            )}
-            {financeAttachments.length > 0 ? (
-              <ul className="space-y-2">
-                {financeAttachments.map((att, index) => {
-                  const originalIndex =
-                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
-                    -1;
-                  if (originalIndex === -1) return null;
-                  return (
-                    <li
-                      key={originalIndex}
-                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
-                    >
-                      <a
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 truncate hover:underline text-primary"
-                      >
-                        <Paperclip className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">{att.name}</span>
-                      </a>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={() => removeAttachment(originalIndex)}
-                        disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
-                        }
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center pt-2">
-                Belum ada lampiran finance.
-              </p>
-            )}
-          </div>
-        </Content>
-
-        {/* --- REVISI: Ringkasan Biaya dengan CurrencyInput --- */}
-        <Content title="Ringkasan Biaya">
-          <div className="space-y-4">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <Label>Diskon</Label>
-              <CurrencyInput
-                value={poForm.discount}
-                onValueChange={(numValue) =>
-                  setPoForm((p) => (p ? { ...p, discount: numValue } : null))
-                }
-                className="w-32"
-                disabled={actionLoading || isUploadingPO || isUploadingFinance}
-              />
-            </div>
-            <div className="space-y-2 pt-2 border-t">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="include-tax-edit"
-                  checked={isTaxIncluded}
-                  onCheckedChange={(c) => setIsTaxIncluded(c as boolean)}
-                  disabled={
-                    actionLoading || isUploadingPO || isUploadingFinance
-                  }
-                />
-                <Label
-                  htmlFor="include-tax-edit"
-                  className="text-sm font-medium leading-none"
-                >
-                  Harga Item Sudah Termasuk Pajak (PPN)?
-                </Label>
-              </div>
-              {!isTaxIncluded && (
-                <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
-                  <Label className="text-sm font-medium">
-                    Metode Pajak (PPN)
-                  </Label>
-                  <Select
-                    value={taxMode}
-                    onValueChange={(v) => setTaxMode(v as any)}
-                    disabled={
-                      actionLoading || isUploadingPO || isUploadingFinance
-                    }
+        {/* --- Blok Jalur Approval --- */}
+        <Content title="Jalur Approval">
+          {po.approvals && po.approvals.length > 0 ? (
+            <ul className="space-y-2">
+              {po.approvals.map((approver, index) => {
+                const isMyTurn =
+                  currentTurnIndex === index &&
+                  (currentTurnIndex === 0 || allPreviousApproved);
+                return (
+                  <li
+                    key={index}
+                    className={cn(
+                      "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
+                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50"
+                    )}
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih metode..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percentage">Persentase (%)</SelectItem>
-                      <SelectItem value="manual">Manual (Rp)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {taxMode === "percentage" && (
-                    <div className="relative animate-in fade-in">
-                      <Input
-                        type="number"
-                        value={taxPercentage}
-                        onChange={(e) =>
-                          setTaxPercentage(Number(e.target.value) || 0)
-                        }
-                        className="w-full text-right pr-6"
-                        min="0"
-                        step="0.01"
-                        disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
-                        }
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                        %
-                      </span>
+                    <div>
+                      <p className="font-semibold">{approver.nama}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {approver.type}
+                      </p>
+                      {approver.status !== "pending" &&
+                        approver.processed_at && (
+                          <p className="text-xs text-muted-foreground italic mt-1">
+                            {formatDateWithTime(approver.processed_at)}
+                          </p>
+                        )}
                     </div>
-                  )}
-                  {taxMode === "manual" && (
-                    <div className="relative animate-in fade-in">
-                      <CurrencyInput
-                        value={poForm.tax}
-                        onValueChange={(numValue) =>
-                          setPoForm((p) => (p ? { ...p, tax: numValue } : null))
-                        }
-                        className="w-full"
-                        disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <Label>Ongkos Kirim</Label>
-              <CurrencyInput
-                value={poForm.postage}
-                onValueChange={(numValue) =>
-                  setPoForm((p) => (p ? { ...p, postage: numValue } : null))
-                }
-                className="w-32"
-                disabled={actionLoading || isUploadingPO || isUploadingFinance}
-              />
-            </div>
-            <hr className="my-2" />
-            <div className="flex justify-between font-bold text-lg">
-              <span>Grand Total</span>
-              <span>{formatCurrency(poForm.total_price)}</span>
-            </div>
-          </div>
+                    {getApprovalStatusBadge(
+                      approver.status as "approved" | "rejected" | "pending"
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              Jalur approval belum ditentukan oleh GA.
+            </p>
+          )}
+        </Content>
+
+        {/* --- Blok Lampiran PO --- */}
+        <Content title="Lampiran PO">
+          {poAttachments.length > 0 ? (
+            <ul className="space-y-2">
+              {poAttachments.map((file, index) => (
+                <li key={index}>
+                  <Link
+                    href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                    target="_blank"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    <span>{file.name}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
+          )}
+        </Content>
+
+        {/* --- Blok Lampiran Finance --- */}
+        <Content title="Lampiran Finance">
+          {financeAttachments.length > 0 ? (
+            <ul className="space-y-2">
+              {financeAttachments.map((file, index) => (
+                <li key={index}>
+                  <Link
+                    href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                    target="_blank"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    <span>{file.name}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
+          )}
         </Content>
       </div>
 
-      {/* --- REVISI: Dialog Edit Item PO dengan CurrencyInput --- */}
-      <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
+      {/* REVISI: Tambahkan Discussion Section */}
+      <div className="col-span-12">
+        {po.material_requests ? (
+          <DiscussionSection
+            mrId={String(po.material_requests.id)}
+            initialDiscussions={
+              po.material_requests.discussions as Discussion[]
+            }
+          />
+        ) : (
+          <Content title="Diskusi">
+            <p className="text-sm text-muted-foreground text-center">
+              Diskusi hanya tersedia untuk PO yang terhubung ke Material
+              Request.
+            </p>
+          </Content>
+        )}
+      </div>
+
+      {/* REVISI: Tambahkan Dialog Rincian Budget */}
+      <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Item PO</DialogTitle>
+            <DialogTitle>Rincian Biaya PO: {po.kode_po}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Part Number</Label>
-              <p className="col-span-3 font-mono text-sm p-2 border rounded-md bg-muted/50">
-                {itemFormData.part_number || "-"}
-              </p>
+          <div className="space-y-3 py-4">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="font-medium">{formatCurrency(subtotal)}</span>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemNameDlg" className="text-right">
-                Nama Item
-              </Label>
-              <Input
-                id="itemNameDlg"
-                className="col-span-3"
-                value={itemFormData.name}
-                onChange={(e) =>
-                  setItemFormData((prev) => ({ ...prev, name: e.target.value }))
-                }
-              />
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Diskon</span>
+              <span className="font-medium text-destructive">
+                - {formatCurrency(po.discount)}
+              </span>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemUomDlg" className="text-right">
-                UoM
-              </Label>
-              <div className="col-span-3">
-                <Combobox
-                  data={dataUoM}
-                  onChange={(v) =>
-                    setItemFormData((prev) => ({ ...prev, uom: v }))
-                  }
-                  defaultValue={itemFormData.uom}
-                  placeholder="Pilih UoM..."
-                />
-              </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Pajak (PPN)</span>
+              <span className="font-medium">+ {formatCurrency(po.tax)}</span>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemQtyDlg" className="text-right">
-                Quantity
-              </Label>
-              <Input
-                id="itemQtyDlg"
-                className="col-span-3"
-                type="number"
-                value={itemFormData.qty}
-                onChange={(e) =>
-                  setItemFormData((prev) => ({
-                    ...prev,
-                    qty: Number(e.target.value) || 0,
-                  }))
-                }
-                min="1"
-              />
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Ongkos Kirim</span>
+              <span className="font-medium">
+                + {formatCurrency(po.postage)}
+              </span>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemPriceDlg" className="text-right">
-                Harga Satuan
-              </Label>
-              <CurrencyInput
-                id="itemPriceDlg"
-                className="col-span-3"
-                value={itemFormData.price}
-                onValueChange={(value) =>
-                  setItemFormData((prev) => ({
-                    ...prev,
-                    price: value,
-                  }))
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemVendorNameDlg" className="text-right">
-                Vendor Item
-              </Label>
-              <Input
-                id="itemVendorNameDlg"
-                className="col-span-3"
-                value={itemFormData.vendor_name}
-                onChange={(e) =>
-                  setItemFormData((prev) => ({
-                    ...prev,
-                    vendor_name: e.target.value,
-                  }))
-                }
-                placeholder="Nama Vendor Item"
-              />
+            <hr className="my-2" />
+            <div className="flex justify-between items-center text-lg font-bold">
+              <span>Grand Total</span>
+              <span>{formatCurrency(po.total_price)}</span>
             </div>
           </div>
-          <DialogFooter>
-            <Button onClick={handleSaveItemChanges}>
-              Simpan Perubahan Item
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -1112,21 +664,15 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 }
 
 // Ini adalah satu-satunya default export
-export default function EditPOPage({
+export default function DetailPOPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const resolvedParams = use(params);
   return (
-    <Suspense
-      fallback={
-        <div className="col-span-12">
-          <Skeleton className="h-[80vh] w-full" />
-        </div>
-      }
-    >
-      <EditPOPageContent params={resolvedParams} />
+    <Suspense fallback={<DetailPOSkeleton />}>
+      <DetailPOPageContent params={resolvedParams} />
     </Suspense>
   );
 }
