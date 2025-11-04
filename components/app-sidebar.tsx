@@ -159,6 +159,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       profile?.department === "General Affair"
     ) {
       newNav = [
+        newNav[0],
         {
           title: "Cost Center Management",
           url: "/cost-center-management",
