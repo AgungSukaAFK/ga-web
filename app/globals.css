@@ -199,3 +199,51 @@
   pointer-events: none;
   height: 0;
 }
+
+/* ... (style Anda yang lain) ... */
+
+/* ================================================================== */
+/* Print Styles */
+/* ================================================================== */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Sembunyikan semua elemen yang memiliki kelas .no-print */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Tampilkan elemen yang memiliki kelas .print-only */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Atur layout halaman A4 untuk area cetak spesifik PO */
+  #printable-po-a4 {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 15mm; /* Padding untuk margin cetak */
+    font-size: 10pt;
+    color: black;
+    background-color: white;
+  }
+
+  /* Atur ukuran kertas ke A4 secara global */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* Hindari page break di dalam tabel jika memungkinkan */
+  tr,
+  td,
+  th {
+    page-break-inside: avoid !important;
+  }
+}
+
+/* ... (sisa style Anda) ... */
