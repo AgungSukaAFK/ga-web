@@ -71,28 +71,28 @@ import Image from "next/image";
 const COMPANY_DETAILS = {
   GMI: {
     name: "PT. Garuda Mart Indonesia",
-    logo: "/gmi.jpg",
+    logo: "/gmi-logo.webp",
     address: "Sakura Regency Blok J5-8A, Jatiasih, Bekasi 17423 - Indonesia",
     phone: "(021) 824-073-09",
     email: "info@garudamart.com",
   },
   GIS: {
     name: "PT. Global Inti Sejati",
-    logo: "/lourdes.png",
+    logo: "/lourdes-logo.webp",
     address: "Jl. Alamat GIS No. 456, Bekasi, Indonesia",
     phone: "(021) 765-4321",
     email: "info@gis.co.id",
   },
   LOURDES: {
     name: "Lourdes Auto Parts",
-    logo: "/lourdes.png",
-    address: "Jl. Alamat Lourdes No. 789, Tangerang, Indonesia",
-    phone: "(021) 111-2222",
-    email: "info@lourdes.co.id",
+    logo: "/lourdes-logo.webp",
+    address: "Sakura Regency J5-8A, Jati Asih, Bekasi 17423",
+    phone: "(+021) 82407309",
+    email: "info@garudamart.com",
   },
   DEFAULT: {
     name: "Nama Perusahaan Default",
-    logo: "/lourdes.png",
+    logo: "/lourdes-logo.webp",
     address: "Alamat Default",
     phone: "Telepon Default",
     email: "email@default.com",
@@ -754,11 +754,11 @@ const PrintablePO = ({
       {/* 1. Header */}
       <header className="flex justify-between items-start border-b-4 border-black pb-4">
         <div className="flex items-center gap-4">
-          <Image
+          <img
             src={companyInfo.logo}
             alt="Logo Perusahaan"
-            width={80}
-            height={80}
+            width={140}
+            height={140}
           />
           <div>
             <h1 className="text-2xl font-bold">{companyInfo.name}</h1>
