@@ -710,7 +710,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       )}
                     >
                       <div>
-                        <p className="font-semibold">{approver.nama}</p>
+                        <p className="font-semibold">
+                          {approver.nama}{" "}
+                          <span className="ml-2">
+                            <Badge variant={"outline"}>
+                              {approver.department}
+                            </Badge>
+                          </span>
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           {approver.type}
                         </p>
