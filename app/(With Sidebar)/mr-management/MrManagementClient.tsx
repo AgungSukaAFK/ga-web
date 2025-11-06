@@ -102,13 +102,20 @@ export function MrManagementClientContent() {
   const statusFilter = searchParams.get("status") || "";
   const companyFilter = searchParams.get("company") || ""; // Filter company baru
   const limit = Number(searchParams.get("limit") || 25);
-  // REVISI: State filter dan sort baru
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
   const sortFilter = searchParams.get("sort") || "created_at.desc";
+  // --- REVISI: State filter estimasi ---
+  const minEstimasi = searchParams.get("min_estimasi") || "";
+  const maxEstimasi = searchParams.get("max_estimasi") || "";
+  // --- AKHIR REVISI ---
 
   // State untuk input form
   const [searchInput, setSearchInput] = useState(searchTerm);
+  // --- REVISI: State input estimasi ---
+  const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
+  const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
+  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -165,7 +172,7 @@ export function MrManagementClientContent() {
       const from = (currentPage - 1) * limit;
       const to = from + limit - 1;
 
-      // REVISI: Ambil juga cost_estimation dan tujuan_site
+      // REVISI: Ambil juga cost_estimation dan tujuan_site (sudah ada)
       let query = s.from("material_requests").select(
         `
             id, kode_mr, kategori, status, department, created_at, due_date, company_code, cost_estimation,
@@ -182,10 +189,15 @@ export function MrManagementClientContent() {
         );
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
-
-      // REVISI: Terapkan filter baru
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
+      // --- REVISI: Terapkan filter estimasi ---
+      if (minEstimasi)
+        query = query.gte("cost_estimation", Number(minEstimasi));
+      if (maxEstimasi)
+        query = query.lte("cost_estimation", Number(maxEstimasi));
+      // --- AKHIR REVISI ---
 
       if (profileData.company && profileData.company !== "LOURDES") {
         query = query.eq("company_code", profileData.company);
@@ -224,9 +236,11 @@ export function MrManagementClientContent() {
     companyFilter,
     limit,
     router,
-    departmentFilter, // REVISI: Tambah dependency
-    siteFilter, // REVISI: Tambah dependency
-    sortFilter, // REVISI: Tambah dependency
+    departmentFilter,
+    siteFilter,
+    sortFilter,
+    minEstimasi, // <-- REVISI: Tambah dependency
+    maxEstimasi, // <-- REVISI: Tambah dependency
   ]);
 
   // Efek untuk debounce pencarian
@@ -252,7 +266,7 @@ export function MrManagementClientContent() {
     });
   };
 
-  // --- REVISI: handleDownloadExcel ---
+  // --- REVISI: handleDownloadExcel (sudah ada cost_estimation) ---
   const handleDownloadExcel = async () => {
     if (!adminProfile) return;
     setIsExporting(true);
@@ -273,10 +287,14 @@ export function MrManagementClientContent() {
         );
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
-
-      // REVISI: Terapkan filter baru
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+      // --- REVISI: Terapkan filter estimasi ---
+      if (minEstimasi)
+        query = query.gte("cost_estimation", Number(minEstimasi));
+      if (maxEstimasi)
+        query = query.lte("cost_estimation", Number(maxEstimasi));
+      // --- AKHIR REVISI ---
 
       if (adminProfile.company && adminProfile.company !== "LOURDES") {
         query = query.eq("company_code", adminProfile.company);
@@ -393,7 +411,6 @@ export function MrManagementClientContent() {
         </div>
 
         <div className="p-4 border rounded-lg bg-muted/50">
-          {/* REVISI: Grid layout diubah untuk 4-5 filter */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Filter Status */}
             <div className="flex flex-col gap-2">
@@ -445,7 +462,6 @@ export function MrManagementClientContent() {
               </div>
             )}
 
-            {/* REVISI: Filter Departemen */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Departemen</label>
               <Select
@@ -470,7 +486,6 @@ export function MrManagementClientContent() {
               </Select>
             </div>
 
-            {/* REVISI: Filter Tujuan Site */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Tujuan Site</label>
               <Select
@@ -495,13 +510,48 @@ export function MrManagementClientContent() {
               </Select>
             </div>
           </div>
+          {/* --- REVISI: Baris baru untuk filter estimasi --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Min Estimasi</label>
+              <Input
+                type="number"
+                placeholder="Rp 0"
+                value={minEstimasiInput}
+                onChange={(e) => setMinEstimasiInput(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Max Estimasi</label>
+              <Input
+                type="number"
+                placeholder="Rp 1.000.000"
+                value={maxEstimasiInput}
+                onChange={(e) => setMaxEstimasiInput(e.target.value)}
+              />
+            </div>
+            <div className="lg:col-span-2 flex flex-col gap-2 justify-end">
+              <Button
+                className="w-full"
+                onClick={() =>
+                  handleFilterChange({
+                    min_estimasi: minEstimasiInput || undefined,
+                    max_estimasi: maxEstimasiInput || undefined,
+                  })
+                }
+              >
+                Terapkan Filter Estimasi
+              </Button>
+            </div>
+          </div>
+          {/* --- AKHIR REVISI --- */}
         </div>
       </div>
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto">
-        {/* REVISI: Tambah min-w */}
-        <Table className="min-w-[1300px]">
+        {/* REVISI: Tambah min-w-[1400px] dan ColSpan 11 */}
+        <Table className="min-w-[1400px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
@@ -509,9 +559,9 @@ export function MrManagementClientContent() {
               <TableHead>Requester</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>
-              {/* REVISI: Kolom baru */}
               <TableHead>Perusahaan</TableHead>
               <TableHead>Status</TableHead>
+              {/* --- REVISI: Kolom Estimasi --- */}
               <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
@@ -520,7 +570,7 @@ export function MrManagementClientContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                {/* REVISI: ColSpan + 1 */}
+                {/* REVISI: ColSpan 10 */}
                 <TableCell colSpan={10} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -538,13 +588,13 @@ export function MrManagementClientContent() {
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
-                  {/* REVISI: Cell baru */}
                   <TableCell>
                     <Badge variant="outline">{mr.company_code || "N/A"}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
                   </TableCell>
+                  {/* --- REVISI: Cell Estimasi --- */}
                   <TableCell className="text-right font-medium">
                     {formatCurrency(mr.cost_estimation)}
                   </TableCell>
@@ -561,7 +611,7 @@ export function MrManagementClientContent() {
               ))
             ) : (
               <TableRow>
-                {/* REVISI: ColSpan + 1 */}
+                {/* REVISI: ColSpan 10 */}
                 <TableCell colSpan={10} className="text-center h-24">
                   Tidak ada Material Request yang ditemukan.
                 </TableCell>

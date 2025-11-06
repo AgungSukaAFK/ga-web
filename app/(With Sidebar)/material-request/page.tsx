@@ -46,7 +46,7 @@ import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequest } from "@/type"; // REVISI: Impor Tipe 'Order' dan 'MaterialRequest'
 import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
-import { formatDateFriendly } from "@/lib/utils";
+import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // <-- REVISI: Import formatCurrency
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
@@ -151,15 +151,21 @@ function MaterialRequestContent() {
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
   const sortFilter = searchParams.get("sort") || "created_at.desc";
-  // --- REVISI: Tambahkan state filter baru ---
   const prioritasFilter = searchParams.get("prioritas") || "";
   const levelFilter = searchParams.get("level") || "";
+  // --- REVISI: State filter estimasi ---
+  const minEstimasi = searchParams.get("min_estimasi") || "";
+  const maxEstimasi = searchParams.get("max_estimasi") || "";
   // --- AKHIR REVISI ---
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
+  // --- REVISI: State input estimasi ---
+  const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
+  const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
+  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -210,11 +216,11 @@ function MaterialRequestContent() {
       const to = from + limit - 1;
 
       try {
-        // --- REVISI: Tambahkan 'prioritas' dan 'level' ke select ---
+        // --- REVISI: Tambahkan 'cost_estimation' ke select ---
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
-            tujuan_site, prioritas, level,
+            tujuan_site, prioritas, level, cost_estimation,
             users_with_profiles!userid (nama)
           `,
           { count: "exact" }
@@ -233,10 +239,14 @@ function MaterialRequestContent() {
 
         if (departmentFilter) query = query.eq("department", departmentFilter);
         if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-
-        // --- REVISI: Terapkan filter baru ---
         if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
         if (levelFilter) query = query.eq("level", levelFilter);
+
+        // --- REVISI: Terapkan filter estimasi ---
+        if (minEstimasi)
+          query = query.gte("cost_estimation", Number(minEstimasi));
+        if (maxEstimasi)
+          query = query.lte("cost_estimation", Number(maxEstimasi));
         // --- AKHIR REVISI ---
 
         // 4. Terapkan filter berdasarkan ROLE
@@ -281,8 +291,10 @@ function MaterialRequestContent() {
     departmentFilter,
     siteFilter,
     sortFilter,
-    prioritasFilter, // <-- REVISI: Tambah dependency
-    levelFilter, // <-- REVISI: Tambah dependency
+    prioritasFilter,
+    levelFilter,
+    minEstimasi, // <-- REVISI: Tambah dependency
+    maxEstimasi, // <-- REVISI: Tambah dependency
   ]);
 
   // Efek debounce pencarian
@@ -308,14 +320,14 @@ function MaterialRequestContent() {
     });
   };
 
-  // --- REVISI: Handler Download Excel diperbarui ---
+  // --- REVISI: Handler Download Excel (sudah ada cost_estimation) ---
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Ambil kolom 'orders', 'prioritas', 'level'
+      // 1. Ambil kolom 'orders', 'prioritas', 'level', 'cost_estimation'
       let query = s.from("material_requests").select(`
           kode_mr, kategori, department, status, remarks, cost_estimation, 
           tujuan_site, company_code, created_at, due_date,
@@ -335,6 +347,12 @@ function MaterialRequestContent() {
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
       if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
       if (levelFilter) query = query.eq("level", levelFilter);
+      // --- REVISI: Terapkan filter estimasi ---
+      if (minEstimasi)
+        query = query.gte("cost_estimation", Number(minEstimasi));
+      if (maxEstimasi)
+        query = query.lte("cost_estimation", Number(maxEstimasi));
+      // --- AKHIR REVISI ---
 
       if (currentUser.role === "requester") {
         query = query.eq("userid", currentUser.id);
@@ -360,8 +378,8 @@ function MaterialRequestContent() {
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
-          Level: mr.level, // <-- Tambahkan Level
-          Prioritas: mr.prioritas, // <-- Tambahkan Prioritas
+          Level: mr.level,
+          Prioritas: mr.prioritas,
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
           Remarks: mr.remarks,
@@ -466,7 +484,7 @@ function MaterialRequestContent() {
 
         {/* --- REVISI: Grid filter diubah --- */}
         <div className="p-4 border rounded-lg bg-muted/50">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
               <Select
@@ -491,7 +509,6 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            {/* --- REVISI: Filter Prioritas --- */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Prioritas</label>
               <Select
@@ -516,7 +533,6 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            {/* --- REVISI: Filter Level --- */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Level</label>
               <Select
@@ -540,29 +556,8 @@ function MaterialRequestContent() {
                 </SelectContent>
               </Select>
             </div>
-            {/* --- AKHIR REVISI --- */}
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Dari Tanggal</label>
-              <Input
-                type="date"
-                value={startDateInput}
-                onChange={(e) => setStartDateInput(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Sampai Tanggal</label>
-              <Input
-                type="date"
-                value={endDateInput}
-                onChange={(e) => setEndDateInput(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* REVISI: Filter Departemen & Site dipindah ke baris baru */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
-            <div className="flex flex-col gap-2 lg:col-span-2">
               <label className="text-sm font-medium">Departemen</label>
               <Select
                 onValueChange={(value) =>
@@ -585,8 +580,10 @@ function MaterialRequestContent() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2 lg:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Tujuan Site</label>
               <Select
                 onValueChange={(value) =>
@@ -610,6 +607,46 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Min Estimasi</label>
+              <Input
+                type="number"
+                placeholder="Rp 0"
+                value={minEstimasiInput}
+                onChange={(e) => setMinEstimasiInput(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Max Estimasi</label>
+              <Input
+                type="number"
+                placeholder="Rp 1.000.000"
+                value={maxEstimasiInput}
+                onChange={(e) => setMaxEstimasiInput(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Dari Tanggal</label>
+              <Input
+                type="date"
+                value={startDateInput}
+                onChange={(e) => setStartDateInput(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Sampai Tanggal</label>
+              <Input
+                type="date"
+                value={endDateInput}
+                onChange={(e) => setEndDateInput(e.target.value)}
+              />
+            </div>
+            <div className="lg:col-span-2"></div>
             <div className="flex flex-col gap-2 justify-end">
               <Button
                 className="w-full"
@@ -617,6 +654,8 @@ function MaterialRequestContent() {
                   handleFilterChange({
                     startDate: startDateInput,
                     endDate: endDateInput,
+                    min_estimasi: minEstimasiInput || undefined,
+                    max_estimasi: maxEstimasiInput || undefined,
                   })
                 }
               >
@@ -631,13 +670,13 @@ function MaterialRequestContent() {
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
         {/* REVISI: Tambah min-w */}
-        <Table className="min-w-[1400px]">
+        <Table className="min-w-[1500px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
-              <TableHead>Prioritas</TableHead> {/* <-- REVISI: Kolom Baru */}
-              <TableHead>Level</TableHead> {/* <-- REVISI: Kolom Baru */}
+              <TableHead>Prioritas</TableHead>
+              <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>
@@ -645,15 +684,16 @@ function MaterialRequestContent() {
               <TableHead>Status</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead>Due Date</TableHead>
+              {/* --- REVISI: Kolom Estimasi --- */}
+              <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead className="text-right no-print">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center h-24">
-                  {" "}
-                  {/* REVISI: ColSpan */}
+                {/* REVISI: ColSpan */}
+                <TableCell colSpan={13} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -667,7 +707,6 @@ function MaterialRequestContent() {
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
                   <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
-                  {/* --- REVISI: Cell Baru --- */}
                   <TableCell>
                     <Badge
                       variant={
@@ -684,7 +723,6 @@ function MaterialRequestContent() {
                       {mr.level}
                     </Badge>
                   </TableCell>
-                  {/* --- AKHIR REVISI --- */}
                   <TableCell>{mr.kategori}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
@@ -698,6 +736,10 @@ function MaterialRequestContent() {
                   <TableCell>
                     {formatDateFriendly(mr.due_date ?? undefined)}
                   </TableCell>
+                  {/* --- REVISI: Cell Estimasi --- */}
+                  <TableCell className="text-right font-medium">
+                    {formatCurrency(mr.cost_estimation)}
+                  </TableCell>
                   <TableCell className="text-right no-print">
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/material-request/${mr.id}`}>View</Link>
@@ -707,9 +749,8 @@ function MaterialRequestContent() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={12} className="text-center h-24">
-                  {" "}
-                  {/* REVISI: ColSpan */}
+                {/* REVISI: ColSpan */}
+                <TableCell colSpan={13} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
               </TableRow>
