@@ -72,6 +72,8 @@ export default function ApprovalPOPage() {
       const fetchPoData = async () => {
         setLoading(true);
         const supabase = createClient();
+
+        // --- REVISI: Menggunakan .maybeSingle() ---
         const { data, error } = await supabase
           .from("purchase_orders")
           .select(
@@ -82,22 +84,28 @@ export default function ApprovalPOPage() {
             `
           )
           .eq("id", poId)
-          .single();
+          .maybeSingle();
 
         if (error) {
           setError(error.message);
         } else if (data) {
-          // REVISI: Transformasi data sebelum set state
-          const transformedData = {
+          const normalized = {
             ...data,
-            users_with_profiles: Array.isArray(data.users_with_profiles)
-              ? data.users_with_profiles[0] ?? null
-              : data.users_with_profiles,
-            material_requests: Array.isArray(data.material_requests)
-              ? data.material_requests[0] ?? null
-              : data.material_requests,
-          };
-          setPo(transformedData as POApprovalDetail);
+            users_with_profiles:
+              Array.isArray((data as any).users_with_profiles) &&
+              (data as any).users_with_profiles.length > 0
+                ? (data as any).users_with_profiles[0]
+                : (data as any).users_with_profiles || null,
+            material_requests:
+              Array.isArray((data as any).material_requests) &&
+              (data as any).material_requests.length > 0
+                ? (data as any).material_requests[0]
+                : (data as any).material_requests || null,
+          } as unknown as POApprovalDetail;
+
+          setPo(normalized);
+        } else {
+          setError("Purchase Order tidak ditemukan.");
         }
         setLoading(false);
       };

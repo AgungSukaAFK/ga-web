@@ -48,7 +48,7 @@ import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // <-- REVISI: Import formatCurrency
 import { Badge } from "@/components/ui/badge";
-import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
+import { DATA_LEVEL, LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
@@ -103,18 +103,6 @@ const dataPrioritas: { label: string; value: string }[] = [
   { label: "P4", value: "P4" },
 ];
 
-const dataLevel: { label: string; value: string }[] = [
-  { label: "OPEN 1", value: "OPEN 1" },
-  { label: "OPEN 2", value: "OPEN 2" },
-  { label: "OPEN 3A", value: "OPEN 3A" },
-  { label: "OPEN 3B", value: "OPEN 3B" },
-  { label: "OPEN 4", value: "OPEN 4" },
-  { label: "OPEN 5", value: "OPEN 5" },
-  { label: "CLOSE 1", value: "CLOSE 1" },
-  { label: "CLOSE 2A", value: "CLOSE 2A" },
-  { label: "CLOSE 2B", value: "CLOSE 2B" },
-  { label: "CLOSE 3", value: "CLOSE 3" },
-];
 // --- AKHIR REVISI ---
 
 function MaterialRequestContent() {
@@ -540,7 +528,7 @@ function MaterialRequestContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Level</SelectItem>
-                  {dataLevel.map((l) => (
+                  {DATA_LEVEL.map((l) => (
                     <SelectItem key={l.value} value={l.value}>
                       {l.label}
                     </SelectItem>

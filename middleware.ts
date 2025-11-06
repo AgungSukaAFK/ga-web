@@ -35,8 +35,10 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getSession();
   const { pathname } = request.nextUrl;
 
-  // Halaman publik yang selalu bisa diakses
-  const publicPaths = [
+  // --- REVISI LOGIKA ---
+
+  // 1. Daftar halaman otentikasi (user yg sudah login tidak boleh akses ini)
+  const authPaths = [
     "/auth/login",
     "/auth/sign-up",
     "/auth/forgot-password",
@@ -44,56 +46,79 @@ export async function middleware(request: NextRequest) {
     "/auth/sign-up-success",
     "/auth/confirm",
     "/auth/update-password",
-    "/pending-approval",
   ];
 
-  // Jika user BELUM login
+  // 2. Daftar halaman "Tunggu" (hanya boleh diakses user login yg belum aktif)
+  const pendingPath = "/pending-approval";
+
+  // 3. Daftar halaman publik (bisa diakses siapa saja, kapan saja)
+  const otherPublicPaths = [
+    "/", // Landing page
+  ];
+
+  // 4. Pola Regex untuk rute publik dinamis
+  const dynamicPublicPatterns = [
+    /^\/approval-po\/[0-9]+$/, // Cocok: /approval-po/123, /approval-po/88
+    // Tidak Cocok: /approval-po/, /approval-po/validate
+  ];
+
+  // Cek apakah path saat ini adalah path publik
+  const isAuthPath = authPaths.includes(pathname);
+  const isPendingPath = pathname === pendingPath;
+  const isOtherPublicPath = otherPublicPaths.includes(pathname);
+  const isDynamicPublicPath = dynamicPublicPatterns.some((pattern) =>
+    pattern.test(pathname)
+  );
+
+  // ===================================
+  // LOGIKA UNTUK USER BELUM LOGIN
+  // ===================================
   if (!session) {
-    // Jika mencoba akses halaman selain halaman publik, redirect ke login, diperbolehkan jika akses root url (landing page)
-    if (!publicPaths.includes(pathname) && pathname !== "/") {
-      return NextResponse.redirect(new URL("/auth/login", request.url));
+    // User belum login HANYA boleh akses:
+    // - Halaman Auth (isAuthPath)
+    // - Halaman Publik Lain (isOtherPublicPath)
+    // - Halaman PO Dinamis (isDynamicPublicPath)
+    if (isAuthPath || isOtherPublicPath || isDynamicPublicPath) {
+      return response; // Biarkan
     }
-    // Jika sudah di halaman publik, biarkan
-    return response;
+
+    // Jika akses halaman lain (misal /dashboard), redirect ke login
+    return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  // Jika user SUDAH login
+  // ===================================
+  // LOGIKA UNTUK USER SUDAH LOGIN
+  // ===================================
   if (session) {
     // Ambil profile-nya
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("nrp, company") // Cek kolom nrp dan company
+      .select("nrp, company")
       .eq("id", session.user.id)
-      .maybeSingle(); // Gunakan maybeSingle untuk handle jika profile belum ada
+      .maybeSingle();
 
-    // Handle jika ada error saat fetch profile (selain user belum ada profile)
     if (profileError && profileError.code !== "PGRST116") {
       console.error("Middleware profile fetch error:", profileError);
-      // Mungkin redirect ke halaman error atau logout?
-      // Untuk sementara, biarkan lanjut tapi log error
     }
 
     // Kondisi 1: User login tapi BELUM punya NRP/Company (belum diaktifkan)
     if (!profile?.nrp || !profile?.company) {
-      // Jika TIDAK sedang di halaman pending, redirect ke sana
-      if (pathname !== "/pending-approval") {
-        console.log("User lacks NRP/Company, redirecting to /pending-approval");
+      // Jika user belum aktif, HANYA boleh akses halaman pending
+      if (!isPendingPath) {
         return NextResponse.redirect(new URL("/pending-approval", request.url));
       }
     }
     // Kondisi 2: User SUDAH punya NRP/Company (sudah aktif)
     else {
-      // Jika mencoba akses halaman login, signup, atau pending, redirect ke dashboard
-      if (publicPaths.includes(pathname)) {
-        console.log(
-          "Activated user accessing public auth page, redirecting to /"
-        );
-        return NextResponse.redirect(new URL("/", request.url));
+      // Jika user sudah aktif, dia TIDAK BOLEH akses halaman auth atau halaman pending
+      if (isAuthPath || isPendingPath) {
+        return NextResponse.redirect(new URL("/", request.url)); // Redirect ke dashboard
       }
     }
   }
 
-  // Jika semua kondisi lolos, lanjutkan request
+  // Jika semua kondisi lolos (user aktif akses halaman terproteksi,
+  // atau user (non)aktif akses halaman publik dinamis), biarkan request.
   return response;
 }
 
