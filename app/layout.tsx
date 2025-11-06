@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { ThemeProvider } from "next-themes";
+import { CustomThemeProvider } from "@/lib/theme-provider"; // <-- REVISI
 import "./globals.css";
 import { Toaster } from "sonner";
 
@@ -28,14 +28,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
-        <ThemeProvider
+        {/* REVISI: Gunakan CustomThemeProvider */}
+        <CustomThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
           {children}
-        </ThemeProvider>
+        </CustomThemeProvider>
         <Toaster richColors position="bottom-right" />
       </body>
     </html>

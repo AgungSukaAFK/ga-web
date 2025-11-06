@@ -47,25 +47,28 @@
 
 @layer base {
   :root {
+    /* ====================================================== */
+    /* REVISI: Menggunakan Tema ZINC (Default) - Light Mode   */
+    /* ====================================================== */
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 240 5.9% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 240 5.9% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
+    --popover-foreground: 240 5.9% 10%;
+    --primary: 240 5.9% 10%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --chart-1: oklch(0.646 0.222 41.116);
     --chart-2: oklch(0.6 0.118 184.704);
@@ -74,30 +77,59 @@
     --chart-5: oklch(0.769 0.188 70.08);
   }
   .dark {
-    --background: 0 0% 3.9%;
+    /* ====================================================== */
+    /* REVISI: Menggunakan Tema ZINC (Default) - Dark Mode    */
+    /* Ini tidak lagi hitam pekat, tapi slate/zinc gelap.     */
+    /* ====================================================== */
+    --background: 240 5.9% 10%;
     --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
+    --card: 240 5.9% 10%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
+    --popover: 240 5.9% 10%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
     --chart-1: oklch(0.488 0.243 264.376);
     --chart-2: oklch(0.696 0.17 162.48);
     --chart-3: oklch(0.769 0.188 70.08);
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
+  }
+
+  /* ====================================================== */
+  /* BARU: Tambahan Tema Warna Aksen (Colorful)             */
+  /* ====================================================== */
+
+  /* Tema Blue */
+  .theme-blue {
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 210 40% 98%;
+    --ring: 217.2 91.2% 59.8%;
+  }
+
+  /* Tema Rose */
+  .theme-rose {
+    --primary: 346.8 77.2% 49.8%;
+    --primary-foreground: 355.7 100% 97.3%;
+    --ring: 346.8 77.2% 49.8%;
+  }
+
+  /* Tema Green */
+  .theme-green {
+    --primary: 142.1 76.2% 36.3%;
+    --primary-foreground: 144.9 80.4% 97.3%;
+    --ring: 142.1 76.2% 36.3%;
   }
 
   /* Global styles */
@@ -130,16 +162,19 @@
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
   }
   .dark {
+    /* REVISI: Dark mode sidebar juga disesuaikan dengan Zinc */
     --sidebar: hsl(240 5.9% 10%);
-    --sidebar-foreground: hsl(240 4.8% 95.9%);
-    --sidebar-primary: hsl(224.3 76.3% 48%);
-    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-foreground: hsl(0 0% 98%);
+    --sidebar-primary: hsl(0 0% 98%);
+    --sidebar-primary-foreground: hsl(240 5.9% 10%);
     --sidebar-accent: hsl(240 3.7% 15.9%);
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+    --sidebar-accent-foreground: hsl(0 0% 98%);
     --sidebar-border: hsl(240 3.7% 15.9%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar-ring: hsl(240 4.9% 83.9%);
   }
 }
+
+/* ... (Sisa styling print & tiptap Anda) ... */
 
 /* ================================================================== */
 /* Print Styles (Metode yang Benar & Fleksibel) */
@@ -231,6 +266,18 @@
     color: black;
     background-color: white;
   }
+
+  /* REVISI: Fix untuk tabel di PO cetak agar text wrap */
+  #printable-po-a4 table {
+    table-layout: fixed;
+    width: 100%;
+  }
+  #printable-po-a4 th,
+  #printable-po-a4 td {
+    word-wrap: break-word; /* Memaksa text turun ke bawah */
+    overflow-wrap: break-word;
+  }
+  /* --- AKHIR REVISI CETAK --- */
 
   /* Atur ukuran kertas ke A4 secara global */
   @page {

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
+import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
 
 // REVISI: Tambahkan nrp dan company ke tipe Profile
 type Profile = {
@@ -337,10 +338,15 @@ export default function Dashboard() {
         </div>
       </Content>
       <Content size="xs">
+        {/* --- REVISI: Tambahkan AccentThemeSwitcher --- */}
         <div className="flex justify-between items-center">
           <Label className="text-base font-bold">Pengaturan Tema</Label>
-          <ThemeSwitcher />
+          <div className="flex items-center gap-1">
+            <AccentThemeSwitcher />
+            <ThemeSwitcher />
+          </div>
         </div>
+        {/* --- AKHIR REVISI --- */}
       </Content>
     </>
   );
