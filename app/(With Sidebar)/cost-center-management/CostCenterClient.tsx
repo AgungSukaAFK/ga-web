@@ -415,14 +415,17 @@ export function CostCenterClientContent() {
         .select("*")
         .eq("id", user.id)
         .single();
-      const allowedDepartments = ["General Affair", "General Manager", "Admin"];
+      const allowedDepartments = ["General Affair", "General Manager"];
+      const allowedRoles = ["admin"];
       if (
         !profileData ||
         !allowedDepartments.includes(profileData.department)
       ) {
-        toast.error("Akses ditolak.");
-        router.push("/dashboard");
-        return;
+        if (!allowedRoles.includes(profileData.role)) {
+          toast.error("Akses ditolak.");
+          router.push("/dashboard");
+          return;
+        }
       }
       setAdminProfile(profileData);
 

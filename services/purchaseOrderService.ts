@@ -8,7 +8,7 @@ import {
   MaterialRequest,
   PurchaseOrderDetail,
   PurchaseOrderPayload,
-  PurchaseOrderListItem
+  PurchaseOrderListItem,
 } from "@/type";
 
 const supabase = createClient();
@@ -203,6 +203,7 @@ export const createPurchaseOrder = async (
 export const fetchPurchaseOrderById = async (
   id: number
 ): Promise<PurchaseOrderDetail | null> => {
+  // --- REVISI DI SINI ---
   const { data, error } = await supabase
     .from("purchase_orders")
     .select(
@@ -210,13 +211,15 @@ export const fetchPurchaseOrderById = async (
       *, 
       material_requests!mr_id (
         *, 
-        users_with_profiles!userid (nama)
+        users_with_profiles!userid (nama),
+        cost_centers!cost_center_id (name) 
       ), 
       users_with_profiles!user_id (nama, email)
     `
     )
     .eq("id", id)
     .single();
+  // --- AKHIR REVISI ---
 
   if (error) {
     console.error("Error fetching PO details:", error);

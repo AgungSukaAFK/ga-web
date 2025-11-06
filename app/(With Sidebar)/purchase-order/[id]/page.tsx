@@ -466,6 +466,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   </div>
                 }
               />
+              {/* --- REVISI: Quick Link ke MR --- */}
+              <InfoItem
+                icon={Tag}
+                label="Ref. MR"
+                value={
+                  po.material_requests ? (
+                    <Link
+                      href={`/material-request/${po.material_requests.id}`}
+                      className="text-primary hover:underline flex items-center gap-1"
+                      target="_blank"
+                    >
+                      {po.material_requests.kode_mr}
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
+                  ) : (
+                    "Tidak ada"
+                  )
+                }
+              />
+              {/* --- AKHIR REVISI --- */}
               <InfoItem
                 icon={Wallet}
                 label="Payment Term"
@@ -477,7 +497,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 value={po.shipping_address}
               />
               <div className="md:col-span-2">
-                <InfoItem icon={Info} label="Catatan PO" value={po.notes} />
+                <InfoItem
+                  icon={Info}
+                  label="Catatan PO"
+                  value={po.notes || "N/A"}
+                  isBlock
+                />
               </div>
               <hr className="md:col-span-2" />
               <InfoItem
@@ -495,6 +520,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   icon={Building2}
                   label="Alamat Vendor"
                   value={po.vendor_details?.address || "N/A"}
+                  isBlock
                 />
               </div>
             </div>
@@ -536,9 +562,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- Info Referensi MR (jika ada) --- */}
+          {/* --- REVISI: Info Referensi MR (jika ada) --- */}
           {po.material_requests && (
-            <Content title={`Referensi dari ${po.material_requests.kode_mr}`}>
+            <Content
+              title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <InfoItem
                   icon={CircleUser}
@@ -557,16 +585,82 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   label="Estimasi Biaya MR"
                   value={formatCurrency(po.material_requests.cost_estimation)}
                 />
+                {/* --- REVISI: Tampilkan Nama Cost Center --- */}
                 <InfoItem
                   icon={Building2}
                   label="Cost Center"
                   value={
-                    po.material_requests.cost_center_id?.toString() ||
-                    (po.material_requests as any).cost_center ||
+                    (po.material_requests.cost_centers as any)?.name || // Gunakan nama dari join
+                    (po.material_requests as any).cost_center || // Fallback ke field lama
                     "N/A"
                   }
                 />
+                {/* --- AKHIR REVISI --- */}
+                <div className="md:col-span-2">
+                  <InfoItem
+                    icon={Info}
+                    label="Remarks MR"
+                    value={po.material_requests.remarks}
+                    isBlock
+                  />
+                </div>
               </div>
+
+              {/* --- REVISI: Tambahkan tabel item MR --- */}
+              <h4 className="font-semibold mt-6 mb-2">Item di MR:</h4>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama Item</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead className="text-right">
+                        Estimasi Harga
+                      </TableHead>
+                      <TableHead className="text-right">
+                        Total Estimasi
+                      </TableHead>
+                      <TableHead>Link</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(po.material_requests.orders as Order[]).map(
+                      (order, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-medium">
+                            {order.name}
+                          </TableCell>
+                          <TableCell>
+                            {order.qty} {order.uom}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(order.estimasi_harga)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(
+                              Number(order.qty) * order.estimasi_harga
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {order.url && (
+                              <Button asChild variant={"outline"} size="sm">
+                                <Link
+                                  href={order.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <LinkIcon className="h-3 w-3" />
+                                </Link>
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* --- AKHIR REVISI --- */}
             </Content>
           )}
         </div>
@@ -762,7 +856,9 @@ const PrintablePO = ({
           />
           <div>
             <h1 className="text-2xl font-bold">{companyInfo.name}</h1>
-            <p className="text-xs">{companyInfo.address}</p>
+            <p className="text-xs whitespace-normal break-words">
+              {companyInfo.address}
+            </p>
             <p className="text-xs">
               {companyInfo.phone} | {companyInfo.email}
             </p>
@@ -782,13 +878,19 @@ const PrintablePO = ({
         <div className="space-y-1 rounded border p-4">
           <h3 className="font-semibold">KEPADA YTH (VENDOR):</h3>
           <p className="text-sm font-bold">{po.vendor_details?.name}</p>
-          <p className="text-xs">{po.vendor_details?.address}</p>
+          {/* --- REVISI: Tambahkan text wrap --- */}
+          <p className="text-xs whitespace-normal break-words">
+            {po.vendor_details?.address}
+          </p>
           <p className="text-xs">Kontak: {po.vendor_details?.contact_person}</p>
         </div>
         <div className="space-y-1 rounded border p-4">
           <h3 className="font-semibold">ALAMAT PENGIRIMAN:</h3>
           <p className="text-sm font-bold">{companyInfo.name}</p>
-          <p className="text-xs">{po.shipping_address}</p>
+          {/* --- REVISI: Tambahkan text wrap --- */}
+          <p className="text-xs whitespace-normal break-words">
+            {po.shipping_address}
+          </p>
           <p className="text-xs">
             Ref. MR: {po.material_requests?.kode_mr || "N/A"}
           </p>
@@ -800,9 +902,10 @@ const PrintablePO = ({
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-200">
-              <TableHead className="text-black">No.</TableHead>
-              <TableHead className="text-black">Nama Barang</TableHead>
-              <TableHead className="text-black">Part Number</TableHead>
+              {/* --- REVISI: Tambahkan lebar kolom --- */}
+              <TableHead className="text-black w-[5%]">No.</TableHead>
+              <TableHead className="text-black w-[35%]">Nama Barang</TableHead>
+              <TableHead className="text-black w-[20%]">Part Number</TableHead>
               <TableHead className="text-black text-center">Qty</TableHead>
               <TableHead className="text-black">UoM</TableHead>
               <TableHead className="text-black text-right">
@@ -815,8 +918,13 @@ const PrintablePO = ({
             {po.items.map((item, index) => (
               <TableRow key={index}>
                 <TableCell>{index + 1}</TableCell>
-                <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell className="font-mono">{item.part_number}</TableCell>
+                {/* --- REVISI: Tambahkan text wrap --- */}
+                <TableCell className="font-medium whitespace-normal break-words">
+                  {item.name}
+                </TableCell>
+                <TableCell className="font-mono whitespace-normal break-words">
+                  {item.part_number}
+                </TableCell>
                 <TableCell className="text-center">{item.qty}</TableCell>
                 <TableCell>{item.uom}</TableCell>
                 <TableCell className="text-right">
@@ -835,7 +943,9 @@ const PrintablePO = ({
       <section className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
           <h3 className="font-semibold">Catatan:</h3>
-          <p className="text-xs italic">{po.notes || "Tidak ada catatan."}</p>
+          <p className="text-xs italic whitespace-normal break-words">
+            {po.notes || "Tidak ada catatan."}
+          </p>
           <h3 className="font-semibold pt-2">Payment Term:</h3>
           <p className="text-xs">{po.payment_term}</p>
         </div>
