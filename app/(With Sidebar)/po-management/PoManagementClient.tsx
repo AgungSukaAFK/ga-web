@@ -32,17 +32,7 @@ import * as XLSX from "xlsx";
 import { PurchaseOrderListItem, Profile } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { LIMIT_OPTIONS } from "@/type/enum";
-
-const STATUS_OPTIONS = [
-  "Pending Validation",
-  "Pending Approval",
-  "Pending BAST",
-  "Completed",
-  "Rejected",
-  "Draft",
-  "Ordered",
-];
+import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 
 export function PoManagementClientContent() {
   const s = createClient();

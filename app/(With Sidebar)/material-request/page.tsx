@@ -48,7 +48,7 @@ import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // <-- REVISI: Import formatCurrency
 import { Badge } from "@/components/ui/badge";
-import { LIMIT_OPTIONS } from "@/type/enum";
+import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
@@ -85,14 +85,6 @@ const dataLokasi: ComboboxData = [
   { label: "Site BIB", value: "Site BIB" },
   { label: "Site AMI", value: "Site AMI" },
   { label: "Site Tabang", value: "Site Tabang" },
-];
-
-const STATUS_OPTIONS = [
-  "Pending Validation",
-  "Pending Approval",
-  "Waiting PO",
-  "Completed",
-  "Rejected",
 ];
 
 const SORT_OPTIONS = [

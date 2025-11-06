@@ -79,6 +79,7 @@ import {
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { fetchActiveCostCenters } from "@/services/mrService";
 import { addDays } from "date-fns"; // <-- REVISI: Tambahan
+import { STATUS_OPTIONS } from "@/type/enum";
 
 // --- REVISI: Pindahkan data konstanta ke atas ---
 const dataUoM: ComboboxData = [
@@ -167,13 +168,6 @@ const dataLevel: { label: string; value: string; group: string }[] = [
   },
 ];
 
-const STATUS_OPTIONS: MaterialRequest["status"][] = [
-  "Pending Validation",
-  "Pending Approval",
-  "Waiting PO",
-  "Completed",
-  "Rejected",
-];
 const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
   "pending",
   "approved",

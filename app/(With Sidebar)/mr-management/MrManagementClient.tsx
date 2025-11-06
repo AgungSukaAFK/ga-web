@@ -32,17 +32,8 @@ import * as XLSX from "xlsx";
 import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order dan ComboboxData diimpor
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Pastikan formatCurrency diimpor
 import { Badge } from "@/components/ui/badge";
-import { LIMIT_OPTIONS } from "@/type/enum";
+import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
-
-const STATUS_OPTIONS = [
-  // Opsi status untuk filter
-  "Pending Validation",
-  "Pending Approval",
-  "Waiting PO",
-  "Completed",
-  "Rejected",
-];
 
 // --- Konstanta untuk Filter ---
 const dataDepartment: ComboboxData = [
