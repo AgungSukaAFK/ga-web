@@ -35,9 +35,11 @@ import {
   Truck,
   Building2,
   ExternalLink,
-  Zap, // <-- REVISI: Ikon baru untuk prioritas
-  Layers, // <-- REVISI: Ikon baru untuk level
-  HelpCircle, // <-- REVISI: Ikon baru untuk info
+  Zap, // Ikon baru untuk prioritas
+  Layers, // Ikon baru untuk level
+  HelpCircle, // Ikon baru untuk info
+  Upload, // <-- REVISI: Ikon baru
+  CheckCheck, // <-- REVISI: Ikon baru
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,7 +68,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
-  DialogDescription, // <-- REVISI: Tambahan
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -80,7 +82,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { addDays } from "date-fns";
-import { useRouter } from "next/navigation"; // <-- REVISI: Tambahkan useRouter
+import { useRouter } from "next/navigation";
+// --- REVISI: Import Alert Dialog ---
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+// --- AKHIR REVISI ---
 
 // --- Data Konstanta ---
 const kategoriData: ComboboxData = [
@@ -124,7 +138,7 @@ const dataPrioritas: {
   { label: "P4 - Sangat Rendah (30 Hari)", value: "P4", days: 30 },
 ];
 
-// --- REVISI: Data untuk Level ---
+// Data untuk Level
 const dataLevel: { label: string; value: string; group: string }[] = [
   { label: "OPEN 1: Menunggu PR WH", value: "OPEN 1", group: "OPEN" },
   { label: "OPEN 2: Menunggu PO SCM", value: "OPEN 2", group: "OPEN" },
@@ -169,7 +183,7 @@ const dataLevel: { label: string; value: string; group: string }[] = [
     group: "CLOSE",
   },
 ];
-// --- AKHIR REVISI ---
+// --- AKHIR DATA KONSTANTA ---
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
@@ -189,8 +203,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [costCenterName, setCostCenterName] = useState<string | null>(null);
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
 
-  // --- REVISI: State untuk dialog level ---
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
+  // --- REVISI: State untuk konfirmasi close MR ---
+  const [isCloseMrAlertOpen, setIsCloseMrAlertOpen] = useState(false);
   // --- AKHIR REVISI ---
 
   const supabase = createClient();
@@ -281,10 +296,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const canEdit =
     userProfile?.role === "admin" || userProfile?.role === "approver";
 
-  // const canEdit =
-  //   (isMyTurnForApproval || userProfile?.role === "admin") &&
-  //   mr?.status === "Pending Approval";
-
   useEffect(() => {
     if (mr) {
       const total = mr.orders.reduce((acc, item) => {
@@ -356,17 +367,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!mr || !currentUser) return;
 
-    // --- REVISI: Simpan perubahan dulu jika sedang mode edit ---
     if (isEditing && decision === "approved") {
       const saveSuccess = await handleSaveChanges();
-      // Jika penyimpanan gagal, batalkan approval
       if (!saveSuccess) {
         toast.error("Persetujuan dibatalkan karena gagal menyimpan perubahan.");
         return;
       }
     }
-    // --- AKHIR REVISI ---
-
     setActionLoading(true);
     if (myApprovalIndex === -1) {
       toast.error("Anda tidak memiliki tugas persetujuan yang aktif.");
@@ -379,19 +386,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
 
     let newMrStatus = mr.status;
-    // Ambil data 'mr' yang TERBARU (setelah handleSaveChanges)
     const currentMrData = mr;
 
     const dataToUpdate: {
       approvals: Approval[];
       status: string;
-      level: string; // <-- REVISI: Level juga di-update
+      level: string;
       orders?: Order[];
       cost_estimation?: string;
     } = {
       approvals: updatedApprovals,
       status: newMrStatus,
-      level: currentMrData.level, // <-- REVISI: Kirim level yang mungkin diedit
+      level: currentMrData.level,
     };
 
     if (decision === "rejected") {
@@ -500,10 +506,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
   };
 
+  // --- REVISI: handleAttachmentUpload (dulu handleBastUpload) ---
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    // ... (Fungsi ini tetap sama, sudah benar)
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
 
@@ -517,6 +523,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         .from("mr")
         .upload(filePath, file);
       if (error) return { error };
+      // Simpan nama file asli
       return { data: { ...data, name: file.name }, error: null };
     });
 
@@ -525,57 +532,162 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       .filter((r) => !r.error)
       .map((r) => ({ url: r.data!.path, name: r.data!.name } as Attachment));
 
-    if (successfulUploads.length > 0) {
-      setMr((prevMr) =>
-        prevMr
-          ? {
-              ...prevMr,
-              attachments: [
-                ...(prevMr.attachments || []),
-                ...successfulUploads,
-              ],
-            }
-          : null
-      );
-      toast.success(`${successfulUploads.length} file berhasil ditambahkan.`, {
-        id: toastId,
-      });
+    if (successfulUploads.length === 0) {
+      toast.error("Semua file gagal diunggah.", { id: toastId });
+      setIsUploading(false);
+      return;
     }
 
-    const failedUploads = results.filter((r) => r.error);
-    if (failedUploads.length > 0) {
-      toast.error(`Gagal mengunggah ${failedUploads.length} file.`, {
+    const updatedAttachments = [
+      ...(mr.attachments || []),
+      ...successfulUploads,
+    ];
+
+    // Update field attachments di database
+    const { error: updateError } = await supabase
+      .from("material_requests")
+      .update({ attachments: updatedAttachments })
+      .eq("id", mr.id);
+
+    if (updateError) {
+      toast.error("Gagal menyimpan data lampiran", {
         id: toastId,
+        description: updateError.message,
       });
-    } else if (successfulUploads.length === 0) {
-      toast.dismiss(toastId);
+      // Rollback storage? (Opsional, untuk saat ini kita biarkan)
+    } else {
+      toast.success(
+        `${successfulUploads.length} file berhasil diunggah & disimpan.`,
+        { id: toastId }
+      );
+      // Refresh data lokal
+      await fetchMrData();
     }
 
     setIsUploading(false);
-    e.target.value = "";
+    e.target.value = ""; // Reset input file
   };
+  // --- AKHIR REVISI ---
 
   const removeAttachment = (indexToRemove: number) => {
-    // ... (Fungsi ini tetap sama, sudah benar)
     if (!mr || !Array.isArray(mr.attachments)) return;
     const attachmentToRemove = mr.attachments[indexToRemove];
     if (!attachmentToRemove) return;
 
-    setMr((prevMr) =>
-      prevMr
-        ? {
-            ...prevMr,
-            attachments: prevMr.attachments.filter(
-              (_, i) => i !== indexToRemove
-            ),
-          }
-        : null
+    // Optimistic update di UI
+    const updatedAttachments = mr.attachments.filter(
+      (_, i) => i !== indexToRemove
     );
+    setMr({ ...mr, attachments: updatedAttachments });
+
+    // Hapus dari storage dan DB
     supabase.storage.from("mr").remove([attachmentToRemove.url]);
-    toast.info(
-      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menyimpan.`
+    supabase
+      .from("material_requests")
+      .update({ attachments: updatedAttachments })
+      .eq("id", mr.id)
+      .then(({ error }) => {
+        if (error) {
+          toast.error("Gagal menghapus lampiran dari DB");
+          fetchMrData(); // Revert UI
+        } else {
+          toast.success(
+            `Lampiran "${attachmentToRemove.name}" berhasil dihapus.`
+          );
+        }
+      });
+  };
+
+  // --- REVISI: handleConfirmCloseMR (dulu handleCloseMR) ---
+  const handleConfirmCloseMR = async () => {
+    if (!mr) return;
+    setActionLoading(true);
+    const toastId = toast.loading("Menutup MR dan PO terkait...");
+
+    try {
+      // 1. Update status MR
+      const { error: mrError } = await supabase
+        .from("material_requests")
+        .update({ status: "Completed" })
+        .eq("id", mr.id);
+
+      if (mrError) throw mrError;
+
+      // 2. Cari semua PO yang terkait dengan MR ini
+      const { data: relatedPOs, error: poFetchError } = await supabase
+        .from("purchase_orders")
+        .select("id")
+        .eq("mr_id", mr.id);
+
+      if (poFetchError) throw poFetchError;
+
+      // 3. Update status semua PO terkait
+      if (relatedPOs && relatedPOs.length > 0) {
+        const poIds = relatedPOs.map((po) => po.id);
+        const { error: poUpdateError } = await supabase
+          .from("purchase_orders")
+          .update({ status: "Completed" })
+          .in("id", poIds);
+
+        if (poUpdateError) throw poUpdateError;
+      }
+
+      toast.success("MR dan PO terkait berhasil ditutup!", { id: toastId });
+      await fetchMrData();
+    } catch (error: any) {
+      toast.error("Gagal menutup MR", {
+        id: toastId,
+        description: error.message,
+      });
+    } finally {
+      setActionLoading(false);
+      setIsCloseMrAlertOpen(false);
+    }
+  };
+  // --- AKHIR REVISI ---
+
+  // --- REVISI: Komponen Aksi untuk Requester ---
+  const RequesterActions = () => {
+    if (
+      !mr ||
+      !currentUser ||
+      mr.userid !== currentUser.id || // Hanya untuk requester asli
+      mr.status !== "Pending BAST" // Hanya jika status Pending BAST
+    ) {
+      return null;
+    }
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <Label htmlFor="bast-upload">Unggah BAST / Bukti Terima Barang</Label>
+          <Input
+            id="bast-upload"
+            type="file"
+            multiple
+            disabled={actionLoading || isUploading}
+            onChange={handleAttachmentUpload}
+            className="mt-1"
+          />
+          {isUploading && (
+            <div className="flex items-center text-sm text-muted-foreground mt-2">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+            </div>
+          )}
+        </div>
+        <hr />
+        <Button
+          className="w-full"
+          onClick={() => setIsCloseMrAlertOpen(true)}
+          disabled={actionLoading || isUploading}
+        >
+          <CheckCheck className="mr-2 h-4 w-4" />
+          Tutup MR (Konfirmasi Barang Lengkap)
+        </Button>
+      </div>
     );
   };
+  // --- AKHIR REVISI ---
 
   const ApprovalActions = () => {
     // ... (Fungsi ini tetap sama, sudah benar)
@@ -619,8 +731,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     );
   };
 
+  // --- REVISI: getStatusBadge ---
   const getStatusBadge = (status: string) => {
-    // ... (Fungsi ini tetap sama, sudah benar)
     switch (status?.toLowerCase()) {
       case "approved":
         return <Badge variant="outline">Approved</Badge>;
@@ -632,6 +744,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="secondary">Pending Validation</Badge>;
       case "waiting po":
         return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
+      // --- REVISI: Tambah status Pending BAST ---
+      case "pending bast":
+        return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
+      // --- AKHIR REVISI ---
       case "completed":
         return <Badge className="bg-green-500 text-white">Completed</Badge>;
       default:
@@ -700,15 +816,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <p className="text-muted-foreground">Detail Material Request</p>
           </div>
           <div className="flex items-center gap-2">
-            {canEdit && !isEditing && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditing(true)}
-              >
-                <Edit className="mr-2 h-4 w-4" /> Edit Rincian
-              </Button>
-            )}
+            {canEdit &&
+              !isEditing &&
+              mr.status === "Pending Approval" && ( // Hanya bisa edit saat pending approval
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Edit className="mr-2 h-4 w-4" /> Edit Rincian
+                </Button>
+              )}
             {isEditing && (
               <>
                 <Button
@@ -1056,6 +1174,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         <Content title="Tindakan">
           <div className="flex flex-col gap-2">
             {!isEditing && <ApprovalActions />}
+            {/* --- REVISI: Tampilkan RequesterActions --- */}
+            {!isEditing && <RequesterActions />}
+            {/* --- AKHIR REVISI --- */}
             {isEditing && (
               <p className="text-sm text-center text-muted-foreground">
                 Simpan perubahan atau setujui untuk melanjutkan.
@@ -1351,6 +1472,43 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* --- REVISI: Dialog Konfirmasi Close MR --- */}
+      <AlertDialog
+        open={isCloseMrAlertOpen}
+        onOpenChange={setIsCloseMrAlertOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Anda Yakin Ingin Menutup MR Ini?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tindakan ini akan mengubah status MR dan semua PO terkait menjadi
+              "Completed". Pastikan semua barang sudah Anda terima dengan
+              lengkap. Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionLoading}>
+              Batal
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmCloseMR}
+              disabled={actionLoading}
+              className={cn("bg-green-600 hover:bg-green-700 text-white")}
+            >
+              {actionLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCheck className="mr-2 h-4 w-4" />
+              )}
+              Ya, Tutup MR
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* --- AKHIR REVISI --- */}
     </>
   );
 }

@@ -228,6 +228,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   const canEditPO = userProfile?.role === "approver";
 
+  // --- REVISI LOGIKA APPROVAL PO ---
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
@@ -238,6 +239,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
 
     let newPoStatus = po.status;
+    let newMrStatus: string | null = null; // <-- Variabel baru untuk status MR
+
     if (decision === "rejected") {
       newPoStatus = "Rejected";
     } else if (decision === "approved") {
@@ -246,22 +249,41 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       );
       if (isLastApproval) {
         newPoStatus = "Pending BAST";
+        newMrStatus = "Pending BAST"; // <-- REVISI: Set status MR juga
       }
     }
 
-    const { error } = await supabase
+    // Update PO
+    const { error: poError } = await supabase
       .from("purchase_orders")
       .update({ approvals: updatedApprovals, status: newPoStatus })
       .eq("id", po.id);
 
-    if (error) {
-      toast.error("Aksi gagal", { description: error.message });
-    } else {
-      toast.success(
-        `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
-      );
-      await fetchPoData();
+    if (poError) {
+      toast.error("Aksi PO gagal", { description: poError.message });
+      setActionLoading(false);
+      return;
     }
+
+    // Jika PO sukses diupdate DAN status MR perlu diupdate
+    if (newMrStatus && po.mr_id) {
+      const { error: mrError } = await supabase
+        .from("material_requests")
+        .update({ status: newMrStatus }) // <-- Update MR terkait
+        .eq("id", po.mr_id);
+
+      if (mrError) {
+        toast.warning("PO Disetujui, tapi gagal update status MR", {
+          description: mrError.message,
+        });
+      }
+    }
+    // --- AKHIR REVISI LOGIKA ---
+
+    toast.success(
+      `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
+    );
+    await fetchPoData();
     setActionLoading(false);
   };
 
@@ -856,7 +878,8 @@ const PrintablePO = ({
           />
           <div>
             <h1 className="text-2xl font-bold">{companyInfo.name}</h1>
-            <p className="text-xs whitespace-normal break-words">
+            {/* --- REVISI: Tambahkan text wrap --- */}
+            <p className="text-xs whitespace-normal break-words max-w-xs">
               {companyInfo.address}
             </p>
             <p className="text-xs">
@@ -864,7 +887,7 @@ const PrintablePO = ({
             </p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right flex-shrink-0">
           <h1 className="text-xl font-bold">PURCHASE ORDER</h1>
           <p className="font-mono text-sm mt-2">{po.kode_po}</p>
           <p className="text-sm">
@@ -899,19 +922,24 @@ const PrintablePO = ({
 
       {/* 3. Tabel Item */}
       <section>
-        <Table>
+        {/* --- REVISI: Set table-layout fixed --- */}
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow className="bg-gray-200">
               {/* --- REVISI: Tambahkan lebar kolom --- */}
               <TableHead className="text-black w-[5%]">No.</TableHead>
               <TableHead className="text-black w-[35%]">Nama Barang</TableHead>
               <TableHead className="text-black w-[20%]">Part Number</TableHead>
-              <TableHead className="text-black text-center">Qty</TableHead>
-              <TableHead className="text-black">UoM</TableHead>
-              <TableHead className="text-black text-right">
+              <TableHead className="text-black w-[8%] text-center">
+                Qty
+              </TableHead>
+              <TableHead className="text-black w-[8%]">UoM</TableHead>
+              <TableHead className="text-black w-[12%] text-right">
                 Harga Satuan
               </TableHead>
-              <TableHead className="text-black text-right">Total</TableHead>
+              <TableHead className="text-black w-[12%] text-right">
+                Total
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -943,6 +971,7 @@ const PrintablePO = ({
       <section className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
           <h3 className="font-semibold">Catatan:</h3>
+          {/* --- REVISI: Tambahkan text wrap --- */}
           <p className="text-xs italic whitespace-normal break-words">
             {po.notes || "Tidak ada catatan."}
           </p>
