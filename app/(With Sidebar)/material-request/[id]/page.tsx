@@ -1485,8 +1485,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               Tindakan ini akan mengubah status MR dan semua PO terkait menjadi
-              "Completed". Pastikan semua barang sudah Anda terima dengan
-              lengkap. Tindakan ini tidak dapat dibatalkan.
+              &quot;Completed&quot;. Pastikan semua barang sudah Anda terima
+              dengan lengkap. Tindakan ini tidak dapat dibatalkan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
