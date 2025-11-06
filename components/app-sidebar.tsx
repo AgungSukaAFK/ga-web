@@ -177,10 +177,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <div>
           <Image
-            src={"/lourdes.png"}
-            width={500}
-            height={500}
+            src="/lourdes-logo.webp"
             alt="Lourdes Autoparts"
+            width={500}
+            height={300}
+            style={{ width: "100%", height: "auto" }}
+            priority
           />
         </div>
       </SidebarHeader>

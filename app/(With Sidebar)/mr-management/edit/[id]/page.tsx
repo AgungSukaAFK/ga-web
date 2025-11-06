@@ -37,8 +37,11 @@ import {
   CheckCheck,
   XCircle,
   Clock,
-  Building2, // Impor ikon yang hilang
-  ExternalLink, // Impor ikon yang hilang
+  Building2,
+  ExternalLink,
+  Zap, // <-- REVISI: Ikon baru
+  Layers, // <-- REVISI: Ikon baru
+  HelpCircle, // <-- REVISI: Ikon baru
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,14 +71,116 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription, // <-- REVISI: Tambahan
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CurrencyInput } from "@/components/ui/currency-input"; // Impor CurrencyInput
-import { fetchActiveCostCenters } from "@/services/mrService"; // Impor fetcher Cost Center
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { fetchActiveCostCenters } from "@/services/mrService";
+import { addDays } from "date-fns"; // <-- REVISI: Tambahan
 
-// 1. Definisi Komponen InfoItem
+// --- REVISI: Pindahkan data konstanta ke atas ---
+const dataUoM: ComboboxData = [
+  { label: "Pcs", value: "Pcs" },
+  { label: "Unit", value: "Unit" },
+  { label: "Set", value: "Set" },
+  { label: "Box", value: "Box" },
+  { label: "Rim", value: "Rim" },
+  { label: "Roll", value: "Roll" },
+];
+
+const kategoriData: ComboboxData = [
+  { label: "New Item", value: "New Item" },
+  { label: "Replace Item", value: "Replace Item" },
+  { label: "Fix & Repair", value: "Fix & Repair" },
+  { label: "Upgrade", value: "Upgrade" },
+];
+
+const dataLokasi: ComboboxData = [
+  { label: "Head Office", value: "Head Office" },
+  { label: "Tanjung Enim", value: "Tanjung Enim" },
+  { label: "Balikpapan", value: "Balikpapan" },
+  { label: "Site BA", value: "Site BA" },
+  { label: "Site TAL", value: "Site TAL" },
+  { label: "Site MIP", value: "Site MIP" },
+  { label: "Site MIFA", value: "Site MIFA" },
+  { label: "Site BIB", value: "Site BIB" },
+  { label: "Site AMI", value: "Site AMI" },
+  { label: "Site Tabang", value: "Site Tabang" },
+];
+
+const dataPrioritas: {
+  label: string;
+  value: MaterialRequest["prioritas"];
+  days: number;
+}[] = [
+  { label: "P0 - Sangat Mendesak (2 Hari)", value: "P0", days: 2 },
+  { label: "P1 - Mendesak (10 Hari)", value: "P1", days: 10 },
+  { label: "P2 - Standar (15 Hari)", value: "P2", days: 15 },
+  { label: "P3 - Rendah (20 Hari)", value: "P3", days: 20 },
+  { label: "P4 - Sangat Rendah (30 Hari)", value: "P4", days: 30 },
+];
+
+const dataLevel: { label: string; value: string; group: string }[] = [
+  { label: "OPEN 1: Menunggu PR WH", value: "OPEN 1", group: "OPEN" },
+  { label: "OPEN 2: Menunggu PO SCM", value: "OPEN 2", group: "OPEN" },
+  {
+    label: "OPEN 3A: Menunggu Kirim (No Payment Issue)",
+    value: "OPEN 3A",
+    group: "OPEN",
+  },
+  {
+    label: "OPEN 3B: Menunggu Kirim (Payment Issue)",
+    value: "OPEN 3B",
+    group: "OPEN",
+  },
+  {
+    label: "OPEN 4: Vendor Kirim (Belum Tiba)",
+    value: "OPEN 4",
+    group: "OPEN",
+  },
+  {
+    label: "OPEN 5: Tiba di WH (Belum Kirim ke Site)",
+    value: "OPEN 5",
+    group: "OPEN",
+  },
+  {
+    label: "CLOSE 1: Kirim ke Site (Belum Diterima)",
+    value: "CLOSE 1",
+    group: "CLOSE",
+  },
+  {
+    label: "CLOSE 2A: Diterima Site (Dokumen Belum Kirim)",
+    value: "CLOSE 2A",
+    group: "CLOSE",
+  },
+  {
+    label: "CLOSE 2B: Diterima Site (Dokumen Terkirim)",
+    value: "CLOSE 2B",
+    group: "CLOSE",
+  },
+  {
+    label: "CLOSE 3: Selesai (Update Sistem)",
+    value: "CLOSE 3",
+    group: "CLOSE",
+  },
+];
+
+const STATUS_OPTIONS: MaterialRequest["status"][] = [
+  "Pending Validation",
+  "Pending Approval",
+  "Waiting PO",
+  "Completed",
+  "Rejected",
+];
+const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
+  "pending",
+  "approved",
+  "rejected",
+];
+
+// Komponen InfoItem
 const InfoItem = ({
   icon: Icon,
   label,
@@ -99,51 +204,7 @@ const InfoItem = ({
     </dd>
   </div>
 );
-
-// 2. Definisi Konstanta dataUoM
-const dataUoM: ComboboxData = [
-  { label: "Pcs", value: "Pcs" },
-  { label: "Unit", value: "Unit" },
-  { label: "Set", value: "Set" },
-  { label: "Box", value: "Box" },
-  { label: "Rim", value: "Rim" },
-  { label: "Roll", value: "Roll" },
-];
-
-// Data lain yang dibutuhkan untuk edit
-const kategoriData: ComboboxData = [
-  { label: "New Item", value: "New Item" },
-  { label: "Replace Item", value: "Replace Item" },
-  { label: "Fix & Repair", value: "Fix & Repair" },
-  { label: "Upgrade", value: "Upgrade" },
-];
-
-// HAPUS dataCostCenter
-
-const dataLokasi: ComboboxData = [
-  { label: "Head Office", value: "Head Office" },
-  { label: "Tanjung Enim", value: "Tanjung Enim" },
-  { label: "Balikpapan", value: "Balikpapan" },
-  { label: "Site BA", value: "Site BA" },
-  { label: "Site TAL", value: "Site TAL" },
-  { label: "Site MIP", value: "Site MIP" },
-  { label: "Site MIFA", value: "Site MIFA" },
-  { label: "Site BIB", value: "Site BIB" },
-  { label: "Site AMI", value: "Site AMI" },
-  { label: "Site Tabang", value: "Site Tabang" },
-];
-const STATUS_OPTIONS: MaterialRequest["status"][] = [
-  "Pending Validation",
-  "Pending Approval",
-  "Waiting PO",
-  "Completed",
-  "Rejected",
-];
-const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
-  "pending",
-  "approved",
-  "rejected",
-];
+// --- AKHIR DATA KONSTANTA ---
 
 function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
@@ -158,13 +219,15 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
 
   const [isUploading, setIsUploading] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
-
-  // State untuk Cost Center
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+
+  // --- REVISI: State untuk dialog level ---
+  const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
+  // --- AKHIR REVISI ---
 
   const supabase = createClient();
 
-  // REVISI: useEffect untuk auto-sum cost_estimation
+  // Efek untuk auto-sum cost_estimation
   useEffect(() => {
     if (mr) {
       const total = mr.orders.reduce((acc, item) => {
@@ -179,18 +242,45 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       );
       setFormattedCost(formatCurrency(total));
     }
-  }, [mr?.orders]); // Dijalankan setiap kali item di 'orders' berubah
+  }, [mr?.orders]);
+
+  // --- REVISI: Tambahkan useEffect untuk auto-set Due Date ---
+  useEffect(() => {
+    if (mr) {
+      const prioritasData = dataPrioritas.find((p) => p.value === mr.prioritas);
+      if (prioritasData) {
+        const calculatedDueDate = addDays(new Date(), prioritasData.days);
+        if (
+          !mr.due_date ||
+          new Date(mr.due_date).toDateString() !==
+            calculatedDueDate.toDateString()
+        ) {
+          setMr((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  due_date: calculatedDueDate,
+                }
+              : null
+          );
+        }
+      }
+    }
+  }, [mr?.prioritas]);
+  // --- AKHIR REVISI ---
 
   const fetchMrData = async () => {
     if (isNaN(mrId)) {
       setError("ID Material Request tidak valid.");
       return null;
     }
+    // --- REVISI: Ambil prioritas dan level ---
     const { data: mrData, error: mrError } = await supabase
       .from("material_requests")
-      .select("*, users_with_profiles!userid(nama)")
+      .select("*, users_with_profiles!userid(nama), prioritas, level")
       .eq("id", mrId)
       .single();
+    // --- AKHIR REVISI ---
 
     if (mrError) {
       setError("Gagal memuat data MR.");
@@ -208,7 +298,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
       };
       setMr(initialData as any);
-      // setFormattedCost tidak di-set di sini lagi, akan di-handle oleh useEffect
       return initialData;
     }
   };
@@ -222,7 +311,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      let adminCompany = ""; // Variabel untuk menyimpan company admin
+      let adminCompany = "";
 
       if (user) {
         const { data: profile } = await supabase
@@ -237,21 +326,19 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           return;
         }
         setUserProfile(profile as Profile | null);
-        adminCompany = profile.company || ""; // Simpan company admin
+        adminCompany = profile.company || "";
       } else {
         router.push("/auth/login");
         return;
       }
 
-      await fetchMrData(); // Fetch MR dulu
+      await fetchMrData();
 
-      // Fetch Cost Center
       try {
-        // Fetch CC berdasarkan company admin (Lourdes bisa lihat semua)
         const costCenters = await fetchActiveCostCenters(adminCompany);
         const costCenterOptions = costCenters.map((cc) => ({
           label: `${cc.name} (${formatCurrency(cc.current_budget)})`,
-          value: cc.id.toString(), // Gunakan ID sebagai value
+          value: cc.id.toString(),
         }));
         setCostCenterList(costCenterOptions);
       } catch (ccError: any) {
@@ -263,27 +350,26 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       setLoading(false);
     };
     initializePage();
-  }, [mrId, router]); // 'mr' dihapus dari dependency
+  }, [mrId, router]);
 
   const handleSaveChanges = async () => {
     if (!mr) return;
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan semua perubahan...");
 
-    // REVISI: Pastikan cost_center_id dikirim, bukan cost_center
-    const { cost_center, ...restOfData } = mr as any; // Hapus properti 'cost_center' lama
+    const { cost_center, users_with_profiles, ...restOfData } = mr as any;
 
     const updateData: Partial<MaterialRequest> = {
       ...restOfData,
-      cost_estimation: String(mr.cost_estimation), // Pastikan ini adalah string angka
-      cost_center_id: mr.cost_center_id, // Kirim ID
-      // Hapus properti yang tidak seharusnya diupdate
-      users_with_profiles: undefined,
+      cost_estimation: String(mr.cost_estimation),
+      cost_center_id: mr.cost_center_id,
+      prioritas: mr.prioritas, // <-- REVISI: Pastikan terkirim
+      level: mr.level, // <-- REVISI: Pastikan terkirim
     };
 
     const { error: updateError } = await supabase
       .from("material_requests")
-      .update(updateData as any) // 'as any' untuk bypass type-check sementara
+      .update(updateData as any)
       .eq("id", mr.id);
 
     setActionLoading(false);
@@ -306,13 +392,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, [name]: value });
   };
 
-  // REVISI: Handler Combobox
   const handleComboboxChange = (
     field: "kategori" | "tujuan_site" | "cost_center_id",
     value: string
   ) => {
     if (!mr) return;
-
     if (field === "cost_center_id") {
       setMr({ ...mr, cost_center_id: value ? Number(value) : null });
     } else {
@@ -320,20 +404,21 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- REVISI: Handler baru ---
+  const handlePrioritasChange = (value: string) => {
     if (!mr) return;
-    setMr({
-      ...mr,
-      due_date: e.target.value ? new Date(e.target.value) : undefined,
-    });
+    setMr({ ...mr, prioritas: value as any });
   };
 
-  // HAPUS handleCostChange
+  const handleLevelChange = (value: string) => {
+    if (!mr) return;
+    setMr({ ...mr, level: value as any });
+  };
+  // --- AKHIR REVISI ---
 
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
-  // REVISI: Tipe state Order
   const [orderItem, setOrderItem] = useState<
     Omit<Order, "vendor" | "vendor_contact">
   >({
@@ -376,7 +461,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     }
     if (!mr) return;
 
-    // Pastikan estimasi_harga adalah angka
     const itemToSave: Order = {
       ...orderItem,
       estimasi_harga: Number(orderItem.estimasi_harga) || 0,
@@ -395,6 +479,21 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const removeItem = (index: number) => {
     if (!mr) return;
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
+  };
+
+  const handleItemChange = (index: number, field: string, value: any) => {
+    if (!mr) return;
+    const updatedOrders = [...mr.orders];
+    const item = { ...(updatedOrders[index] || {}) } as any;
+
+    if (field === "estimasi_harga") {
+      item.estimasi_harga = Number(value) || 0;
+    } else {
+      item[field] = value;
+    }
+
+    updatedOrders[index] = item;
+    setMr({ ...mr, orders: updatedOrders });
   };
 
   const handleAttachmentUpload = async (
@@ -490,26 +589,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, status: newStatus });
   };
 
-  const getStatusBadge = (status: string) => {
-    // ... (Fungsi ini tetap sama)
-    switch (status?.toLowerCase()) {
-      case "approved":
-        return <Badge variant="outline">Approved</Badge>;
-      case "rejected":
-        return <Badge variant="destructive">Rejected</Badge>;
-      case "pending approval":
-        return <Badge variant="secondary">Pending Approval</Badge>;
-      case "pending validation":
-        return <Badge variant="secondary">Pending Validation</Badge>;
-      case "waiting po":
-        return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
-      case "completed":
-        return <Badge className="bg-green-500 text-white">Completed</Badge>;
-      default:
-        return <Badge>{status || "N/A"}</Badge>;
-    }
-  };
-
   if (loading) return <DetailMRSkeleton />;
   if (error || !mr)
     return (
@@ -579,7 +658,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               label="Tanggal Dibuat"
               value={formatDateFriendly(mr.created_at)}
             />
-
             <div className="space-y-1">
               <Label htmlFor="department">Departemen</Label>
               <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
@@ -596,7 +674,38 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               />
             </div>
 
-            {/* REVISI: Combobox Cost Center (Admin bisa edit) */}
+            {/* --- REVISI: Tambahkan Prioritas --- */}
+            <div className="space-y-1">
+              <Label>Prioritas</Label>
+              <Select
+                onValueChange={handlePrioritasChange}
+                defaultValue={mr.prioritas || ""}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih prioritas..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataPrioritas.map((p) => (
+                    <SelectItem key={p.value} value={p.value!}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Due Date (Otomatis)</Label>
+              <Input
+                type="text"
+                readOnly
+                disabled
+                value={formatDateFriendly(mr.due_date)}
+                className="font-medium bg-muted/50"
+              />
+            </div>
+            {/* --- AKHIR REVISI --- */}
+
             <div className="space-y-1">
               <Label htmlFor="cost_center_id">Cost Center</Label>
               <Combobox
@@ -607,7 +716,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 placeholder="Pilih Cost Center..."
               />
             </div>
-
             <div className="space-y-1">
               <Label htmlFor="tujuan_site">Tujuan (Site)</Label>
               <Combobox
@@ -618,21 +726,38 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 placeholder="Pilih Tujuan Site..."
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="due_date">Due Date</Label>
-              <Input
-                id="due_date"
-                type="date"
-                value={
-                  mr.due_date
-                    ? new Date(mr.due_date).toISOString().slice(0, 10)
-                    : ""
-                }
-                onChange={handleDateChange}
-              />
-            </div>
 
-            {/* REVISI: Estimasi Biaya (Read Only) */}
+            {/* --- REVISI: Tambahkan Level --- */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <Label>Level</Label>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={() => setIsLevelInfoOpen(true)}
+                >
+                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+              <Select
+                onValueChange={handleLevelChange}
+                defaultValue={mr.level || "OPEN 1"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih level..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataLevel.map((lvl) => (
+                    <SelectItem key={lvl.value} value={lvl.value!}>
+                      {lvl.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* --- AKHIR REVISI --- */}
+
             <div className="space-y-1">
               <Label htmlFor="cost_estimation">Estimasi Biaya (Otomatis)</Label>
               <Input
@@ -644,7 +769,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 className="font-bold"
               />
             </div>
-
             <div className="md:col-span-2 space-y-1">
               <Label htmlFor="remarks">Remarks</Label>
               <Textarea
@@ -673,7 +797,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           <div className="space-y-4">
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[1000px]">
-                {/* REVISI: Header Tabel Item */}
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nama</TableHead>
@@ -689,41 +812,59 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 <TableBody>
                   {mr.orders.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.qty}</TableCell>
-                      <TableCell>{item.uom}</TableCell>
-                      {/* REVISI: Tampilkan Harga */}
                       <TableCell>
-                        {formatCurrency(item.estimasi_harga)}
+                        <Input
+                          value={item.name}
+                          onChange={(e) =>
+                            handleItemChange(index, "name", e.target.value)
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={item.qty}
+                          onChange={(e) =>
+                            handleItemChange(index, "qty", e.target.value)
+                          }
+                          type="number"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Combobox
+                          data={dataUoM}
+                          onChange={(v) => handleItemChange(index, "uom", v)}
+                          defaultValue={item.uom}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CurrencyInput
+                          value={item.estimasi_harga}
+                          onValueChange={(value) =>
+                            handleItemChange(index, "estimasi_harga", value)
+                          }
+                        />
                       </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(Number(item.qty) * item.estimasi_harga)}
                       </TableCell>
-                      <TableCell className="max-w-[150px] truncate">
-                        {item.note}
+                      <TableCell>
+                        <Input
+                          value={item.note}
+                          onChange={(e) =>
+                            handleItemChange(index, "note", e.target.value)
+                          }
+                        />
                       </TableCell>
                       <TableCell>
-                        {item.url && (
-                          <Button asChild variant={"outline"} size="sm">
-                            <Link
-                              href={item.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <LinkIcon className="h-3 w-3" />
-                            </Link>
-                          </Button>
-                        )}
+                        <Input
+                          value={item.url}
+                          onChange={(e) =>
+                            handleItemChange(index, "url", e.target.value)
+                          }
+                          type="url"
+                        />
                       </TableCell>
                       <TableCell className="space-x-1">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleOpenEditItemDialog(index)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
                         <Button
                           variant="destructive"
                           size="icon"
@@ -738,7 +879,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                   {mr.orders.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={8} // REVISI: Sesuaikan colSpan
+                        colSpan={8}
                         className="text-center h-24 text-muted-foreground"
                       >
                         Belum ada item.
@@ -752,42 +893,36 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         </Content>
 
         <Content title="Lampiran">
-          {/* ... (Kode lampiran tetap sama) ... */}
           <div className="space-y-4">
-            {" "}
-            <Label htmlFor="attachments">Tambah Lampiran</Label>{" "}
+            <Label htmlFor="attachments">Tambah Lampiran</Label>
             <Input
               id="attachments"
               type="file"
               multiple
               disabled={actionLoading || isUploading}
               onChange={handleAttachmentUpload}
-            />{" "}
+            />
             {isUploading && (
               <div className="flex items-center text-sm text-muted-foreground">
-                {" "}
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...{" "}
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
               </div>
-            )}{" "}
+            )}
             {Array.isArray(mr.attachments) && mr.attachments.length > 0 && (
               <ul className="space-y-2 mt-2">
-                {" "}
                 {mr.attachments.map((file, index) => (
                   <li
                     key={index}
                     className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                   >
-                    {" "}
                     <a
                       href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 truncate hover:underline text-primary"
                     >
-                      {" "}
-                      <Paperclip className="h-4 w-4 flex-shrink-0" />{" "}
-                      <span className="truncate">{file.name}</span>{" "}
-                    </a>{" "}
+                      <Paperclip className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">{file.name}</span>
+                    </a>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -795,48 +930,40 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       onClick={() => removeAttachment(index)}
                       disabled={actionLoading || isUploading}
                     >
-                      {" "}
-                      <Trash2 className="h-4 w-4 text-destructive" />{" "}
-                    </Button>{" "}
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
                   </li>
-                ))}{" "}
+                ))}
               </ul>
-            )}{" "}
+            )}
             {(!Array.isArray(mr.attachments) ||
               mr.attachments.length === 0) && (
               <p className="text-sm text-muted-foreground text-center pt-2">
-                {" "}
-                Belum ada lampiran.{" "}
+                Belum ada lampiran.
               </p>
-            )}{" "}
+            )}
           </div>
         </Content>
       </div>
 
       <div className="col-span-12 lg:col-span-4 space-y-6">
         <Content title="Jalur Approval">
-          {/* ... (Kode Jalur Approval tetap sama) ... */}
           {Array.isArray(mr.approvals) && mr.approvals.length > 0 ? (
             <div className="space-y-2">
-              {" "}
               <Label className="text-xs text-muted-foreground">
-                {" "}
-                Admin dapat mengubah status approval:{" "}
-              </Label>{" "}
+                Admin dapat mengubah status approval:
+              </Label>
               {mr.approvals.map((approver, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between gap-4 p-3 rounded-md border bg-card"
                 >
-                  {" "}
                   <div>
-                    {" "}
-                    <p className="font-semibold">{approver.nama}</p>{" "}
+                    <p className="font-semibold">{approver.nama}</p>
                     <p className="text-sm text-muted-foreground">
-                      {" "}
-                      {approver.type}{" "}
-                    </p>{" "}
-                  </div>{" "}
+                      {approver.type}
+                    </p>
+                  </div>
                   <Select
                     value={approver.status}
                     onValueChange={(newStatus) =>
@@ -846,50 +973,32 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       )
                     }
                   >
-                    {" "}
                     <SelectTrigger className="w-[120px] capitalize">
-                      {" "}
-                      <SelectValue placeholder="Status..." />{" "}
-                    </SelectTrigger>{" "}
+                      <SelectValue placeholder="Status..." />
+                    </SelectTrigger>
                     <SelectContent>
-                      {" "}
                       {APPROVAL_STATUS_OPTIONS.map((opt) => (
                         <SelectItem
                           key={opt}
                           value={opt}
                           className="capitalize"
                         >
-                          {" "}
-                          {opt}{" "}
+                          {opt}
                         </SelectItem>
-                      ))}{" "}
-                    </SelectContent>{" "}
-                  </Select>{" "}
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ))}{" "}
+              ))}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground text-center">
-              {" "}
-              Jalur approval belum ditentukan.{" "}
+              Jalur approval belum ditentukan.
             </p>
           )}
         </Content>
-
-        {/* REVISI: Aktifkan Diskusi */}
-        <Content title="Diskusi">
-          <p className="text-sm text-muted-foreground">
-            Fitur diskusi akan muncul di sini.
-          </p>
-          {/* Anda dapat mengimpor dan menggunakan <DiscussionSection /> di sini jika sudah siap */}
-          {/* <DiscussionSection
-              mrId={String(mr.id)}
-              initialDiscussions={mr.discussions as Discussion[]}
-            /> */}
-        </Content>
       </div>
 
-      {/* REVISI: Dialog Item */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -940,8 +1049,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-
-            {/* REVISI: Ganti Vendor dengan Estimasi Harga */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="estimasi_harga" className="text-right">
                 Estimasi Harga
@@ -955,7 +1062,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="itemUrlDlg" className="text-right">
                 Link Ref.
@@ -990,6 +1096,73 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             <Button onClick={handleSaveOrUpdateItem}>
               {editingItemIndex !== null ? "Simpan Perubahan" : "Tambah"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- REVISI: Dialog Info Level --- */}
+      <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Keterangan Level Material Request</DialogTitle>
+            <DialogDescription>
+              Level ini melacak status fisik barang setelah MR disetujui.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <h4 className="font-semibold">
+              Level OPEN (Barang Belum Diterima Site)
+            </h4>
+            <ul className="list-disc pl-5 space-y-2 text-sm">
+              <li>
+                <strong>OPEN 1:</strong> Bila belum dibuatkan PR nya dari team
+                WH
+              </li>
+              <li>
+                <strong>OPEN 2:</strong> Bila belum dibuatkan PO nya dari team
+                SCM
+              </li>
+              <li>
+                <strong>OPEN 3A:</strong> Bila barangnya belum dikirimkan dari
+                vendor (No Payment Issue)
+              </li>
+              <li>
+                <strong>OPEN 3B:</strong> Bila barangnya belum dikirimkan dari
+                vendor (Ada Payment Issue)
+              </li>
+              <li>
+                <strong>OPEN 4:</strong> Bila barang sudah dikirim dari Vendor
+                tapi belum sampai di WH kita
+              </li>
+              <li>
+                <strong>OPEN 5:</strong> Bila barang sudah ada di Warehouse GMI
+                (Bpn/ HO), tapi belum dikirim oleh team WH ke site
+              </li>
+            </ul>
+            <h4 className="font-semibold">
+              Level CLOSE (Barang Sudah Diterima Site)
+            </h4>
+            <ul className="list-disc pl-5 space-y-2 text-sm">
+              <li>
+                <strong>CLOSE 1:</strong> Bila barang sudah dikirimkan oleh team
+                WH tapi belum diterima oleh team admin WH Site
+              </li>
+              <li>
+                <strong>CLOSE 2A:</strong> Bila barang sudah diterima admin WH
+                Site tapi dokumen tanda terima belum dikirimkan ke HO.
+              </li>
+              <li>
+                <strong>CLOSE 2B:</strong> Bila barang sudah diterima admin WH
+                Site, serta dokumen tanda terima juga sudah dikirimkan ke HO.
+              </li>
+              <li>
+                <strong>CLOSE 3:</strong> Bila proses CLOSE 2B sudah selesai dan
+                data sudah diupdate di sistem monitoring.
+              </li>
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

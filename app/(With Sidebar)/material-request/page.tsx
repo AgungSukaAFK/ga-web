@@ -29,6 +29,8 @@ import {
   Search,
   Loader2,
   Edit,
+  Layers, // <-- REVISI: Ikon baru
+  Zap, // <-- REVISI: Ikon baru
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -41,26 +43,18 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
-import { Profile, Order } from "@/type"; // REVISI: Impor Tipe 'Order'
+import { Profile, Order, MaterialRequest } from "@/type"; // REVISI: Impor Tipe 'Order' dan 'MaterialRequest'
 import * as XLSX from "xlsx";
-import { PaginationComponent } from "@/components/pagination-components"; // Path sudah dikoreksi
-import { formatDateFriendly } from "@/lib/utils"; // Menggunakan helper yang konsisten
+import { PaginationComponent } from "@/components/pagination-components";
+import { formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
-interface MaterialRequestListItem {
-  id: string;
-  kode_mr: string;
-  kategori: string;
-  status: string;
-  department: string;
-  tujuan_site: string; // Ditambahkan
-  created_at: Date;
-  due_date?: Date;
-  users_with_profiles: { nama: string } | null; // Nama requester
-}
+// REVISI: Gunakan MaterialRequestListItem dari type/index.ts
+// (Kita sudah menambah 'prioritas' dan 'level' di sana)
+import { MaterialRequestListItem } from "@/type";
 
 // --- Konstanta untuk Filter ---
 const dataDepartment: ComboboxData = [
@@ -108,6 +102,29 @@ const SORT_OPTIONS = [
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
+// --- REVISI: Tambahkan data filter prioritas dan level ---
+const dataPrioritas: { label: string; value: string }[] = [
+  { label: "P0", value: "P0" },
+  { label: "P1", value: "P1" },
+  { label: "P2", value: "P2" },
+  { label: "P3", value: "P3" },
+  { label: "P4", value: "P4" },
+];
+
+const dataLevel: { label: string; value: string }[] = [
+  { label: "OPEN 1", value: "OPEN 1" },
+  { label: "OPEN 2", value: "OPEN 2" },
+  { label: "OPEN 3A", value: "OPEN 3A" },
+  { label: "OPEN 3B", value: "OPEN 3B" },
+  { label: "OPEN 4", value: "OPEN 4" },
+  { label: "OPEN 5", value: "OPEN 5" },
+  { label: "CLOSE 1", value: "CLOSE 1" },
+  { label: "CLOSE 2A", value: "CLOSE 2A" },
+  { label: "CLOSE 2B", value: "CLOSE 2B" },
+  { label: "CLOSE 3", value: "CLOSE 3" },
+];
+// --- AKHIR REVISI ---
+
 function MaterialRequestContent() {
   const s = createClient();
   const router = useRouter();
@@ -134,6 +151,10 @@ function MaterialRequestContent() {
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
   const sortFilter = searchParams.get("sort") || "created_at.desc";
+  // --- REVISI: Tambahkan state filter baru ---
+  const prioritasFilter = searchParams.get("prioritas") || "";
+  const levelFilter = searchParams.get("level") || "";
+  // --- AKHIR REVISI ---
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -189,14 +210,16 @@ function MaterialRequestContent() {
       const to = from + limit - 1;
 
       try {
+        // --- REVISI: Tambahkan 'prioritas' dan 'level' ke select ---
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
-            tujuan_site, 
+            tujuan_site, prioritas, level,
             users_with_profiles!userid (nama)
           `,
           { count: "exact" }
         );
+        // --- AKHIR REVISI ---
 
         // 3. Terapkan filter berdasarkan input
         if (searchTerm)
@@ -210,6 +233,11 @@ function MaterialRequestContent() {
 
         if (departmentFilter) query = query.eq("department", departmentFilter);
         if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+
+        // --- REVISI: Terapkan filter baru ---
+        if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
+        if (levelFilter) query = query.eq("level", levelFilter);
+        // --- AKHIR REVISI ---
 
         // 4. Terapkan filter berdasarkan ROLE
         if (userProfile.role === "requester") {
@@ -253,6 +281,8 @@ function MaterialRequestContent() {
     departmentFilter,
     siteFilter,
     sortFilter,
+    prioritasFilter, // <-- REVISI: Tambah dependency
+    levelFilter, // <-- REVISI: Tambah dependency
   ]);
 
   // Efek debounce pencarian
@@ -278,17 +308,18 @@ function MaterialRequestContent() {
     });
   };
 
-  // REVISI: Handler Download Excel
+  // --- REVISI: Handler Download Excel diperbarui ---
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Ambil kolom 'orders' (JSON) dan 'company_code' dari database
+      // 1. Ambil kolom 'orders', 'prioritas', 'level'
       let query = s.from("material_requests").select(`
-          kode_mr, kategori, department, status, remarks, cost_estimation, tujuan_site, company_code, created_at, due_date,
-          orders, 
+          kode_mr, kategori, department, status, remarks, cost_estimation, 
+          tujuan_site, company_code, created_at, due_date,
+          prioritas, level, orders, 
           users_with_profiles!userid (nama)
         `);
 
@@ -302,13 +333,13 @@ function MaterialRequestContent() {
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+      if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
+      if (levelFilter) query = query.eq("level", levelFilter);
 
-      // Terapkan filter role
       if (currentUser.role === "requester") {
         query = query.eq("userid", currentUser.id);
       }
 
-      // Terapkan sorting
       const [sortBy, sortOrder] = sortFilter.split(".");
       const { data, error } = await query.order(sortBy, {
         ascending: sortOrder === "asc",
@@ -321,7 +352,7 @@ function MaterialRequestContent() {
         return;
       }
 
-      // 2. Gunakan .flatMap() untuk "meledakkan" data (sama seperti di Admin)
+      // 2. Gunakan .flatMap() untuk "meledakkan" data
       const formattedData = data.flatMap((mr: any) => {
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
@@ -329,12 +360,14 @@ function MaterialRequestContent() {
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
+          Level: mr.level, // <-- Tambahkan Level
+          Prioritas: mr.prioritas, // <-- Tambahkan Prioritas
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
           Remarks: mr.remarks,
           "Total Estimasi Biaya (MR)": Number(mr.cost_estimation),
-          "Tanggal Dibuat": formatDateFriendly(mr.created_at),
-          "Due Date": formatDateFriendly(mr.due_date),
+          "Tanggal Dibuat": formatDateFriendly(mr.created_at ?? undefined),
+          "Due Date": formatDateFriendly(mr.due_date ?? undefined),
         };
 
         if (Array.isArray(mr.orders) && mr.orders.length > 0) {
@@ -431,6 +464,7 @@ function MaterialRequestContent() {
           </Button>
         </div>
 
+        {/* --- REVISI: Grid filter diubah --- */}
         <div className="p-4 border rounded-lg bg-muted/50">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="flex flex-col gap-2">
@@ -457,7 +491,78 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
+            {/* --- REVISI: Filter Prioritas --- */}
             <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Prioritas</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    prioritas: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={prioritasFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter prioritas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Prioritas</SelectItem>
+                  {dataPrioritas.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* --- REVISI: Filter Level --- */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Level</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    level: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={levelFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Level</SelectItem>
+                  {dataLevel.map((l) => (
+                    <SelectItem key={l.value} value={l.value}>
+                      {l.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* --- AKHIR REVISI --- */}
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Dari Tanggal</label>
+              <Input
+                type="date"
+                value={startDateInput}
+                onChange={(e) => setStartDateInput(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Sampai Tanggal</label>
+              <Input
+                type="date"
+                value={endDateInput}
+                onChange={(e) => setEndDateInput(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* REVISI: Filter Departemen & Site dipindah ke baris baru */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
+            <div className="flex flex-col gap-2 lg:col-span-2">
               <label className="text-sm font-medium">Departemen</label>
               <Select
                 onValueChange={(value) =>
@@ -481,7 +586,7 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 lg:col-span-2">
               <label className="text-sm font-medium">Tujuan Site</label>
               <Select
                 onValueChange={(value) =>
@@ -505,46 +610,34 @@ function MaterialRequestContent() {
               </Select>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Dari Tanggal</label>
-              <Input
-                type="date"
-                value={startDateInput}
-                onChange={(e) => setStartDateInput(e.target.value)}
-              />
+            <div className="flex flex-col gap-2 justify-end">
+              <Button
+                className="w-full"
+                onClick={() =>
+                  handleFilterChange({
+                    startDate: startDateInput,
+                    endDate: endDateInput,
+                  })
+                }
+              >
+                Terapkan Filter
+              </Button>
             </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Sampai Tanggal</label>
-              <Input
-                type="date"
-                value={endDateInput}
-                onChange={(e) => setEndDateInput(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              className="mt-4 w-full md:w-auto"
-              onClick={() =>
-                handleFilterChange({
-                  startDate: startDateInput,
-                  endDate: endDateInput,
-                })
-              }
-            >
-              Terapkan Filter Tanggal
-            </Button>
           </div>
         </div>
       </div>
+      {/* --- AKHIR REVISI --- */}
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
-        <Table className="min-w-[1200px]">
+        {/* REVISI: Tambah min-w */}
+        <Table className="min-w-[1400px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
+              <TableHead>Prioritas</TableHead> {/* <-- REVISI: Kolom Baru */}
+              <TableHead>Level</TableHead> {/* <-- REVISI: Kolom Baru */}
               <TableHead>Kategori</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>
@@ -558,7 +651,9 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
+                <TableCell colSpan={12} className="text-center h-24">
+                  {" "}
+                  {/* REVISI: ColSpan */}
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -572,6 +667,24 @@ function MaterialRequestContent() {
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
                   <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
+                  {/* --- REVISI: Cell Baru --- */}
+                  <TableCell>
+                    <Badge
+                      variant={
+                        mr.prioritas === "P0" ? "destructive" : "outline"
+                      }
+                    >
+                      <Zap className="h-3 w-3 mr-1" />
+                      {mr.prioritas}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="default">
+                      <Layers className="h-3 w-3 mr-1" />
+                      {mr.level}
+                    </Badge>
+                  </TableCell>
+                  {/* --- AKHIR REVISI --- */}
                   <TableCell>{mr.kategori}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
@@ -579,8 +692,12 @@ function MaterialRequestContent() {
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
                   </TableCell>
-                  <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
-                  <TableCell>{formatDateFriendly(mr.due_date)}</TableCell>
+                  <TableCell>
+                    {formatDateFriendly(mr.created_at ?? undefined)}
+                  </TableCell>
+                  <TableCell>
+                    {formatDateFriendly(mr.due_date ?? undefined)}
+                  </TableCell>
                   <TableCell className="text-right no-print">
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/material-request/${mr.id}`}>View</Link>
@@ -590,7 +707,9 @@ function MaterialRequestContent() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
+                <TableCell colSpan={12} className="text-center h-24">
+                  {" "}
+                  {/* REVISI: ColSpan */}
                   Tidak ada data ditemukan.
                 </TableCell>
               </TableRow>

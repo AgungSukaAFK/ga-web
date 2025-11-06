@@ -37,9 +37,11 @@ import {
   Link as LinkIcon,
   Paperclip,
   Tag,
-  ExternalLink, // Import ExternalLink
-  DollarSign, // Import DollarSign
-  Info, // Import Info
+  ExternalLink,
+  DollarSign,
+  Info,
+  Zap, // <-- REVISI: Ikon baru
+  Layers, // <-- REVISI: Ikon baru
 } from "lucide-react";
 import {
   Table,
@@ -79,8 +81,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // --- REVISI: State untuk Cost Center ---
-  // Tipe yang benar adalah ComboboxData (karena ComboboxData sudah ...[])
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<
     number | null
@@ -114,10 +114,12 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           throw new Error("Sesi user tidak ditemukan.");
         }
 
-        // 2. Ambil MR
+        // 2. Ambil MR (termasuk kolom baru)
         const { data: mrData, error: mrError } = await s
           .from("material_requests")
-          .select("*, users_with_profiles!userid(nama, email)")
+          .select(
+            "*, users_with_profiles!userid(nama, email), prioritas, level"
+          ) // Ambil prioritas & level
           .eq("id", mrId)
           .single();
 
@@ -147,7 +149,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           label: `${cc.name} (${formatCurrency(cc.current_budget)})`,
           value: cc.id.toString(),
         }));
-        setCostCenterList(costCenterOptions); // Ini sekarang akan berfungsi
+        setCostCenterList(costCenterOptions);
       } catch (err: any) {
         setError("Gagal memuat data.");
         toast.error("Gagal memuat data", { description: err.message });
@@ -413,6 +415,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
         <Content title="Detail Pengajuan" size="sm">
+          {/* --- REVISI: Tampilkan Prioritas & Level --- */}
           <div className="space-y-4">
             <InfoItem
               icon={CircleUser}
@@ -426,8 +429,18 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             />
             <InfoItem icon={Tag} label="Kategori" value={mr.kategori} />
             <InfoItem
+              icon={Zap} // <-- Ikon baru
+              label="Prioritas"
+              value={mr.prioritas || "N/A"}
+            />
+            <InfoItem
+              icon={Layers} // <-- Ikon baru
+              label="Level"
+              value={mr.level || "N/A"}
+            />
+            <InfoItem
               icon={Clock}
-              label="Due Date"
+              label="Due Date (Otomatis)"
               value={formatDateFriendly(mr.due_date)}
             />
             <InfoItem
@@ -454,6 +467,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             />
             <InfoItem icon={Info} label="Remarks" value={mr.remarks} isBlock />
           </div>
+          {/* --- AKHIR REVISI --- */}
         </Content>
 
         <Content title="Item yang Diminta" size="sm">

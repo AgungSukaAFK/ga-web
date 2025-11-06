@@ -10,7 +10,7 @@ export interface Approval {
   email: string;
   role: string;
   department: string;
-  processed_at?: string | null; // <-- TAMBAHKAN BARIS INI
+  processed_at?: string | null;
 }
 
 export interface Order {
@@ -68,11 +68,16 @@ export interface MaterialRequest {
   company_code: string;
   tujuan_site: string;
   cost_center_id: number | null;
-  cost_center?: string;
+  cost_center?: string; // Field lama, mungkin masih dipakai di bbrp tempat
   cost_centers?: {
     name: string;
     current_budget: number;
   } | null;
+
+  // --- REVISI: TAMBAHAN PROPERTI BARU ---
+  prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
+  level: string; // OPEN 1, OPEN 2, dst.
+  // --- AKHIR REVISI ---
 
   // Properti relasi (opsional, tergantung query)
   users_with_profiles?: { nama: string; email?: string } | null;
@@ -114,9 +119,9 @@ export interface PurchaseOrderPayload {
   shipping_address: string;
   company_code: string;
   notes: string;
-  attachments?: Attachment[]; // Diperbarui ke tipe Attachment
+  attachments?: Attachment[];
   approvals?: Approval[];
-  repeated_from_po_id?: number | null; // Anda bisa hapus ini jika sudah tidak dipakai
+  repeated_from_po_id?: number | null;
 }
 
 // --- Tipe Data View & Helper ---
@@ -136,6 +141,11 @@ export interface MaterialRequestListItem {
   due_date?: Date | string | null; // Opsional dan bisa null
   company_code: string | null; // Ditambahkan untuk MR Management
   users_with_profiles: { nama: string } | null; // Nama requester
+
+  // --- REVISI: TAMBAHAN PROPERTI BARU ---
+  prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
+  level: string;
+  // --- AKHIR REVISI ---
 }
 
 export interface PurchaseOrderListItem {
@@ -144,7 +154,7 @@ export interface PurchaseOrderListItem {
   status: string;
   total_price: number;
   created_at: string;
-  company_code: string | null; // Tambahkan company_code
+  company_code: string | null;
   users_with_profiles: { nama: string } | null;
   material_requests: { kode_mr: string } | null;
 }
@@ -169,9 +179,13 @@ export interface Barang {
 export interface MaterialRequestForPO {
   id: number;
   kode_mr: string;
-  orders: Order[]; // Diperbarui dari tipe generik
+  orders: Order[];
   company_code: string;
   users_with_profiles: { nama: string } | null;
+  // --- REVISI: TAMBAHAN PROPERTI BARU ---
+  prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
+  level: string;
+  // --- AKHIR REVISI ---
 }
 
 // REVISI KRITIS: PurchaseOrderDetail sekarang mencerminkan data yang di-fetch
@@ -191,6 +205,7 @@ export interface PurchaseOrderDetail
   // Ini adalah data MR yang direferensikan, lengkap dengan data requester-nya
   material_requests:
     | (MaterialRequest & {
+        // <-- MaterialRequest sudah punya 'prioritas' & 'level'
         users_with_profiles: { nama: string } | null;
       })
     | null;
@@ -240,6 +255,7 @@ export interface PurchaseOrder {
   // Ini adalah data MR yang direferensikan
   material_requests?:
     | (MaterialRequest & {
+        // <-- MaterialRequest sudah punya 'prioritas' & 'level'
         users_with_profiles: { nama: string } | null;
       })
     | null;
