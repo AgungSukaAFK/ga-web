@@ -212,7 +212,7 @@ function PurchaseOrderPageContent() {
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Buat query manual untuk mengambil 'items' dan 'approvals'
+      // 1. Buat query manual
       let query = s.from("purchase_orders").select(
         `
           kode_po, status, total_price, company_code, created_at,
@@ -227,11 +227,31 @@ function PurchaseOrderPageContent() {
 
       // 2. Terapkan SEMUA filter yang aktif
       if (searchTerm) {
-        const searchTermLike = `%${searchTerm}%`;
-        query = query.or(
-          `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike},material_requests.kode_mr.ilike.${searchTermLike},material_requests.users_with_profiles.nama.ilike.${searchTermLike}`
-        );
+        // --- AWAL PERBAIKAN ---
+
+        // 1. Cari MR IDs
+        const { data: matchingMRs } = await s
+          .from("material_requests")
+          .select("id")
+          .ilike("kode_mr", `%${searchTerm}%`);
+
+        const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
+
+        // 2. Bangun filter .or()
+        const searchTermLike = `"%${searchTerm}%"`;
+        let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
+
+        if (matchingMrIds.length > 0) {
+          orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+        }
+
+        // 3. Terapkan filter .or()
+        query = query.or(orFilter);
+
+        // --- AKHIR PERBAIKAN ---
       }
+
+      // Filter lain tetap di sini
       if (statusFilter) query = query.eq("status", statusFilter);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));

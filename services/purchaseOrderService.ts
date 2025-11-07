@@ -43,12 +43,11 @@ export const fetchPurchaseOrders = async (
   maxPrice: string | null,
   startDate: string | null,
   endDate: string | null,
-  paymentFilter: string | null // <-- REVISI: Argumen baru
+  paymentFilter: string | null
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
-  // REVISI: Tambahkan 'approvals' ke select
   let query = supabase.from("purchase_orders").select(
     `
       id, kode_po, status, total_price, created_at, company_code, approvals,
@@ -60,13 +59,43 @@ export const fetchPurchaseOrders = async (
     `,
     { count: "exact" }
   );
-  // --- AKHIR REVISI ---
 
   if (searchQuery) {
-    const searchTerm = `%${searchQuery}%`;
-    query = query.or(
-      `kode_po.ilike.${searchTerm},status.ilike.${searchTerm},material_requests.kode_mr.ilike.${searchTerm},material_requests.users_with_profiles.nama.ilike.${searchTerm}`
-    );
+    // --- AWAL PERBAIKAN ---
+
+    // 1. Cari MR ID yang cocok terlebih dahulu
+    //    Kita tidak bisa join di .or(), jadi kita query ID-nya secara terpisah.
+    //    (Kita tidak perlu 'await' di sini, biarkan promise-nya berjalan)
+    const mrIdQuery = supabase
+      .from("material_requests")
+      .select("id")
+      .ilike("kode_mr", `%${searchQuery}%`); // .ilike() biasa pakai %
+
+    // 2. Jalankan query MR ID
+    const { data: matchingMRs } = await mrIdQuery;
+    const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
+
+    // 3. Bangun string filter .or()
+    //    Bungkus dengan "%" dan tanda kutip ganda untuk menangani '/'
+    const searchTerm = `"%${searchQuery}%"`;
+
+    let orFilter = `kode_po.ilike.${searchTerm},status.ilike.${searchTerm}`;
+
+    // 4. HANYA tambahkan filter 'mr_id.in' jika kita menemukan MR yang cocok
+    if (matchingMrIds.length > 0) {
+      orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+    }
+
+    // 5. Terapkan filter .or()
+    //    Filter nama requester (relasi bertingkat) DIHAPUS dari .or() karena terlalu kompleks.
+    query = query.or(orFilter);
+
+    // --- AKHIR PERBAIKAN ---
+  }
+
+  // Terapkan filter lain (ini akan digabung dengan 'AND')
+  if (statusFilter) {
+    query = query.eq("status", statusFilter);
   }
 
   // Terapkan filter baru
@@ -86,14 +115,14 @@ export const fetchPurchaseOrders = async (
     query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
 
-  // --- REVISI: Terapkan filter pembayaran ---
-  // Ini adalah query JSONB. Kita mencari array yg berisi objek spesifik ini.
+  // --- REVISI: Perbaikan sintaks filter pembayaran ---
   const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
   if (paymentFilter === "paid") {
+    // .contains() sudah benar
     query = query.contains("approvals", paymentApprovalObject);
   } else if (paymentFilter === "unpaid") {
-    // Gunakan bentuk .not(column, operator, value) untuk negasi pada PostgREST
-    query = query.not("approvals", "cs", paymentApprovalObject);
+    // .not.contains() salah, seharusnya .not("column", "operator", "value")
+    query = query.not("approvals", "contains", paymentApprovalObject);
   }
   // --- AKHIR REVISI ---
 
@@ -113,20 +142,17 @@ export const fetchPurchaseOrders = async (
     throw error;
   }
 
-  // REVISI: Logika transform data (approvals sudah otomatis masuk via ...po)
+  // ... (sisa fungsi transform data tidak perlu diubah) ...
   const data =
     rawData?.map((po: any) => ({
       ...po,
-      // Handle PO creator
       users_with_profiles: Array.isArray(po.users_with_profiles)
         ? po.users_with_profiles[0] ?? null
         : po.users_with_profiles,
-      // Handle MR relation
       material_requests: Array.isArray(po.material_requests)
         ? po.material_requests[0]
           ? {
               ...po.material_requests[0],
-              // Handle nested MR requester
               users_with_profiles: Array.isArray(
                 po.material_requests[0].users_with_profiles
               )
@@ -137,16 +163,14 @@ export const fetchPurchaseOrders = async (
         : po.material_requests
         ? {
             ...po.material_requests,
-            // Handle nested MR requester
             users_with_profiles: Array.isArray(
               po.material_requests.users_with_profiles
             )
-              ? po.material_requests.users_with_profiles[0] ?? null
+              ? po.material_requests[0].users_with_profiles[0] ?? null
               : po.material_requests.users_with_profiles,
           }
         : null,
     })) || [];
-  // --- AKHIR REVISI ---
 
   return { data: data as PurchaseOrderListItem[], count };
 };
