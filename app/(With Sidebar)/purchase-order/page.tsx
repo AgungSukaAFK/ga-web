@@ -29,7 +29,6 @@ import { fetchPurchaseOrders } from "@/services/purchaseOrderService";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { CreatePOModal } from "./CreatePOModal";
-// REVISI: Import CreditCard
 import {
   FileText,
   Newspaper,
@@ -39,7 +38,6 @@ import {
   CreditCard,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-// REVISI: Import Approval dan POItem
 import { Approval, POItem, Profile, PurchaseOrderListItem } from "@/type";
 import * as XLSX from "xlsx";
 import {
@@ -51,7 +49,6 @@ import {
 } from "@/components/ui/select";
 import { LIMIT_OPTIONS } from "@/type/enum";
 
-// --- REVISI: Pindahkan konstanta ke atas ---
 const STATUS_OPTIONS = [
   "Pending Validation",
   "Pending Approval",
@@ -62,9 +59,15 @@ const STATUS_OPTIONS = [
   "Ordered",
 ];
 
-// --- REVISI: Tambahkan ID Validator Pembayaran ---
+// --- TAMBAHKAN KONSTANTA BARU ---
+const PAYMENT_TERM_OPTIONS = [
+  { label: "Semua Jenis", value: "all" },
+  { label: "Cash", value: "Cash" },
+  { label: "Termin", value: "Termin" },
+];
+// --- AKHIR TAMBAHAN ---
+
 const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
-// --- AKHIR REVISI ---
 
 // ==================================================================
 // KOMPONEN ANAK YANG BERISI SEMUA LOGIKA
@@ -83,7 +86,6 @@ function PurchaseOrderPageContent() {
   const searchParams = useSearchParams();
   const s = createClient();
 
-  // --- REVISI: Ambil semua state filter dari URL ---
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
@@ -93,16 +95,17 @@ function PurchaseOrderPageContent() {
   const maxPrice = searchParams.get("max_price") || "";
   const startDate = searchParams.get("start_date") || "";
   const endDate = searchParams.get("end_date") || "";
-  const paymentFilter = searchParams.get("payment_status") || ""; // <-- REVISI: Filter baru
-  // --- AKHIR REVISI ---
+  const paymentFilter = searchParams.get("payment_status") || "";
+
+  // --- TAMBAHKAN STATE FILTER BARU ---
+  const paymentTermFilter = searchParams.get("payment_term_filter") || "";
+  // --- AKHIR TAMBAHAN ---
 
   const [searchInput, setSearchInput] = useState(searchTerm);
-  // --- REVISI: State untuk input ---
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
   const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
-  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -145,7 +148,6 @@ function PurchaseOrderPageContent() {
           setUserProfile(profile);
         }
 
-        // --- REVISI: Kirim semua filter ke service ---
         const { data, count } = await fetchPurchaseOrders(
           currentPage,
           limit,
@@ -156,9 +158,9 @@ function PurchaseOrderPageContent() {
           maxPrice || null,
           startDate || null,
           endDate || null,
-          paymentFilter || null // <-- REVISI: Kirim filter baru
+          paymentFilter || null,
+          paymentTermFilter || null // <-- KIRIM PARAMETER BARU
         );
-        // --- AKHIR REVISI ---
 
         setDataPO(data || []);
         setTotalItems(count || 0);
@@ -181,7 +183,8 @@ function PurchaseOrderPageContent() {
     maxPrice,
     startDate,
     endDate,
-    paymentFilter, // <-- REVISI: Tambah dependency
+    paymentFilter,
+    paymentTermFilter, // <-- TAMBAHKAN DEPENDENCY BARU
   ]);
 
   useEffect(() => {
@@ -205,18 +208,16 @@ function PurchaseOrderPageContent() {
     });
   };
 
-  // --- REVISI: handleDownloadExcel dirubah total ---
   const handleDownloadExcel = async () => {
     if (!userProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Buat query manual
       let query = s.from("purchase_orders").select(
         `
           kode_po, status, total_price, company_code, created_at,
-          items, approvals,
+          items, approvals, payment_term,
           users_with_profiles!user_id (nama),
           material_requests!mr_id (
             kode_mr,
@@ -225,40 +226,28 @@ function PurchaseOrderPageContent() {
         `
       );
 
-      // 2. Terapkan SEMUA filter yang aktif
       if (searchTerm) {
         // --- AWAL PERBAIKAN ---
-
-        // 1. Cari MR IDs
         const { data: matchingMRs } = await s
           .from("material_requests")
           .select("id")
           .ilike("kode_mr", `%${searchTerm}%`);
 
         const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
-
-        // 2. Bangun filter .or()
         const searchTermLike = `"%${searchTerm}%"`;
         let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
-
         if (matchingMrIds.length > 0) {
           orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
         }
-
-        // 3. Terapkan filter .or()
         query = query.or(orFilter);
-
         // --- AKHIR PERBAIKAN ---
       }
-
-      // Filter lain tetap di sini
       if (statusFilter) query = query.eq("status", statusFilter);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
-      // REVISI: Terapkan filter pembayaran di Excel
       const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
       if (paymentFilter === "paid") {
         query = query.contains("approvals", paymentApprovalObject);
@@ -266,12 +255,17 @@ function PurchaseOrderPageContent() {
         query = query.not("approvals", "cs", paymentApprovalObject);
       }
 
+      // --- TAMBAHKAN LOGIKA FILTER INI DI EXCEL ---
+      if (paymentTermFilter) {
+        query = query.ilike("payment_term", `%${paymentTermFilter}%`);
+      }
+      // --- AKHIR TAMBAHAN ---
+
       if (companyFilter) query = query.eq("company_code", companyFilter);
       if (userProfile.company && userProfile.company !== "LOURDES") {
         query = query.eq("company_code", userProfile.company);
       }
 
-      // 3. Ambil data
       const { data, error } = await query.order("created_at", {
         ascending: false,
       });
@@ -279,12 +273,11 @@ function PurchaseOrderPageContent() {
       if (error) throw error;
       if (!data || data.length === 0) {
         toast.warning("Tidak ada data PO untuk diekspor sesuai filter.");
+        setIsExporting(false); // Pastikan setIsExporting(false) ada di sini
         return;
       }
 
-      // 4. "Meledakkan" data (flat map)
       const formattedData = data.flatMap((po: any) => {
-        // Logika Pengecekan Pembayaran
         const isPaid =
           (po.approvals as Approval[])?.some(
             (app) =>
@@ -298,7 +291,8 @@ function PurchaseOrderPageContent() {
           "Requester MR":
             po.material_requests?.users_with_profiles?.nama || "N/A",
           Status: po.status,
-          "Status Pembayaran": isPaid ? "Paid" : "Unpaid", // <-- Kolom Baru
+          "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
+          "Jenis Pembayaran": po.payment_term || "N/A", // <-- TAMBAHKAN KOLOM INI
           "Total Harga PO": po.total_price,
           "Pembuat PO": po.users_with_profiles?.nama || "N/A",
           Perusahaan: po.company_code,
@@ -317,7 +311,6 @@ function PurchaseOrderPageContent() {
             "Vendor Item": item.vendor_name,
           }));
         } else {
-          // Jika PO tidak punya item
           return [
             {
               ...basePoInfo,
@@ -333,7 +326,6 @@ function PurchaseOrderPageContent() {
         }
       });
 
-      // 5. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase Orders");
@@ -349,7 +341,6 @@ function PurchaseOrderPageContent() {
       setIsExporting(false);
     }
   };
-  // --- AKHIR REVISI ---
 
   const canCreatePO =
     userProfile?.role === "approver" &&
@@ -370,13 +361,12 @@ function PurchaseOrderPageContent() {
         className="col-span-12"
       >
         <div id="printable-area">
-          {/* --- REVISI: UI Filter Baru --- */}
           <div className="flex flex-col gap-4 mb-6 no-print">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-grow">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
-                  placeholder="Cari Kode PO, Kode MR, Requester MR..."
+                  placeholder="Cari Kode PO, Kode MR..."
                   className="pl-10"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
@@ -423,7 +413,6 @@ function PurchaseOrderPageContent() {
                   </Select>
                 </div>
 
-                {/* --- REVISI: Filter Pembayaran --- */}
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">
                     Status Pembayaran
@@ -446,7 +435,34 @@ function PurchaseOrderPageContent() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* --- AKHIR REVISI --- */}
+
+                {/* --- TAMBAHKAN BLOK FILTER BARU INI --- */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">
+                    Jenis Pembayaran
+                  </label>
+                  <Select
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        payment_term_filter:
+                          value === "all" ? undefined : value,
+                      })
+                    }
+                    defaultValue={paymentTermFilter || "all"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter jenis..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_TERM_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* --- AKHIR TAMBAHAN --- */}
 
                 {userProfile?.company === "LOURDES" && (
                   <div className="flex flex-col gap-2">
@@ -471,7 +487,8 @@ function PurchaseOrderPageContent() {
                     </Select>
                   </div>
                 )}
-
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Dari Tanggal</label>
                   <Input
@@ -480,8 +497,6 @@ function PurchaseOrderPageContent() {
                     onChange={(e) => setStartDateInput(e.target.value)}
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Sampai Tanggal</label>
                   <Input
@@ -508,6 +523,9 @@ function PurchaseOrderPageContent() {
                     onChange={(e) => setMaxPriceInput(e.target.value)}
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                <div className="lg:col-span-3"></div>
                 <div className="flex flex-col gap-2 justify-end">
                   <Button
                     className="w-full"
@@ -526,9 +544,7 @@ function PurchaseOrderPageContent() {
               </div>
             </div>
           </div>
-          {/* --- AKHIR REVISI UI --- */}
           <div className="rounded-md border overflow-x-auto">
-            {/* --- REVISI: Tambah min-w-[1600px] --- */}
             <Table className="min-w-[1600px]">
               <TableHeader>
                 <TableRow>
@@ -538,7 +554,6 @@ function PurchaseOrderPageContent() {
                   <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
                   <TableHead>Status PO</TableHead>
-                  {/* --- REVISI: Kolom Baru --- */}
                   <TableHead>Payment</TableHead>
                   <TableHead className="text-right">Total Harga</TableHead>
                   <TableHead>Tanggal Dibuat</TableHead>
@@ -549,7 +564,6 @@ function PurchaseOrderPageContent() {
                 {loading || isPending ? (
                   Array.from({ length: limit }).map((_, i) => (
                     <TableRow key={i}>
-                      {/* --- REVISI: Colspan 10 --- */}
                       <TableCell colSpan={10}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
@@ -559,7 +573,11 @@ function PurchaseOrderPageContent() {
                   dataPO.map((po) => (
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">
-                        {po.kode_po}
+                        <Button asChild variant="ghost">
+                          <Link href={`/purchase-order/${po.id}`}>
+                            {po.kode_po}
+                          </Link>
+                        </Button>
                       </TableCell>
                       <TableCell>
                         {po.material_requests?.kode_mr || "N/A"}
@@ -579,7 +597,6 @@ function PurchaseOrderPageContent() {
                       <TableCell>
                         <Badge variant="secondary">{po.status}</Badge>
                       </TableCell>
-                      {/* --- REVISI: Cell Baru --- */}
                       <TableCell>
                         {po.approvals?.some(
                           (app: Approval) =>
@@ -596,7 +613,6 @@ function PurchaseOrderPageContent() {
                           </Badge>
                         )}
                       </TableCell>
-                      {/* --- AKHIR REVISI --- */}
                       <TableCell className="text-right">
                         {formatCurrency(po.total_price)}
                       </TableCell>
@@ -610,7 +626,6 @@ function PurchaseOrderPageContent() {
                   ))
                 ) : (
                   <TableRow>
-                    {/* --- REVISI: Colspan 10 --- */}
                     <TableCell colSpan={10} className="text-center h-24">
                       Tidak ada data ditemukan.
                     </TableCell>

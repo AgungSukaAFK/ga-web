@@ -43,7 +43,8 @@ export const fetchPurchaseOrders = async (
   maxPrice: string | null,
   startDate: string | null,
   endDate: string | null,
-  paymentFilter: string | null
+  paymentFilter: string | null,
+  paymentTermFilter: string | null // <-- Parameter dari request terakhir Anda
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -65,20 +66,17 @@ export const fetchPurchaseOrders = async (
 
     // 1. Cari MR ID yang cocok terlebih dahulu
     //    Kita tidak bisa join di .or(), jadi kita query ID-nya secara terpisah.
-    //    (Kita tidak perlu 'await' di sini, biarkan promise-nya berjalan)
-    const mrIdQuery = supabase
+    const { data: matchingMRs } = await supabase
       .from("material_requests")
       .select("id")
-      .ilike("kode_mr", `%${searchQuery}%`); // .ilike() biasa pakai %
+      .ilike("kode_mr", `%${searchQuery}%`); // .ilike() standar pakai %
 
-    // 2. Jalankan query MR ID
-    const { data: matchingMRs } = await mrIdQuery;
     const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
 
-    // 3. Bangun string filter .or()
-    //    Bungkus dengan "%" dan tanda kutip ganda untuk menangani '/'
+    // 2. Bungkus search term dengan "%" dan tanda kutip ganda "..."
     const searchTerm = `"%${searchQuery}%"`;
 
+    // 3. Bangun string filter .or()
     let orFilter = `kode_po.ilike.${searchTerm},status.ilike.${searchTerm}`;
 
     // 4. HANYA tambahkan filter 'mr_id.in' jika kita menemukan MR yang cocok
@@ -91,11 +89,6 @@ export const fetchPurchaseOrders = async (
     query = query.or(orFilter);
 
     // --- AKHIR PERBAIKAN ---
-  }
-
-  // Terapkan filter lain (ini akan digabung dengan 'AND')
-  if (statusFilter) {
-    query = query.eq("status", statusFilter);
   }
 
   // Terapkan filter baru
@@ -115,16 +108,17 @@ export const fetchPurchaseOrders = async (
     query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
 
-  // --- REVISI: Perbaikan sintaks filter pembayaran ---
   const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
   if (paymentFilter === "paid") {
-    // .contains() sudah benar
     query = query.contains("approvals", paymentApprovalObject);
   } else if (paymentFilter === "unpaid") {
-    // .not.contains() salah, seharusnya .not("column", "operator", "value")
-    query = query.not("approvals", "contains", paymentApprovalObject);
+    query = query.not("approvals", "cs", paymentApprovalObject);
   }
-  // --- AKHIR REVISI ---
+
+  // Filter jenis pembayaran (dari request terakhir Anda)
+  if (paymentTermFilter) {
+    query = query.ilike("payment_term", `%${paymentTermFilter}%`);
+  }
 
   // Terapkan filter company_code
   if (company_code && company_code !== "LOURDES") {
@@ -142,17 +136,19 @@ export const fetchPurchaseOrders = async (
     throw error;
   }
 
-  // ... (sisa fungsi transform data tidak perlu diubah) ...
   const data =
     rawData?.map((po: any) => ({
       ...po,
+      // Handle PO creator
       users_with_profiles: Array.isArray(po.users_with_profiles)
         ? po.users_with_profiles[0] ?? null
         : po.users_with_profiles,
+      // Handle MR relation
       material_requests: Array.isArray(po.material_requests)
         ? po.material_requests[0]
           ? {
               ...po.material_requests[0],
+              // Handle nested MR requester
               users_with_profiles: Array.isArray(
                 po.material_requests[0].users_with_profiles
               )
@@ -163,10 +159,11 @@ export const fetchPurchaseOrders = async (
         : po.material_requests
         ? {
             ...po.material_requests,
+            // Handle nested MR requester
             users_with_profiles: Array.isArray(
               po.material_requests.users_with_profiles
             )
-              ? po.material_requests[0].users_with_profiles[0] ?? null
+              ? po.material_requests.users_with_profiles[0] ?? null
               : po.material_requests.users_with_profiles,
           }
         : null,
@@ -182,7 +179,9 @@ export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
     .eq("status", "Waiting PO");
 
   if (searchQuery) {
-    const searchTerm = `%${searchQuery.trim()}%`;
+    // --- PERBAIKI FILTER .OR() DI SINI JUGA ---
+    // Gunakan "%" dan bungkus dengan "..."
+    const searchTerm = `"%${searchQuery.trim()}%"`;
     query = query.or(
       `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`
     );
@@ -289,7 +288,6 @@ export const createPurchaseOrder = async (
 export const fetchPurchaseOrderById = async (
   id: number
 ): Promise<PurchaseOrderDetail | null> => {
-  // --- REVISI DI SINI ---
   const { data, error } = await supabase
     .from("purchase_orders")
     .select(
@@ -305,14 +303,12 @@ export const fetchPurchaseOrderById = async (
     )
     .eq("id", id)
     .single();
-  // --- AKHIR REVISI ---
 
   if (error) {
     console.error("Error fetching PO details:", error);
     throw error;
   }
 
-  // --- REVISI: Logika transform data untuk menangani nested join ---
   const transformedData = {
     ...data,
     users_with_profiles: Array.isArray(data.users_with_profiles)
@@ -340,7 +336,6 @@ export const fetchPurchaseOrderById = async (
         }
       : null,
   };
-  // --- AKHIR REVISI ---
 
   return transformedData as PurchaseOrderDetail;
 };
@@ -366,7 +361,9 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
   const { data, error } = await supabase
     .from("barang")
     .select("*")
-    .or(`part_number.ilike.%${query}%,part_name.ilike.%${query}%`)
+    // --- PERBAIKI FILTER .OR() DI SINI JUGA ---
+    // Gunakan "%" dan bungkus dengan "..."
+    .or(`part_number.ilike."%${query}%",part_name.ilike."%${query}%"`)
     .limit(10);
 
   if (error) {
