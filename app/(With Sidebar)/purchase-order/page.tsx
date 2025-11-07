@@ -29,12 +29,19 @@ import { fetchPurchaseOrders } from "@/services/purchaseOrderService";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { CreatePOModal } from "./CreatePOModal";
-import { FileText, Newspaper, Printer, Search, Loader2 } from "lucide-react";
+// REVISI: Import CreditCard
+import {
+  FileText,
+  Newspaper,
+  Printer,
+  Search,
+  Loader2,
+  CreditCard,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Profile, PurchaseOrderListItem } from "@/type";
+// REVISI: Import Approval dan POItem
+import { Approval, POItem, Profile, PurchaseOrderListItem } from "@/type";
 import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import {
   Select,
   SelectContent,
@@ -44,7 +51,20 @@ import {
 } from "@/components/ui/select";
 import { LIMIT_OPTIONS } from "@/type/enum";
 
-const ITEMS_PER_PAGE = 10;
+// --- REVISI: Pindahkan konstanta ke atas ---
+const STATUS_OPTIONS = [
+  "Pending Validation",
+  "Pending Approval",
+  "Pending BAST",
+  "Completed",
+  "Rejected",
+  "Draft",
+  "Ordered",
+];
+
+// --- REVISI: Tambahkan ID Validator Pembayaran ---
+const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
+// --- AKHIR REVISI ---
 
 // ==================================================================
 // KOMPONEN ANAK YANG BERISI SEMUA LOGIKA
@@ -63,12 +83,26 @@ function PurchaseOrderPageContent() {
   const searchParams = useSearchParams();
   const s = createClient();
 
-  const page = searchParams.get("page") || "1";
-  const search = searchParams.get("search");
-  const limit = Number(searchParams.get("limit") || ITEMS_PER_PAGE);
-  const currentPage = parseInt(page, 10);
+  // --- REVISI: Ambil semua state filter dari URL ---
+  const currentPage = Number(searchParams.get("page") || "1");
+  const limit = Number(searchParams.get("limit") || 25);
+  const searchTerm = searchParams.get("search") || "";
+  const statusFilter = searchParams.get("status") || "";
+  const companyFilter = searchParams.get("company") || "";
+  const minPrice = searchParams.get("min_price") || "";
+  const maxPrice = searchParams.get("max_price") || "";
+  const startDate = searchParams.get("start_date") || "";
+  const endDate = searchParams.get("end_date") || "";
+  const paymentFilter = searchParams.get("payment_status") || ""; // <-- REVISI: Filter baru
+  // --- AKHIR REVISI ---
 
-  const [searchInput, setSearchInput] = useState(search || "");
+  const [searchInput, setSearchInput] = useState(searchTerm);
+  // --- REVISI: State untuk input ---
+  const [startDateInput, setStartDateInput] = useState(startDate);
+  const [endDateInput, setEndDateInput] = useState(endDate);
+  const [minPriceInput, setMinPriceInput] = useState(minPrice);
+  const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
+  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -111,13 +145,21 @@ function PurchaseOrderPageContent() {
           setUserProfile(profile);
         }
 
-        // REVISI: Kirim company_code dari profil user ke service
+        // --- REVISI: Kirim semua filter ke service ---
         const { data, count } = await fetchPurchaseOrders(
           currentPage,
           limit,
-          search,
-          profile?.company || null // Kirim company code (GMI, GIS, LOURDES, atau null)
+          searchTerm,
+          profile?.company || null,
+          statusFilter || null,
+          minPrice || null,
+          maxPrice || null,
+          startDate || null,
+          endDate || null,
+          paymentFilter || null // <-- REVISI: Kirim filter baru
         );
+        // --- AKHIR REVISI ---
+
         setDataPO(data || []);
         setTotalItems(count || 0);
       } catch (err: any) {
@@ -128,11 +170,23 @@ function PurchaseOrderPageContent() {
     };
 
     loadData();
-  }, [currentPage, limit, search, s]);
+  }, [
+    currentPage,
+    limit,
+    searchTerm,
+    s,
+    statusFilter,
+    companyFilter,
+    minPrice,
+    maxPrice,
+    startDate,
+    endDate,
+    paymentFilter, // <-- REVISI: Tambah dependency
+  ]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
-      if (searchInput !== (search || "")) {
+      if (searchInput !== (searchTerm || "")) {
         startTransition(() => {
           router.push(
             `${pathname}?${createQueryString({ search: searchInput })}`
@@ -141,7 +195,7 @@ function PurchaseOrderPageContent() {
       }
     }, 500);
     return () => clearTimeout(handler);
-  }, [searchInput, search, pathname, router, createQueryString]);
+  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>
@@ -151,69 +205,131 @@ function PurchaseOrderPageContent() {
     });
   };
 
-  const handlePrint = () => window.print();
-
+  // --- REVISI: handleDownloadExcel dirubah total ---
   const handleDownloadExcel = async () => {
+    if (!userProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // REVISI: Kirim company_code dari profil user ke service
-      const { data } = await fetchPurchaseOrders(
-        1,
-        totalItems || 1000,
-        search,
-        userProfile?.company || null
+      // 1. Buat query manual untuk mengambil 'items' dan 'approvals'
+      let query = s.from("purchase_orders").select(
+        `
+          kode_po, status, total_price, company_code, created_at,
+          items, approvals,
+          users_with_profiles!user_id (nama),
+          material_requests!mr_id (
+            kode_mr,
+            users_with_profiles!userid (nama)
+          )
+        `
       );
 
-      const formattedData = data.map((po: any) => ({
-        "Kode PO": po.kode_po,
-        "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
-        Status: po.status,
-        "Total Harga": po.total_price,
-        Pembuat: po.users_with_profiles?.nama || "N/A",
-        Perusahaan: po.company_code, // <-- Tampilkan company code
-        "Tanggal Dibuat": formatDateFriendly(po.created_at),
-      }));
+      // 2. Terapkan SEMUA filter yang aktif
+      if (searchTerm) {
+        const searchTermLike = `%${searchTerm}%`;
+        query = query.or(
+          `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike},material_requests.kode_mr.ilike.${searchTermLike},material_requests.users_with_profiles.nama.ilike.${searchTermLike}`
+        );
+      }
+      if (statusFilter) query = query.eq("status", statusFilter);
+      if (minPrice) query = query.gte("total_price", Number(minPrice));
+      if (maxPrice) query = query.lte("total_price", Number(maxPrice));
+      if (startDate) query = query.gte("created_at", startDate);
+      if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
+      // REVISI: Terapkan filter pembayaran di Excel
+      const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
+      if (paymentFilter === "paid") {
+        query = query.contains("approvals", paymentApprovalObject);
+      } else if (paymentFilter === "unpaid") {
+        query = query.not("approvals", "cs", paymentApprovalObject);
+      }
+
+      if (companyFilter) query = query.eq("company_code", companyFilter);
+      if (userProfile.company && userProfile.company !== "LOURDES") {
+        query = query.eq("company_code", userProfile.company);
+      }
+
+      // 3. Ambil data
+      const { data, error } = await query.order("created_at", {
+        ascending: false,
+      });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        toast.warning("Tidak ada data PO untuk diekspor sesuai filter.");
+        return;
+      }
+
+      // 4. "Meledakkan" data (flat map)
+      const formattedData = data.flatMap((po: any) => {
+        // Logika Pengecekan Pembayaran
+        const isPaid =
+          (po.approvals as Approval[])?.some(
+            (app) =>
+              app.userid === PAYMENT_VALIDATOR_USER_ID &&
+              app.status === "approved"
+          ) ?? false;
+
+        const basePoInfo = {
+          "Kode PO": po.kode_po,
+          "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
+          "Requester MR":
+            po.material_requests?.users_with_profiles?.nama || "N/A",
+          Status: po.status,
+          "Status Pembayaran": isPaid ? "Paid" : "Unpaid", // <-- Kolom Baru
+          "Total Harga PO": po.total_price,
+          "Pembuat PO": po.users_with_profiles?.nama || "N/A",
+          Perusahaan: po.company_code,
+          "Tanggal Dibuat": formatDateFriendly(po.created_at),
+        };
+
+        if (Array.isArray(po.items) && po.items.length > 0) {
+          return po.items.map((item: POItem) => ({
+            ...basePoInfo,
+            "Part Number": item.part_number,
+            "Nama Item": item.name,
+            Qty: item.qty,
+            UoM: item.uom,
+            "Harga Satuan": item.price,
+            "Total Harga Item": item.total_price,
+            "Vendor Item": item.vendor_name,
+          }));
+        } else {
+          // Jika PO tidak punya item
+          return [
+            {
+              ...basePoInfo,
+              "Part Number": "N/A",
+              "Nama Item": "N/A",
+              Qty: 0,
+              UoM: "N/A",
+              "Harga Satuan": 0,
+              "Total Harga Item": 0,
+              "Vendor Item": "N/A",
+            },
+          ];
+        }
+      });
+
+      // 5. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase Orders");
       XLSX.writeFile(
         workbook,
-        `Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`
+        `Detail_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`
       );
+
+      toast.success("Data PO detail berhasil diunduh!");
     } catch (error: any) {
       toast.error("Gagal mengunduh data", { description: error.message });
     } finally {
       setIsExporting(false);
     }
   };
-
-  const handleDownloadPdf = () => {
-    const doc = new jsPDF();
-    autoTable(doc, {
-      head: [
-        [
-          "Kode PO",
-          "Ref. Kode MR",
-          "Status",
-          "Total Harga",
-          "Pembuat",
-          "Tanggal Dibuat",
-        ],
-      ],
-      body: dataPO.map((po) => [
-        po.kode_po,
-        po.material_requests?.kode_mr || "N/A",
-        po.status,
-        formatCurrency(po.total_price),
-        po.users_with_profiles?.nama || "N/A",
-        formatDateFriendly(po.created_at),
-      ]),
-    });
-    doc.save(`Purchase_Orders_${new Date().toISOString().split("T")[0]}.pdf`);
-  };
+  // --- AKHIR REVISI ---
 
   const canCreatePO =
     userProfile?.role === "approver" &&
@@ -234,53 +350,177 @@ function PurchaseOrderPageContent() {
         className="col-span-12"
       >
         <div id="printable-area">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4 no-print">
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder="Cari Kode PO, MR, atau Status..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="w-auto"
-              />
-              <Button
-                variant="outline"
-                onClick={() => handleFilterChange({ search: searchInput })}
-                disabled={isPending}
-              >
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={handlePrint} variant="outline">
-                <Printer className="mr-2 h-4 w-4" /> Cetak
-              </Button>
+          {/* --- REVISI: UI Filter Baru --- */}
+          <div className="flex flex-col gap-4 mb-6 no-print">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-grow">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  placeholder="Cari Kode PO, Kode MR, Requester MR..."
+                  className="pl-10"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+              </div>
               <Button
                 onClick={handleDownloadExcel}
                 variant="outline"
                 disabled={isExporting}
+                className="w-full md:w-auto"
               >
                 {isExporting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Newspaper className="mr-2 h-4 w-4" />
                 )}
-                Excel
-              </Button>
-              <Button onClick={handleDownloadPdf} variant="outline">
-                <FileText className="mr-2 h-4 w-4" /> PDF
+                Download Excel (Detail)
               </Button>
             </div>
+
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Status PO</label>
+                  <Select
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        status: value === "all" ? undefined : value,
+                      })
+                    }
+                    defaultValue={statusFilter || "all"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Status</SelectItem>
+                      {STATUS_OPTIONS.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* --- REVISI: Filter Pembayaran --- */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">
+                    Status Pembayaran
+                  </label>
+                  <Select
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        payment_status: value === "all" ? undefined : value,
+                      })
+                    }
+                    defaultValue={paymentFilter || "all"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter pembayaran..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* --- AKHIR REVISI --- */}
+
+                {userProfile?.company === "LOURDES" && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Perusahaan</label>
+                    <Select
+                      onValueChange={(value) =>
+                        handleFilterChange({
+                          company: value === "all" ? undefined : value,
+                        })
+                      }
+                      defaultValue={companyFilter || "all"}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Filter perusahaan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua Perusahaan</SelectItem>
+                        <SelectItem value="GMI">GMI</SelectItem>
+                        <SelectItem value="GIS">GIS</SelectItem>
+                        <SelectItem value="LOURDES">LOURDES</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Dari Tanggal</label>
+                  <Input
+                    type="date"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Sampai Tanggal</label>
+                  <Input
+                    type="date"
+                    value={endDateInput}
+                    onChange={(e) => setEndDateInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Min Total Harga</label>
+                  <Input
+                    type="number"
+                    placeholder="Rp 0"
+                    value={minPriceInput}
+                    onChange={(e) => setMinPriceInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Max Total Harga</label>
+                  <Input
+                    type="number"
+                    placeholder="Rp 1.000.000"
+                    value={maxPriceInput}
+                    onChange={(e) => setMaxPriceInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 justify-end">
+                  <Button
+                    className="w-full"
+                    onClick={() =>
+                      handleFilterChange({
+                        start_date: startDateInput || undefined,
+                        end_date: endDateInput || undefined,
+                        min_price: minPriceInput || undefined,
+                        max_price: maxPriceInput || undefined,
+                      })
+                    }
+                  >
+                    Terapkan Filter
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
+          {/* --- AKHIR REVISI UI --- */}
           <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1000px]">
+            {/* --- REVISI: Tambah min-w-[1600px] --- */}
+            <Table className="min-w-[1600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Kode PO</TableHead>
                   <TableHead>Ref. Kode MR</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Total Harga</TableHead>
-                  <TableHead>Pembuat</TableHead>
+                  <TableHead>Requester MR</TableHead>
+                  <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
+                  <TableHead>Status PO</TableHead>
+                  {/* --- REVISI: Kolom Baru --- */}
+                  <TableHead>Payment</TableHead>
+                  <TableHead className="text-right">Total Harga</TableHead>
                   <TableHead>Tanggal Dibuat</TableHead>
                   <TableHead className="text-right no-print">Aksi</TableHead>
                 </TableRow>
@@ -289,7 +529,8 @@ function PurchaseOrderPageContent() {
                 {loading || isPending ? (
                   Array.from({ length: limit }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8}>
+                      {/* --- REVISI: Colspan 10 --- */}
+                      <TableCell colSpan={10}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -304,9 +545,9 @@ function PurchaseOrderPageContent() {
                         {po.material_requests?.kode_mr || "N/A"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{po.status}</Badge>
+                        {po.material_requests?.users_with_profiles?.nama ||
+                          "N/A"}
                       </TableCell>
-                      <TableCell>{formatCurrency(po.total_price)}</TableCell>
                       <TableCell>
                         {po.users_with_profiles?.nama || "N/A"}
                       </TableCell>
@@ -314,6 +555,30 @@ function PurchaseOrderPageContent() {
                         <Badge variant="outline">
                           {(po as any).company_code}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{po.status}</Badge>
+                      </TableCell>
+                      {/* --- REVISI: Cell Baru --- */}
+                      <TableCell>
+                        {po.approvals?.some(
+                          (app: Approval) =>
+                            app.userid === PAYMENT_VALIDATOR_USER_ID &&
+                            app.status === "approved"
+                        ) ? (
+                          <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
+                            <CreditCard className="h-3 w-3" />
+                            Paid
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="w-fit">
+                            Unpaid
+                          </Badge>
+                        )}
+                      </TableCell>
+                      {/* --- AKHIR REVISI --- */}
+                      <TableCell className="text-right">
+                        {formatCurrency(po.total_price)}
                       </TableCell>
                       <TableCell>{formatDateFriendly(po.created_at)}</TableCell>
                       <TableCell className="text-right no-print">
@@ -325,7 +590,8 @@ function PurchaseOrderPageContent() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-24">
+                    {/* --- REVISI: Colspan 10 --- */}
+                    <TableCell colSpan={10} className="text-center h-24">
                       Tidak ada data ditemukan.
                     </TableCell>
                   </TableRow>

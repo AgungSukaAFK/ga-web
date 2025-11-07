@@ -13,6 +13,8 @@ import {
 
 const supabase = createClient();
 
+const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
+
 const toRoman = (num: number): string => {
   const romanMap: { [key: string]: string } = {
     "1": "I",
@@ -31,38 +33,74 @@ const toRoman = (num: number): string => {
   return romanMap[String(num)] || "";
 };
 
-// --- Fungsi-fungsi ---
 export const fetchPurchaseOrders = async (
   page: number,
   limit: number,
   searchQuery: string | null,
-  company_code: string | null // <-- Tambahkan parameter company_code
+  company_code: string | null,
+  statusFilter: string | null,
+  minPrice: string | null,
+  maxPrice: string | null,
+  startDate: string | null,
+  endDate: string | null,
+  paymentFilter: string | null // <-- REVISI: Argumen baru
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
+  // REVISI: Tambahkan 'approvals' ke select
   let query = supabase.from("purchase_orders").select(
     `
-      id, kode_po, status, total_price, created_at, company_code,
+      id, kode_po, status, total_price, created_at, company_code, approvals,
       users_with_profiles!user_id (nama), 
-      material_requests!mr_id (kode_mr)
+      material_requests!mr_id (
+        kode_mr,
+        users_with_profiles!userid (nama)
+      )
     `,
     { count: "exact" }
   );
+  // --- AKHIR REVISI ---
 
   if (searchQuery) {
     const searchTerm = `%${searchQuery}%`;
     query = query.or(
-      `kode_po.ilike.${searchTerm},status.ilike.${searchTerm},material_requests.kode_mr.ilike.${searchTerm}`
+      `kode_po.ilike.${searchTerm},status.ilike.${searchTerm},material_requests.kode_mr.ilike.${searchTerm},material_requests.users_with_profiles.nama.ilike.${searchTerm}`
     );
   }
 
-  // REVISI: Terapkan filter company_code
-  // Jika company_code ada dan BUKAN LOURDES, filter berdasarkan kode tersebut
+  // Terapkan filter baru
+  if (statusFilter) {
+    query = query.eq("status", statusFilter);
+  }
+  if (minPrice) {
+    query = query.gte("total_price", Number(minPrice));
+  }
+  if (maxPrice) {
+    query = query.lte("total_price", Number(maxPrice));
+  }
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+  }
+
+  // --- REVISI: Terapkan filter pembayaran ---
+  // Ini adalah query JSONB. Kita mencari array yg berisi objek spesifik ini.
+  const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
+  if (paymentFilter === "paid") {
+    query = query.contains("approvals", paymentApprovalObject);
+  } else if (paymentFilter === "unpaid") {
+    // Gunakan bentuk .not(column, operator, value) untuk negasi pada PostgREST
+    query = query.not("approvals", "cs", paymentApprovalObject);
+  }
+  // --- AKHIR REVISI ---
+
+  // Terapkan filter company_code
   if (company_code && company_code !== "LOURDES") {
     query = query.eq("company_code", company_code);
   }
-  // Jika 'LOURDES' atau null, jangan filter (RLS akan menangani jika LOURDES)
 
   const {
     data: rawData,
@@ -75,16 +113,40 @@ export const fetchPurchaseOrders = async (
     throw error;
   }
 
+  // REVISI: Logika transform data (approvals sudah otomatis masuk via ...po)
   const data =
-    rawData?.map((po) => ({
+    rawData?.map((po: any) => ({
       ...po,
+      // Handle PO creator
       users_with_profiles: Array.isArray(po.users_with_profiles)
         ? po.users_with_profiles[0] ?? null
         : po.users_with_profiles,
+      // Handle MR relation
       material_requests: Array.isArray(po.material_requests)
-        ? po.material_requests[0] ?? null
-        : po.material_requests,
+        ? po.material_requests[0]
+          ? {
+              ...po.material_requests[0],
+              // Handle nested MR requester
+              users_with_profiles: Array.isArray(
+                po.material_requests[0].users_with_profiles
+              )
+                ? po.material_requests[0].users_with_profiles[0] ?? null
+                : po.material_requests[0].users_with_profiles,
+            }
+          : null
+        : po.material_requests
+        ? {
+            ...po.material_requests,
+            // Handle nested MR requester
+            users_with_profiles: Array.isArray(
+              po.material_requests.users_with_profiles
+            )
+              ? po.material_requests.users_with_profiles[0] ?? null
+              : po.material_requests.users_with_profiles,
+          }
+        : null,
     })) || [];
+  // --- AKHIR REVISI ---
 
   return { data: data as PurchaseOrderListItem[], count };
 };
@@ -226,15 +288,35 @@ export const fetchPurchaseOrderById = async (
     throw error;
   }
 
+  // --- REVISI: Logika transform data untuk menangani nested join ---
   const transformedData = {
     ...data,
     users_with_profiles: Array.isArray(data.users_with_profiles)
       ? data.users_with_profiles[0] ?? null
       : data.users_with_profiles,
     material_requests: Array.isArray(data.material_requests)
-      ? data.material_requests[0] ?? null
-      : data.material_requests,
+      ? data.material_requests[0]
+        ? {
+            ...data.material_requests[0],
+            users_with_profiles: Array.isArray(
+              data.material_requests[0].users_with_profiles
+            )
+              ? data.material_requests[0].users_with_profiles[0] ?? null
+              : data.material_requests[0].users_with_profiles,
+          }
+        : null
+      : data.material_requests
+      ? {
+          ...data.material_requests,
+          users_with_profiles: Array.isArray(
+            data.material_requests.users_with_profiles
+          )
+            ? data.material_requests.users_with_profiles[0] ?? null
+            : data.material_requests.users_with_profiles,
+        }
+      : null,
   };
+  // --- AKHIR REVISI ---
 
   return transformedData as PurchaseOrderDetail;
 };

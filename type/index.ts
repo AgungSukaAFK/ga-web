@@ -155,8 +155,12 @@ export interface PurchaseOrderListItem {
   total_price: number;
   created_at: string;
   company_code: string | null;
+  approvals: Approval[] | null;
   users_with_profiles: { nama: string } | null;
-  material_requests: { kode_mr: string } | null;
+  material_requests: {
+    kode_mr: string;
+    users_with_profiles: { nama: string } | null;
+  } | null;
 }
 
 export interface ApprovedMaterialRequest {
