@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { MR_LEVELS } from "@/type/enum";
 import {
   AlertCircle,
   BookOpen,
@@ -27,6 +28,7 @@ import {
   FileSpreadsheet,
   FileX,
   HelpCircle,
+  Layers,
   Package,
   Send,
   Truck,
@@ -377,6 +379,40 @@ export default function DokumentasiPage() {
                   jika terjadi kesalahan.
                 </p>
               </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* ====================================================== */}
+          {/* LEVEL MR */}
+          {/* ====================================================== */}
+          <AccordionItem value="item-level">
+            <AccordionTrigger className="text-xl font-semibold">
+              <div className="flex items-center gap-3">
+                <Layers className="h-5 w-5" /> Keterangan Level MR
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <h5 className="font-semibold border-b pb-2">
+                Level OPEN (Barang Belum Diterima Site)
+              </h5>
+              <ul className="list-disc pl-5 space-y-2 text-sm">
+                {MR_LEVELS.filter((l) => l.group === "OPEN").map((level) => (
+                  <li key={level.value}>
+                    <strong>{level.value}:</strong> {level.description}
+                  </li>
+                ))}
+              </ul>
+
+              <h5 className="font-semibold border-b pb-2 mt-4">
+                Level CLOSE (Barang Sudah Diterima Site)
+              </h5>
+              <ul className="list-disc pl-5 space-y-2 text-sm">
+                {MR_LEVELS.filter((l) => l.group === "CLOSE").map((level) => (
+                  <li key={level.value}>
+                    <strong>{level.value}:</strong> {level.description}
+                  </li>
+                ))}
+              </ul>
             </AccordionContent>
           </AccordionItem>
 

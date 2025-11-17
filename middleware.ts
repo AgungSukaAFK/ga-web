@@ -28,9 +28,12 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  // UPDATE: Menggunakan getUser() alih-alih getSession() untuk keamanan
+  // getUser() memvalidasi token ke server auth Supabase
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { pathname } = request.nextUrl;
 
   const authPaths = [
@@ -56,7 +59,8 @@ export async function middleware(request: NextRequest) {
     pattern.test(pathname)
   );
 
-  if (!session) {
+  // Cek keberadaan user, bukan session
+  if (!user) {
     if (isAuthPath || isOtherPublicPath || isDynamicPublicPath) {
       return response;
     }
@@ -64,11 +68,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  if (session) {
+  // Jika user terautentikasi
+  if (user) {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("nrp, company")
-      .eq("id", session.user.id)
+      .eq("id", user.id) // Gunakan user.id
       .maybeSingle();
 
     if (profileError && profileError.code !== "PGRST116") {

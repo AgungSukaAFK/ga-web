@@ -48,7 +48,12 @@ import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // <-- REVISI: Import formatCurrency
 import { Badge } from "@/components/ui/badge";
-import { DATA_LEVEL, LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
+import {
+  DATA_LEVEL,
+  LIMIT_OPTIONS,
+  MR_LEVELS,
+  STATUS_OPTIONS,
+} from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
@@ -528,7 +533,7 @@ function MaterialRequestContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Level</SelectItem>
-                  {DATA_LEVEL.map((l) => (
+                  {MR_LEVELS.map((l) => (
                     <SelectItem key={l.value} value={l.value}>
                       {l.label}
                     </SelectItem>

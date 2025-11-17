@@ -35,6 +35,8 @@ import {
   Eye,
   Edit as EditIcon,
   Printer,
+  Zap,
+  Layers,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -228,7 +230,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   const canEditPO = userProfile?.role === "approver";
 
-  // --- REVISI LOGIKA APPROVAL PO ---
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
@@ -239,7 +240,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
 
     let newPoStatus = po.status;
-    let newMrStatus: string | null = null; // <-- Variabel baru untuk status MR
+    let newMrStatus: string | null = null;
 
     if (decision === "rejected") {
       newPoStatus = "Rejected";
@@ -249,7 +250,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       );
       if (isLastApproval) {
         newPoStatus = "Pending BAST";
-        newMrStatus = "Pending BAST"; // <-- REVISI: Set status MR juga
+        newMrStatus = "Pending BAST";
       }
     }
 
@@ -265,11 +266,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    // Jika PO sukses diupdate DAN status MR perlu diupdate
     if (newMrStatus && po.mr_id) {
       const { error: mrError } = await supabase
         .from("material_requests")
-        .update({ status: newMrStatus }) // <-- Update MR terkait
+        .update({ status: newMrStatus })
         .eq("id", po.mr_id);
 
       if (mrError) {
@@ -278,7 +278,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         });
       }
     }
-    // --- AKHIR REVISI LOGIKA ---
 
     toast.success(
       `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
@@ -372,7 +371,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // REVISI: Fungsi cetak
   const handlePrint = () => {
     window.print();
   };
@@ -423,7 +421,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   return (
     <>
-      {/* REVISI: Bungkus UI utama dengan no-print */}
       <div className="col-span-12 grid grid-cols-12 gap-6 no-print">
         <div className="col-span-12">
           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
@@ -432,7 +429,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <p className="text-muted-foreground">Detail Purchase Order</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* Tombol Cetak */}
               <Button variant="outline" size="sm" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" />
                 Cetak PO
@@ -488,7 +484,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   </div>
                 }
               />
-              {/* --- REVISI: Quick Link ke MR --- */}
               <InfoItem
                 icon={Tag}
                 label="Ref. MR"
@@ -507,7 +502,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   )
                 }
               />
-              {/* --- AKHIR REVISI --- */}
               <InfoItem
                 icon={Wallet}
                 label="Payment Term"
@@ -584,7 +578,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- REVISI: Info Referensi MR (jika ada) --- */}
+          {/* --- AWAL REVISI: Info Referensi MR (jika ada) --- */}
           {po.material_requests && (
             <Content
               title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
@@ -603,21 +597,39 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   value={po.material_requests.department}
                 />
                 <InfoItem
+                  icon={Tag}
+                  label="Kategori MR"
+                  value={po.material_requests.kategori}
+                />
+                <InfoItem
+                  icon={Truck}
+                  label="Tujuan Site (MR)"
+                  value={po.material_requests.tujuan_site || "N/A"}
+                />
+                <InfoItem
                   icon={DollarSign}
                   label="Estimasi Biaya MR"
                   value={formatCurrency(po.material_requests.cost_estimation)}
                 />
-                {/* --- REVISI: Tampilkan Nama Cost Center --- */}
                 <InfoItem
                   icon={Building2}
                   label="Cost Center"
                   value={
-                    (po.material_requests.cost_centers as any)?.name || // Gunakan nama dari join
-                    (po.material_requests as any).cost_center || // Fallback ke field lama
+                    (po.material_requests.cost_centers as any)?.name ||
+                    (po.material_requests as any).cost_center ||
                     "N/A"
                   }
                 />
-                {/* --- AKHIR REVISI --- */}
+                <InfoItem
+                  icon={Zap}
+                  label="Prioritas MR"
+                  value={po.material_requests.prioritas || "N/A"}
+                />
+                <InfoItem
+                  icon={Layers}
+                  label="Level MR"
+                  value={po.material_requests.level || "N/A"}
+                />
                 <div className="md:col-span-2">
                   <InfoItem
                     icon={Info}
@@ -628,7 +640,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 </div>
               </div>
 
-              {/* --- REVISI: Tambahkan tabel item MR --- */}
+              {/* Tabel Item MR */}
               <h4 className="font-semibold mt-6 mb-2">Item di MR:</h4>
               <div className="rounded-md border overflow-x-auto">
                 <Table>
@@ -682,9 +694,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   </TableBody>
                 </Table>
               </div>
-              {/* --- AKHIR REVISI --- */}
             </Content>
           )}
+          {/* --- AKHIR REVISI --- */}
         </div>
 
         <div className="col-span-12 lg:col-span-4 space-y-6">
@@ -849,7 +861,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* REVISI: Komponen Cetak PO (hanya terlihat saat print) */}
+      {/* --- Komponen Cetak PO --- */}
       <div className="print-only">
         <PrintablePO po={po} companyInfo={companyInfo} qrUrl={qrUrl} />
       </div>

@@ -79,7 +79,7 @@ import {
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { fetchActiveCostCenters } from "@/services/mrService";
 import { addDays } from "date-fns"; // <-- REVISI: Tambahan
-import { STATUS_OPTIONS } from "@/type/enum";
+import { MR_LEVELS, STATUS_OPTIONS } from "@/type/enum";
 
 // --- REVISI: Pindahkan data konstanta ke atas ---
 const dataUoM: ComboboxData = [
@@ -121,51 +121,6 @@ const dataPrioritas: {
   { label: "P2 - Standar (15 Hari)", value: "P2", days: 15 },
   { label: "P3 - Rendah (20 Hari)", value: "P3", days: 20 },
   { label: "P4 - Sangat Rendah (30 Hari)", value: "P4", days: 30 },
-];
-
-const dataLevel: { label: string; value: string; group: string }[] = [
-  { label: "OPEN 1: Menunggu PR WH", value: "OPEN 1", group: "OPEN" },
-  { label: "OPEN 2: Menunggu PO SCM", value: "OPEN 2", group: "OPEN" },
-  {
-    label: "OPEN 3A: Menunggu Kirim (No Payment Issue)",
-    value: "OPEN 3A",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 3B: Menunggu Kirim (Payment Issue)",
-    value: "OPEN 3B",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 4: Vendor Kirim (Belum Tiba)",
-    value: "OPEN 4",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 5: Tiba di WH (Belum Kirim ke Site)",
-    value: "OPEN 5",
-    group: "OPEN",
-  },
-  {
-    label: "CLOSE 1: Kirim ke Site (Belum Diterima)",
-    value: "CLOSE 1",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 2A: Diterima Site (Dokumen Belum Kirim)",
-    value: "CLOSE 2A",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 2B: Diterima Site (Dokumen Terkirim)",
-    value: "CLOSE 2B",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 3: Selesai (Update Sistem)",
-    value: "CLOSE 3",
-    group: "CLOSE",
-  },
 ];
 
 const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
@@ -735,15 +690,16 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 </Button>
               </div>
               <Select
-                onValueChange={handleLevelChange}
-                defaultValue={mr.level || "OPEN 1"}
+                onValueChange={(v) => setMr({ ...mr, level: v as any })}
+                defaultValue={mr.level || ""}
+                disabled={actionLoading}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih level..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {dataLevel.map((lvl) => (
-                    <SelectItem key={lvl.value} value={lvl.value!}>
+                  {MR_LEVELS.map((lvl) => (
+                    <SelectItem key={lvl.value} value={lvl.value}>
                       {lvl.label}
                     </SelectItem>
                   ))}
@@ -1108,51 +1064,23 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               Level OPEN (Barang Belum Diterima Site)
             </h4>
             <ul className="list-disc pl-5 space-y-2 text-sm">
-              <li>
-                <strong>OPEN 1:</strong> Bila belum dibuatkan PR nya dari team
-                WH
-              </li>
-              <li>
-                <strong>OPEN 2:</strong> Bila belum dibuatkan PO nya dari team
-                SCM
-              </li>
-              <li>
-                <strong>OPEN 3A:</strong> Bila barangnya belum dikirimkan dari
-                vendor (No Payment Issue)
-              </li>
-              <li>
-                <strong>OPEN 3B:</strong> Bila barangnya belum dikirimkan dari
-                vendor (Ada Payment Issue)
-              </li>
-              <li>
-                <strong>OPEN 4:</strong> Bila barang sudah dikirim dari Vendor
-                tapi belum sampai di WH kita
-              </li>
-              <li>
-                <strong>OPEN 5:</strong> Bila barang sudah ada di Warehouse GMI
-                (Bpn/ HO), tapi belum dikirim oleh team WH ke site
-              </li>
+              {/* Render Dinamis dari MR_LEVELS */}
+              {MR_LEVELS.filter((l) => l.group === "OPEN").map((l) => (
+                <li key={l.value}>
+                  <strong>{l.value}:</strong> {l.description}
+                </li>
+              ))}
             </ul>
             <h4 className="font-semibold">
               Level CLOSE (Barang Sudah Diterima Site)
             </h4>
             <ul className="list-disc pl-5 space-y-2 text-sm">
-              <li>
-                <strong>CLOSE 1:</strong> Bila barang sudah dikirimkan oleh team
-                WH tapi belum diterima oleh team admin WH Site
-              </li>
-              <li>
-                <strong>CLOSE 2A:</strong> Bila barang sudah diterima admin WH
-                Site tapi dokumen tanda terima belum dikirimkan ke HO.
-              </li>
-              <li>
-                <strong>CLOSE 2B:</strong> Bila barang sudah diterima admin WH
-                Site, serta dokumen tanda terima juga sudah dikirimkan ke HO.
-              </li>
-              <li>
-                <strong>CLOSE 3:</strong> Bila proses CLOSE 2B sudah selesai dan
-                data sudah diupdate di sistem monitoring.
-              </li>
+              {/* Render Dinamis dari MR_LEVELS */}
+              {MR_LEVELS.filter((l) => l.group === "CLOSE").map((l) => (
+                <li key={l.value}>
+                  <strong>{l.value}:</strong> {l.description}
+                </li>
+              ))}
             </ul>
           </div>
           <DialogFooter>
