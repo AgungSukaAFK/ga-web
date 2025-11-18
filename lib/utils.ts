@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
-import { isValid, parse } from "date-fns";
+import { differenceInCalendarDays, isValid, parse } from "date-fns";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
@@ -158,4 +158,34 @@ export const formatDateWithTime = (date?: Date | string | null): string => {
       timeZone: "Asia/Jakarta", // Pastikan zona waktu WIB
     }) + " WIB"
   );
+};
+
+export const calculatePriority = (dueDate: string | Date): string => {
+  const today = new Date();
+  const target = new Date(dueDate);
+
+  // Hitung selisih hari (Target - Hari ini)
+  const diffDays = differenceInCalendarDays(target, today);
+
+  if (diffDays <= 2) return "P0"; // Sangat Mendesak (< 2 hari)
+  if (diffDays <= 10) return "P1"; // Mendesak (3-10 hari)
+  if (diffDays <= 15) return "P2"; // Standar (11-15 hari)
+  if (diffDays <= 30) return "P3"; // Rendah (16-30 hari)
+  return "P4"; // Sangat Rendah (> 30 hari)
+};
+
+// Helper untuk mendapatkan warna badge berdasarkan prioritas (Opsional)
+export const getPriorityColor = (priority: string) => {
+  switch (priority) {
+    case "P0":
+      return "destructive"; // Merah
+    case "P1":
+      return "orange-500"; // Orange (custom class)
+    case "P2":
+      return "yellow-500"; // Kuning
+    case "P3":
+      return "blue-500"; // Biru
+    default:
+      return "secondary"; // Abu-abu
+  }
 };

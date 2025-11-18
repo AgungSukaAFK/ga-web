@@ -18,30 +18,33 @@ import {
   Order,
   Profile,
   Attachment,
-} from "@/type"; // Pastikan 'Order' dan 'Profile' ada
-import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+} from "@/type";
+import {
+  formatCurrency,
+  formatDateFriendly,
+  cn,
+  calculatePriority, // Import helper prioritas
+} from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   CheckCircle,
   Clock,
-  Download,
   Loader2,
   XCircle,
   Building2,
   Truck,
   CircleUser,
   ArrowLeft,
-  Check,
-  Link as LinkIcon,
   Paperclip,
   Tag,
   ExternalLink,
   DollarSign,
   Info,
-  Zap, // <-- REVISI: Ikon baru
-  Layers, // <-- REVISI: Ikon baru
+  Zap,
+  Layers,
+  HelpCircle, // Icon untuk info level
 } from "lucide-react";
 import {
   Table,
@@ -58,7 +61,41 @@ import {
 } from "@/services/approvalTemplateService";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { fetchActiveCostCenters } from "@/services/mrService"; // Import fetcher Cost Center
+import { fetchActiveCostCenters } from "@/services/mrService";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { MR_LEVELS } from "@/type/enum"; // Import Enum Level
+
+// Komponen helper InfoItem
+const InfoItem = ({
+  label,
+  value,
+  icon: Icon,
+  isBlock,
+}: {
+  label: string;
+  value: string;
+  icon: React.ElementType;
+  isBlock?: boolean;
+}) => (
+  <div
+    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
+  >
+    <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+      <Icon className="h-4 w-4" />
+      {label}
+    </div>
+    <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+      {value}
+    </div>
+  </div>
+);
 
 function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -73,7 +110,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null); // State untuk GA profile
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   // State untuk approval
   const [newApprovals, setNewApprovals] = useState<Approval[]>([]);
@@ -86,9 +123,11 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     number | null
   >(null);
 
+  // State untuk dialog info level
+  const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
+
   const s = createClient();
 
-  // Fetch data MR, template, dan Cost Center
   useEffect(() => {
     if (isNaN(mrId)) {
       setError("ID Material Request tidak valid.");
@@ -99,7 +138,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     const fetchInitialData = async () => {
       setLoading(true);
       try {
-        // 1. Ambil profil GA dulu
+        // 1. Ambil profil GA
         const {
           data: { user },
         } = await s.auth.getUser();
@@ -114,12 +153,12 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           throw new Error("Sesi user tidak ditemukan.");
         }
 
-        // 2. Ambil MR (termasuk kolom baru)
+        // 2. Ambil MR
         const { data: mrData, error: mrError } = await s
           .from("material_requests")
           .select(
-            "*, users_with_profiles!userid(nama, email), prioritas, level"
-          ) // Ambil prioritas & level
+            "*, users_with_profiles!userid(nama, email), prioritas, level, due_date"
+          )
           .eq("id", mrId)
           .single();
 
@@ -128,23 +167,20 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           setError("Material Request ini tidak lagi menunggu validasi.");
         }
         setMr(mrData as any);
-        // Set initial CC (jika sudah pernah diisi)
         setSelectedCostCenterId(mrData.cost_center_id || null);
 
-        // 3. Ambil Template dan Cost Center (berdasarkan company MR)
+        // 3. Ambil Template dan Cost Center
         const [templatesResult, costCentersResult] = await Promise.all([
           fetchTemplateList(),
           fetchActiveCostCenters(mrData.company_code),
         ]);
 
-        // 4. Proses Template (Tipe ComboboxData sudah array)
         const templateOptions: ComboboxData = templatesResult.map((t) => ({
           label: t.template_name,
           value: String(t.id),
         }));
         setTemplateList(templateOptions);
 
-        // 5. Proses Cost Center (Tipe ComboboxData sudah array)
         const costCenterOptions: ComboboxData = costCentersResult.map((cc) => ({
           label: `${cc.name} (${formatCurrency(cc.current_budget)})`,
           value: cc.id.toString(),
@@ -161,7 +197,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     fetchInitialData();
   }, [mrId, s]);
 
-  // Efek untuk menerapkan template saat dipilih
   const handleTemplateChange = async (templateId: string) => {
     setSelectedTemplateId(templateId);
     if (!templateId) {
@@ -186,12 +221,10 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // Handler untuk Combobox Cost Center
   const handleCostCenterChange = (value: string) => {
     setSelectedCostCenterId(value ? Number(value) : null);
   };
 
-  // Fungsi untuk mengelola Approval Path
   const removeApprover = (userId: string) =>
     setNewApprovals((prev) => prev.filter((a) => a.userid !== userId));
 
@@ -209,7 +242,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  // Fungsi untuk Aksi
   const handleValidate = async () => {
     if (!mr || !profile) {
       toast.error("Data MR atau profil GA tidak ditemukan.");
@@ -226,7 +258,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    // Peringatan budget
+    // Validasi Budget (Peringatan)
     const selectedCC = costCenterList.find(
       (c) => c.value === selectedCostCenterId.toString()
     );
@@ -284,54 +316,20 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
       if (updateError) throw updateError;
 
-      const requesterEmail = mr.users_with_profiles?.email;
-      const firstApprover = newApprovals[0];
-      const emailPromises = [];
+      // Notifikasi Email (Opsional, jika endpoint tersedia)
+      // ... (Logika email bisa ditambahkan di sini)
 
-      if (requesterEmail) {
-        emailPromises.push(
-          fetch("/api/v1/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: requesterEmail,
-              subject: `[VALIDATED] MR Anda (${mr.kode_mr}) telah divalidasi`,
-              html: `<h1>Material Request Divalidasi</h1><p>Halo,</p><p>Material Request Anda dengan kode <strong>${mr.kode_mr}</strong> telah berhasil divalidasi oleh General Affair dan sekarang sedang dalam proses persetujuan.</p><a href="${window.location.origin}/material-request/${mr.id}">Lihat Detail MR</a>`,
-            }),
-          })
-        );
-      }
-      if (firstApprover?.email) {
-        emailPromises.push(
-          fetch("/api/v1/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: firstApprover.email,
-              subject: `[ACTION REQUIRED] Persetujuan MR Baru (${mr.kode_mr})`,
-              html: `<h1>Tugas Persetujuan Baru</h1><p>Halo ${firstApprover.nama},</p><p>Anda memiliki Material Request baru dengan kode <strong>${mr.kode_mr}</strong> yang menunggu persetujuan Anda.</p><a href="${window.location.origin}/approval-validation">Buka Halaman Approval</a>`,
-            }),
-          })
-        );
-      }
-      await Promise.all(emailPromises);
-      toast.success("MR berhasil divalidasi dan notifikasi email terkirim!", {
+      toast.success("MR berhasil divalidasi!", {
         id: toastId,
       });
+      router.push("/approval-validation");
     } catch (err: any) {
-      const errorMsg = err.message || "Terjadi kesalahan";
-      toast.error(
-        errorMsg.includes("update")
-          ? "Gagal memvalidasi"
-          : "Validasi berhasil, tapi email gagal terkirim",
-        {
-          id: toastId,
-          description: errorMsg,
-        }
-      );
+      toast.error("Gagal memvalidasi MR", {
+        id: toastId,
+        description: err.message,
+      });
     } finally {
       setActionLoading(false);
-      router.push("/approval-validation");
     }
   };
 
@@ -354,6 +352,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       .from("material_requests")
       .update({ status: "Rejected", discussions: updatedDiscussions })
       .eq("id", mrId);
+
     setActionLoading(false);
     if (error) {
       toast.error("Gagal menolak MR", { description: error.message });
@@ -378,6 +377,11 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
         </div>
       </Content>
     );
+
+  // HITUNG LIVE PRIORITY
+  const livePriority = mr.due_date
+    ? calculatePriority(mr.due_date)
+    : "Menghitung...";
 
   const currentTurnIndex = newApprovals.findIndex(
     (app) => app.status === "pending"
@@ -415,7 +419,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
         <Content title="Detail Pengajuan" size="sm">
-          {/* --- REVISI: Tampilkan Prioritas & Level --- */}
           <div className="space-y-4">
             <InfoItem
               icon={CircleUser}
@@ -428,19 +431,46 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               value={mr.department}
             />
             <InfoItem icon={Tag} label="Kategori" value={mr.kategori} />
-            <InfoItem
-              icon={Zap} // <-- Ikon baru
-              label="Prioritas"
-              value={mr.prioritas || "N/A"}
-            />
-            <InfoItem
-              icon={Layers} // <-- Ikon baru
-              label="Level"
-              value={mr.level || "N/A"}
-            />
+
+            {/* --- PRIORITAS LIVE --- */}
+            <div className="grid grid-cols-3 gap-x-2">
+              <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                Prioritas (Live)
+              </div>
+              <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap flex items-center gap-2">
+                <Badge
+                  variant={livePriority === "P0" ? "destructive" : "outline"}
+                  className={livePriority === "P0" ? "animate-pulse" : ""}
+                >
+                  {livePriority}
+                </Badge>
+                <span className="text-xs font-normal text-muted-foreground">
+                  (Deadline: {formatDateFriendly(mr.due_date)})
+                </span>
+              </div>
+            </div>
+
+            {/* --- LEVEL INFO --- */}
+            <div className="grid grid-cols-3 gap-x-2">
+              <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                Level
+                <button
+                  onClick={() => setIsLevelInfoOpen(true)}
+                  className="text-muted-foreground hover:text-primary"
+                >
+                  <HelpCircle className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+                {mr.level || "OPEN 1"}
+              </div>
+            </div>
+
             <InfoItem
               icon={Clock}
-              label="Due Date (Otomatis)"
+              label="Due Date"
               value={formatDateFriendly(mr.due_date)}
             />
             <InfoItem
@@ -467,7 +497,6 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             />
             <InfoItem icon={Info} label="Remarks" value={mr.remarks} isBlock />
           </div>
-          {/* --- AKHIR REVISI --- */}
         </Content>
 
         <Content title="Item yang Diminta" size="sm">
@@ -709,33 +738,46 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
       </div>
+
+      {/* Dialog Info Level (Sama seperti halaman Edit) */}
+      <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Keterangan Level Material Request</DialogTitle>
+            <DialogDescription>
+              Level ini melacak status fisik barang setelah MR disetujui.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <h4 className="font-semibold">
+              Level OPEN (Barang Belum Diterima Site)
+            </h4>
+            <ul className="list-disc pl-5 space-y-2 text-sm">
+              {MR_LEVELS.filter((l) => l.group === "OPEN").map((level) => (
+                <li key={level.value}>
+                  <strong>{level.value}:</strong> {level.description}
+                </li>
+              ))}
+            </ul>
+            <h4 className="font-semibold">
+              Level CLOSE (Barang Sudah Diterima Site)
+            </h4>
+            <ul className="list-disc pl-5 space-y-2 text-sm">
+              {MR_LEVELS.filter((l) => l.group === "CLOSE").map((level) => (
+                <li key={level.value}>
+                  <strong>{level.value}:</strong> {level.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
-
-const InfoItem = ({
-  label,
-  value,
-  icon: Icon,
-  isBlock,
-}: {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  isBlock?: boolean;
-}) => (
-  <div
-    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
-  >
-    <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
-      <Icon className="h-4 w-4" />
-      {label}
-    </div>
-    <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
-      {value}
-    </div>
-  </div>
-);
 
 export default function ValidateMRPage({
   params,

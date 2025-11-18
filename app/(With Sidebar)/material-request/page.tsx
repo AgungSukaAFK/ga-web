@@ -29,8 +29,9 @@ import {
   Search,
   Loader2,
   Edit,
-  Layers, // <-- REVISI: Ikon baru
-  Zap, // <-- REVISI: Ikon baru
+  Layers,
+  Zap,
+  CalendarClock, // Ikon baru
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -43,22 +44,25 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
-import { Profile, Order, MaterialRequest } from "@/type"; // REVISI: Impor Tipe 'Order' dan 'MaterialRequest'
+import { Profile, Order } from "@/type";
 import * as XLSX from "xlsx";
 import { PaginationComponent } from "@/components/pagination-components";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // <-- REVISI: Import formatCurrency
+import {
+  formatCurrency,
+  formatDateFriendly,
+  calculatePriority, // IMPORT FUNGSI INI
+  cn,
+} from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   DATA_LEVEL,
   LIMIT_OPTIONS,
-  MR_LEVELS,
   STATUS_OPTIONS,
+  MR_LEVELS,
 } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 
 // --- Tipe Data ---
-// REVISI: Gunakan MaterialRequestListItem dari type/index.ts
-// (Kita sudah menambah 'prioritas' dan 'level' di sana)
 import { MaterialRequestListItem } from "@/type";
 
 // --- Konstanta untuk Filter ---
@@ -95,20 +99,17 @@ const dataLokasi: ComboboxData = [
 const SORT_OPTIONS = [
   { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
   { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
-  { label: "Due Date (Mendesak)", value: "due_date.asc" },
+  { label: "Due Date (Mendesak)", value: "due_date.asc" }, // Opsi penting untuk P0
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
-// --- REVISI: Tambahkan data filter prioritas dan level ---
 const dataPrioritas: { label: string; value: string }[] = [
-  { label: "P0", value: "P0" },
-  { label: "P1", value: "P1" },
-  { label: "P2", value: "P2" },
-  { label: "P3", value: "P3" },
-  { label: "P4", value: "P4" },
+  { label: "P0 (Sangat Mendesak)", value: "P0" },
+  { label: "P1 (Mendesak)", value: "P1" },
+  { label: "P2 (Standar)", value: "P2" },
+  { label: "P3 (Rendah)", value: "P3" },
+  { label: "P4 (Sangat Rendah)", value: "P4" },
 ];
-
-// --- AKHIR REVISI ---
 
 function MaterialRequestContent() {
   const s = createClient();
@@ -138,19 +139,15 @@ function MaterialRequestContent() {
   const sortFilter = searchParams.get("sort") || "created_at.desc";
   const prioritasFilter = searchParams.get("prioritas") || "";
   const levelFilter = searchParams.get("level") || "";
-  // --- REVISI: State filter estimasi ---
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
-  // --- AKHIR REVISI ---
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
-  // --- REVISI: State input estimasi ---
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
   const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
-  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -201,7 +198,6 @@ function MaterialRequestContent() {
       const to = from + limit - 1;
 
       try {
-        // --- REVISI: Tambahkan 'cost_estimation' ke select ---
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
@@ -210,7 +206,6 @@ function MaterialRequestContent() {
           `,
           { count: "exact" }
         );
-        // --- AKHIR REVISI ---
 
         // 3. Terapkan filter berdasarkan input
         if (searchTerm)
@@ -227,12 +222,10 @@ function MaterialRequestContent() {
         if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
         if (levelFilter) query = query.eq("level", levelFilter);
 
-        // --- REVISI: Terapkan filter estimasi ---
         if (minEstimasi)
           query = query.gte("cost_estimation", Number(minEstimasi));
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
-        // --- AKHIR REVISI ---
 
         // 4. Terapkan filter berdasarkan ROLE
         if (userProfile.role === "requester") {
@@ -278,8 +271,8 @@ function MaterialRequestContent() {
     sortFilter,
     prioritasFilter,
     levelFilter,
-    minEstimasi, // <-- REVISI: Tambah dependency
-    maxEstimasi, // <-- REVISI: Tambah dependency
+    minEstimasi,
+    maxEstimasi,
   ]);
 
   // Efek debounce pencarian
@@ -305,14 +298,13 @@ function MaterialRequestContent() {
     });
   };
 
-  // --- REVISI: Handler Download Excel (sudah ada cost_estimation) ---
+  // Handler Download Excel
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Ambil kolom 'orders', 'prioritas', 'level', 'cost_estimation'
       let query = s.from("material_requests").select(`
           kode_mr, kategori, department, status, remarks, cost_estimation, 
           tujuan_site, company_code, created_at, due_date,
@@ -320,7 +312,6 @@ function MaterialRequestContent() {
           users_with_profiles!userid (nama)
         `);
 
-      // Terapkan semua filter aktif
       if (searchTerm)
         query = query.or(
           `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
@@ -332,12 +323,10 @@ function MaterialRequestContent() {
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
       if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
       if (levelFilter) query = query.eq("level", levelFilter);
-      // --- REVISI: Terapkan filter estimasi ---
       if (minEstimasi)
         query = query.gte("cost_estimation", Number(minEstimasi));
       if (maxEstimasi)
         query = query.lte("cost_estimation", Number(maxEstimasi));
-      // --- AKHIR REVISI ---
 
       if (currentUser.role === "requester") {
         query = query.eq("userid", currentUser.id);
@@ -355,8 +344,10 @@ function MaterialRequestContent() {
         return;
       }
 
-      // 2. Gunakan .flatMap() untuk "meledakkan" data
       const formattedData = data.flatMap((mr: any) => {
+        // Hitung prioritas live untuk report juga
+        const livePriority = calculatePriority(mr.due_date || new Date());
+
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
@@ -364,7 +355,8 @@ function MaterialRequestContent() {
           Tujuan: mr.tujuan_site,
           Status: mr.status,
           Level: mr.level,
-          Prioritas: mr.prioritas,
+          "Prioritas (Live)": livePriority,
+          "Prioritas (Awal)": mr.prioritas, // Opsional: tampilkan juga data DB
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
           Remarks: mr.remarks,
@@ -401,7 +393,6 @@ function MaterialRequestContent() {
         }
       });
 
-      // 3. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Material Requests");
@@ -416,7 +407,6 @@ function MaterialRequestContent() {
       setIsExporting(false);
     }
   };
-  // --- AKHIR REVISI ---
 
   const handlePrint = () => window.print();
 
@@ -467,7 +457,6 @@ function MaterialRequestContent() {
           </Button>
         </div>
 
-        {/* --- REVISI: Grid filter diubah --- */}
         <div className="p-4 border rounded-lg bg-muted/50">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
@@ -495,7 +484,7 @@ function MaterialRequestContent() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Prioritas</label>
+              <label className="text-sm font-medium">Prioritas (Awal)</label>
               <Select
                 onValueChange={(value) =>
                   handleFilterChange({
@@ -650,11 +639,9 @@ function MaterialRequestContent() {
           </div>
         </div>
       </div>
-      {/* --- AKHIR REVISI --- */}
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
-        {/* REVISI: Tambah min-w */}
         <Table className="min-w-[1500px]">
           <TableHeader>
             <TableRow>
@@ -669,7 +656,6 @@ function MaterialRequestContent() {
               <TableHead>Status</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead>Due Date</TableHead>
-              {/* --- REVISI: Kolom Estimasi --- */}
               <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead className="text-right no-print">Aksi</TableHead>
             </TableRow>
@@ -677,7 +663,6 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                {/* REVISI: ColSpan */}
                 <TableCell colSpan={13} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -686,55 +671,82 @@ function MaterialRequestContent() {
                 </TableCell>
               </TableRow>
             ) : dataMR.length > 0 ? (
-              dataMR.map((mr, index) => (
-                <TableRow key={mr.id}>
-                  <TableCell className="font-medium">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-                  <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        mr.prioritas === "P0" ? "destructive" : "outline"
-                      }
-                    >
-                      <Zap className="h-3 w-3 mr-1" />
-                      {mr.prioritas}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="default">
-                      <Layers className="h-3 w-3 mr-1" />
-                      {mr.level}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{mr.kategori}</TableCell>
-                  <TableCell>{mr.department}</TableCell>
-                  <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
-                  <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{mr.status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {formatDateFriendly(mr.created_at ?? undefined)}
-                  </TableCell>
-                  <TableCell>
-                    {formatDateFriendly(mr.due_date ?? undefined)}
-                  </TableCell>
-                  {/* --- REVISI: Cell Estimasi --- */}
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(mr.cost_estimation)}
-                  </TableCell>
-                  <TableCell className="text-right no-print">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/material-request/${mr.id}`}>View</Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              dataMR.map((mr, index) => {
+                // HITUNG PRIORITAS LIVE
+                const livePriority = calculatePriority(
+                  mr.due_date || new Date()
+                );
+
+                return (
+                  <TableRow key={mr.id}>
+                    <TableCell className="font-medium">
+                      {(currentPage - 1) * limit + index + 1}
+                    </TableCell>
+                    <TableCell className="font-semibold">
+                      {mr.kode_mr}
+                    </TableCell>
+                    <TableCell>
+                      {/* Tampilkan Badge Prioritas Live */}
+                      <Badge
+                        variant={
+                          livePriority === "P0" ? "destructive" : "outline"
+                        }
+                        className={cn(
+                          "font-mono transition-all duration-500",
+                          livePriority === "P0" &&
+                            "animate-pulse repeat-[5] shadow-sm"
+                        )}
+                      >
+                        <Zap className="h-3 w-3 mr-1" />
+                        {livePriority}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="default" className="bg-slate-600">
+                        <Layers className="h-3 w-3 mr-1" />
+                        {mr.level}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{mr.kategori}</TableCell>
+                    <TableCell>{mr.department}</TableCell>
+                    <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
+                    <TableCell>
+                      {mr.users_with_profiles?.nama || "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{mr.status}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {formatDateFriendly(mr.created_at ?? undefined)}
+                    </TableCell>
+                    <TableCell>
+                      {mr.due_date ? (
+                        <span
+                          className={cn(
+                            livePriority === "P0"
+                              ? "text-destructive font-bold"
+                              : ""
+                          )}
+                        >
+                          {formatDateFriendly(mr.due_date)}
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(mr.cost_estimation)}
+                    </TableCell>
+                    <TableCell className="text-right no-print">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/material-request/${mr.id}`}>View</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
-                {/* REVISI: ColSpan */}
                 <TableCell colSpan={13} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
@@ -798,30 +810,20 @@ function MaterialRequestContent() {
   );
 }
 
-// Bungkus komponen utama dengan Suspense
 export default function MaterialRequestPage() {
   return (
-    <Suspense fallback={<UserManagementSkeleton />}>
-      {" "}
+    <Suspense
+      fallback={
+        <Content
+          title="Daftar Material Request"
+          size="lg"
+          className="col-span-12"
+        >
+          <Skeleton className="h-96 w-full" />
+        </Content>
+      }
+    >
       <MaterialRequestContent />
     </Suspense>
   );
 }
-
-// Komponen skeleton sederhana untuk fallback Suspense
-const UserManagementSkeleton = () => (
-  <Content title="Daftar Material Request" size="lg" className="col-span-12">
-    <div className="flex flex-col gap-4 mb-6">
-      <div className="flex flex-col md:flex-row gap-4">
-        <Skeleton className="h-10 w-full md:w-1/2" />
-        <Skeleton className="h-10 w-full md:w-auto px-6" />
-      </div>
-      <Skeleton className="h-24 w-full rounded-lg" />
-    </div>
-    <Skeleton className="h-96 w-full rounded-lg" />
-    <div className="mt-6 flex justify-between items-center">
-      <Skeleton className="h-8 w-32" />
-      <Skeleton className="h-9 w-64" />
-    </div>
-  </Content>
-);

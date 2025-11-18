@@ -21,7 +21,6 @@ import {
   Calendar,
   DollarSign,
   Info,
-  Download,
   Link as LinkIcon,
   AlertTriangle,
   Check,
@@ -35,11 +34,11 @@ import {
   Truck,
   Building2,
   ExternalLink,
-  Zap, // Ikon baru untuk prioritas
-  Layers, // Ikon baru untuk level
-  HelpCircle, // Ikon baru untuk info
-  Upload, // <-- REVISI: Ikon baru
-  CheckCheck, // <-- REVISI: Ikon baru
+  Zap,
+  Layers,
+  HelpCircle,
+  CheckCheck,
+  Calendar as CalendarIcon, // Ikon Kalender
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,6 +58,7 @@ import {
   formatDateFriendly,
   cn,
   formatDateWithTime,
+  calculatePriority, // IMPORT HELPER BARU
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
@@ -81,9 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { addDays } from "date-fns";
 import { useRouter } from "next/navigation";
-// --- REVISI: Import Alert Dialog ---
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,7 +92,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-// --- AKHIR REVISI ---
+import { MR_LEVELS } from "@/type/enum"; // IMPORT ENUM
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"; // IMPORT POPOVER
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"; // IMPORT CALENDAR
+import { format } from "date-fns";
 
 // --- Data Konstanta ---
 const kategoriData: ComboboxData = [
@@ -126,68 +131,9 @@ const dataUoM: ComboboxData = [
   { label: "Roll", value: "Roll" },
 ];
 
-const dataPrioritas: {
-  label: string;
-  value: MaterialRequest["prioritas"];
-  days: number;
-}[] = [
-  { label: "P0 - Sangat Mendesak (2 Hari)", value: "P0", days: 2 },
-  { label: "P1 - Mendesak (10 Hari)", value: "P1", days: 10 },
-  { label: "P2 - Standar (15 Hari)", value: "P2", days: 15 },
-  { label: "P3 - Rendah (20 Hari)", value: "P3", days: 20 },
-  { label: "P4 - Sangat Rendah (30 Hari)", value: "P4", days: 30 },
-];
-
-// Data untuk Level
-const dataLevel: { label: string; value: string; group: string }[] = [
-  { label: "OPEN 1: Menunggu PR WH", value: "OPEN 1", group: "OPEN" },
-  { label: "OPEN 2: Menunggu PO SCM", value: "OPEN 2", group: "OPEN" },
-  {
-    label: "OPEN 3A: Menunggu Kirim (No Payment Issue)",
-    value: "OPEN 3A",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 3B: Menunggu Kirim (Payment Issue)",
-    value: "OPEN 3B",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 4: Vendor Kirim (Belum Tiba)",
-    value: "OPEN 4",
-    group: "OPEN",
-  },
-  {
-    label: "OPEN 5: Tiba di WH (Belum Kirim ke Site)",
-    value: "OPEN 5",
-    group: "OPEN",
-  },
-  {
-    label: "CLOSE 1: Kirim ke Site (Belum Diterima)",
-    value: "CLOSE 1",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 2A: Diterima Site (Dokumen Belum Kirim)",
-    value: "CLOSE 2A",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 2B: Diterima Site (Dokumen Terkirim)",
-    value: "CLOSE 2B",
-    group: "CLOSE",
-  },
-  {
-    label: "CLOSE 3: Selesai (Update Sistem)",
-    value: "CLOSE 3",
-    group: "CLOSE",
-  },
-];
-// --- AKHIR DATA KONSTANTA ---
-
 function DetailMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
-  const router = useRouter(); // <-- REVISI: Tambahkan router
+  const router = useRouter();
 
   const [mr, setMr] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -203,10 +149,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [costCenterName, setCostCenterName] = useState<string | null>(null);
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
 
+  // State UI
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
-  // --- REVISI: State untuk konfirmasi close MR ---
   const [isCloseMrAlertOpen, setIsCloseMrAlertOpen] = useState(false);
-  // --- AKHIR REVISI ---
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
   const supabase = createClient();
 
@@ -223,6 +169,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         *, 
         prioritas, 
         level, 
+        due_date,
         users_with_profiles!userid(nama),
         cost_centers!cost_center_id(name, current_budget) 
       `
@@ -245,6 +192,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           : [],
         approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
         orders: Array.isArray(mrData.orders) ? mrData.orders : [],
+        // Pastikan due_date adalah objek Date
+        due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
 
@@ -279,23 +228,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [mrId]);
 
-  const myApprovalIndex =
-    mr && currentUser && mr.approvals
-      ? mr.approvals.findIndex(
-          (a) => a.userid === currentUser.id && a.status === "pending"
-        )
-      : -1;
+  // --- LOGIKA BARU: Auto-Calculate Priority (LIVE) ---
+  // Jika due_date berubah (misal diedit), hitung ulang prioritas
+  useEffect(() => {
+    if (mr?.due_date) {
+      const newPriority = calculatePriority(mr.due_date);
+      if (mr.prioritas !== newPriority) {
+        setMr((prev) =>
+          prev
+            ? {
+                ...prev,
+                prioritas: newPriority as MaterialRequest["prioritas"],
+              }
+            : null
+        );
+      }
+    }
+  }, [mr?.due_date]);
 
-  const isMyTurnForApproval =
-    myApprovalIndex !== -1 && mr
-      ? mr.approvals
-          .slice(0, myApprovalIndex)
-          .every((a) => a.status === "approved")
-      : false;
-
-  const canEdit =
-    userProfile?.role === "admin" || userProfile?.role === "approver";
-
+  // Auto-Calculate Cost
   useEffect(() => {
     if (mr) {
       const total = mr.orders.reduce((acc, item) => {
@@ -313,35 +264,39 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   }, [mr?.orders]);
 
-  useEffect(() => {
-    if (mr && isEditing) {
-      const prioritasData = dataPrioritas.find((p) => p.value === mr.prioritas);
-      if (prioritasData) {
-        const calculatedDueDate = addDays(new Date(), prioritasData.days);
-        if (
-          !mr.due_date ||
-          new Date(mr.due_date).toDateString() !==
-            calculatedDueDate.toDateString()
-        ) {
-          setMr((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  due_date: calculatedDueDate,
-                }
-              : null
-          );
-        }
-      }
-    }
-  }, [mr?.prioritas, isEditing]);
+  const myApprovalIndex =
+    mr && currentUser && mr.approvals
+      ? mr.approvals.findIndex(
+          (a) => a.userid === currentUser.id && a.status === "pending"
+        )
+      : -1;
+
+  const isMyTurnForApproval =
+    myApprovalIndex !== -1 && mr
+      ? mr.approvals
+          .slice(0, myApprovalIndex)
+          .every((a) => a.status === "approved")
+      : false;
+
+  const canEdit =
+    userProfile?.role === "admin" ||
+    userProfile?.role === "approver" ||
+    (userProfile?.role === "requester" && mr?.status === "Pending Validation");
 
   const handleSaveChanges = async () => {
     if (!mr) return;
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan perubahan...");
 
-    const { users_with_profiles, cost_centers, ...updateData } = mr;
+    const { users_with_profiles, cost_centers, ...restOfData } = mr as any;
+
+    const updateData = {
+      ...restOfData,
+      cost_estimation: String(mr.cost_estimation),
+      // Simpan prioritas hasil hitungan dan tanggal baru
+      prioritas: mr.prioritas,
+      due_date: mr.due_date,
+    };
 
     const { error: updateError } = await supabase
       .from("material_requests")
@@ -354,7 +309,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         id: toastId,
         description: updateError.message,
       });
-      // REVISI: Jangan lempar error, biarkan fungsi selesai
       return false;
     } else {
       toast.success("Perubahan berhasil disimpan!", { id: toastId });
@@ -388,13 +342,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     let newMrStatus = mr.status;
     const currentMrData = mr;
 
-    const dataToUpdate: {
-      approvals: Approval[];
-      status: string;
-      level: string;
-      orders?: Order[];
-      cost_estimation?: string;
-    } = {
+    const dataToUpdate: any = {
       approvals: updatedApprovals,
       status: newMrStatus,
       level: currentMrData.level,
@@ -406,6 +354,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     } else if (decision === "approved") {
       dataToUpdate.orders = currentMrData.orders;
       dataToUpdate.cost_estimation = currentMrData.cost_estimation;
+      dataToUpdate.due_date = currentMrData.due_date;
+      dataToUpdate.prioritas = currentMrData.prioritas;
 
       const isLastApproval = updatedApprovals.every(
         (app: Approval) => app.status === "approved"
@@ -427,11 +377,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.success(
         `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
       );
-      await fetchMrData(); // Ambil data terbaru
+      await fetchMrData();
     }
     setActionLoading(false);
-    setIsEditing(false); // Selalu matikan mode edit setelah aksi
+    setIsEditing(false);
   };
+
+  // ... (Handlers untuk Item, Attachment, Close MR, dan UI Actions tidak berubah drastis, salin dari implementasi sebelumnya) ...
+  // Agar kode tidak terlalu panjang di chat, saya sertakan bagian Render Utama di bawah ini.
+  // Pastikan Anda menyalin logika handlers (handleItemChange, handleAttachmentUpload, dll) dari file sebelumnya jika belum ada.
 
   const handleItemChange = (
     index: number,
@@ -506,13 +460,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
   };
 
-  // --- REVISI: handleAttachmentUpload (dulu handleBastUpload) ---
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
-
     setIsUploading(true);
     const toastId = toast.loading(`Mengunggah ${files.length} file...`);
     const uploadPromises = Array.from(files).map(async (file) => {
@@ -523,64 +475,49 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         .from("mr")
         .upload(filePath, file);
       if (error) return { error };
-      // Simpan nama file asli
       return { data: { ...data, name: file.name }, error: null };
     });
-
     const results = await Promise.all(uploadPromises);
     const successfulUploads = results
       .filter((r) => !r.error)
       .map((r) => ({ url: r.data!.path, name: r.data!.name } as Attachment));
-
     if (successfulUploads.length === 0) {
       toast.error("Semua file gagal diunggah.", { id: toastId });
       setIsUploading(false);
       return;
     }
-
     const updatedAttachments = [
       ...(mr.attachments || []),
       ...successfulUploads,
     ];
-
-    // Update field attachments di database
     const { error: updateError } = await supabase
       .from("material_requests")
       .update({ attachments: updatedAttachments })
       .eq("id", mr.id);
-
     if (updateError) {
       toast.error("Gagal menyimpan data lampiran", {
         id: toastId,
         description: updateError.message,
       });
-      // Rollback storage? (Opsional, untuk saat ini kita biarkan)
     } else {
       toast.success(
         `${successfulUploads.length} file berhasil diunggah & disimpan.`,
         { id: toastId }
       );
-      // Refresh data lokal
       await fetchMrData();
     }
-
     setIsUploading(false);
-    e.target.value = ""; // Reset input file
+    e.target.value = "";
   };
-  // --- AKHIR REVISI ---
 
   const removeAttachment = (indexToRemove: number) => {
     if (!mr || !Array.isArray(mr.attachments)) return;
     const attachmentToRemove = mr.attachments[indexToRemove];
     if (!attachmentToRemove) return;
-
-    // Optimistic update di UI
     const updatedAttachments = mr.attachments.filter(
       (_, i) => i !== indexToRemove
     );
     setMr({ ...mr, attachments: updatedAttachments });
-
-    // Hapus dari storage dan DB
     supabase.storage.from("mr").remove([attachmentToRemove.url]);
     supabase
       .from("material_requests")
@@ -589,7 +526,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       .then(({ error }) => {
         if (error) {
           toast.error("Gagal menghapus lampiran dari DB");
-          fetchMrData(); // Revert UI
+          fetchMrData();
         } else {
           toast.success(
             `Lampiran "${attachmentToRemove.name}" berhasil dihapus.`
@@ -598,40 +535,29 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       });
   };
 
-  // --- REVISI: handleConfirmCloseMR (dulu handleCloseMR) ---
   const handleConfirmCloseMR = async () => {
     if (!mr) return;
     setActionLoading(true);
     const toastId = toast.loading("Menutup MR dan PO terkait...");
-
     try {
-      // 1. Update status MR
       const { error: mrError } = await supabase
         .from("material_requests")
         .update({ status: "Completed" })
         .eq("id", mr.id);
-
       if (mrError) throw mrError;
-
-      // 2. Cari semua PO yang terkait dengan MR ini
       const { data: relatedPOs, error: poFetchError } = await supabase
         .from("purchase_orders")
         .select("id")
         .eq("mr_id", mr.id);
-
       if (poFetchError) throw poFetchError;
-
-      // 3. Update status semua PO terkait
       if (relatedPOs && relatedPOs.length > 0) {
         const poIds = relatedPOs.map((po) => po.id);
         const { error: poUpdateError } = await supabase
           .from("purchase_orders")
           .update({ status: "Completed" })
           .in("id", poIds);
-
         if (poUpdateError) throw poUpdateError;
       }
-
       toast.success("MR dan PO terkait berhasil ditutup!", { id: toastId });
       await fetchMrData();
     } catch (error: any) {
@@ -644,19 +570,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       setIsCloseMrAlertOpen(false);
     }
   };
-  // --- AKHIR REVISI ---
 
-  // --- REVISI: Komponen Aksi untuk Requester ---
   const RequesterActions = () => {
     if (
       !mr ||
       !currentUser ||
-      mr.userid !== currentUser.id || // Hanya untuk requester asli
-      mr.status !== "Pending BAST" // Hanya jika status Pending BAST
+      mr.userid !== currentUser.id ||
+      mr.status !== "Pending BAST"
     ) {
       return null;
     }
-
     return (
       <div className="flex flex-col gap-4">
         <div>
@@ -687,10 +610,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       </div>
     );
   };
-  // --- AKHIR REVISI ---
 
   const ApprovalActions = () => {
-    // ... (Fungsi ini tetap sama, sudah benar)
     if (!mr || !currentUser || mr.status !== "Pending Approval") return null;
     if (myApprovalIndex === -1) return null;
     if (!isMyTurnForApproval)
@@ -699,7 +620,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           Menunggu persetujuan dari approver sebelumnya.
         </p>
       );
-
     return (
       <div className="flex gap-2">
         <Button
@@ -731,7 +651,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  // --- REVISI: getStatusBadge ---
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "approved":
@@ -744,10 +663,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="secondary">Pending Validation</Badge>;
       case "waiting po":
         return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
-      // --- REVISI: Tambah status Pending BAST ---
       case "pending bast":
         return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
-      // --- AKHIR REVISI ---
       case "completed":
         return <Badge className="bg-green-500 text-white">Completed</Badge>;
       default:
@@ -758,7 +675,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const getApprovalStatusBadge = (
     status: "pending" | "approved" | "rejected"
   ) => {
-    // ... (Fungsi ini tetap sama, sudah benar)
     switch (status) {
       case "approved":
         return (
@@ -781,20 +697,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // Render UI
   if (loading) return <DetailMRSkeleton />;
   if (error || !mr)
-    return (
-      <Content className="col-span-12">
-        <div className="flex flex-col items-center justify-center h-96 text-center">
-          <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-          <h1 className="text-2xl font-bold">Data Tidak Ditemukan</h1>
-          <p className="text-muted-foreground">{error}</p>
-          <Button asChild variant="outline" className="mt-6">
-            <Link href="/material-request">Kembali ke Daftar MR</Link>
-          </Button>
-        </div>
-      </Content>
-    );
+    return <Content className="col-span-12">Data tidak ditemukan</Content>;
 
   const currentTurnIndex = mr.approvals.findIndex(
     (app) => app.status === "pending"
@@ -807,6 +713,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           .slice(0, currentTurnIndex)
           .every((app) => app.status === "approved");
 
+  // Live Priority
+  const livePriority = mr.due_date
+    ? calculatePriority(mr.due_date)
+    : "Menghitung...";
+
   return (
     <>
       <div className="col-span-12">
@@ -816,17 +727,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <p className="text-muted-foreground">Detail Material Request</p>
           </div>
           <div className="flex items-center gap-2">
-            {canEdit &&
-              !isEditing &&
-              mr.status === "Pending Approval" && ( // Hanya bisa edit saat pending approval
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsEditing(true)}
-                >
-                  <Edit className="mr-2 h-4 w-4" /> Edit Rincian
-                </Button>
-              )}
+            {canEdit && !isEditing && mr.status === "Pending Approval" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+              >
+                <Edit className="mr-2 h-4 w-4" /> Edit Rincian
+              </Button>
+            )}
             {isEditing && (
               <>
                 <Button
@@ -894,43 +803,69 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               label="Tanggal Dibuat"
               value={formatDateFriendly(mr.created_at)}
             />
+
+            {/* --- REVISI: Due Date & Prioritas Live --- */}
             <div className="space-y-1">
-              <Label>Prioritas</Label>
+              <Label>Due Date (Target)</Label>
               {isEditing ? (
-                <Select
-                  onValueChange={(v) => setMr({ ...mr, prioritas: v as any })}
-                  defaultValue={mr.prioritas || ""}
-                  disabled={actionLoading}
+                <Popover
+                  open={isDatePopoverOpen}
+                  onOpenChange={setIsDatePopoverOpen}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih prioritas..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dataPrioritas.map((p) => (
-                      <SelectItem key={p.value} value={p.value!}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !mr.due_date && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {mr.due_date ? (
+                        format(new Date(mr.due_date), "PPP")
+                      ) : (
+                        <span>Pilih tanggal...</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <CalendarComponent
+                      mode="single"
+                      selected={mr.due_date ? new Date(mr.due_date) : undefined}
+                      onSelect={(date) => {
+                        setMr({ ...mr, due_date: date });
+                        setIsDatePopoverOpen(false);
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
-                  <Zap className="h-4 w-4" /> {mr.prioritas || "N/A"}
+                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
+                  {formatDateFriendly(mr.due_date)}
                 </p>
               )}
             </div>
-            <div className="space-y-1">
-              <Label>Due Date (Otomatis)</Label>
-              <Input
-                type="text"
-                readOnly
-                disabled
-                value={formatDateFriendly(mr.due_date)}
-                className="font-medium bg-muted/50"
-              />
-            </div>
 
-            {/* --- REVISI: Level (Bisa Diedit) --- */}
+            <div className="space-y-1">
+              <Label>Prioritas (Otomatis)</Label>
+              <div
+                className={cn(
+                  "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold transition-colors",
+                  livePriority === "P0" &&
+                    "text-destructive bg-destructive/10 border-destructive/20"
+                )}
+              >
+                <Zap className="h-4 w-4 mr-2" />
+                {livePriority}
+                <span className="text-xs font-normal text-muted-foreground ml-2">
+                  (Live by Date)
+                </span>
+              </div>
+            </div>
+            {/* --- AKHIR REVISI --- */}
+
+            {/* ... (Info Level, Cost Center, dll sama seperti edit) ... */}
             <div className="space-y-1">
               <div className="flex items-center gap-1">
                 <Label>Level</Label>
@@ -953,8 +888,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     <SelectValue placeholder="Pilih level..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {dataLevel.map((lvl) => (
-                      <SelectItem key={lvl.value} value={lvl.value!}>
+                    {MR_LEVELS.map((lvl) => (
+                      <SelectItem key={lvl.value} value={lvl.value}>
                         {lvl.label}
                       </SelectItem>
                     ))}
@@ -966,7 +901,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </p>
               )}
             </div>
-            {/* --- AKHIR REVISI --- */}
 
             <InfoItem
               icon={Building2}
@@ -1040,13 +974,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>UoM</TableHead>
+                  <TableHead className="w-[80px]">Qty</TableHead>
+                  <TableHead className="w-[120px]">UoM</TableHead>
                   <TableHead>Estimasi Harga</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Catatan</TableHead>
                   <TableHead>Link</TableHead>
-                  {isEditing && <TableHead>Aksi</TableHead>}
+                  {isEditing && (
+                    <TableHead className="w-[100px]">Aksi</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1174,9 +1110,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         <Content title="Tindakan">
           <div className="flex flex-col gap-2">
             {!isEditing && <ApprovalActions />}
-            {/* --- REVISI: Tampilkan RequesterActions --- */}
             {!isEditing && <RequesterActions />}
-            {/* --- AKHIR REVISI --- */}
             {isEditing && (
               <p className="text-sm text-center text-muted-foreground">
                 Simpan perubahan atau setujui untuk melanjutkan.
@@ -1306,7 +1240,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         />
       </div>
 
-      {/* --- Dialog Item --- */}
+      {/* Dialog Item */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1406,7 +1340,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* --- REVISI: Dialog Info Level --- */}
+      {/* Dialog Info Level */}
       <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1420,51 +1354,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               Level OPEN (Barang Belum Diterima Site)
             </h4>
             <ul className="list-disc pl-5 space-y-2 text-sm">
-              <li>
-                <strong>OPEN 1:</strong> Bila belum dibuatkan PR nya dari team
-                WH
-              </li>
-              <li>
-                <strong>OPEN 2:</strong> Bila belum dibuatkan PO nya dari team
-                SCM
-              </li>
-              <li>
-                <strong>OPEN 3A:</strong> Bila barangnya belum dikirimkan dari
-                vendor (No Payment Issue)
-              </li>
-              <li>
-                <strong>OPEN 3B:</strong> Bila barangnya belum dikirimkan dari
-                vendor (Ada Payment Issue)
-              </li>
-              <li>
-                <strong>OPEN 4:</strong> Bila barang sudah dikirim dari Vendor
-                tapi belum sampai di WH kita
-              </li>
-              <li>
-                <strong>OPEN 5:</strong> Bila barang sudah ada di Warehouse GMI
-                (Bpn/ HO), tapi belum dikirim oleh team WH ke site
-              </li>
+              {MR_LEVELS.filter((l) => l.group === "OPEN").map((level) => (
+                <li key={level.value}>
+                  <strong>{level.value}:</strong> {level.description}
+                </li>
+              ))}
             </ul>
             <h4 className="font-semibold">
               Level CLOSE (Barang Sudah Diterima Site)
             </h4>
             <ul className="list-disc pl-5 space-y-2 text-sm">
-              <li>
-                <strong>CLOSE 1:</strong> Bila barang sudah dikirimkan oleh team
-                WH tapi belum diterima oleh team admin WH Site
-              </li>
-              <li>
-                <strong>CLOSE 2A:</strong> Bila barang sudah diterima admin WH
-                Site tapi dokumen tanda terima belum dikirimkan ke HO.
-              </li>
-              <li>
-                <strong>CLOSE 2B:</strong> Bila barang sudah diterima admin WH
-                Site, serta dokumen tanda terima juga sudah dikirimkan ke HO.
-              </li>
-              <li>
-                <strong>CLOSE 3:</strong> Bila proses CLOSE 2B sudah selesai dan
-                data sudah diupdate di sistem monitoring.
-              </li>
+              {MR_LEVELS.filter((l) => l.group === "CLOSE").map((level) => (
+                <li key={level.value}>
+                  <strong>{level.value}:</strong> {level.description}
+                </li>
+              ))}
             </ul>
           </div>
           <DialogFooter>
@@ -1473,7 +1377,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* --- REVISI: Dialog Konfirmasi Close MR --- */}
+      {/* Dialog Konfirmasi Close MR */}
       <AlertDialog
         open={isCloseMrAlertOpen}
         onOpenChange={setIsCloseMrAlertOpen}
@@ -1508,7 +1412,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* --- AKHIR REVISI --- */}
     </>
   );
 }

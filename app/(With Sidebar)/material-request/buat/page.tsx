@@ -18,7 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { LinkIcon, Loader2, Trash2, Edit as EditIcon } from "lucide-react";
+import {
+  LinkIcon,
+  Loader2,
+  Trash2,
+  Edit as EditIcon,
+  Calendar as CalendarIcon, // Ikon Kalender
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -28,6 +34,12 @@ import {
   DialogTitle,
   DialogHeader,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -40,15 +52,8 @@ import {
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // REVISI: Menggunakan formatDateFriendly
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"; // <-- REVISI: Import Select
-import { addDays } from "date-fns"; // <-- REVISI: Import addDays
+import { formatCurrency, cn, calculatePriority } from "@/lib/utils"; // Import calculatePriority
+import { format } from "date-fns"; // Import format tanggal
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -79,31 +84,18 @@ const dataUoM: ComboboxData = [
   { label: "Roll", value: "Roll" },
 ];
 
-// --- REVISI: Tambahkan data prioritas ---
-const dataPrioritas: {
-  label: string;
-  value: MaterialRequest["prioritas"];
-  days: number;
-}[] = [
-  { label: "P0 - Sangat Mendesak (2 Hari)", value: "P0", days: 2 },
-  { label: "P1 - Mendesak (10 Hari)", value: "P1", days: 10 },
-  { label: "P2 - Standar (15 Hari)", value: "P2", days: 15 },
-  { label: "P3 - Rendah (20 Hari)", value: "P3", days: 20 },
-  { label: "P4 - Sangat Rendah (30 Hari)", value: "P4", days: 30 },
-];
-
 export default function BuatMRPage() {
   const router = useRouter();
 
-  // --- REVISI: Update state awal formCreateMR ---
+  // State Form Utama
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
     {
       userid: "",
       kode_mr: "Memuat...",
       kategori: "",
       status: "Pending Validation",
-      level: "OPEN 1", // <-- REVISI: Tambahkan level
-      prioritas: null, // <-- REVISI: Tambahkan prioritas
+      level: "OPEN 1",
+      prioritas: null, // Akan dihitung otomatis
       remarks: "",
       cost_estimation: "0",
       department: "",
@@ -111,7 +103,7 @@ export default function BuatMRPage() {
       cost_center_id: null,
       tujuan_site: "",
       created_at: new Date(),
-      due_date: new Date(), // Ini akan di-override oleh prioritas
+      due_date: undefined, // User wajib input
       orders: [],
       approvals: [],
       attachments: [],
@@ -124,7 +116,9 @@ export default function BuatMRPage() {
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
+  // 1. Fetch User Profile & Generate Kode MR
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -160,6 +154,7 @@ export default function BuatMRPage() {
     fetchUserData();
   }, []);
 
+  // 2. Auto-Calculate Cost Estimation
   useEffect(() => {
     const total = formCreateMR.orders.reduce((acc, item) => {
       const qty = Number(item.qty) || 0;
@@ -174,22 +169,28 @@ export default function BuatMRPage() {
     setFormattedCost(formatCurrency(total));
   }, [formCreateMR.orders]);
 
-  // --- REVISI: Tambahkan useEffect untuk auto-set Due Date ---
+  // 3. Auto-Calculate Priority (LIVE) saat Due Date berubah
   useEffect(() => {
-    if (formCreateMR.prioritas) {
-      const prioritasData = dataPrioritas.find(
-        (p) => p.value === formCreateMR.prioritas
-      );
-      if (prioritasData) {
-        const calculatedDueDate = addDays(new Date(), prioritasData.days);
-        setFormCreateMR((prev) => ({
-          ...prev,
-          due_date: calculatedDueDate,
-        }));
-      }
+    if (formCreateMR.due_date) {
+      const priority = calculatePriority(formCreateMR.due_date) as
+        | "P0"
+        | "P1"
+        | "P2"
+        | "P3"
+        | "P4";
+      setFormCreateMR((prev) => ({
+        ...prev,
+        prioritas: priority,
+      }));
+    } else {
+      setFormCreateMR((prev) => ({
+        ...prev,
+        prioritas: null,
+      }));
     }
-  }, [formCreateMR.prioritas]);
-  // --- AKHIR REVISI ---
+  }, [formCreateMR.due_date]);
+
+  // --- Handlers ---
 
   const handleCBKategori = (value: string) => {
     setFormCreateMR({ ...formCreateMR, kategori: value });
@@ -198,15 +199,6 @@ export default function BuatMRPage() {
   const handleCBTujuanSite = (value: string) => {
     setFormCreateMR({ ...formCreateMR, tujuan_site: value });
   };
-
-  // --- REVISI: Handler baru untuk prioritas ---
-  const handlePrioritasChange = (value: string) => {
-    setFormCreateMR({
-      ...formCreateMR,
-      prioritas: value as MaterialRequest["prioritas"],
-    });
-  };
-  // --- AKHIR REVISI ---
 
   useEffect(() => {
     if (tujuanSamaDenganLokasi) {
@@ -218,6 +210,7 @@ export default function BuatMRPage() {
     }
   }, [tujuanSamaDenganLokasi, userLokasi]);
 
+  // --- Item Management ---
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [orderItem, setOrderItem] = useState<
     Omit<Order, "vendor" | "vendor_contact">
@@ -279,6 +272,7 @@ export default function BuatMRPage() {
     setOpenItemDialog(false);
   };
 
+  // --- File Upload ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
@@ -336,26 +330,25 @@ export default function BuatMRPage() {
     }
   };
 
+  // --- Submit MR ---
   const [ajukanAlert, setAjukanAlert] = useState<string>("");
 
   const handleAjukanMR = async () => {
     setAjukanAlert("");
 
-    // --- REVISI: Validasi diubah ---
     if (
       !formCreateMR.kategori ||
       !formCreateMR.remarks ||
-      !formCreateMR.prioritas || // <-- Cek prioritas
+      !formCreateMR.due_date || // Wajib ada due date
       !formCreateMR.department ||
       !formCreateMR.tujuan_site ||
       !formCreateMR.company_code
     ) {
       setAjukanAlert(
-        "Semua data utama (Kategori, Prioritas, Remarks, Tujuan) wajib diisi."
+        "Semua data utama (Kategori, Due Date, Remarks, Tujuan) wajib diisi."
       );
       return;
     }
-    // --- AKHIR REVISI ---
 
     if (formCreateMR.orders.length === 0) {
       setAjukanAlert("Minimal harus ada satu order item.");
@@ -390,15 +383,13 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
-      // --- REVISI: Pastikan prioritas dan level terkirim ---
+      // Pastikan prioritas (hasil kalkulasi) terkirim
       const finalPayload = {
         ...payload,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
-        prioritas: formCreateMR.prioritas, // Pastikan terkirim
-        level: "OPEN 1", // Kirim status level awal
+        level: "OPEN 1", // Default Level Awal
       };
-      // --- AKHIR REVISI ---
 
       await createMaterialRequest(finalPayload as any, user.id, company_code);
 
@@ -456,43 +447,66 @@ export default function BuatMRPage() {
             />
           </div>
 
-          {/* --- REVISI: Ganti Cost Center dengan Prioritas --- */}
+          {/* --- Bagian Due Date (Manual) --- */}
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Prioritas (Wajib)</Label>
-            <Select
-              onValueChange={handlePrioritasChange}
-              defaultValue={formCreateMR.prioritas || ""}
-              disabled={loading}
+            <Label>Due Date (Target Pemakaian)</Label>
+            <Popover
+              open={isDatePopoverOpen}
+              onOpenChange={setIsDatePopoverOpen}
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih prioritas..." />
-              </SelectTrigger>
-              <SelectContent>
-                {dataPrioritas.map((p) => (
-                  <SelectItem key={p.value} value={p.value!}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !formCreateMR.due_date && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {formCreateMR.due_date ? (
+                    format(formCreateMR.due_date, "dd MMMM yyyy")
+                  ) : (
+                    <span>Pilih tanggal...</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={formCreateMR.due_date}
+                  onSelect={(date) => {
+                    setFormCreateMR((prev) => ({ ...prev, due_date: date }));
+                    setIsDatePopoverOpen(false);
+                  }}
+                  disabled={(date) => date < new Date()} // Tidak boleh pilih tanggal lampau
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
-          {/* --- AKHIR REVISI --- */}
 
-          <div className="flex flex-col gap-2 col-span-12">
-            <Label>Remarks (Tujuan & Latar Belakang)</Label>
-            <Textarea
-              placeholder="Jelaskan tujuan dan latar belakang kebutuhan Anda di sini..."
-              value={formCreateMR.remarks}
-              rows={4}
-              onChange={(e) =>
-                setFormCreateMR({ ...formCreateMR, remarks: e.target.value })
-              }
-            />
+          {/* --- Bagian Prioritas (Live Calculation) --- */}
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+            <Label>Estimasi Prioritas (Otomatis)</Label>
+            <div
+              className={cn(
+                "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold transition-colors",
+                formCreateMR.prioritas === "P0" &&
+                  "text-destructive bg-destructive/10 border-destructive/20"
+              )}
+            >
+              {formCreateMR.prioritas || "-"}
+              {formCreateMR.prioritas && (
+                <span className="text-xs font-normal text-muted-foreground ml-2">
+                  (Berdasarkan Due Date)
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Tujuan Pengiriman (Site)</Label>
-            <div className="flex items-center space-x-2 mt-2">
+            <div className="flex items-center space-x-2 mt-2 h-9">
               <Checkbox
                 id="tujuan-sama"
                 checked={tujuanSamaDenganLokasi}
@@ -502,9 +516,9 @@ export default function BuatMRPage() {
               />
               <label
                 htmlFor="tujuan-sama"
-                className="text-sm font-medium leading-none"
+                className="text-sm font-medium leading-none cursor-pointer"
               >
-                Tujuan sama dengan lokasi saya
+                Sama dengan lokasi saya
               </label>
             </div>
             {!tujuanSamaDenganLokasi && (
@@ -519,24 +533,18 @@ export default function BuatMRPage() {
             )}
           </div>
 
-          {/* --- REVISI: Ganti Input Due Date menjadi ReadOnly --- */}
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Due Date (Otomatis)</Label>
-            <Input
-              type="text"
-              readOnly
-              disabled
-              value={
-                formCreateMR.due_date && formCreateMR.prioritas
-                  ? formatDateFriendly(formCreateMR.due_date)
-                  : "Pilih prioritas..."
+          <div className="flex flex-col gap-2 col-span-12">
+            <Label>Remarks (Tujuan & Latar Belakang)</Label>
+            <Textarea
+              placeholder="Jelaskan tujuan dan latar belakang kebutuhan Anda di sini..."
+              value={formCreateMR.remarks}
+              rows={4}
+              onChange={(e) =>
+                setFormCreateMR({ ...formCreateMR, remarks: e.target.value })
               }
-              className="font-medium bg-muted/50"
             />
           </div>
-          {/* --- AKHIR REVISI --- */}
 
-          {/* --- REVISI: Ganti Input Estimasi Biaya menjadi ReadOnly --- */}
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Estimasi Biaya (Otomatis)</Label>
             <Input
@@ -546,10 +554,10 @@ export default function BuatMRPage() {
               className="font-bold text-lg"
             />
           </div>
-          {/* --- AKHIR REVISI --- */}
         </div>
       </Content>
 
+      {/* ... (Sisa kode untuk Tabel Item dan Dialog sama persis dengan sebelumnya) ... */}
       <Content
         title="Order Item"
         size="lg"
