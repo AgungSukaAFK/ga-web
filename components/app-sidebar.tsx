@@ -26,7 +26,8 @@ import {
   FileSearch2,
   PackageSearch,
   BadgeDollarSign,
-  DollarSign, // Pastikan ikon ini sudah diimpor
+  DollarSign,
+  Briefcase, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -80,6 +81,11 @@ const data = {
       title: "Barang",
       url: "/barang",
       icon: Boxes,
+    },
+    {
+      title: "Vendor",
+      url: "/vendor",
+      icon: Briefcase,
     },
   ],
   navSecondary: [

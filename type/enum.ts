@@ -23,7 +23,8 @@ export const MR_LEVELS: LevelDefinition[] = [
     value: "OPEN 1",
     label: "OPEN 1: Menunggu PR WH",
     group: "OPEN",
-    description: "MR yg belum ada PR (Purchase Requisition) dari team WH",
+    description:
+      "MR sudah diajukan tapi belum ada approval dari atasan (SPV / Manager)",
   },
   {
     value: "OPEN 2",

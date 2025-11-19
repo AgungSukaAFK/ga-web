@@ -1,7 +1,3 @@
-// src/type.ts
-
-// --- Tipe Data Database (jika Anda menggunakan auto-generation, ini bisa disederhanakan) ---
-
 export interface Approval {
   type: string;
   status: "pending" | "approved" | "rejected";
@@ -36,7 +32,7 @@ export interface Discussion {
 }
 
 export interface Profile {
-  id: string; // UUID
+  id: string;
   role?: string | null;
   lokasi?: string | null;
   department?: string | null;
@@ -47,7 +43,6 @@ export interface Profile {
   email?: string | null;
 }
 
-// Tipe alias untuk 'User' dari tabel profiles
 export type User = Profile;
 
 export interface MaterialRequest {
@@ -68,22 +63,17 @@ export interface MaterialRequest {
   company_code: string;
   tujuan_site: string;
   cost_center_id: number | null;
-  cost_center?: string; // Field lama, mungkin masih dipakai di bbrp tempat
+  cost_center?: string;
   cost_centers?: {
     name: string;
     current_budget: number;
   } | null;
 
-  // --- REVISI: TAMBAHAN PROPERTI BARU ---
   prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
-  level: string; // OPEN 1, OPEN 2, dst.
-  // --- AKHIR REVISI ---
+  level: string;
 
-  // Properti relasi (opsional, tergantung query)
   users_with_profiles?: { nama: string; email?: string } | null;
 }
-
-// --- Tipe Data PO ---
 
 export interface POItem {
   barang_id: number;
@@ -124,10 +114,8 @@ export interface PurchaseOrderPayload {
   repeated_from_po_id?: number | null;
 }
 
-// --- Tipe Data View & Helper ---
-
 export interface MaterialRequestListItem {
-  id: string; // Atau number jika ID Anda number
+  id: string;
   kode_mr: string;
   cost_estimation: string;
   kategori: string;
@@ -137,15 +125,13 @@ export interface MaterialRequestListItem {
   orders: Order[];
   approvals: Approval[];
   attachments: Attachment[];
-  created_at: Date | string; // Bisa Date atau string ISO
-  due_date?: Date | string | null; // Opsional dan bisa null
-  company_code: string | null; // Ditambahkan untuk MR Management
-  users_with_profiles: { nama: string } | null; // Nama requester
+  created_at: Date | string;
+  due_date?: Date | string | null;
+  company_code: string | null;
+  users_with_profiles: { nama: string } | null;
 
-  // --- REVISI: TAMBAHAN PROPERTI BARU ---
   prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
   level: string;
-  // --- AKHIR REVISI ---
 }
 
 export interface PurchaseOrderListItem {
@@ -178,6 +164,17 @@ export interface Barang {
   category: string | null;
   uom: string | null;
   vendor: string | null;
+  is_asset: boolean;
+}
+
+export interface Vendor {
+  id: number;
+  created_at: string;
+  kode_vendor: string;
+  nama_vendor: string;
+  pic_contact_person: string | null;
+  alamat: string | null;
+  email: string | null;
 }
 
 export interface MaterialRequestForPO {
@@ -186,13 +183,10 @@ export interface MaterialRequestForPO {
   orders: Order[];
   company_code: string;
   users_with_profiles: { nama: string } | null;
-  // --- REVISI: TAMBAHAN PROPERTI BARU ---
   prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
   level: string;
-  // --- AKHIR REVISI ---
 }
 
-// REVISI KRITIS: PurchaseOrderDetail sekarang mencerminkan data yang di-fetch
 export interface PurchaseOrderDetail
   extends Omit<PurchaseOrderPayload, "mr_id" | "user_id"> {
   id: number;
@@ -200,16 +194,13 @@ export interface PurchaseOrderDetail
   updated_at: string;
   mr_id: number | null;
 
-  // Ini adalah pembuat PO (Purchasing)
   users_with_profiles: {
     nama: string;
-    email?: string; // Sesuai query
+    email?: string;
   } | null;
 
-  // Ini adalah data MR yang direferensikan, lengkap dengan data requester-nya
   material_requests:
     | (MaterialRequest & {
-        // <-- MaterialRequest sudah punya 'prioritas' & 'level'
         users_with_profiles: { nama: string } | null;
       })
     | null;
@@ -228,7 +219,7 @@ export interface PurchaseOrder {
     | "Rejected"
     | "Draft"
     | "Ordered"
-    | string; // Fallback untuk status lain
+    | string;
   vendor_details: {
     name: string;
     address?: string;
@@ -246,20 +237,16 @@ export interface PurchaseOrder {
   notes: string | null;
   attachments: Attachment[] | null;
   approvals: Approval[] | null;
-  created_at: string; // ISO timestamp string
-  updated_at: string; // ISO timestamp string
+  created_at: string;
+  updated_at: string;
 
-  // -- Properti Relasional (dari join) --
-  // Ini adalah pembuat PO (Purchasing)
   users_with_profiles?: {
     nama: string;
     email?: string;
   } | null;
 
-  // Ini adalah data MR yang direferensikan
   material_requests?:
     | (MaterialRequest & {
-        // <-- MaterialRequest sudah punya 'prioritas' & 'level'
         users_with_profiles: { nama: string } | null;
       })
     | null;
@@ -287,12 +274,10 @@ export interface CostCenterHistory {
   description: string;
   created_at: string | Date;
 
-  // Relasi opsional untuk menampilkan nama
   material_requests?: {
     kode_mr: string;
   } | null;
   profiles?: {
-    // Asumsi relasi dari user_id ke profiles
     nama: string;
   } | null;
 }
