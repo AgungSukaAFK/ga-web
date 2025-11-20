@@ -108,7 +108,7 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
             <div className="text-center h-full flex flex-col justify-center items-center py-8">
               <p className="font-semibold">Tidak Ada MR yang Ditemukan</p>
               <p className="text-sm text-muted-foreground">
-                Pastikan status MR sudah "Waiting PO".
+                Pastikan status MR sudah &quot;Waiting PO&quot;.
               </p>
             </div>
           )}

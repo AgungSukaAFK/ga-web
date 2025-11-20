@@ -3,7 +3,7 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination-components"; // Sesuaikan path jika perlu
+import { PaginationComponent } from "@/components/pagination-components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,19 +21,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, Newspaper, Search, Edit } from "lucide-react"; // Import ikon
+import { Loader2, Newspaper, Search, Edit } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { MaterialRequestListItem, Order, Profile } from "@/type"; // Pastikan Order dan ComboboxData diimpor
-import { formatCurrency, formatDateFriendly } from "@/lib/utils"; // Pastikan formatCurrency diimpor
+import { MaterialRequestListItem, Order, Profile } from "@/type";
+import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
+import { fetchActiveCostCenters } from "@/services/mrService"; // Import service cost center
 
 // --- Konstanta untuk Filter ---
 const dataDepartment: ComboboxData = [
@@ -87,26 +88,26 @@ export function MrManagementClientContent() {
   const [isPending, startTransition] = useTransition();
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
 
+  // State untuk Cost Center Filter
+  const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+
   // State dari URL
   const currentPage = Number(searchParams.get("page") || "1");
   const searchTerm = searchParams.get("search") || "";
   const statusFilter = searchParams.get("status") || "";
-  const companyFilter = searchParams.get("company") || ""; // Filter company baru
+  const companyFilter = searchParams.get("company") || "";
+  const costCenterFilter = searchParams.get("cost_center") || "all"; // Filter baru
   const limit = Number(searchParams.get("limit") || 25);
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
   const sortFilter = searchParams.get("sort") || "created_at.desc";
-  // --- REVISI: State filter estimasi ---
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
-  // --- AKHIR REVISI ---
 
   // State untuk input form
   const [searchInput, setSearchInput] = useState(searchTerm);
-  // --- REVISI: State input estimasi ---
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
   const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
-  // --- AKHIR REVISI ---
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -130,7 +131,31 @@ export function MrManagementClientContent() {
     [searchParams]
   );
 
-  // Efek untuk fetch data MR dan profil admin
+  // 1. Load Cost Centers untuk Filter
+  useEffect(() => {
+    const loadCostCenters = async () => {
+      if (adminProfile) {
+        try {
+          const ccData = await fetchActiveCostCenters(
+            adminProfile.company || "LOURDES"
+          );
+          const options = ccData.map((cc: any) => ({
+            label: `${cc.code} - ${cc.name}`,
+            value: String(cc.id),
+          }));
+          setCostCenterList(options);
+        } catch (e) {
+          console.error("Failed to load cost centers", e);
+        }
+      }
+    };
+
+    if (adminProfile) {
+      loadCostCenters();
+    }
+  }, [adminProfile]);
+
+  // 2. Fetch Data MR & Profil Admin
   useEffect(() => {
     async function fetchMRsAndAdminProfile() {
       setLoading(true);
@@ -141,7 +166,7 @@ export function MrManagementClientContent() {
       } = await s.auth.getUser();
       if (!user) {
         toast.error("Sesi tidak valid. Silakan login kembali.");
-        router.push("/auth/login"); // Redirect jika tidak ada user
+        router.push("/auth/login");
         return;
       }
       const { data: profileData } = await s
@@ -154,7 +179,7 @@ export function MrManagementClientContent() {
         toast.error(
           "Akses ditolak. Hanya admin yang bisa mengakses halaman ini."
         );
-        router.push("/dashboard"); // Redirect jika bukan admin
+        router.push("/dashboard");
         return;
       }
       setAdminProfile(profileData);
@@ -163,12 +188,12 @@ export function MrManagementClientContent() {
       const from = (currentPage - 1) * limit;
       const to = from + limit - 1;
 
-      // REVISI: Ambil juga cost_estimation dan tujuan_site (sudah ada)
       let query = s.from("material_requests").select(
         `
             id, kode_mr, kategori, status, department, created_at, due_date, company_code, cost_estimation,
             tujuan_site,
-            users_with_profiles!userid (nama)
+            users_with_profiles!userid (nama),
+            cost_centers (code)
           `,
         { count: "exact" }
       );
@@ -183,18 +208,21 @@ export function MrManagementClientContent() {
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
 
-      // --- REVISI: Terapkan filter estimasi ---
+      // Filter Cost Center Baru
+      if (costCenterFilter && costCenterFilter !== "all") {
+        query = query.eq("cost_center_id", costCenterFilter);
+      }
+
       if (minEstimasi)
         query = query.gte("cost_estimation", Number(minEstimasi));
       if (maxEstimasi)
         query = query.lte("cost_estimation", Number(maxEstimasi));
-      // --- AKHIR REVISI ---
 
       if (profileData.company && profileData.company !== "LOURDES") {
         query = query.eq("company_code", profileData.company);
       }
 
-      // REVISI: Terapkan sorting
+      // Sorting
       const [sortBy, sortOrder] = sortFilter.split(".");
       query = query
         .order(sortBy, { ascending: sortOrder === "asc" })
@@ -212,6 +240,16 @@ export function MrManagementClientContent() {
             users_with_profiles: Array.isArray(mr.users_with_profiles)
               ? mr.users_with_profiles[0] ?? null
               : mr.users_with_profiles,
+            // Ensure required fields from MaterialRequestListItem exist with safe defaults
+            orders: Array.isArray((mr as any).orders) ? (mr as any).orders : [],
+            approvals: Array.isArray((mr as any).approvals)
+              ? (mr as any).approvals
+              : [],
+            attachments: Array.isArray((mr as any).attachments)
+              ? (mr as any).attachments
+              : [],
+            prioritas: (mr as any).prioritas ?? null,
+            level: (mr as any).level ?? null,
           })) || [];
         setMrList(transformedData as MaterialRequestListItem[]);
         setTotalItems(count || 0);
@@ -225,16 +263,17 @@ export function MrManagementClientContent() {
     searchTerm,
     statusFilter,
     companyFilter,
+    costCenterFilter, // Dependency baru
     limit,
     router,
     departmentFilter,
     siteFilter,
     sortFilter,
-    minEstimasi, // <-- REVISI: Tambah dependency
-    maxEstimasi, // <-- REVISI: Tambah dependency
+    minEstimasi,
+    maxEstimasi,
   ]);
 
-  // Efek untuk debounce pencarian
+  // Debounce search
   useEffect(() => {
     const handler = setTimeout(() => {
       if (searchInput !== searchTerm) {
@@ -248,7 +287,6 @@ export function MrManagementClientContent() {
     return () => clearTimeout(handler);
   }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
-  // Handler untuk filter
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>
   ) => {
@@ -257,21 +295,20 @@ export function MrManagementClientContent() {
     });
   };
 
-  // --- REVISI: handleDownloadExcel (sudah ada cost_estimation) ---
+  // 3. Update Download Excel
   const handleDownloadExcel = async () => {
     if (!adminProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // 1. Ambil kolom 'orders' (JSON) dari database
       let query = s.from("material_requests").select(`
           kode_mr, kategori, department, status, remarks, cost_estimation, tujuan_site, company_code, created_at, due_date,
           orders, 
-          users_with_profiles!userid (nama)
+          users_with_profiles!userid (nama),
+          cost_centers (code)
         `);
 
-      // Terapkan semua filter aktif
       if (searchTerm)
         query = query.or(
           `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
@@ -280,18 +317,18 @@ export function MrManagementClientContent() {
       if (companyFilter) query = query.eq("company_code", companyFilter);
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-      // --- REVISI: Terapkan filter estimasi ---
+      if (costCenterFilter && costCenterFilter !== "all") {
+        query = query.eq("cost_center_id", costCenterFilter);
+      }
       if (minEstimasi)
         query = query.gte("cost_estimation", Number(minEstimasi));
       if (maxEstimasi)
         query = query.lte("cost_estimation", Number(maxEstimasi));
-      // --- AKHIR REVISI ---
 
       if (adminProfile.company && adminProfile.company !== "LOURDES") {
         query = query.eq("company_code", adminProfile.company);
       }
 
-      // REVISI: Terapkan sorting
       const [sortBy, sortOrder] = sortFilter.split(".");
       const { data, error } = await query.order(sortBy, {
         ascending: sortOrder === "asc",
@@ -304,29 +341,25 @@ export function MrManagementClientContent() {
         return;
       }
 
-      // 2. Gunakan .flatMap() untuk "meledakkan" data
       const formattedData = data.flatMap((mr: any) => {
-        // Simpan info MR dasar yang akan diulang
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
+          "Cost Center": mr.cost_centers?.code || "-", // Kolom Baru di Excel
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
           Remarks: mr.remarks,
-          "Total Estimasi Biaya (MR)": Number(mr.cost_estimation), // Ini adalah total auto-sum
+          "Total Estimasi Biaya (MR)": Number(mr.cost_estimation),
           "Tanggal Dibuat": formatDateFriendly(mr.created_at),
           "Due Date": formatDateFriendly(mr.due_date),
         };
 
-        // Cek apakah 'orders' ada dan merupakan array
         if (Array.isArray(mr.orders) && mr.orders.length > 0) {
-          // Jika ada item, buat satu baris untuk setiap item
           return mr.orders.map((item: Order) => ({
             ...baseMrInfo,
-            // Tambahkan kolom item di sini
             "Nama Item": item.name,
             Qty: Number(item.qty) || 0,
             UoM: item.uom,
@@ -337,7 +370,6 @@ export function MrManagementClientContent() {
             "URL Referensi": item.url || "-",
           }));
         } else {
-          // Jika MR tidak punya item, kembalikan satu baris
           return [
             {
               ...baseMrInfo,
@@ -353,7 +385,6 @@ export function MrManagementClientContent() {
         }
       });
 
-      // 3. Buat Excel
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Material Requests");
@@ -428,7 +459,7 @@ export function MrManagementClientContent() {
               </Select>
             </div>
 
-            {/* Filter Company (hanya untuk admin Lourdes) */}
+            {/* Filter Company */}
             {adminProfile?.company === "LOURDES" && (
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Perusahaan</label>
@@ -500,8 +531,34 @@ export function MrManagementClientContent() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* 4. Filter Cost Center Baru */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Cost Center</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    cost_center: value,
+                  })
+                }
+                defaultValue={costCenterFilter}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua Cost Center" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Cost Center</SelectItem>
+                  {costCenterList.map((cc) => (
+                    <SelectItem key={cc.value} value={cc.value}>
+                      {cc.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          {/* --- REVISI: Baris baru untuk filter estimasi --- */}
+
+          {/* Filter Estimasi */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Min Estimasi</label>
@@ -535,24 +592,22 @@ export function MrManagementClientContent() {
               </Button>
             </div>
           </div>
-          {/* --- AKHIR REVISI --- */}
         </div>
       </div>
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto">
-        {/* REVISI: Tambah min-w-[1400px] dan ColSpan 11 */}
         <Table className="min-w-[1400px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
+              <TableHead>Cost Center</TableHead> {/* Kolom Baru */}
               <TableHead>Requester</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>
               <TableHead>Perusahaan</TableHead>
               <TableHead>Status</TableHead>
-              {/* --- REVISI: Kolom Estimasi --- */}
               <TableHead className="text-right">Total Estimasi</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
@@ -561,8 +616,7 @@ export function MrManagementClientContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                {/* REVISI: ColSpan 10 */}
-                <TableCell colSpan={10} className="text-center h-24">
+                <TableCell colSpan={11} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -576,6 +630,12 @@ export function MrManagementClientContent() {
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
                   <TableCell className="font-semibold">{mr.kode_mr}</TableCell>
+                  {/* Tampilkan Kode Cost Center */}
+                  <TableCell>
+                    <Badge variant="outline">
+                      {(mr as any).cost_centers?.code || "-"}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
@@ -585,7 +645,6 @@ export function MrManagementClientContent() {
                   <TableCell>
                     <Badge variant="secondary">{mr.status}</Badge>
                   </TableCell>
-                  {/* --- REVISI: Cell Estimasi --- */}
                   <TableCell className="text-right font-medium">
                     {formatCurrency(mr.cost_estimation)}
                   </TableCell>
@@ -602,8 +661,7 @@ export function MrManagementClientContent() {
               ))
             ) : (
               <TableRow>
-                {/* REVISI: ColSpan 10 */}
-                <TableCell colSpan={10} className="text-center h-24">
+                <TableCell colSpan={11} className="text-center h-24">
                   Tidak ada Material Request yang ditemukan.
                 </TableCell>
               </TableRow>
@@ -614,7 +672,6 @@ export function MrManagementClientContent() {
 
       {/* --- Pagination & Limit Section --- */}
       <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        {/* REVISI: Wrapper untuk limit dan sort */}
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Tampilkan</span>
@@ -636,7 +693,6 @@ export function MrManagementClientContent() {
             <span>dari {totalItems} MR.</span>
           </div>
 
-          {/* REVISI: Tambahkan Sortir */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Urutkan</span>
             <Select

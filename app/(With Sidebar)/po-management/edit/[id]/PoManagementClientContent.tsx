@@ -1,4 +1,4 @@
-// src/app/(With Sidebar)/po-management/edit/[id]/PoManagementEditClient.tsx
+// src/app/(With Sidebar)/po-management/edit/[id]/PoManagementClientContent.tsx
 
 "use client";
 
@@ -46,7 +46,8 @@ import {
   Paperclip,
   Edit as EditIcon,
   Plus,
-  ExternalLink, // Impor ikon
+  ExternalLink,
+  ChevronsUpDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -58,6 +59,8 @@ import {
   Approval,
   Profile,
   Order,
+  Vendor,
+  StoredVendorDetails,
 } from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
@@ -70,10 +73,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Combobox, ComboboxData } from "@/components/combobox";
-import { CurrencyInput } from "@/components/ui/currency-input"; // <-- Impor CurrencyInput
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { BarangSearchCombobox } from "@/app/(With Sidebar)/purchase-order/BarangSearchCombobox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { searchVendors } from "@/services/vendorService";
 
-// Komponen helper InfoItem
+// --- Komponen Helper Info ---
 const InfoItem = ({
   icon: Icon,
   label,
@@ -98,7 +115,7 @@ const InfoItem = ({
   </div>
 );
 
-// Data UoM untuk Dialog Item
+// Data UoM
 const dataUoM: ComboboxData = [
   { label: "Pcs", value: "Pcs" },
   { label: "Unit", value: "Unit" },
@@ -122,6 +139,91 @@ const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
   "approved",
   "rejected",
 ];
+
+// --- Vendor Search Component (Sama seperti di Create PO) ---
+function VendorSearchCombobox({
+  poForm,
+  setPoForm,
+}: {
+  poForm: any;
+  setPoForm: React.Dispatch<React.SetStateAction<any>>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<Vendor[]>([]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      searchVendors(searchQuery).then(setResults);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const handleSelect = (vendor: Vendor) => {
+    const newVendorDetails: StoredVendorDetails = {
+      vendor_id: vendor.id,
+      kode_vendor: vendor.kode_vendor,
+      nama_vendor: vendor.nama_vendor,
+      alamat: vendor.alamat || "",
+      contact_person: vendor.pic_contact_person || "",
+      email: vendor.email || "",
+    };
+    setPoForm((prev: any) => ({
+      ...prev,
+      vendor_details: newVendorDetails,
+    }));
+    setOpen(false);
+    setSearchQuery("");
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between truncate"
+          title={poForm.vendor_details?.nama_vendor}
+        >
+          {poForm.vendor_details?.nama_vendor ||
+            "Cari Nama atau Kode Vendor..."}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[400px] p-0">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Ketik untuk mencari vendor..."
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+          />
+          <CommandList>
+            {results.length === 0 && searchQuery.length > 0 && (
+              <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+            )}
+            <CommandGroup>
+              {results.map((vendor) => (
+                <CommandItem
+                  key={vendor.id}
+                  value={`${vendor.kode_vendor} - ${vendor.nama_vendor}`}
+                  onSelect={() => handleSelect(vendor)}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-semibold">{vendor.nama_vendor}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {vendor.kode_vendor}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function PoManagementEditClientContent({
   params: paramsPromise,
@@ -149,7 +251,6 @@ export function PoManagementEditClientContent({
   const [taxPercentage, setTaxPercentage] = useState<number>(11);
   const [isTaxIncluded, setIsTaxIncluded] = useState<boolean>(false);
 
-  // --- State untuk Dialog Tambah/Edit Item ---
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [itemFormData, setItemFormData] = useState<POItem>({
@@ -162,6 +263,22 @@ export function PoManagementEditClientContent({
     total_price: 0,
     vendor_name: "",
   });
+
+  // Helper Nama Cost Center
+  const getCostCenterName = (mrData: any) => {
+    if (!mrData) return "N/A";
+    const cc = mrData.cost_centers;
+    if (cc && typeof cc === "object" && "name" in cc) {
+      return cc.name;
+    }
+    if (Array.isArray(cc) && cc.length > 0) {
+      return cc[0].name;
+    }
+    return (
+      mrData.cost_center ||
+      `ID: ${mrData.cost_center_id} (Data tidak ditemukan)`
+    );
+  };
 
   useEffect(() => {
     async function fetchInitialData() {
@@ -205,6 +322,15 @@ export function PoManagementEditClientContent({
           ...data,
           attachments: Array.isArray(data.attachments) ? data.attachments : [],
           approvals: Array.isArray(data.approvals) ? data.approvals : [],
+          // Inisialisasi vendor details jika kosong (backward compat)
+          vendor_details: data.vendor_details || {
+            vendor_id: 0,
+            kode_vendor: "",
+            nama_vendor: "",
+            alamat: "",
+            contact_person: "",
+            email: "",
+          },
         };
         setPoForm(initialData);
 
@@ -272,8 +398,6 @@ export function PoManagementEditClientContent({
 
     setPoForm((prev) => {
       if (!prev) return null;
-      // Hanya update tax jika BUKAN mode manual (agar input manual tidak tertimpa)
-      // atau jika pajak di-include (force 0)
       const newTax =
         taxMode !== "manual" || isTaxIncluded ? calculatedTax : prev.tax;
       if (prev.tax !== newTax || prev.total_price !== grandTotal) {
@@ -294,10 +418,8 @@ export function PoManagementEditClientContent({
     isTaxIncluded,
   ]);
 
-  // Efek terpisah untuk update total HANYA JIKA mode manual dan tax berubah
   useEffect(() => {
     if (!poForm || taxMode !== "manual" || isTaxIncluded) return;
-
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
       0
@@ -355,7 +477,7 @@ export function PoManagementEditClientContent({
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: barang.vendor || "",
+      vendor_name: "", // Kosongkan karena ikut Vendor Utama
     };
     setPoForm((prev) =>
       prev ? { ...prev, items: [...prev.items, newItem] } : null
@@ -384,7 +506,7 @@ export function PoManagementEditClientContent({
       !itemFormData.uom.trim() ||
       itemFormData.price < 0
     ) {
-      toast.error("Nama, Qty (>0), UoM, dan Harga (>=0) harus valid.");
+      toast.error("Data item tidak valid.");
       return;
     }
 
@@ -402,11 +524,15 @@ export function PoManagementEditClientContent({
 
   const handleSubmit = async () => {
     if (!poForm) return;
+    // Validasi Vendor Utama
+    if (!poForm.vendor_details || !poForm.vendor_details.vendor_id) {
+      toast.error("Vendor Utama wajib dipilih.");
+      return;
+    }
 
     const payload: Partial<PurchaseOrderPayload> = {
       kode_po: poForm.kode_po,
       mr_id: poForm.mr_id,
-      // user_id: poForm.user_id, // Biarkan asli
       status: poForm.status,
       vendor_details: poForm.vendor_details,
       items: poForm.items,
@@ -427,7 +553,7 @@ export function PoManagementEditClientContent({
     const toastId = toast.loading(`Memperbarui PO...`);
     try {
       await updatePurchaseOrder(poId, payload);
-      toast.success("Purchase Order berhasil diperbarui!", { id: toastId });
+      toast.success("PO berhasil diperbarui!", { id: toastId });
       router.push(`/po-management`);
       router.refresh();
     } catch (err: any) {
@@ -440,24 +566,7 @@ export function PoManagementEditClientContent({
     }
   };
 
-  const handleVendorChange = (
-    field: "name" | "address" | "contact_person",
-    value: string
-  ) => {
-    setPoForm((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        vendor_details: {
-          name: prev.vendor_details?.name || "",
-          address: prev.vendor_details?.address || "",
-          contact_person: prev.vendor_details?.contact_person || "",
-          [field]: value,
-        },
-      };
-    });
-  };
-
+  // ... (Handlers Attachment sama seperti sebelumnya) ...
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     type: "po" | "finance"
@@ -523,10 +632,7 @@ export function PoManagementEditClientContent({
 
     const supabase = createClient();
     supabase.storage.from("mr").remove([attachmentToRemove.url]);
-
-    toast.info(
-      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`
-    );
+    toast.info(`Lampiran dihapus.`);
   };
 
   const handleApprovalStatusChange = (
@@ -657,16 +763,14 @@ export function PoManagementEditClientContent({
                 label="Estimasi Biaya MR"
                 value={formatCurrency(poForm.material_requests.cost_estimation)}
               />
+
+              {/* --- REVISI: Tampilkan Cost Center Name yang Benar --- */}
               <InfoItem
                 icon={Building2}
                 label="Cost Center"
-                // REVISI: Tampilkan cost_center_id jika ada
-                value={
-                  poForm.material_requests.cost_center_id?.toString() ||
-                  poForm.material_requests.cost_center ||
-                  "N/A"
-                }
+                value={getCostCenterName(poForm.material_requests)}
               />
+
               <InfoItem
                 icon={Truck}
                 label="Tujuan Site (MR)"
@@ -683,10 +787,11 @@ export function PoManagementEditClientContent({
             </div>
           </Content>
         )}
+
+        {/* --- Tabel Item Referensi MR --- */}
         {poForm.material_requests && (
           <Content title="Item Referensi dari MR">
             <div className="rounded-md border overflow-x-auto">
-              {/* REVISI: Tabel Item Referensi MR */}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -737,6 +842,7 @@ export function PoManagementEditClientContent({
           </Content>
         )}
 
+        {/* --- Tabel Item PO --- */}
         <Content title="Detail Item Pesanan (PO)">
           <div className="overflow-x-auto">
             <Table className="min-w-[900px]">
@@ -747,7 +853,7 @@ export function PoManagementEditClientContent({
                   <TableHead>Qty</TableHead>
                   <TableHead>Harga</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Vendor</TableHead>
+                  {/* HAPUS KOLOM VENDOR */}
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -761,12 +867,27 @@ export function PoManagementEditClientContent({
                     </TableCell>
                     <TableCell>{item.name}</TableCell>
                     <TableCell>
-                      {item.qty} {item.uom}
+                      <Input
+                        type="number"
+                        value={item.qty}
+                        onChange={(e) =>
+                          handleItemChange(index, "qty", e.target.value)
+                        }
+                        className="w-20"
+                        min="1"
+                      />
                     </TableCell>
-                    {/* REVISI: Harga tidak bisa diedit di tabel, hanya di dialog */}
-                    <TableCell>{formatCurrency(item.price)}</TableCell>
+                    <TableCell>
+                      <CurrencyInput
+                        value={item.price}
+                        onValueChange={(numValue) =>
+                          handleItemChange(index, "price", numValue)
+                        }
+                        placeholder="Rp 0"
+                        className="w-32"
+                      />
+                    </TableCell>
                     <TableCell>{formatCurrency(item.total_price)}</TableCell>
-                    <TableCell>{item.vendor_name}</TableCell>
                     <TableCell className="space-x-1">
                       <Button
                         variant="outline"
@@ -787,16 +908,6 @@ export function PoManagementEditClientContent({
                     </TableCell>
                   </TableRow>
                 ))}
-                {poForm.items.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center h-24 text-muted-foreground"
-                    >
-                      Belum ada item.
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </div>
@@ -826,30 +937,29 @@ export function PoManagementEditClientContent({
         <Content title="Vendor Utama & Pengiriman">
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium">Nama Vendor Utama</Label>
-              <Input
-                value={poForm.vendor_details?.name || ""}
-                onChange={(e) => handleVendorChange("name", e.target.value)}
-              />
+              <Label className="mb-1 block">Pilih Vendor Utama</Label>
+              <VendorSearchCombobox poForm={poForm} setPoForm={setPoForm} />
             </div>
-            <div>
-              <Label className="text-sm font-medium">
-                Kontak Person Vendor
-              </Label>
-              <Input
-                value={poForm.vendor_details?.contact_person || ""}
-                onChange={(e) =>
-                  handleVendorChange("contact_person", e.target.value)
-                }
-              />
+
+            <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Kontak:</span>
+                <span>{poForm.vendor_details?.contact_person || "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Email:</span>
+                <span>{poForm.vendor_details?.email || "-"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-1">
+                  Alamat:
+                </span>
+                <p className="whitespace-pre-wrap">
+                  {poForm.vendor_details?.alamat || "-"}
+                </p>
+              </div>
             </div>
-            <div>
-              <Label className="text-sm font-medium">Alamat Vendor</Label>
-              <Textarea
-                value={poForm.vendor_details?.address || ""}
-                onChange={(e) => handleVendorChange("address", e.target.value)}
-              />
-            </div>
+
             <hr />
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
@@ -897,12 +1007,124 @@ export function PoManagementEditClientContent({
           </div>
         </Content>
 
+        {/* ... (Content Lampiran & Ringkasan Biaya sama persis) ... */}
         <Content title="Lampiran PO">
-          {/* ... (Konten Lampiran PO tetap sama) ... */}
+          <div className="space-y-4">
+            <Label htmlFor="po-attachment-upload">Tambah Lampiran PO</Label>
+            <Input
+              id="po-attachment-upload"
+              type="file"
+              onChange={(e) => handleAttachmentUpload(e, "po")}
+              disabled={isUploadingPO || isUploadingFinance || actionLoading}
+            />
+            {isUploadingPO && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+              </div>
+            )}
+            {poAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {poAttachments.map((att, index) => {
+                  const originalIndex =
+                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
+                    -1;
+                  if (originalIndex === -1) return null;
+                  return (
+                    <li
+                      key={originalIndex}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <a
+                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 truncate hover:underline text-primary"
+                      >
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => removeAttachment(originalIndex)}
+                        disabled={
+                          actionLoading || isUploadingPO || isUploadingFinance
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                Belum ada lampiran PO.
+              </p>
+            )}
+          </div>
         </Content>
 
         <Content title="Lampiran Finance">
-          {/* ... (Konten Lampiran Finance tetap sama) ... */}
+          {/* ... (Implementasi sama seperti lampiran PO) ... */}
+          <div className="space-y-4">
+            <Label htmlFor="finance-attachment-upload">
+              Tambah Lampiran Finance
+            </Label>
+            <Input
+              id="finance-attachment-upload"
+              type="file"
+              onChange={(e) => handleAttachmentUpload(e, "finance")}
+              disabled={isUploadingPO || isUploadingFinance || actionLoading}
+            />
+            {isUploadingFinance && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+              </div>
+            )}
+            {financeAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {financeAttachments.map((att, index) => {
+                  const originalIndex =
+                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
+                    -1;
+                  if (originalIndex === -1) return null;
+                  return (
+                    <li
+                      key={originalIndex}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <a
+                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 truncate hover:underline text-primary"
+                      >
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => removeAttachment(originalIndex)}
+                        disabled={
+                          actionLoading || isUploadingPO || isUploadingFinance
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                Belum ada lampiran finance.
+              </p>
+            )}
+          </div>
         </Content>
 
         <Content title="Jalur Approval">
@@ -956,7 +1178,6 @@ export function PoManagementEditClientContent({
           )}
         </Content>
 
-        {/* --- REVISI: Ringkasan Biaya dengan CurrencyInput --- */}
         <Content title="Ringkasan Biaya">
           <div className="space-y-4">
             <div className="flex justify-between">
@@ -1068,7 +1289,7 @@ export function PoManagementEditClientContent({
         </Content>
       </div>
 
-      {/* --- REVISI: Dialog Edit Item PO dengan CurrencyInput --- */}
+      {/* --- Dialog Edit Item PO --- */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1143,23 +1364,7 @@ export function PoManagementEditClientContent({
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemVendorNameDlg" className="text-right">
-                Vendor Item
-              </Label>
-              <Input
-                id="itemVendorNameDlg"
-                className="col-span-3"
-                value={itemFormData.vendor_name}
-                onChange={(e) =>
-                  setItemFormData((prev) => ({
-                    ...prev,
-                    vendor_name: e.target.value,
-                  }))
-                }
-                placeholder="Nama Vendor Item"
-              />
-            </div>
+            {/* Field Vendor Item Dihapus */}
           </div>
           <DialogFooter>
             <Button onClick={handleSaveItemChanges}>

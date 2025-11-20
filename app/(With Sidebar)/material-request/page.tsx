@@ -31,7 +31,7 @@ import {
   Edit,
   Layers,
   Zap,
-  CalendarClock, // Ikon baru
+  CalendarClock,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -50,7 +50,7 @@ import { PaginationComponent } from "@/components/pagination-components";
 import {
   formatCurrency,
   formatDateFriendly,
-  calculatePriority, // IMPORT FUNGSI INI
+  calculatePriority,
   cn,
 } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,7 @@ import {
   MR_LEVELS,
 } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
+import { fetchActiveCostCenters } from "@/services/mrService"; // Import service
 
 // --- Tipe Data ---
 import { MaterialRequestListItem } from "@/type";
@@ -99,7 +100,7 @@ const dataLokasi: ComboboxData = [
 const SORT_OPTIONS = [
   { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
   { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
-  { label: "Due Date (Mendesak)", value: "due_date.asc" }, // Opsi penting untuk P0
+  { label: "Due Date (Mendesak)", value: "due_date.asc" },
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
@@ -127,6 +128,9 @@ function MaterialRequestContent() {
     null
   );
 
+  // State Filter Cost Center
+  const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+
   // --- State dari URL ---
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
   const limit = parseInt(searchParams.get("limit") || "25", 10);
@@ -141,6 +145,7 @@ function MaterialRequestContent() {
   const levelFilter = searchParams.get("level") || "";
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
+  const costCenterFilter = searchParams.get("cost_center") || "all";
 
   // --- State untuk Input ---
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -171,12 +176,32 @@ function MaterialRequestContent() {
     [searchParams]
   );
 
-  // --- Efek untuk Fetch Data ---
+  // --- Load Cost Centers ---
+  useEffect(() => {
+    const loadCC = async () => {
+      if (currentUser) {
+        try {
+          const ccData = await fetchActiveCostCenters(
+            currentUser.company || "LOURDES"
+          );
+          const options = ccData.map((cc: any) => ({
+            label: `${cc.code} - ${cc.name}`,
+            value: String(cc.id),
+          }));
+          setCostCenterList(options);
+        } catch (e) {
+          console.error("Gagal load cost center", e);
+        }
+      }
+    };
+    if (currentUser) loadCC();
+  }, [currentUser]);
+
+  // --- Efek untuk Fetch Data MR ---
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
 
-      // 1. Ambil data user dan profil saat ini
       const {
         data: { user },
       } = await s.auth.getUser();
@@ -193,21 +218,22 @@ function MaterialRequestContent() {
       const userProfile = { ...user, ...profile };
       setCurrentUser(userProfile as AuthUser & Profile);
 
-      // 2. Tentukan range paginasi
       const from = (currentPage - 1) * limit;
       const to = from + limit - 1;
 
       try {
+        // 1. REVISI QUERY: Tambah cost_centers(code)
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
             tujuan_site, prioritas, level, cost_estimation,
-            users_with_profiles!userid (nama)
+            users_with_profiles!userid (nama),
+            cost_centers (code)
           `,
           { count: "exact" }
         );
 
-        // 3. Terapkan filter berdasarkan input
+        // 2. Filter Pencarian & Standar
         if (searchTerm)
           query = query.or(
             `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
@@ -222,15 +248,22 @@ function MaterialRequestContent() {
         if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
         if (levelFilter) query = query.eq("level", levelFilter);
 
+        // 3. Filter Cost Center
+        if (costCenterFilter && costCenterFilter !== "all") {
+          query = query.eq("cost_center_id", costCenterFilter);
+        }
+
         if (minEstimasi)
           query = query.gte("cost_estimation", Number(minEstimasi));
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
-        // 4. Terapkan filter berdasarkan ROLE
-        if (userProfile.role === "requester") {
-          query = query.eq("userid", user.id);
+        // 4. REVISI LOGIC: Filter Company (Gantikan filter 'userid')
+        // "User biasa tetep bisa liat semua MR (company yg sama)"
+        if (userProfile.company && userProfile.company !== "LOURDES") {
+          query = query.eq("company_code", userProfile.company);
         }
+        // Jika Lourdes, otomatis bisa lihat semua (tidak perlu filter company_code)
 
         const [sortBy, sortOrder] = sortFilter.split(".");
         query = query
@@ -241,11 +274,18 @@ function MaterialRequestContent() {
         if (error) throw error;
 
         const transformedData =
-          data?.map((mr) => ({
+          data?.map((mr: any) => ({
             ...mr,
             users_with_profiles: Array.isArray(mr.users_with_profiles)
               ? mr.users_with_profiles[0] ?? null
               : mr.users_with_profiles,
+            cost_centers: Array.isArray(mr.cost_centers)
+              ? mr.cost_centers[0] ?? null
+              : mr.cost_centers,
+            orders: Array.isArray(mr.orders) ? mr.orders : [],
+            approvals: Array.isArray(mr.approvals) ? mr.approvals : [],
+            attachments: Array.isArray(mr.attachments) ? mr.attachments : [],
+            company_code: mr.company_code ?? mr.company ?? null,
           })) || [];
 
         setDataMR(transformedData as MaterialRequestListItem[]);
@@ -273,6 +313,7 @@ function MaterialRequestContent() {
     levelFilter,
     minEstimasi,
     maxEstimasi,
+    costCenterFilter,
   ]);
 
   // Efek debounce pencarian
@@ -305,11 +346,13 @@ function MaterialRequestContent() {
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
+      // REVISI QUERY EXCEL: Tambah cost_centers(code)
       let query = s.from("material_requests").select(`
           kode_mr, kategori, department, status, remarks, cost_estimation, 
           tujuan_site, company_code, created_at, due_date,
           prioritas, level, orders, 
-          users_with_profiles!userid (nama)
+          users_with_profiles!userid (nama),
+          cost_centers (code)
         `);
 
       if (searchTerm)
@@ -323,13 +366,17 @@ function MaterialRequestContent() {
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
       if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
       if (levelFilter) query = query.eq("level", levelFilter);
+      if (costCenterFilter && costCenterFilter !== "all") {
+        query = query.eq("cost_center_id", costCenterFilter);
+      }
       if (minEstimasi)
         query = query.gte("cost_estimation", Number(minEstimasi));
       if (maxEstimasi)
         query = query.lte("cost_estimation", Number(maxEstimasi));
 
-      if (currentUser.role === "requester") {
-        query = query.eq("userid", currentUser.id);
+      // REVISI LOGIC EXCEL: Sama dengan tampilan tabel
+      if (currentUser.company && currentUser.company !== "LOURDES") {
+        query = query.eq("company_code", currentUser.company);
       }
 
       const [sortBy, sortOrder] = sortFilter.split(".");
@@ -345,18 +392,18 @@ function MaterialRequestContent() {
       }
 
       const formattedData = data.flatMap((mr: any) => {
-        // Hitung prioritas live untuk report juga
         const livePriority = calculatePriority(mr.due_date || new Date());
 
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
+          "Cost Center": mr.cost_centers?.code || "-", // Kolom Baru
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
           Level: mr.level,
           "Prioritas (Live)": livePriority,
-          "Prioritas (Awal)": mr.prioritas, // Opsional: tampilkan juga data DB
+          "Prioritas (Awal)": mr.prioritas,
           Requester: mr.users_with_profiles?.nama || "N/A",
           Perusahaan: mr.company_code,
           Remarks: mr.remarks,
@@ -484,23 +531,23 @@ function MaterialRequestContent() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Prioritas (Awal)</label>
+              <label className="text-sm font-medium">Cost Center</label>
               <Select
                 onValueChange={(value) =>
                   handleFilterChange({
-                    prioritas: value === "all" ? undefined : value,
+                    cost_center: value,
                   })
                 }
-                defaultValue={prioritasFilter || "all"}
+                defaultValue={costCenterFilter}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Filter prioritas" />
+                  <SelectValue placeholder="Semua Cost Center" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Prioritas</SelectItem>
-                  {dataPrioritas.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                  <SelectItem value="all">Semua Cost Center</SelectItem>
+                  {costCenterList.map((cc) => (
+                    <SelectItem key={cc.value} value={cc.value}>
+                      {cc.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -642,11 +689,13 @@ function MaterialRequestContent() {
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
-        <Table className="min-w-[1500px]">
+        {/* REVISI: Tambah min-w dan colSpan header */}
+        <Table className="min-w-[1400px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
+              <TableHead>Cost Center</TableHead> {/* Kolom Baru */}
               <TableHead>Prioritas</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
@@ -663,7 +712,7 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={13} className="text-center h-24">
+                <TableCell colSpan={14} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -672,7 +721,6 @@ function MaterialRequestContent() {
               </TableRow>
             ) : dataMR.length > 0 ? (
               dataMR.map((mr, index) => {
-                // HITUNG PRIORITAS LIVE
                 const livePriority = calculatePriority(
                   mr.due_date || new Date()
                 );
@@ -685,8 +733,13 @@ function MaterialRequestContent() {
                     <TableCell className="font-semibold">
                       {mr.kode_mr}
                     </TableCell>
+                    {/* Kolom Cost Center */}
                     <TableCell>
-                      {/* Tampilkan Badge Prioritas Live */}
+                      <Badge variant="outline">
+                        {(mr as any).cost_centers?.code || "-"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <Badge
                         variant={
                           livePriority === "P0" ? "destructive" : "outline"
@@ -747,7 +800,7 @@ function MaterialRequestContent() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={13} className="text-center h-24">
+                <TableCell colSpan={14} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
               </TableRow>

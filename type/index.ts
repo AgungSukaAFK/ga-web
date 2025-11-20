@@ -147,6 +147,7 @@ export interface PurchaseOrderListItem {
     kode_mr: string;
     users_with_profiles: { nama: string } | null;
   } | null;
+  vendor_details?: StoredVendorDetails | any;
 }
 
 export interface ApprovedMaterialRequest {

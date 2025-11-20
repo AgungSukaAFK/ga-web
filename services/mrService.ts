@@ -204,8 +204,7 @@ export const createMaterialRequest = async (
 export const fetchActiveCostCenters = async (company_code: string) => {
   let query = supabase
     .from("cost_centers")
-    .select("id, name, code, current_budget")
-    .gt("current_budget", 0); // Hanya tampilkan yg budgetnya masih ada
+    .select("id, name, code, current_budget");
 
   if (company_code !== "LOURDES") {
     query = query.eq("company_code", company_code);

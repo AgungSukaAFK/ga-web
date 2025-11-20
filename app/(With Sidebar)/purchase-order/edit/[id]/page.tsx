@@ -44,7 +44,8 @@ import {
   Building2,
   Link as LinkIcon,
   Paperclip,
-  ExternalLink, // Impor ikon
+  ExternalLink,
+  ChevronsUpDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { BarangSearchCombobox } from "../../BarangSearchCombobox";
@@ -54,12 +55,28 @@ import {
   Barang,
   PurchaseOrderPayload,
   Attachment,
-  Order, // <-- Impor tipe Order
+  Order,
+  Vendor,
+  StoredVendorDetails,
 } from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CurrencyInput } from "@/components/ui/currency-input"; // <-- Impor CurrencyInput
+import { CurrencyInput } from "@/components/ui/currency-input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { searchVendors } from "@/services/vendorService";
 
 // Komponen helper kecil untuk menampilkan info
 const InfoItem = ({
@@ -84,6 +101,91 @@ const InfoItem = ({
   </div>
 );
 
+// --- Vendor Search Component ---
+function VendorSearchCombobox({
+  poForm,
+  setPoForm,
+}: {
+  poForm: any;
+  setPoForm: React.Dispatch<React.SetStateAction<any>>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<Vendor[]>([]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      searchVendors(searchQuery).then(setResults);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const handleSelect = (vendor: Vendor) => {
+    const newVendorDetails: StoredVendorDetails = {
+      vendor_id: vendor.id,
+      kode_vendor: vendor.kode_vendor,
+      nama_vendor: vendor.nama_vendor,
+      alamat: vendor.alamat || "",
+      contact_person: vendor.pic_contact_person || "",
+      email: vendor.email || "",
+    };
+    setPoForm((prev: any) => ({
+      ...prev,
+      vendor_details: newVendorDetails,
+    }));
+    setOpen(false);
+    setSearchQuery("");
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between truncate"
+          title={poForm.vendor_details?.nama_vendor}
+        >
+          {poForm.vendor_details?.nama_vendor ||
+            "Cari Nama atau Kode Vendor..."}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[400px] p-0">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Ketik untuk mencari vendor..."
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+          />
+          <CommandList>
+            {results.length === 0 && searchQuery.length > 0 && (
+              <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+            )}
+            <CommandGroup>
+              {results.map((vendor) => (
+                <CommandItem
+                  key={vendor.id}
+                  value={`${vendor.kode_vendor} - ${vendor.nama_vendor}`}
+                  onSelect={() => handleSelect(vendor)}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-semibold">{vendor.nama_vendor}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {vendor.kode_vendor}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function EditPOPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const poId = parseInt(params.id);
@@ -102,6 +204,22 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const [taxPercentage, setTaxPercentage] = useState<number>(11);
   const [isTaxIncluded, setIsTaxIncluded] = useState<boolean>(false);
 
+  // Helper Cost Center Name
+  const getCostCenterName = (mrData: any) => {
+    if (!mrData) return "N/A";
+    const cc = mrData.cost_centers;
+    if (cc && typeof cc === "object" && "name" in cc) {
+      return cc.name;
+    }
+    if (Array.isArray(cc) && cc.length > 0) {
+      return cc[0].name;
+    }
+    return (
+      mrData.cost_center ||
+      `ID: ${mrData.cost_center_id} (Data tidak ditemukan)`
+    );
+  };
+
   useEffect(() => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
@@ -119,8 +237,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         const initialData = {
           ...data,
           attachments: Array.isArray(data.attachments) ? data.attachments : [],
+          // Inisialisasi vendor_details (backward compat)
+          vendor_details: data.vendor_details || {
+            vendor_id: 0,
+            kode_vendor: "",
+            nama_vendor: "",
+            alamat: "",
+            contact_person: "",
+            email: "",
+          },
         };
-        setPoForm(initialData);
+        setPoForm(initialData as any);
 
         if (initialData.payment_term) {
           if (initialData.payment_term.toLowerCase() === "cash") {
@@ -144,7 +271,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           );
           if (
             subtotalSaatLoad > 0 &&
-            Math.abs((initialData.tax ?? 0) - subtotalSaatLoad * 0.11) < 1 // Tambah nullish coalescing
+            Math.abs((initialData.tax ?? 0) - subtotalSaatLoad * 0.11) < 1
           ) {
             setTaxMode("percentage");
             setTaxPercentage(11);
@@ -157,7 +284,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       .finally(() => setLoading(false));
   }, [poId]);
 
-  // --- REVISI: Logika Kalkulasi Pajak/Total ---
+  // --- Logika Kalkulasi Pajak/Total ---
   useEffect(() => {
     if (!poForm) return;
     const subtotal = poForm.items.reduce(
@@ -218,7 +345,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       setPoForm((prev) => (prev ? { ...prev, total_price: grandTotal } : null));
     }
   }, [poForm?.tax, taxMode, isTaxIncluded]);
-  // --- AKHIR REVISI LOGIKA KALKULASI ---
 
   useEffect(() => {
     if (!poForm) return;
@@ -261,7 +387,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       uom: barang.uom || "Pcs",
       price: 0,
       total_price: 0,
-      vendor_name: barang.vendor || "",
+      vendor_name: "",
     };
     setPoForm((prev) =>
       prev ? { ...prev, items: [...prev.items, newItem] } : null
@@ -277,11 +403,20 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const handleSubmit = async () => {
     if (!poForm) return;
+    // Validasi Vendor Utama
+    if (!poForm.vendor_details || !poForm.vendor_details.vendor_id) {
+      toast.error("Vendor Utama wajib dipilih.");
+      return;
+    }
 
+    // FIX: Gunakan non-null assertion (!) untuk vendor_details agar sesuai tipe
     const payload: Partial<PurchaseOrderPayload> = {
       ...poForm,
+      vendor_details: poForm.vendor_details!,
       attachments: Array.isArray(poForm.attachments) ? poForm.attachments : [],
     };
+
+    // Hapus property relasi agar tidak dikirim ke Supabase update
     delete (payload as any).material_requests;
     delete (payload as any).users_with_profiles;
     delete (payload as any).created_at;
@@ -305,20 +440,31 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // --- Handle Vendor Change (Manual Edit) ---
   const handleVendorChange = (
     field: "name" | "address" | "contact_person",
     value: string
   ) => {
     setPoForm((prev) => {
       if (!prev) return null;
+      // Ensure vendor_details matches StoredVendorDetails shape and preserve existing values
+      const existing = prev.vendor_details || {
+        vendor_id: 0,
+        kode_vendor: "",
+        nama_vendor: "",
+        alamat: "",
+        contact_person: "",
+        email: "",
+      };
+      const updatedVendorDetails = {
+        ...existing,
+        ...(field === "name" ? { nama_vendor: value } : {}),
+        ...(field === "address" ? { alamat: value } : {}),
+        ...(field === "contact_person" ? { contact_person: value } : {}),
+      };
       return {
         ...prev,
-        vendor_details: {
-          name: prev.vendor_details?.name || "",
-          address: prev.vendor_details?.address || "",
-          contact_person: prev.vendor_details?.contact_person || "",
-          [field]: value,
-        },
+        vendor_details: updatedVendorDetails,
       };
     });
   };
@@ -473,14 +619,11 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 label="Estimasi Biaya MR"
                 value={formatCurrency(poForm.material_requests.cost_estimation)}
               />
+              {/* REVISI: Tampilkan Nama Cost Center */}
               <InfoItem
                 icon={Building2}
                 label="Cost Center"
-                value={
-                  poForm.material_requests.cost_center_id?.toString() ||
-                  (poForm.material_requests as any).cost_center || // Fallback ke field lama jika ada
-                  "N/A"
-                }
+                value={getCostCenterName(poForm.material_requests)}
               />
               <InfoItem
                 icon={Truck}
@@ -499,7 +642,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </Content>
         )}
 
-        {/* --- REVISI: Tabel Item Referensi MR --- */}
         {poForm.material_requests && (
           <Content title="Item Referensi dari MR">
             <div className="rounded-md border overflow-x-auto">
@@ -552,9 +694,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
         )}
-        {/* --- AKHIR REVISI --- */}
 
-        <Content title="Detail Item Pesanan">
+        <Content title="Detail Item Pesanan (PO)">
           <div className="overflow-x-auto">
             <Table className="min-w-[900px]">
               <TableHeader>
@@ -564,7 +705,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   <TableHead>Qty</TableHead>
                   <TableHead>Harga</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Vendor</TableHead>
+                  {/* REVISI: Kolom Vendor Dihapus */}
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -588,7 +729,6 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         min="1"
                       />
                     </TableCell>
-                    {/* --- REVISI: CurrencyInput untuk Harga --- */}
                     <TableCell>
                       <CurrencyInput
                         value={item.price}
@@ -596,19 +736,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                           handleItemChange(index, "price", numValue)
                         }
                         placeholder="Rp 0"
-                        className="w-32" // Sesuaikan lebar
+                        className="w-32"
                       />
                     </TableCell>
                     <TableCell>{formatCurrency(item.total_price)}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={item.vendor_name || ""}
-                        onChange={(e) =>
-                          handleItemChange(index, "vendor_name", e.target.value)
-                        }
-                        placeholder="Nama Vendor Item"
-                      />
-                    </TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
@@ -638,7 +769,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               onChange={(e) =>
                 setPoForm((p) => (p ? { ...p, notes: e.target.value } : null))
               }
-              placeholder="Masukkan catatan internal untuk tim purchasing..."
+              placeholder="Masukkan catatan internal..."
               rows={4}
             />
           </div>
@@ -647,64 +778,51 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor Utama & Pengiriman">
-          {/* ... (Konten Vendor & Pengiriman tetap sama) ... */}
           <div className="space-y-4">
-            {" "}
+            {/* REVISI: Gunakan Search Combobox */}
             <div>
-              {" "}
-              <Label className="text-sm font-medium">
-                Nama Vendor Utama
-              </Label>{" "}
-              <Input
-                value={poForm.vendor_details?.name || ""}
-                onChange={(e) => handleVendorChange("name", e.target.value)}
-              />{" "}
-            </div>{" "}
+              <Label className="mb-1 block">Pilih Vendor Utama</Label>
+              <VendorSearchCombobox poForm={poForm} setPoForm={setPoForm} />
+            </div>
+
+            {/* Detail Vendor Read-Only */}
+            <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Kontak:</span>
+                <span>{poForm.vendor_details?.contact_person || "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Email:</span>
+                <span>{poForm.vendor_details?.email || "-"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-1">
+                  Alamat:
+                </span>
+                <p className="whitespace-pre-wrap">
+                  {poForm.vendor_details?.alamat || "-"}
+                </p>
+              </div>
+            </div>
+
+            <hr />
             <div>
-              {" "}
-              <Label className="text-sm font-medium">
-                {" "}
-                Kontak Person Vendor{" "}
-              </Label>{" "}
-              <Input
-                value={poForm.vendor_details?.contact_person || ""}
-                onChange={(e) =>
-                  handleVendorChange("contact_person", e.target.value)
-                }
-              />{" "}
-            </div>{" "}
-            <div>
-              {" "}
-              <Label className="text-sm font-medium">Alamat Vendor</Label>{" "}
-              <Textarea
-                value={poForm.vendor_details?.address || ""}
-                onChange={(e) => handleVendorChange("address", e.target.value)}
-              />{" "}
-            </div>{" "}
-            <hr />{" "}
-            <div>
-              {" "}
-              <Label className="text-sm font-medium">Payment Term</Label>{" "}
+              <Label className="text-sm font-medium">Payment Term</Label>
               <div className="flex gap-2 mt-1">
-                {" "}
                 <Select
                   value={paymentTermType}
                   onValueChange={(value) => setPaymentTermType(value)}
                 >
-                  {" "}
                   <SelectTrigger className="w-1/2">
-                    {" "}
-                    <SelectValue placeholder="Pilih tipe..." />{" "}
-                  </SelectTrigger>{" "}
+                    <SelectValue placeholder="Pilih tipe..." />
+                  </SelectTrigger>
                   <SelectContent>
-                    {" "}
-                    <SelectItem value="Termin">Termin</SelectItem>{" "}
-                    <SelectItem value="Cash">Cash</SelectItem>{" "}
-                  </SelectContent>{" "}
-                </Select>{" "}
+                    <SelectItem value="Termin">Termin</SelectItem>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                  </SelectContent>
+                </Select>
                 {paymentTermType === "Termin" && (
                   <div className="w-1/2 relative">
-                    {" "}
                     <Input
                       type="number"
                       value={paymentTermDays}
@@ -712,20 +830,16 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                       placeholder="... hari"
                       className="pr-12"
                       min="0"
-                    />{" "}
+                    />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      {" "}
-                      Hari{" "}
-                    </span>{" "}
+                      Hari
+                    </span>
                   </div>
-                )}{" "}
-              </div>{" "}
-            </div>{" "}
+                )}
+              </div>
+            </div>
             <div>
-              {" "}
-              <Label className="text-sm font-medium">
-                Alamat Pengiriman
-              </Label>{" "}
+              <Label className="text-sm font-medium">Alamat Pengiriman</Label>
               <Textarea
                 value={poForm.shipping_address || ""}
                 onChange={(e) =>
@@ -733,12 +847,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                     p ? { ...p, shipping_address: e.target.value } : null
                   )
                 }
-              />{" "}
-            </div>{" "}
+              />
+            </div>
           </div>
         </Content>
 
-        {/* --- REVISI: Konten Lampiran PO & Finance --- */}
+        {/* --- Konten Lampiran PO (Sama) --- */}
         <Content title="Lampiran PO">
           <div className="space-y-4">
             <Label htmlFor="po-attachment-upload">Tambah Lampiran PO</Label>
@@ -797,6 +911,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
+        {/* --- Konten Lampiran Finance (Sama) --- */}
         <Content title="Lampiran Finance">
           <div className="space-y-4">
             <Label htmlFor="finance-attachment-upload">
@@ -857,7 +972,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
-        {/* --- REVISI: Ringkasan Biaya dengan CurrencyInput --- */}
+        {/* --- Ringkasan Biaya --- */}
         <Content title="Ringkasan Biaya">
           <div className="space-y-4">
             <div className="flex justify-between">
