@@ -175,6 +175,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
+  useEffect(() => {
+    if (po?.kode_po) {
+      document.title = `GP - ${po.kode_po}`;
+    }
+    return () => {
+      document.title = "Garuda Procure";
+    };
+  }, [po]);
+
   const fetchPoData = async () => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
@@ -1132,12 +1141,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-// REVISI: Update property name untuk vendor di PrintablePO
 const PrintablePO = ({
   po,
   companyInfo,
   qrUrl,
-  vendorData, // Terima data vendor yang sudah dinormalisasi
+  vendorData,
 }: {
   po: PurchaseOrderDetail;
   companyInfo: (typeof COMPANY_DETAILS)["DEFAULT"];
@@ -1145,162 +1153,263 @@ const PrintablePO = ({
   vendorData: { name: string; address: string; contact: string; code: string };
 }) => {
   return (
-    <div id="printable-po-a4" className="p-10 space-y-6">
-      {/* 1. Header */}
-      <header className="flex justify-between items-start border-b-4 border-black pb-4">
-        <div className="flex items-center gap-4">
-          <img
-            src={companyInfo.logo}
-            alt="Logo Perusahaan"
-            width={140}
-            height={140}
-          />
+    <div
+      id="printable-po-a4"
+      className="p-8 bg-white text-black font-sans text-sm leading-normal min-h-[29.7cm] flex flex-col relative"
+    >
+      {/* 1. Header: Logo & Judul */}
+      <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
+        <div className="flex items-center gap-6 w-2/3">
+          {/* REVISI: Ukuran Logo Diperbesar */}
+          <div className="w-[120px] relative flex-shrink-0 flex items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={companyInfo.logo}
+              alt="Logo"
+              className="object-contain max-w-full max-h-full object-left"
+            />
+          </div>
           <div>
-            <h1 className="text-2xl font-bold">{companyInfo.name}</h1>
-            <p className="text-xs whitespace-normal break-words max-w-xs">
+            <h1 className="text-xl font-black uppercase tracking-tight text-gray-900 leading-none">
+              {companyInfo.name}
+            </h1>
+            <p className="text-xs text-gray-600 mt-1.5 leading-snug max-w-sm">
               {companyInfo.address}
             </p>
-            <p className="text-xs">
-              {companyInfo.phone} | {companyInfo.email}
+            <p className="text-xs font-medium text-gray-800 mt-1">
+              {companyInfo.email} | {companyInfo.phone}
             </p>
           </div>
         </div>
-        <div className="text-right flex-shrink-0">
-          <h1 className="text-xl font-bold">PURCHASE ORDER</h1>
-          <p className="font-mono text-sm mt-2">{po.kode_po}</p>
-          <p className="text-sm">
-            Tanggal: {formatDateFriendly(po.created_at)}
-          </p>
+        <div className="text-right w-1/3">
+          <h2 className="text-xl font-black text-gray-800 tracking-wide uppercase">
+            Purchase Order
+          </h2>
+          <div className="mt-2">
+            <p className="text-base font-bold text-gray-900">{po.kode_po}</p>
+            <p className="text-xs text-gray-500">
+              Tgl: {formatDateFriendly(po.created_at)}
+            </p>
+          </div>
         </div>
       </header>
 
-      {/* 2. Info Vendor & Pengiriman */}
-      <section className="grid grid-cols-2 gap-6">
-        <div className="space-y-1 rounded border p-4">
-          <h3 className="font-semibold">KEPADA YTH (VENDOR):</h3>
-          {/* Gunakan data dari helper */}
-          <p className="text-sm font-bold">{vendorData.name}</p>
-          {vendorData.code && (
-            <p className="text-xs text-muted-foreground">{vendorData.code}</p>
-          )}
-          <p className="text-xs whitespace-normal break-words">
-            {vendorData.address}
-          </p>
-          <p className="text-xs">Kontak: {vendorData.contact}</p>
-        </div>
-        <div className="space-y-1 rounded border p-4">
-          <h3 className="font-semibold">ALAMAT PENGIRIMAN:</h3>
-          <p className="text-sm font-bold">{companyInfo.name}</p>
-          <p className="text-xs whitespace-normal break-words">
-            {po.shipping_address}
-          </p>
-          <p className="text-xs">
-            Ref. MR: {po.material_requests?.kode_mr || "N/A"}
-          </p>
-        </div>
-      </section>
-
-      {/* 3. Tabel Item */}
-      <section>
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow className="bg-gray-200">
-              <TableHead className="text-black w-[5%]">No.</TableHead>
-              <TableHead className="text-black w-[35%]">Nama Barang</TableHead>
-              <TableHead className="text-black w-[20%]">Part Number</TableHead>
-              <TableHead className="text-black w-[8%] text-center">
-                Qty
-              </TableHead>
-              <TableHead className="text-black w-[8%]">UoM</TableHead>
-              <TableHead className="text-black w-[12%] text-right">
-                Harga Satuan
-              </TableHead>
-              <TableHead className="text-black w-[12%] text-right">
-                Total
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {po.items.map((item, index) => (
-              <TableRow key={index}>
-                <TableCell>{index + 1}</TableCell>
-                <TableCell className="font-medium whitespace-normal break-words">
-                  {item.name}
-                </TableCell>
-                <TableCell className="font-mono whitespace-normal break-words">
-                  {item.part_number}
-                </TableCell>
-                <TableCell className="text-center">{item.qty}</TableCell>
-                <TableCell>{item.uom}</TableCell>
-                <TableCell className="text-right">
-                  {formatCurrency(item.price)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {formatCurrency(item.total_price)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </section>
-
-      {/* 4. Total & Catatan */}
-      <section className="grid grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <h3 className="font-semibold">Catatan:</h3>
-          <p className="text-xs italic whitespace-normal break-words">
-            {po.notes || "Tidak ada catatan."}
-          </p>
-          <h3 className="font-semibold pt-2">Payment Term:</h3>
-          <p className="text-xs">{po.payment_term}</p>
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-700">Subtotal:</span>
-            <span className="font-medium">
-              {formatCurrency(
-                po.items.reduce((acc, item) => acc + item.price * item.qty, 0)
-              )}
-            </span>
+      {/* 2. Info Vendor & Pengiriman (Grid Box Style) */}
+      <section className="flex gap-6 mb-8">
+        {/* Box Vendor */}
+        <div className="w-1/2 border border-gray-300 rounded-sm">
+          <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
+            <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
+              Vendor (Supplier)
+            </h3>
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-700">Diskon:</span>
-            <span className="font-medium">- {formatCurrency(po.discount)}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-700">Pajak (PPN):</span>
-            <span className="font-medium">+ {formatCurrency(po.tax)}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-700">Ongkos Kirim:</span>
-            <span className="font-medium">+ {formatCurrency(po.postage)}</span>
-          </div>
-          <div className="flex justify-between items-center text-base font-bold border-t border-black pt-2 mt-2">
-            <span>Grand Total:</span>
-            <span>{formatCurrency(po.total_price)}</span>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. QR Code */}
-      <section className="flex justify-center text-center pt-6">
-        <div>
-          <p className="text-sm font-semibold">Verifikasi Approval</p>
-          {qrUrl ? (
-            <div className="p-2 border rounded-md mt-2 inline-block">
-              <QRCodeCanvas value={qrUrl} size={90} />
+          <div className="p-3">
+            <p className="font-bold text-base text-gray-900">
+              {vendorData.name}
+            </p>
+            {vendorData.code && (
+              <p className="text-[10px] font-mono text-gray-500 mb-1">
+                ID: {vendorData.code}
+              </p>
+            )}
+            <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
+              {vendorData.address}
+            </p>
+            <div className="mt-3 pt-2 border-t border-dashed border-gray-200 flex flex-col gap-0.5">
+              <p className="text-xs">
+                <span className="text-gray-500">UP:</span> {vendorData.contact}
+              </p>
             </div>
-          ) : (
-            <Skeleton className="h-[98px] w-[98px]" />
-          )}
-          <p className="text-xs italic mt-1">
-            Scan untuk melihat status approval
-          </p>
-          <p className="text-xs mt-2">
-            (Dokumen ini dicetak secara digital dan sah tanpa tanda tangan)
-          </p>
+          </div>
+        </div>
+
+        {/* Box Pengiriman */}
+        <div className="w-1/2 border border-gray-300 rounded-sm">
+          <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
+            <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
+              Kirim Ke (Ship To)
+            </h3>
+          </div>
+          <div className="p-3">
+            <p className="font-bold text-base text-gray-900">
+              {companyInfo.name}
+            </p>
+            <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
+              {po.shipping_address}
+            </p>
+            <div className="mt-3 pt-2 border-t border-dashed border-gray-200">
+              <p className="text-xs font-mono text-gray-500">
+                Ref MR: {po.material_requests?.kode_mr || "-"}
+              </p>
+            </div>
+          </div>
         </div>
       </section>
+
+      {/* 3. Tabel Item (REVISI: Header No-Wrap & Lebar Kolom) */}
+      <section className="mb-6">
+        <table className="w-full border-collapse border-y-2 border-black table-fixed text-xs">
+          <thead>
+            <tr className="bg-gray-50">
+              {/* REVISI: whitespace-nowrap ditambahkan ke semua th agar tidak turun baris */}
+              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[5%] border-b border-gray-300 whitespace-nowrap">
+                No
+              </th>
+              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[30%] border-b border-gray-300 whitespace-nowrap">
+                Deskripsi Barang
+              </th>
+              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[17%] border-b border-gray-300 whitespace-nowrap">
+                Part Number
+              </th>
+              <th className="py-2 px-2 text-center font-bold text-gray-700 w-[8%] border-b border-gray-300 whitespace-nowrap">
+                Qty
+              </th>
+              <th className="py-2 px-2 text-center font-bold text-gray-700 w-[10%] border-b border-gray-300 whitespace-nowrap">
+                Satuan
+              </th>
+              <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
+                Harga (@)
+              </th>
+              <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((item, index) => (
+              <tr
+                key={index}
+                className="border-b border-gray-200 last:border-0"
+              >
+                <td className="py-3 px-2 text-left align-top text-gray-600">
+                  {index + 1}
+                </td>
+                <td className="py-3 px-2 text-left align-top font-medium text-gray-900 break-words whitespace-normal">
+                  {item.name}
+                </td>
+                <td className="py-3 px-2 text-left align-top font-mono text-[10px] text-gray-600 break-all">
+                  {item.part_number}
+                </td>
+                <td className="py-3 px-2 text-center align-top text-gray-900">
+                  {item.qty}
+                </td>
+                <td className="py-3 px-2 text-center align-top text-gray-600">
+                  {item.uom}
+                </td>
+                <td className="py-3 px-2 text-right align-top whitespace-nowrap text-gray-900">
+                  {formatCurrency(item.price)}
+                </td>
+                <td className="py-3 px-2 text-right align-top whitespace-nowrap font-semibold text-gray-900 bg-gray-50">
+                  {formatCurrency(item.total_price)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* 4. Footer: Notes & Perhitungan */}
+      <section className="flex gap-10 break-inside-avoid items-start">
+        {/* Kiri: Catatan & Syarat */}
+        <div className="flex-1 space-y-4">
+          <div className="space-y-1">
+            <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
+              Catatan / Notes:
+            </h4>
+            <p className="text-xs italic text-gray-600 whitespace-pre-wrap leading-relaxed pt-1">
+              {po.notes || "Tidak ada catatan khusus."}
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
+              Syarat Pembayaran (Payment Term):
+            </h4>
+            <p className="text-xs font-medium text-gray-800 pt-1">
+              {po.payment_term}
+            </p>
+          </div>
+        </div>
+
+        {/* Kanan: Kalkulasi Angka */}
+        <div className="w-[40%]">
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="font-medium text-gray-900">
+                {formatCurrency(
+                  po.items.reduce((acc, item) => acc + item.price * item.qty, 0)
+                )}
+              </span>
+            </div>
+            {po.discount > 0 && (
+              <div className="flex justify-between text-xs text-red-600">
+                <span>Diskon</span>
+                <span>- {formatCurrency(po.discount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">Pajak (PPN)</span>
+              <span className="font-medium text-gray-900">
+                + {formatCurrency(po.tax)}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs pb-2 border-b border-gray-300">
+              <span className="text-gray-600">Ongkos Kirim</span>
+              <span className="font-medium text-gray-900">
+                + {formatCurrency(po.postage)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center bg-gray-900 text-white px-3 py-2 rounded-sm mt-1 print:bg-gray-200 print:text-black print:border print:border-black">
+              <span className="font-bold text-xs uppercase tracking-wider">
+                Grand Total
+              </span>
+              <span className="font-black text-base">
+                {formatCurrency(po.total_price)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Footer Validasi Digital */}
+      <div className="mt-auto pt-12 break-inside-avoid">
+        <div className="border-t-2 border-black pt-4 flex flex-col items-center text-center">
+          {/* QR Code Section */}
+          <div className="flex items-center gap-4 mb-2">
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
+                Digital Validation
+              </p>
+              <p className="text-[9px] text-gray-400">Scan to verify</p>
+            </div>
+            {qrUrl ? (
+              <div className="p-1 border border-gray-800 rounded-md">
+                <QRCodeCanvas value={qrUrl} size={60} />
+              </div>
+            ) : (
+              <Skeleton className="h-[60px] w-[60px]" />
+            )}
+            <div className="text-left">
+              <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
+                Approved By System
+              </p>
+              <p className="text-[9px] text-gray-400">Garuda Procure System</p>
+            </div>
+          </div>
+
+          {/* Legal Disclaimer */}
+          <p className="text-[10px] text-gray-500 italic max-w-xl leading-tight">
+            Dokumen ini diterbitkan secara elektronik oleh sistem Garuda Procure
+            dan sah tanpa tanda tangan basah. Status persetujuan dapat
+            diverifikasi melalui pemindaian kode QR di atas.
+          </p>
+          <p className="text-[9px] text-gray-400 mt-1">
+            Dicetak oleh {po.users_with_profiles?.nama || "System"} pada{" "}
+            {new Date().toLocaleString("id-ID")}
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
