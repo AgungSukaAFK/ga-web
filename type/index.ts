@@ -21,7 +21,7 @@ export interface Order {
 export interface Attachment {
   url: string;
   name: string;
-  type?: "po" | "finance";
+  type?: "po" | "finance" | "bast";
 }
 
 export interface Discussion {
@@ -98,7 +98,7 @@ export interface PurchaseOrderPayload {
     | "Rejected"
     | "Draft"
     | "Ordered";
-  vendor_details?: { name: string; address?: string; contact_person?: string };
+  vendor_details?: StoredVendorDetails;
   items: POItem[];
   currency: string;
   discount: number;
@@ -177,6 +177,15 @@ export interface Vendor {
   email: string | null;
 }
 
+export interface StoredVendorDetails {
+  vendor_id: number;
+  kode_vendor: string;
+  nama_vendor: string;
+  alamat: string;
+  contact_person: string;
+  email: string;
+}
+
 export interface MaterialRequestForPO {
   id: number;
   kode_mr: string;
@@ -188,17 +197,20 @@ export interface MaterialRequestForPO {
 }
 
 export interface PurchaseOrderDetail
-  extends Omit<PurchaseOrderPayload, "mr_id" | "user_id"> {
+  extends Omit<
+    PurchaseOrderPayload,
+    "mr_id" | "user_id" | "vendor_details" | "items"
+  > {
   id: number;
   created_at: string;
   updated_at: string;
   mr_id: number | null;
-
+  vendor_details: StoredVendorDetails | null;
   users_with_profiles: {
     nama: string;
     email?: string;
   } | null;
-
+  items: POItem[];
   material_requests:
     | (MaterialRequest & {
         users_with_profiles: { nama: string } | null;

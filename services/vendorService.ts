@@ -5,9 +5,6 @@ import { Vendor } from "@/type";
 
 const supabase = createClient();
 
-/**
- * Mengambil daftar Vendors dengan paginasi dan filter
- */
 export const fetchVendors = async (
   page: number,
   limit: number,
@@ -19,9 +16,10 @@ export const fetchVendors = async (
   let query = supabase.from("vendors").select("*", { count: "exact" });
 
   if (searchQuery) {
-    const search = `%${searchQuery.toLowerCase()}%`;
+    // SEARCH CASE-INSENSITIVE
+    const search = `%${searchQuery}%`;
     query = query.or(
-      `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search},email.ilike.${search}`
+      `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search}`
     );
   }
 
@@ -29,37 +27,10 @@ export const fetchVendors = async (
     .order("nama_vendor", { ascending: true })
     .range(from, to);
 
-  if (error) {
-    console.error("Error fetching vendors:", error);
-    throw error;
-  }
-
+  if (error) throw error;
   return { data: data as Vendor[], count: count || 0 };
 };
 
-/**
- * Mencari vendor untuk digunakan di Combobox PO
- */
-export const searchVendors = async (query: string): Promise<Vendor[]> => {
-  if (!query || query.length < 3) return [];
-  const search = `%${query.toLowerCase()}%`;
-
-  const { data, error } = await supabase
-    .from("vendors")
-    .select("id, kode_vendor, nama_vendor, alamat, pic_contact_person, email")
-    .or(`kode_vendor.ilike.${search},nama_vendor.ilike.${search}`)
-    .limit(10);
-
-  if (error) {
-    console.error("Error searching vendors:", error);
-    return [];
-  }
-  return data as Vendor[];
-};
-
-/**
- * Membuat Vendor baru
- */
 export const createVendor = async (
   newData: Omit<Vendor, "id" | "created_at">
 ) => {
@@ -68,22 +39,16 @@ export const createVendor = async (
     .insert([newData])
     .select()
     .single();
-
   if (error) {
-    if (error.code === "23505") {
-      throw new Error("Kode Vendor sudah terdaftar.");
-    }
+    if (error.code === "23505") throw new Error("Kode Vendor sudah terdaftar.");
     throw error;
   }
   return data as Vendor;
 };
 
-/**
- * Memperbarui Vendor
- */
 export const updateVendor = async (
   id: number,
-  updatedData: Partial<Omit<Vendor, "id" | "created_at" | "kode_vendor">>
+  updatedData: Partial<Vendor>
 ) => {
   const { data, error } = await supabase
     .from("vendors")
@@ -91,15 +56,29 @@ export const updateVendor = async (
     .eq("id", id)
     .select()
     .single();
-
   if (error) throw error;
   return data as Vendor;
 };
 
-/**
- * Menghapus Vendor
- */
 export const deleteVendor = async (id: number) => {
   const { error } = await supabase.from("vendors").delete().eq("id", id);
   if (error) throw error;
+};
+
+// SEARCH UNTUK DROPDOWN (CASE-INSENSITIVE)
+export const searchVendors = async (query: string): Promise<Vendor[]> => {
+  if (!query) return [];
+
+  const { data, error } = await supabase
+    .from("vendors")
+    .select("*")
+    // Menggunakan ILIKE agar tidak case-sensitive
+    .or(`nama_vendor.ilike.%${query}%,kode_vendor.ilike.%${query}%`)
+    .limit(10);
+
+  if (error) {
+    console.error("Error searching vendors:", error);
+    return [];
+  }
+  return data as Vendor[];
 };

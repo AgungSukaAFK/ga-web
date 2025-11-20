@@ -37,6 +37,11 @@ import {
   Printer,
   Zap,
   Layers,
+  User,
+  FileText,
+  MapPin,
+  Upload,
+  HelpCircle, // Ikon Help untuk Level
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,17 +62,26 @@ import {
   formatDateFriendly,
   cn,
   formatDateWithTime,
+  calculatePriority,
 } from "@/lib/utils";
-import { fetchPurchaseOrderById } from "@/services/purchaseOrderService";
+import {
+  fetchPurchaseOrderById,
+  closePoWithBast,
+} from "@/services/purchaseOrderService";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
-import { QRCodeCanvas } from "qrcode.react"; // Pastikan ini diimpor
-import Image from "next/image";
+import { QRCodeCanvas } from "qrcode.react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { differenceInCalendarDays } from "date-fns"; // Import untuk hitung hari
+import { MR_LEVELS } from "@/type/enum"; // Import definisi Level
 
 // --- Data Perusahaan ---
 const COMPANY_DETAILS = {
@@ -151,8 +165,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // State Dialogs
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
+  const [isBastDialogOpen, setIsBastDialogOpen] = useState(false);
+  const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false); // Dialog Level
+
   const [qrUrl, setQrUrl] = useState("");
+  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
+  const [uploadingBast, setUploadingBast] = useState(false);
 
   const fetchPoData = async () => {
     if (isNaN(poId)) {
@@ -212,6 +233,50 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [poId]);
 
+  // --- Helper Cost Center Name ---
+  const getCostCenterName = () => {
+    const cc = po?.material_requests?.cost_centers;
+    if (Array.isArray(cc)) return cc[0]?.name || "-";
+    if (cc && typeof cc === "object") return (cc as any).name || "-";
+    return "-";
+  };
+
+  // --- Helper Hitung Sisa Hari ---
+  const getDaysRemaining = (dueDateString?: Date | string) => {
+    if (!dueDateString) return "";
+    const today = new Date();
+    const target = new Date(dueDateString);
+    const diff = differenceInCalendarDays(target, today);
+
+    if (diff < 0) return `(Terlewat ${Math.abs(diff)} hari)`;
+    if (diff === 0) return "(Hari ini)";
+    return `(${diff} hari lagi)`;
+  };
+
+  // --- Helper Data Vendor Fallback ---
+  // Mengutamakan field baru, fallback ke field lama (jika ada di JSONB)
+  const getVendorData = () => {
+    const details = po?.vendor_details as any;
+    if (!details)
+      return {
+        name: "N/A",
+        address: "N/A",
+        contact: "N/A",
+        email: "N/A",
+        code: "",
+      };
+
+    return {
+      name: details.nama_vendor || details.name || "N/A",
+      address: details.alamat || details.address || "N/A",
+      contact: details.contact_person || "N/A", // Field ini biasanya konsisten
+      email: details.email || "N/A",
+      code: details.kode_vendor || "",
+    };
+  };
+
+  const vendorData = getVendorData();
+
   // --- Logika Approval ---
 
   const myApprovalIndex =
@@ -228,7 +293,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           .every((a) => a.status === "approved")
       : false;
 
-  const canEditPO = userProfile?.role === "approver";
+  const canEditPO =
+    userProfile?.role === "approver" || userProfile?.role === "admin";
+  const isRequester = currentUser?.id === po?.material_requests?.userid;
+  const showUploadBast = po?.status === "Pending BAST" && isRequester;
 
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
@@ -250,11 +318,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       );
       if (isLastApproval) {
         newPoStatus = "Pending BAST";
-        newMrStatus = "Pending BAST";
+        newMrStatus = "Pending BAST"; // Sinkron status MR
       }
     }
 
-    // Update PO
     const { error: poError } = await supabase
       .from("purchase_orders")
       .update({ approvals: updatedApprovals, status: newPoStatus })
@@ -286,7 +353,46 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setActionLoading(false);
   };
 
-  // Komponen Tombol Aksi
+  const handleUploadBast = async () => {
+    if (!bastFiles || bastFiles.length === 0) {
+      toast.error("Pilih file BAST terlebih dahulu");
+      return;
+    }
+
+    setUploadingBast(true);
+    try {
+      const uploadedAttachments: Attachment[] = [];
+
+      for (let i = 0; i < bastFiles.length; i++) {
+        const file = bastFiles[i];
+        const filePath = `po/${po?.kode_po}/bast/${Date.now()}_${file.name}`;
+        const { data, error } = await supabase.storage
+          .from("mr")
+          .upload(filePath, file);
+
+        if (error) throw error;
+        uploadedAttachments.push({
+          name: file.name,
+          url: data.path,
+          type: "bast",
+        });
+      }
+
+      const existingAttachments = po?.attachments || [];
+      const finalAttachments = [...existingAttachments, ...uploadedAttachments];
+
+      await closePoWithBast(poId, finalAttachments);
+
+      toast.success("BAST berhasil diunggah, PO Selesai (Completed)");
+      setIsBastDialogOpen(false);
+      fetchPoData();
+    } catch (error: any) {
+      toast.error("Gagal upload BAST", { description: error.message });
+    } finally {
+      setUploadingBast(false);
+    }
+  };
+
   const ApprovalActions = () => {
     if (!po || !currentUser || po.status !== "Pending Approval") return null;
     if (myApprovalIndex === -1) return null;
@@ -328,7 +434,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  // --- Helper Badge Status ---
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "pending approval":
@@ -375,7 +480,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     window.print();
   };
 
-  // --- Render ---
   if (loading) return <DetailPOSkeleton />;
 
   if (error || !po)
@@ -396,6 +500,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     po.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
     po.attachments?.filter((att) => att.type === "finance") || [];
+  const bastAttachments =
+    po.attachments?.filter((att) => att.type === "bast") || [];
 
   const currentTurnIndex = po.approvals?.findIndex(
     (app) => app.status === "pending"
@@ -419,6 +525,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
   const companyInfo = COMPANY_DETAILS[companyKey] || COMPANY_DETAILS.DEFAULT;
 
+  // Live Priority Text
+  const priorityText = getDaysRemaining(po.material_requests?.due_date);
+
   return (
     <>
       <div className="col-span-12 grid grid-cols-12 gap-6 no-print">
@@ -433,7 +542,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <Printer className="mr-2 h-4 w-4" />
                 Cetak PO
               </Button>
-              {canEditPO && (
+              {showUploadBast && (
+                <Button size="sm" onClick={() => setIsBastDialogOpen(true)}>
+                  <Upload className="mr-2 h-4 w-4" /> Upload BAST
+                </Button>
+              )}
+              {canEditPO && po.status === "Pending Approval" && (
                 <Button asChild variant="outline" size="sm">
                   <Link href={`/purchase-order/edit/${po.id}`}>
                     <EditIcon className="mr-2 h-4 w-4" />
@@ -521,21 +635,39 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 />
               </div>
               <hr className="md:col-span-2" />
+
+              {/* --- Bagian Vendor dengan Fallback --- */}
               <InfoItem
                 icon={CircleUser}
                 label="Vendor"
-                value={po.vendor_details?.name || "N/A"}
+                value={
+                  <div>
+                    <span className="block font-medium">{vendorData.name}</span>
+                    {vendorData.code && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {vendorData.code}
+                      </span>
+                    )}
+                  </div>
+                }
               />
               <InfoItem
                 icon={Info}
                 label="Kontak Vendor"
-                value={po.vendor_details?.contact_person || "N/A"}
+                value={
+                  <div>
+                    <div>{vendorData.contact}</div>
+                    <div className="text-xs text-muted-foreground font-normal">
+                      {vendorData.email}
+                    </div>
+                  </div>
+                }
               />
               <div className="md:col-span-2">
                 <InfoItem
                   icon={Building2}
                   label="Alamat Vendor"
-                  value={po.vendor_details?.address || "N/A"}
+                  value={vendorData.address}
                   isBlock
                 />
               </div>
@@ -578,7 +710,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- AWAL REVISI: Info Referensi MR (jika ada) --- */}
+          {/* --- Info Referensi MR (jika ada) --- */}
           {po.material_requests && (
             <Content
               title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
@@ -602,11 +734,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   value={po.material_requests.kategori}
                 />
                 <InfoItem
-                  icon={Truck}
-                  label="Tujuan Site (MR)"
-                  value={po.material_requests.tujuan_site || "N/A"}
-                />
-                <InfoItem
                   icon={DollarSign}
                   label="Estimasi Biaya MR"
                   value={formatCurrency(po.material_requests.cost_estimation)}
@@ -614,22 +741,48 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <InfoItem
                   icon={Building2}
                   label="Cost Center"
-                  value={
-                    (po.material_requests.cost_centers as any)?.name ||
-                    (po.material_requests as any).cost_center ||
-                    "N/A"
-                  }
+                  value={getCostCenterName()}
                 />
+                <InfoItem
+                  icon={Truck}
+                  label="Tujuan Site (MR)"
+                  value={po.material_requests.tujuan_site || "N/A"}
+                />
+
+                {/* --- Bagian Prioritas dengan Hitungan Hari --- */}
                 <InfoItem
                   icon={Zap}
                   label="Prioritas MR"
-                  value={po.material_requests.prioritas || "N/A"}
+                  value={
+                    <div className="flex items-center gap-2">
+                      <span>{po.material_requests.prioritas || "N/A"}</span>
+                      {priorityText && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {priorityText}
+                        </span>
+                      )}
+                    </div>
+                  }
                 />
-                <InfoItem
-                  icon={Layers}
-                  label="Level MR"
-                  value={po.material_requests.level || "N/A"}
-                />
+
+                {/* --- Bagian Level dengan Tooltip Help --- */}
+                <div className="grid grid-cols-3 gap-x-2">
+                  <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                    <Layers className="h-4 w-4" />
+                    Level MR
+                    <button
+                      onClick={() => setIsLevelInfoOpen(true)}
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                      title="Lihat Definisi Level"
+                    >
+                      <HelpCircle className="h-3 w-3" />
+                    </button>
+                  </dt>
+                  <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+                    {po.material_requests.level || "N/A"}
+                  </dd>
+                </div>
+
                 <div className="md:col-span-2">
                   <InfoItem
                     icon={Info}
@@ -696,13 +849,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </div>
             </Content>
           )}
-          {/* --- AKHIR REVISI --- */}
         </div>
 
         <div className="col-span-12 lg:col-span-4 space-y-6">
           {/* --- Blok Tindakan --- */}
           <Content title="Tindakan">
             <ApprovalActions />
+            {po.status === "Completed" && (
+              <div className="mt-2">
+                <p className="text-sm text-green-600 font-medium mb-2 flex items-center gap-2">
+                  <Check className="h-4 w-4" /> PO Selesai (Completed)
+                </p>
+              </div>
+            )}
           </Content>
 
           {/* --- Blok Jalur Approval --- */}
@@ -803,6 +962,29 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </p>
             )}
           </Content>
+
+          {/* --- Blok Lampiran BAST --- */}
+          <Content title="Lampiran BAST / Bukti Terima">
+            {bastAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {bastAttachments.map((file, index) => (
+                  <li key={index}>
+                    <Link
+                      href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                      target="_blank"
+                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      <Check className="h-4 w-4 text-green-600" />
+                      <span>{file.name}</span>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">Belum ada BAST.</p>
+            )}
+          </Content>
         </div>
 
         {/* --- Blok Diskusi --- */}
@@ -861,29 +1043,107 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
+      {/* --- Dialog Upload BAST --- */}
+      <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
+            <DialogDescription>
+              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
+              barang untuk menyelesaikan proses PO ini.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="bast-file">File BAST / Bukti Foto</Label>
+            <Input
+              id="bast-file"
+              type="file"
+              multiple
+              onChange={(e) => setBastFiles(e.target.files)}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBastDialogOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleUploadBast} disabled={uploadingBast}>
+              {uploadingBast && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Upload & Selesaikan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- Dialog Info Level --- */}
+      <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definisi Level MR</DialogTitle>
+            <DialogDescription>
+              Penjelasan mengenai status level pada Material Request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+            <div>
+              <h4 className="font-semibold mb-2">OPEN (Sedang Diproses)</h4>
+              <ul className="list-disc pl-5 space-y-1 text-sm">
+                {MR_LEVELS.filter((l) => l.group === "OPEN").map((l) => (
+                  <li key={l.value}>
+                    <span className="font-semibold">{l.value}:</span>{" "}
+                    {l.description}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-2">CLOSE (Selesai/Diterima)</h4>
+              <ul className="list-disc pl-5 space-y-1 text-sm">
+                {MR_LEVELS.filter((l) => l.group === "CLOSE").map((l) => (
+                  <li key={l.value}>
+                    <span className="font-semibold">{l.value}:</span>{" "}
+                    {l.description}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* --- Komponen Cetak PO --- */}
       <div className="print-only">
-        <PrintablePO po={po} companyInfo={companyInfo} qrUrl={qrUrl} />
+        <PrintablePO
+          po={po}
+          companyInfo={companyInfo}
+          qrUrl={qrUrl}
+          vendorData={vendorData}
+        />
       </div>
     </>
   );
 }
 
-// REVISI: Komponen baru untuk layout cetak
+// REVISI: Update property name untuk vendor di PrintablePO
 const PrintablePO = ({
   po,
   companyInfo,
   qrUrl,
+  vendorData, // Terima data vendor yang sudah dinormalisasi
 }: {
   po: PurchaseOrderDetail;
   companyInfo: (typeof COMPANY_DETAILS)["DEFAULT"];
   qrUrl: string;
+  vendorData: { name: string; address: string; contact: string; code: string };
 }) => {
-  const subtotal = po.items.reduce(
-    (acc, item) => acc + item.price * item.qty,
-    0
-  );
-
   return (
     <div id="printable-po-a4" className="p-10 space-y-6">
       {/* 1. Header */}
@@ -897,7 +1157,6 @@ const PrintablePO = ({
           />
           <div>
             <h1 className="text-2xl font-bold">{companyInfo.name}</h1>
-            {/* --- REVISI: Tambahkan text wrap --- */}
             <p className="text-xs whitespace-normal break-words max-w-xs">
               {companyInfo.address}
             </p>
@@ -919,17 +1178,19 @@ const PrintablePO = ({
       <section className="grid grid-cols-2 gap-6">
         <div className="space-y-1 rounded border p-4">
           <h3 className="font-semibold">KEPADA YTH (VENDOR):</h3>
-          <p className="text-sm font-bold">{po.vendor_details?.name}</p>
-          {/* --- REVISI: Tambahkan text wrap --- */}
+          {/* Gunakan data dari helper */}
+          <p className="text-sm font-bold">{vendorData.name}</p>
+          {vendorData.code && (
+            <p className="text-xs text-muted-foreground">{vendorData.code}</p>
+          )}
           <p className="text-xs whitespace-normal break-words">
-            {po.vendor_details?.address}
+            {vendorData.address}
           </p>
-          <p className="text-xs">Kontak: {po.vendor_details?.contact_person}</p>
+          <p className="text-xs">Kontak: {vendorData.contact}</p>
         </div>
         <div className="space-y-1 rounded border p-4">
           <h3 className="font-semibold">ALAMAT PENGIRIMAN:</h3>
           <p className="text-sm font-bold">{companyInfo.name}</p>
-          {/* --- REVISI: Tambahkan text wrap --- */}
           <p className="text-xs whitespace-normal break-words">
             {po.shipping_address}
           </p>
@@ -941,11 +1202,9 @@ const PrintablePO = ({
 
       {/* 3. Tabel Item */}
       <section>
-        {/* --- REVISI: Set table-layout fixed --- */}
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="bg-gray-200">
-              {/* --- REVISI: Tambahkan lebar kolom --- */}
               <TableHead className="text-black w-[5%]">No.</TableHead>
               <TableHead className="text-black w-[35%]">Nama Barang</TableHead>
               <TableHead className="text-black w-[20%]">Part Number</TableHead>
@@ -965,7 +1224,6 @@ const PrintablePO = ({
             {po.items.map((item, index) => (
               <TableRow key={index}>
                 <TableCell>{index + 1}</TableCell>
-                {/* --- REVISI: Tambahkan text wrap --- */}
                 <TableCell className="font-medium whitespace-normal break-words">
                   {item.name}
                 </TableCell>
@@ -990,7 +1248,6 @@ const PrintablePO = ({
       <section className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
           <h3 className="font-semibold">Catatan:</h3>
-          {/* --- REVISI: Tambahkan text wrap --- */}
           <p className="text-xs italic whitespace-normal break-words">
             {po.notes || "Tidak ada catatan."}
           </p>
@@ -1000,7 +1257,11 @@ const PrintablePO = ({
         <div className="space-y-2">
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-700">Subtotal:</span>
-            <span className="font-medium">{formatCurrency(subtotal)}</span>
+            <span className="font-medium">
+              {formatCurrency(
+                po.items.reduce((acc, item) => acc + item.price * item.qty, 0)
+              )}
+            </span>
           </div>
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-700">Diskon:</span>
@@ -1021,7 +1282,7 @@ const PrintablePO = ({
         </div>
       </section>
 
-      {/* 5. REVISI: QR Code di Tengah */}
+      {/* 5. QR Code */}
       <section className="flex justify-center text-center pt-6">
         <div>
           <p className="text-sm font-semibold">Verifikasi Approval</p>
@@ -1044,7 +1305,6 @@ const PrintablePO = ({
   );
 };
 
-// Ini adalah satu-satunya default export
 export default function DetailPOPage({
   params,
 }: {

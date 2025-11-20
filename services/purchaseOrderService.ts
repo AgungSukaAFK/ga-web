@@ -199,11 +199,20 @@ export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
 export const fetchMaterialRequestById = async (mrId: number) => {
   const { data, error } = await supabase
     .from("material_requests")
-    .select("*, users_with_profiles!userid(nama)")
+    .select(
+      `
+      *, 
+      users_with_profiles!userid(nama),
+      cost_centers (
+        id,
+        name,
+        code,
+        current_budget
+      )
+    `
+    )
     .eq("id", mrId)
-    .single<
-      MaterialRequest & { users_with_profiles: { nama: string } | null }
-    >();
+    .single();
 
   if (error) throw error;
   return data;
@@ -261,8 +270,13 @@ export const generatePoCode = async (
 export const createPurchaseOrder = async (
   poData: Omit<
     PurchaseOrderPayload,
-    "status" | "approvals" | "mr_id" | "user_id" | "company_code"
-  >,
+    | "status"
+    | "approvals"
+    | "mr_id"
+    | "user_id"
+    | "company_code"
+    | "vendor_details"
+  > & { vendor_details: PurchaseOrderPayload["vendor_details"] },
   mr_id: number | null,
   user_id: string,
   company_code: string
@@ -361,8 +375,6 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
   const { data, error } = await supabase
     .from("barang")
     .select("*")
-    // --- PERBAIKI FILTER .OR() DI SINI JUGA ---
-    // Gunakan "%" dan bungkus dengan "..."
     .or(`part_number.ilike."%${query}%",part_name.ilike."%${query}%"`)
     .limit(10);
 

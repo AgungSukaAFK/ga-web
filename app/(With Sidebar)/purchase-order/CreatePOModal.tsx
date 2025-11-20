@@ -29,7 +29,6 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
 
-  // Debounce effect untuk pencarian
   useEffect(() => {
     if (isOpen) {
       const handler = setTimeout(() => {
@@ -40,13 +39,13 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
             toast.error("Gagal memuat daftar MR", { description: err.message })
           )
           .finally(() => setLoading(false));
-      }, 300); // Jeda 300ms setelah user berhenti mengetik
+      }, 300);
 
       return () => {
         clearTimeout(handler);
       };
     }
-  }, [isOpen, searchQuery]); // Efek ini berjalan saat modal terbuka atau query pencarian berubah
+  }, [isOpen, searchQuery]);
 
   const handleSelectMr = (mrId: number) => {
     router.push(`/purchase-order/create?mrId=${mrId}`);
@@ -59,8 +58,7 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
         <DialogHeader>
           <DialogTitle>Pilih Material Request</DialogTitle>
           <DialogDescription>
-            Pilih MR yang sudah disetujui untuk diangkat menjadi Purchase Order
-            baru.
+            Pilih MR yang sudah disetujui untuk diangkat menjadi Purchase Order.
           </DialogDescription>
         </DialogHeader>
 
@@ -85,29 +83,32 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
                 <li key={mr.id}>
                   <button
                     onClick={() => handleSelectMr(mr.id)}
-                    className="w-full text-left p-3 border rounded-lg hover:bg-accent transition-colors flex justify-between items-center"
+                    className="w-full text-left p-3 border rounded-lg hover:bg-accent transition-colors flex justify-between items-start group"
                   >
-                    <div>
-                      {/* FIX: Mengganti <p> menjadi <div> untuk menghindari error hidrasi */}
-                      <div className="font-semibold items-center flex gap-2">
-                        <span>{mr.kode_mr}</span>
-                        <Badge variant="secondary">{mr.department}</Badge>
+                    <div className="flex-1 min-w-0 pr-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-base">
+                          {mr.kode_mr}
+                        </span>
+                        <Badge variant="secondary" className="text-xs">
+                          {mr.department}
+                        </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1 truncate">
-                        {mr.remarks}
+                      {/* REVISI: Line clamp untuk remarks */}
+                      <p className="text-sm text-muted-foreground mt-2 line-clamp-3 break-words">
+                        {mr.remarks || "Tidak ada remarks."}
                       </p>
                     </div>
-                    <FilePlus2 className="h-5 w-5 text-primary flex-shrink-0 ml-4" />
+                    <FilePlus2 className="h-5 w-5 text-muted-foreground group-hover:text-primary flex-shrink-0 mt-1" />
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="text-center h-full flex flex-col justify-center items-center">
+            <div className="text-center h-full flex flex-col justify-center items-center py-8">
               <p className="font-semibold">Tidak Ada MR yang Ditemukan</p>
               <p className="text-sm text-muted-foreground">
-                Coba ubah kata kunci pencarian Anda, atau belum ada MR yang
-                disetujui.
+                Pastikan status MR sudah "Waiting PO".
               </p>
             </div>
           )}
