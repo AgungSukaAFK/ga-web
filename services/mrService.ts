@@ -198,17 +198,14 @@ export const createMaterialRequest = async (
   return data as MaterialRequest;
 };
 
-/**
- * Mengambil daftar Cost Center yang aktif (misal budget > 0)
- */
 export const fetchActiveCostCenters = async (company_code: string) => {
   let query = supabase
     .from("cost_centers")
     .select("id, name, code, current_budget");
 
-  if (company_code !== "LOURDES") {
-    query = query.eq("company_code", company_code);
-  }
+  // if (company_code !== "LOURDES") {
+  //   query = query.eq("company_code", company_code);
+  // }
 
   const { data, error } = await query.order("name", { ascending: true });
   if (error) {
