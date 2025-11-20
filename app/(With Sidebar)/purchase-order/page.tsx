@@ -343,8 +343,9 @@ function PurchaseOrderPageContent() {
   };
 
   const canCreatePO =
-    userProfile?.role === "approver" &&
-    userProfile?.department === "Purchasing";
+    (userProfile?.role === "approver" &&
+      userProfile?.department === "Purchasing") ||
+    userProfile?.role === "admin";
 
   return (
     <>
