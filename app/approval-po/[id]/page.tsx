@@ -1,4 +1,3 @@
-// src/app/approval-po/[id]/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -22,7 +21,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Clock, X } from "lucide-react";
 
-// Tipe data yang disederhanakan untuk halaman ini
 type POApprovalDetail = Pick<
   PurchaseOrder,
   "kode_po" | "total_price" | "created_at" | "status" | "approvals" | "items"
@@ -31,7 +29,6 @@ type POApprovalDetail = Pick<
   material_requests: { kode_mr: string } | null;
 };
 
-// Helper Badge
 const getApprovalStatusBadge = (
   status: "pending" | "approved" | "rejected"
 ) => {
@@ -73,7 +70,6 @@ export default function ApprovalPOPage() {
         setLoading(true);
         const supabase = createClient();
 
-        // --- REVISI: Menggunakan .maybeSingle() ---
         const { data, error } = await supabase
           .from("purchase_orders")
           .select(
@@ -115,7 +111,7 @@ export default function ApprovalPOPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+      <div className="flex min-h-screen items-center justify-center p-4">
         <div className="w-full max-w-2xl space-y-4">
           <Skeleton className="h-10 w-1/2" />
           <Skeleton className="h-40 w-full" />
@@ -127,8 +123,8 @@ export default function ApprovalPOPage() {
 
   if (error || !po) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
-        <div className="rounded-lg border bg-white p-8 text-center shadow-md">
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="rounded-lg border  p-8 text-center shadow-md">
           <h1 className="text-2xl font-bold text-destructive">
             Gagal Memuat Data
           </h1>
@@ -146,37 +142,35 @@ export default function ApprovalPOPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
-      <div className="mx-auto max-w-3xl rounded-lg border bg-white shadow-lg">
+    <div className="min-h-screen p-4 md:p-8">
+      <div className="mx-auto max-w-3xl rounded-lg border  shadow-lg">
         <div className="border-b p-6">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Verifikasi Purchase Order
-          </h1>
-          <p className="text-lg text-gray-700">{po.kode_po}</p>
+          <h1 className="text-3xl font-bold">Verifikasi Purchase Order</h1>
+          <p className="text-lg ">{po.kode_po}</p>
         </div>
 
         <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
           <div>
-            <p className="text-sm font-medium text-gray-500">Dibuat Oleh</p>
+            <p className="text-sm font-medium ">Dibuat Oleh</p>
             <p className="text-lg font-semibold">
               {po.users_with_profiles?.nama || "N/A"}
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">Ref. MR</p>
+            <p className="text-sm font-medium ">Ref. MR</p>
             <p className="text-lg font-semibold">
               {po.material_requests?.kode_mr || "N/A"}
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">Tanggal Dibuat</p>
+            <p className="text-sm font-medium ">Tanggal Dibuat</p>
             <p className="text-lg font-semibold">
               {formatDateFriendly(po.created_at)}
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">Total Biaya</p>
-            <p className="text-lg font-semibold text-blue-600">
+            <p className="text-sm font-medium ">Total Biaya</p>
+            <p className="text-lg font-semibold">
               {formatCurrency(po.total_price)}
             </p>
           </div>
