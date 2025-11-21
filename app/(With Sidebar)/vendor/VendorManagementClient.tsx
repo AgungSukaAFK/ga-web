@@ -269,23 +269,6 @@ export function VendorManagementClientContent() {
     async function fetchData() {
       setLoading(true);
 
-      // (Security Check: Pastikan hanya Admin yang akses halaman ini)
-      const {
-        data: { user },
-      } = await s.auth.getUser();
-      if (user) {
-        const { data: profile } = await s
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-        if (profile?.role !== "admin") {
-          toast.error("Akses ditolak. Hanya Admin yang bisa mengelola Vendor.");
-          router.push("/dashboard");
-          return;
-        }
-      }
-
       try {
         const { data: vData, count } = await fetchVendors(
           currentPage,
