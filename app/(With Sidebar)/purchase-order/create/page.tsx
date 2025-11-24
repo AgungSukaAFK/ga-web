@@ -131,7 +131,6 @@ function VendorSearchCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[400px] p-0">
-        {/* shouldFilter={false} PENTING agar pencarian server-side bekerja */}
         <Command shouldFilter={false}>
           <CommandInput
             placeholder="Ketik untuk mencari vendor..."
@@ -746,13 +745,76 @@ function CreatePOPageContent() {
                 className="w-32"
               />
             </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <Label>
-                PPN ({taxMode === "percentage" ? `${taxPercentage}%` : "Manual"}
-                )
-              </Label>
-              <span>{formatCurrency(poForm.tax)}</span>
+
+            {/* --- Bagian Pajak (PPN) yang Diperbarui --- */}
+            <div className="space-y-2 pt-2 border-t">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="include-tax-create"
+                  checked={isTaxIncluded}
+                  onCheckedChange={(c) => setIsTaxIncluded(c as boolean)}
+                  disabled={loading}
+                />
+                <Label
+                  htmlFor="include-tax-create"
+                  className="text-sm font-medium leading-none"
+                >
+                  Harga Item Sudah Termasuk Pajak (PPN)?
+                </Label>
+              </div>
+              {!isTaxIncluded && (
+                <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
+                  <Label className="text-sm font-medium">
+                    Metode Pajak (PPN)
+                  </Label>
+                  <Select
+                    value={taxMode}
+                    onValueChange={(v) => setTaxMode(v as any)}
+                    disabled={loading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih metode..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentage">Persentase (%)</SelectItem>
+                      <SelectItem value="manual">Manual (Rp)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {taxMode === "percentage" && (
+                    <div className="relative animate-in fade-in">
+                      <Input
+                        type="number"
+                        value={taxPercentage}
+                        onChange={(e) =>
+                          setTaxPercentage(Number(e.target.value) || 0)
+                        }
+                        className="w-full text-right pr-6"
+                        min="0"
+                        step="0.01"
+                        disabled={loading}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  )}
+                  {taxMode === "manual" && (
+                    <div className="relative animate-in fade-in">
+                      <CurrencyInput
+                        value={poForm.tax}
+                        onValueChange={(numValue) =>
+                          setPoForm((p) => ({ ...p, tax: numValue }))
+                        }
+                        className="w-full"
+                        disabled={loading}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+            {/* --- Akhir Bagian Pajak (PPN) --- */}
+
             <div className="flex justify-between items-center">
               <Label>Ongkir</Label>
               <CurrencyInput
