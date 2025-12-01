@@ -294,3 +294,23 @@ export interface CostCenterHistory {
     nama: string;
   } | null;
 }
+
+export interface ItemRequest {
+  id: number;
+  created_at: string;
+  requester_id: string;
+  proposed_name: string;
+  proposed_category: string;
+  proposed_uom: string;
+  description: string | null;
+  status: "pending" | "approved" | "rejected";
+  admin_notes: string | null;
+  processed_by: string | null;
+
+  // Join relations
+  users_with_profiles?: {
+    nama: string;
+    email: string;
+    department: string;
+  } | null;
+}

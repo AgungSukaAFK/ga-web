@@ -27,7 +27,9 @@ import {
   PackageSearch,
   BadgeDollarSign,
   DollarSign,
-  Briefcase, // Pastikan ikon ini sudah diimpor
+  Briefcase,
+  PackagePlus,
+  ArchiveRestore, // Pastikan ikon ini sudah diimpor
 } from "lucide-react";
 import Image from "next/image";
 
@@ -81,6 +83,11 @@ const data = {
       title: "Barang",
       url: "/barang",
       icon: Boxes,
+    },
+    {
+      title: "Request Barang Baru",
+      url: "/request-new-item",
+      icon: PackagePlus,
     },
     {
       title: "Vendor",
@@ -160,6 +167,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       ];
     }
 
+    // GA GM -> lihat cost center management
     if (
       profile?.department === "General Manager" ||
       profile?.department === "General Affair"
@@ -173,6 +181,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         },
         ...newNav.slice(1),
       ];
+    }
+
+    // Purchasing -> lihat request barang baru
+    if (profile?.department === "Purchasing" || profile?.role === "admin") {
+      // Masukkan setelah "Request Barang Baru" atau di area Barang
+      const reqIndex = newNav.findIndex(
+        (item) => item.title === "Request Barang Baru"
+      );
+      newNav.splice(reqIndex + 1, 0, {
+        title: "Permintaan Barang",
+        url: "/item-requests",
+        icon: ArchiveRestore,
+      });
     }
 
     return markActive(newNav);
