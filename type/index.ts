@@ -1,3 +1,5 @@
+// src/type/index.ts
+
 export interface Approval {
   type: string;
   status: "pending" | "approved" | "rejected";
@@ -9,6 +11,7 @@ export interface Approval {
   processed_at?: string | null;
 }
 
+// REVISI: Tambahkan field untuk integrasi Master Barang
 export interface Order {
   name: string;
   qty: string;
@@ -16,6 +19,9 @@ export interface Order {
   estimasi_harga: number;
   note: string;
   url: string;
+  // Field Baru
+  barang_id?: number | null;
+  part_number?: string | null;
 }
 
 export interface Attachment {
@@ -24,6 +30,7 @@ export interface Attachment {
   type?: "po" | "finance" | "bast";
 }
 
+// ... (Sisa file tetap sama, tidak perlu diubah semua)
 export interface Discussion {
   user_id: string;
   user_name: string;
@@ -306,8 +313,6 @@ export interface ItemRequest {
   status: "pending" | "approved" | "rejected";
   admin_notes: string | null;
   processed_by: string | null;
-
-  // Join relations
   users_with_profiles?: {
     nama: string;
     email: string;
