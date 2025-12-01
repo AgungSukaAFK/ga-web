@@ -36,9 +36,19 @@ import {
   Search,
   Loader2,
   CreditCard,
+  Building2,
+  User,
+  Mail,
+  MapPin,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Approval, POItem, Profile, PurchaseOrderListItem } from "@/type";
+import {
+  Approval,
+  POItem,
+  Profile,
+  PurchaseOrderListItem,
+  StoredVendorDetails,
+} from "@/type";
 import * as XLSX from "xlsx";
 import {
   Select,
@@ -47,6 +57,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { LIMIT_OPTIONS } from "@/type/enum";
 
 const STATUS_OPTIONS = [
@@ -59,19 +77,95 @@ const STATUS_OPTIONS = [
   "Ordered",
 ];
 
-// --- TAMBAHKAN KONSTANTA BARU ---
 const PAYMENT_TERM_OPTIONS = [
   { label: "Semua Jenis", value: "all" },
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
 ];
-// --- AKHIR TAMBAHAN ---
 
 const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
 
-// ==================================================================
-// KOMPONEN ANAK YANG BERISI SEMUA LOGIKA
-// ==================================================================
+// --- Komponen Modal Detail Vendor ---
+function VendorDetailModal({
+  isOpen,
+  onClose,
+  vendor,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  vendor: StoredVendorDetails | null;
+}) {
+  if (!vendor) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold">
+            Informasi Vendor
+          </DialogTitle>
+          <DialogDescription>
+            Detail lengkap vendor yang dipilih.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Nama Vendor
+            </label>
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+              <span className="font-semibold text-base">
+                {vendor.nama_vendor}
+              </span>
+            </div>
+            {vendor.kode_vendor && (
+              <Badge variant="outline" className="w-fit mt-1">
+                {vendor.kode_vendor}
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Kontak Person
+            </label>
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-primary" />
+              <span>{vendor.contact_person || "-"}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Email
+            </label>
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-primary" />
+              <span>{vendor.email || "-"}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+              Alamat
+            </label>
+            <div className="flex items-start gap-2">
+              <MapPin className="h-4 w-4 text-primary mt-1" />
+              <span className="whitespace-pre-wrap text-sm">
+                {vendor.alamat || "-"}
+              </span>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Tutup</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PurchaseOrderPageContent() {
   const [dataPO, setDataPO] = useState<PurchaseOrderListItem[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -80,6 +174,11 @@ function PurchaseOrderPageContent() {
   const [isExporting, setIsExporting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
+
+  // State untuk Modal Vendor
+  const [selectedVendor, setSelectedVendor] =
+    useState<StoredVendorDetails | null>(null);
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -96,10 +195,7 @@ function PurchaseOrderPageContent() {
   const startDate = searchParams.get("start_date") || "";
   const endDate = searchParams.get("end_date") || "";
   const paymentFilter = searchParams.get("payment_status") || "";
-
-  // --- TAMBAHKAN STATE FILTER BARU ---
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
-  // --- AKHIR TAMBAHAN ---
 
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
@@ -159,7 +255,7 @@ function PurchaseOrderPageContent() {
           startDate || null,
           endDate || null,
           paymentFilter || null,
-          paymentTermFilter || null // <-- KIRIM PARAMETER BARU
+          paymentTermFilter || null
         );
 
         setDataPO(data || []);
@@ -184,7 +280,7 @@ function PurchaseOrderPageContent() {
     startDate,
     endDate,
     paymentFilter,
-    paymentTermFilter, // <-- TAMBAHKAN DEPENDENCY BARU
+    paymentTermFilter,
   ]);
 
   useEffect(() => {
@@ -208,26 +304,32 @@ function PurchaseOrderPageContent() {
     });
   };
 
+  const handleVendorClick = (vendorDetails: StoredVendorDetails) => {
+    setSelectedVendor(vendorDetails);
+    setIsVendorModalOpen(true);
+  };
+
+  // ... (Function handleDownloadExcel logic sama seperti sebelumnya) ...
   const handleDownloadExcel = async () => {
     if (!userProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
+      // REVISI: Tambahkan vendor_details ke select
       let query = s.from("purchase_orders").select(
         `
-          kode_po, status, total_price, company_code, created_at,
-          items, approvals, payment_term,
-          users_with_profiles!user_id (nama),
-          material_requests!mr_id (
-            kode_mr,
-            users_with_profiles!userid (nama)
-          )
-        `
+            kode_po, status, total_price, company_code, created_at,
+            items, approvals, payment_term, vendor_details,
+            users_with_profiles!user_id (nama),
+            material_requests!mr_id (
+              kode_mr,
+              users_with_profiles!userid (nama)
+            )
+          `
       );
 
       if (searchTerm) {
-        // --- AWAL PERBAIKAN ---
         const { data: matchingMRs } = await s
           .from("material_requests")
           .select("id")
@@ -236,12 +338,16 @@ function PurchaseOrderPageContent() {
         const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
         const searchTermLike = `"%${searchTerm}%"`;
         let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
+        // Tambahkan pencarian Vendor di Excel juga
+        orFilter += `,vendor_details->>nama_vendor.ilike.${searchTermLike}`;
+        orFilter += `,vendor_details->>kode_vendor.ilike.${searchTermLike}`;
+
         if (matchingMrIds.length > 0) {
           orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
         }
         query = query.or(orFilter);
-        // --- AKHIR PERBAIKAN ---
       }
+      // ... (filter lain sama) ...
       if (statusFilter) query = query.eq("status", statusFilter);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
@@ -254,12 +360,9 @@ function PurchaseOrderPageContent() {
       } else if (paymentFilter === "unpaid") {
         query = query.not("approvals", "cs", paymentApprovalObject);
       }
-
-      // --- TAMBAHKAN LOGIKA FILTER INI DI EXCEL ---
       if (paymentTermFilter) {
         query = query.ilike("payment_term", `%${paymentTermFilter}%`);
       }
-      // --- AKHIR TAMBAHAN ---
 
       if (companyFilter) query = query.eq("company_code", companyFilter);
       if (userProfile.company && userProfile.company !== "LOURDES") {
@@ -273,7 +376,7 @@ function PurchaseOrderPageContent() {
       if (error) throw error;
       if (!data || data.length === 0) {
         toast.warning("Tidak ada data PO untuk diekspor sesuai filter.");
-        setIsExporting(false); // Pastikan setIsExporting(false) ada di sini
+        setIsExporting(false);
         return;
       }
 
@@ -288,11 +391,12 @@ function PurchaseOrderPageContent() {
         const basePoInfo = {
           "Kode PO": po.kode_po,
           "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
+          Vendor: po.vendor_details?.nama_vendor || "N/A", // Tambah Kolom Vendor
           "Requester MR":
             po.material_requests?.users_with_profiles?.nama || "N/A",
           Status: po.status,
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
-          "Jenis Pembayaran": po.payment_term || "N/A", // <-- TAMBAHKAN KOLOM INI
+          "Jenis Pembayaran": po.payment_term || "N/A",
           "Total Harga PO": po.total_price,
           "Pembuat PO": po.users_with_profiles?.nama || "N/A",
           Perusahaan: po.company_code,
@@ -367,7 +471,7 @@ function PurchaseOrderPageContent() {
               <div className="relative flex-grow">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
-                  placeholder="Cari Kode PO, Kode MR..."
+                  placeholder="Cari Kode PO, Nama Vendor, Kode MR..."
                   className="pl-10"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
@@ -389,6 +493,7 @@ function PurchaseOrderPageContent() {
             </div>
 
             <div className="p-4 border rounded-lg bg-muted/50">
+              {/* ... (Filter Components tetap sama) ... */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Status PO</label>
@@ -437,7 +542,6 @@ function PurchaseOrderPageContent() {
                   </Select>
                 </div>
 
-                {/* --- TAMBAHKAN BLOK FILTER BARU INI --- */}
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">
                     Jenis Pembayaran
@@ -463,7 +567,6 @@ function PurchaseOrderPageContent() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* --- AKHIR TAMBAHAN --- */}
 
                 {userProfile?.company === "LOURDES" && (
                   <div className="flex flex-col gap-2">
@@ -551,7 +654,8 @@ function PurchaseOrderPageContent() {
                 <TableRow>
                   <TableHead>Kode PO</TableHead>
                   <TableHead>Ref. Kode MR</TableHead>
-                  <TableHead>Requester MR</TableHead>
+                  {/* REVISI: Ganti Requester MR dengan Vendor */}
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
                   <TableHead>Status PO</TableHead>
@@ -583,10 +687,21 @@ function PurchaseOrderPageContent() {
                       <TableCell>
                         {po.material_requests?.kode_mr || "N/A"}
                       </TableCell>
+
+                      {/* REVISI: Kolom Vendor Clickable */}
                       <TableCell>
-                        {po.material_requests?.users_with_profiles?.nama ||
-                          "N/A"}
+                        {po.vendor_details ? (
+                          <button
+                            onClick={() => handleVendorClick(po.vendor_details)}
+                            className="text-primary hover:underline font-medium text-left"
+                          >
+                            {po.vendor_details.nama_vendor}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
+
                       <TableCell>
                         {po.users_with_profiles?.nama || "N/A"}
                       </TableCell>
@@ -636,6 +751,7 @@ function PurchaseOrderPageContent() {
             </Table>
           </div>
         </div>
+        {/* ... (Pagination tetap sama) ... */}
         <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Tampilkan</span>
@@ -671,13 +787,17 @@ function PurchaseOrderPageContent() {
           onClose={() => setIsModalOpen(false)}
         />
       )}
+
+      {/* REVISI: Render Modal Vendor */}
+      <VendorDetailModal
+        isOpen={isVendorModalOpen}
+        onClose={() => setIsVendorModalOpen(false)}
+        vendor={selectedVendor}
+      />
     </>
   );
 }
 
-// ==================================================================
-// KOMPONEN INDUK YANG MEMBUNGKUS DENGAN <Suspense>
-// ==================================================================
 export default function PurchaseOrderPage() {
   return (
     <Suspense

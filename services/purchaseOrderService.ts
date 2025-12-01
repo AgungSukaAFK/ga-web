@@ -44,14 +44,15 @@ export const fetchPurchaseOrders = async (
   startDate: string | null,
   endDate: string | null,
   paymentFilter: string | null,
-  paymentTermFilter: string | null // <-- Parameter dari request terakhir Anda
+  paymentTermFilter: string | null
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
+  // REVISI: Tambahkan vendor_details ke select
   let query = supabase.from("purchase_orders").select(
     `
-      id, kode_po, status, total_price, created_at, company_code, approvals,
+      id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details,
       users_with_profiles!user_id (nama), 
       material_requests!mr_id (
         kode_mr,
@@ -62,36 +63,33 @@ export const fetchPurchaseOrders = async (
   );
 
   if (searchQuery) {
-    // --- AWAL PERBAIKAN ---
-
     // 1. Cari MR ID yang cocok terlebih dahulu
-    //    Kita tidak bisa join di .or(), jadi kita query ID-nya secara terpisah.
     const { data: matchingMRs } = await supabase
       .from("material_requests")
       .select("id")
-      .ilike("kode_mr", `%${searchQuery}%`); // .ilike() standar pakai %
+      .ilike("kode_mr", `%${searchQuery}%`);
 
     const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
 
-    // 2. Bungkus search term dengan "%" dan tanda kutip ganda "..."
+    // 2. Bungkus search term
     const searchTerm = `"%${searchQuery}%"`;
 
     // 3. Bangun string filter .or()
+    // REVISI: Tambahkan pencarian ke vendor_details (JSONB)
     let orFilter = `kode_po.ilike.${searchTerm},status.ilike.${searchTerm}`;
 
-    // 4. HANYA tambahkan filter 'mr_id.in' jika kita menemukan MR yang cocok
+    // Tambahkan pencarian Nama Vendor & Kode Vendor di dalam JSONB
+    orFilter += `,vendor_details->>nama_vendor.ilike.${searchTerm}`;
+    orFilter += `,vendor_details->>kode_vendor.ilike.${searchTerm}`;
+
     if (matchingMrIds.length > 0) {
       orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
     }
 
-    // 5. Terapkan filter .or()
-    //    Filter nama requester (relasi bertingkat) DIHAPUS dari .or() karena terlalu kompleks.
     query = query.or(orFilter);
-
-    // --- AKHIR PERBAIKAN ---
   }
 
-  // Terapkan filter baru
+  // ... (Sisa kode filter sama seperti sebelumnya)
   if (statusFilter) {
     query = query.eq("status", statusFilter);
   }
@@ -115,12 +113,10 @@ export const fetchPurchaseOrders = async (
     query = query.not("approvals", "cs", paymentApprovalObject);
   }
 
-  // Filter jenis pembayaran (dari request terakhir Anda)
   if (paymentTermFilter) {
     query = query.ilike("payment_term", `%${paymentTermFilter}%`);
   }
 
-  // Terapkan filter company_code
   if (company_code && company_code !== "LOURDES") {
     query = query.eq("company_code", company_code);
   }
@@ -139,16 +135,13 @@ export const fetchPurchaseOrders = async (
   const data =
     rawData?.map((po: any) => ({
       ...po,
-      // Handle PO creator
       users_with_profiles: Array.isArray(po.users_with_profiles)
         ? po.users_with_profiles[0] ?? null
         : po.users_with_profiles,
-      // Handle MR relation
       material_requests: Array.isArray(po.material_requests)
         ? po.material_requests[0]
           ? {
               ...po.material_requests[0],
-              // Handle nested MR requester
               users_with_profiles: Array.isArray(
                 po.material_requests[0].users_with_profiles
               )
@@ -159,7 +152,6 @@ export const fetchPurchaseOrders = async (
         : po.material_requests
         ? {
             ...po.material_requests,
-            // Handle nested MR requester
             users_with_profiles: Array.isArray(
               po.material_requests.users_with_profiles
             )
@@ -172,6 +164,7 @@ export const fetchPurchaseOrders = async (
   return { data: data as PurchaseOrderListItem[], count };
 };
 
+// ... (Sisa fungsi export lainnya tetap sama: fetchApprovedMaterialRequests, fetchMaterialRequestById, generatePoCode, dll)
 export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
   let query = supabase
     .from("material_requests")
@@ -179,8 +172,6 @@ export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
     .eq("status", "Waiting PO");
 
   if (searchQuery) {
-    // --- PERBAIKI FILTER .OR() DI SINI JUGA ---
-    // Gunakan "%" dan bungkus dengan "..."
     const searchTerm = `"%${searchQuery.trim()}%"`;
     query = query.or(
       `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`
