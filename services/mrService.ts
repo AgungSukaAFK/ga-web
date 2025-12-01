@@ -9,6 +9,7 @@ const supabase = createClient();
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
   "Human Resource": "HR",
+  "Human Resources": "HR",
   Marketing: "MKT",
   Produksi: "PROD",
   K3: "HSE",
