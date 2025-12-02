@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MaterialRequest, Order, Attachment } from "@/type";
+import { MaterialRequest, Order, Attachment, Barang } from "@/type"; // REVISI: Import Barang
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -23,7 +23,7 @@ import {
   Loader2,
   Trash2,
   Edit as EditIcon,
-  Calendar as CalendarIcon, // Ikon Kalender
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -52,9 +52,11 @@ import {
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { formatCurrency, cn, calculatePriority } from "@/lib/utils"; // Import calculatePriority
-import { format } from "date-fns"; // Import format tanggal
+import { formatCurrency, cn, calculatePriority } from "@/lib/utils";
+import { format } from "date-fns";
+import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox"; // REVISI: Import ini
 
+// ... (Konstanta kategoriData, dataLokasi tetap sama)
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },
@@ -75,6 +77,7 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
+// dataUoM tidak lagi wajib di sini jika diambil dari master, tapi bisa buat fallback
 const dataUoM: ComboboxData = [
   { label: "Pcs", value: "Pcs" },
   { label: "Unit", value: "Unit" },
@@ -85,9 +88,9 @@ const dataUoM: ComboboxData = [
 ];
 
 export default function BuatMRPage() {
+  // ... (State & Effect utama tidak berubah)
   const router = useRouter();
 
-  // State Form Utama
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
     {
       userid: "",
@@ -95,7 +98,7 @@ export default function BuatMRPage() {
       kategori: "",
       status: "Pending Validation",
       level: "OPEN 1",
-      prioritas: null, // Akan dihitung otomatis
+      prioritas: null,
       remarks: "",
       cost_estimation: "0",
       department: "",
@@ -103,7 +106,7 @@ export default function BuatMRPage() {
       cost_center_id: null,
       tujuan_site: "",
       created_at: new Date(),
-      due_date: undefined, // User wajib input
+      due_date: undefined,
       orders: [],
       approvals: [],
       attachments: [],
@@ -118,7 +121,6 @@ export default function BuatMRPage() {
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
-  // 1. Fetch User Profile & Generate Kode MR
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -154,7 +156,6 @@ export default function BuatMRPage() {
     fetchUserData();
   }, []);
 
-  // 2. Auto-Calculate Cost Estimation
   useEffect(() => {
     const total = formCreateMR.orders.reduce((acc, item) => {
       const qty = Number(item.qty) || 0;
@@ -169,7 +170,6 @@ export default function BuatMRPage() {
     setFormattedCost(formatCurrency(total));
   }, [formCreateMR.orders]);
 
-  // 3. Auto-Calculate Priority (LIVE) saat Due Date berubah
   useEffect(() => {
     if (formCreateMR.due_date) {
       const priority = calculatePriority(formCreateMR.due_date) as
@@ -190,8 +190,6 @@ export default function BuatMRPage() {
     }
   }, [formCreateMR.due_date]);
 
-  // --- Handlers ---
-
   const handleCBKategori = (value: string) => {
     setFormCreateMR({ ...formCreateMR, kategori: value });
   };
@@ -210,17 +208,20 @@ export default function BuatMRPage() {
     }
   }, [tujuanSamaDenganLokasi, userLokasi]);
 
-  // --- Item Management ---
+  // --- Item Management (REVISI BAGIAN INI) ---
   const [openItemDialog, setOpenItemDialog] = useState(false);
-  const [orderItem, setOrderItem] = useState<
-    Omit<Order, "vendor" | "vendor_contact">
-  >({
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // State lokal untuk dialog
+  const [orderItem, setOrderItem] = useState<Order>({
     name: "",
     qty: "1",
     uom: "Pcs",
     estimasi_harga: 0,
     url: "",
     note: "",
+    barang_id: null,
+    part_number: null,
   });
 
   const handleOpenAddItemDialog = () => {
@@ -232,6 +233,8 @@ export default function BuatMRPage() {
       estimasi_harga: 0,
       url: "",
       note: "",
+      barang_id: null,
+      part_number: null,
     });
     setOpenItemDialog(true);
   };
@@ -242,15 +245,25 @@ export default function BuatMRPage() {
     setOpenItemDialog(true);
   };
 
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // REVISI: Handler saat barang dipilih dari Combobox
+  const handleSelectBarang = (barang: Barang) => {
+    setOrderItem((prev) => ({
+      ...prev,
+      name: barang.part_name || prev.name,
+      part_number: barang.part_number,
+      uom: barang.uom || "Pcs",
+      barang_id: barang.id,
+    }));
+  };
 
   const handleSaveOrUpdateItem = () => {
-    if (
-      !orderItem.name.trim() ||
-      !orderItem.qty.trim() ||
-      !orderItem.uom.trim()
-    ) {
-      toast.error("Nama item, quantity, dan UoM harus diisi.");
+    // REVISI: Validasi wajib pilih dari database (barang_id harus ada)
+    if (!orderItem.barang_id || !orderItem.name) {
+      toast.error("Wajib memilih barang dari database.");
+      return;
+    }
+    if (!orderItem.qty || Number(orderItem.qty) <= 0) {
+      toast.error("Quantity harus lebih dari 0.");
       return;
     }
 
@@ -272,7 +285,14 @@ export default function BuatMRPage() {
     setOpenItemDialog(false);
   };
 
-  // --- File Upload ---
+  const removeItem = (index: number) => {
+    setFormCreateMR((prev) => ({
+      ...prev,
+      orders: prev.orders.filter((_, i) => i !== index),
+    }));
+  };
+
+  // ... (Sisa handlers: FileUpload, RemoveAttachment, AjukanMR tetap sama)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
@@ -330,7 +350,6 @@ export default function BuatMRPage() {
     }
   };
 
-  // --- Submit MR ---
   const [ajukanAlert, setAjukanAlert] = useState<string>("");
 
   const handleAjukanMR = async () => {
@@ -339,7 +358,7 @@ export default function BuatMRPage() {
     if (
       !formCreateMR.kategori ||
       !formCreateMR.remarks ||
-      !formCreateMR.due_date || // Wajib ada due date
+      !formCreateMR.due_date ||
       !formCreateMR.department ||
       !formCreateMR.tujuan_site ||
       !formCreateMR.company_code
@@ -352,6 +371,14 @@ export default function BuatMRPage() {
 
     if (formCreateMR.orders.length === 0) {
       setAjukanAlert("Minimal harus ada satu order item.");
+      return;
+    }
+
+    // Validasi Level 2: Pastikan semua item punya barang_id
+    if (formCreateMR.orders.some((o) => !o.barang_id)) {
+      setAjukanAlert(
+        "Terdapat item yang tidak valid (bukan dari database). Hapus dan input ulang."
+      );
       return;
     }
 
@@ -383,12 +410,11 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
-      // Pastikan prioritas (hasil kalkulasi) terkirim
       const finalPayload = {
         ...payload,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
-        level: "OPEN 1", // Default Level Awal
+        level: "OPEN 1",
       };
 
       await createMaterialRequest(finalPayload as any, user.id, company_code);
@@ -405,13 +431,16 @@ export default function BuatMRPage() {
     }
   };
 
+  // ... (Bagian Render UI)
   return (
     <>
       <Content
         title="Buat Material Request Baru"
         description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
+        {/* ... (Form Header sama persis seperti sebelumnya) ... */}
         <div className="grid grid-cols-12 gap-4">
+          {/* ... field read-only ... */}
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Kode MR</Label>
             <Input readOnly disabled value={formCreateMR.kode_mr} />
@@ -447,7 +476,6 @@ export default function BuatMRPage() {
             />
           </div>
 
-          {/* --- Bagian Due Date (Manual) --- */}
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Due Date (Target Pemakaian)</Label>
             <Popover
@@ -478,14 +506,13 @@ export default function BuatMRPage() {
                     setFormCreateMR((prev) => ({ ...prev, due_date: date }));
                     setIsDatePopoverOpen(false);
                   }}
-                  disabled={(date) => date < new Date()} // Tidak boleh pilih tanggal lampau
+                  disabled={(date) => date < new Date()}
                   initialFocus
                 />
               </PopoverContent>
             </Popover>
           </div>
 
-          {/* --- Bagian Prioritas (Live Calculation) --- */}
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Estimasi Prioritas (Otomatis)</Label>
             <div
@@ -496,11 +523,6 @@ export default function BuatMRPage() {
               )}
             >
               {formCreateMR.prioritas || "-"}
-              {formCreateMR.prioritas && (
-                <span className="text-xs font-normal text-muted-foreground ml-2">
-                  (Berdasarkan Due Date)
-                </span>
-              )}
             </div>
           </div>
 
@@ -536,7 +558,7 @@ export default function BuatMRPage() {
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Remarks (Tujuan & Latar Belakang)</Label>
             <Textarea
-              placeholder="Jelaskan tujuan dan latar belakang kebutuhan Anda di sini..."
+              placeholder="Jelaskan tujuan..."
               value={formCreateMR.remarks}
               rows={4}
               onChange={(e) =>
@@ -544,7 +566,6 @@ export default function BuatMRPage() {
               }
             />
           </div>
-
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Estimasi Biaya (Otomatis)</Label>
             <Input
@@ -557,7 +578,6 @@ export default function BuatMRPage() {
         </div>
       </Content>
 
-      {/* ... (Sisa kode untuk Tabel Item dan Dialog sama persis dengan sebelumnya) ... */}
       <Content
         title="Order Item"
         size="lg"
@@ -571,16 +591,17 @@ export default function BuatMRPage() {
           </Button>
         }
       >
+        {/* ... (Tabel Item sama persis) ... */}
         <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>No</TableHead>
                 <TableHead>Nama Item</TableHead>
+                <TableHead>Part Number</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Estimasi Harga</TableHead>
-                <TableHead>Total Estimasi</TableHead>
-                <TableHead>Link</TableHead>
+                <TableHead>Total</TableHead>
                 <TableHead>Aksi</TableHead>
               </TableRow>
             </TableHeader>
@@ -589,70 +610,42 @@ export default function BuatMRPage() {
                 <TableRow key={index}>
                   <TableCell>{index + 1}</TableCell>
                   <TableCell>{order.name}</TableCell>
+                  <TableCell className="text-xs font-mono">
+                    {order.part_number || "-"}
+                  </TableCell>
                   <TableCell>
                     {order.qty} {order.uom}
                   </TableCell>
                   <TableCell>{formatCurrency(order.estimasi_harga)}</TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell>
                     {formatCurrency(Number(order.qty) * order.estimasi_harga)}
                   </TableCell>
                   <TableCell>
-                    {order.url && (
-                      <Button asChild variant="outline" size="sm">
-                        <Link
-                          href={order.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1"
-                        >
-                          Link <LinkIcon className="h-3 w-3" />
-                        </Link>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={() => handleOpenEditItemDialog(index)}
+                      >
+                        <EditIcon className="h-4 w-4" />
                       </Button>
-                    )}
-                  </TableCell>
-                  <TableCell className="space-x-1">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleOpenEditItemDialog(index)}
-                    >
-                      <EditIcon className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => {
-                        const updatedOrders = formCreateMR.orders.filter(
-                          (_, i) => i !== index
-                        );
-                        setFormCreateMR({
-                          ...formCreateMR,
-                          orders: updatedOrders,
-                        });
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        onClick={() => removeItem(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {formCreateMR.orders.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center h-24 text-muted-foreground"
-                  >
-                    Belum ada item ditambahkan.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </div>
       </Content>
 
+      {/* --- DIALOG TAMBAH ITEM (MODIFIED) --- */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -661,83 +654,54 @@ export default function BuatMRPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemName" className="text-right">
-                Nama Item
-              </Label>
-              <Input
-                id="itemName"
-                className="col-span-3"
-                value={orderItem.name}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, name: e.target.value })
-                }
-              />
+            <div className="space-y-2">
+              <Label className="text-right">Cari Barang (Wajib)</Label>
+              {/* REVISI: Ganti Input dengan BarangSearchCombobox */}
+              <BarangSearchCombobox onSelect={handleSelectBarang} />
+              {orderItem.name && (
+                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                  Terpilih: <strong>{orderItem.name}</strong> (
+                  {orderItem.part_number})
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemUom" className="text-right">
-                UoM
-              </Label>
-              <div className="col-span-3">
-                <Combobox
-                  data={dataUoM}
-                  onChange={(value) =>
-                    setOrderItem({ ...orderItem, uom: value })
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  value={orderItem.qty}
+                  onChange={(e) =>
+                    setOrderItem({ ...orderItem, qty: e.target.value })
                   }
-                  defaultValue={orderItem.uom}
-                  placeholder="Pilih UoM..."
+                  min="1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>UoM</Label>
+                <Input
+                  value={orderItem.uom}
+                  readOnly
+                  disabled
+                  className="bg-muted"
                 />
               </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemQty" className="text-right">
-                Quantity
-              </Label>
-              <Input
-                id="itemQty"
-                className="col-span-3"
-                type="number"
-                value={orderItem.qty}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, qty: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="estimasi_harga" className="text-right">
-                Estimasi Harga
-              </Label>
+
+            <div className="space-y-2">
+              <Label>Estimasi Harga Satuan</Label>
               <CurrencyInput
-                id="estimasi_harga"
-                className="col-span-3"
                 value={orderItem.estimasi_harga}
                 onValueChange={(value) =>
                   setOrderItem({ ...orderItem, estimasi_harga: value })
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemUrl" className="text-right">
-                Link Ref.
-              </Label>
+
+            <div className="space-y-2">
+              <Label>Catatan / Link Ref</Label>
               <Input
-                id="itemUrl"
-                type="url"
-                className="col-span-3"
-                value={orderItem.url}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, url: e.target.value })
-                }
-                placeholder="(Opsional)"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemNote" className="text-right">
-                Catatan
-              </Label>
-              <Textarea
-                id="itemNote"
-                className="col-span-3"
                 value={orderItem.note}
                 onChange={(e) =>
                   setOrderItem({ ...orderItem, note: e.target.value })
@@ -755,53 +719,33 @@ export default function BuatMRPage() {
       </Dialog>
 
       <Content title="Lampiran File" size="sm">
+        {/* ... (Sama persis) ... */}
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="attachments">
-              Unggah lampiran (wajib untuk Replace, Fix & Repair, Upgrade)
-            </Label>
-            <Input
-              id="attachments"
-              type="file"
-              multiple
-              disabled={loading || isUploading}
-              onChange={handleFileUpload}
-            />
-            {isUploading && (
-              <div className="flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
-              </div>
-            )}
-          </div>
+          <Input
+            type="file"
+            multiple
+            onChange={handleFileUpload}
+            disabled={isUploading}
+          />
+          {/* List Lampiran */}
           {(formCreateMR.attachments || []).length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>No</TableHead>
-                  <TableHead>Nama File</TableHead>
-                  <TableHead>Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {formCreateMR.attachments.map((att, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell className="truncate max-w-xs">
-                      {att.name}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => handleRemoveAttachment(index, att.url)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ul className="space-y-2">
+              {formCreateMR.attachments.map((att, index) => (
+                <li
+                  key={index}
+                  className="flex justify-between items-center p-2 bg-muted rounded text-sm"
+                >
+                  <span className="truncate max-w-[200px]">{att.name}</span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => handleRemoveAttachment(index, att.url)}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </Content>

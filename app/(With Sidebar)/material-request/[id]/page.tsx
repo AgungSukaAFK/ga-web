@@ -38,7 +38,7 @@ import {
   Layers,
   HelpCircle,
   CheckCheck,
-  Calendar as CalendarIcon, // Ikon Kalender
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,7 +50,7 @@ import {
   Approval,
   Discussion,
   Order,
-  User as Profile,
+  Profile,
   Attachment,
 } from "@/type";
 import {
@@ -58,7 +58,7 @@ import {
   formatDateFriendly,
   cn,
   formatDateWithTime,
-  calculatePriority, // IMPORT HELPER BARU
+  calculatePriority,
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
@@ -92,14 +92,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { MR_LEVELS } from "@/type/enum"; // IMPORT ENUM
+import { MR_LEVELS } from "@/type/enum";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover"; // IMPORT POPOVER
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"; // IMPORT CALENDAR
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
+import { processMrApproval } from "@/services/approvalService"; // IMPORT BARU
 
 // --- Data Konstanta ---
 const kategoriData: ComboboxData = [
@@ -192,7 +193,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           : [],
         approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
         orders: Array.isArray(mrData.orders) ? mrData.orders : [],
-        // Pastikan due_date adalah objek Date
         due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
@@ -228,8 +228,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [mrId]);
 
-  // --- LOGIKA BARU: Auto-Calculate Priority (LIVE) ---
-  // Jika due_date berubah (misal diedit), hitung ulang prioritas
+  // Auto-Calculate Priority (LIVE)
   useEffect(() => {
     if (mr?.due_date) {
       const newPriority = calculatePriority(mr.due_date);
@@ -293,7 +292,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     const updateData = {
       ...restOfData,
       cost_estimation: String(mr.cost_estimation),
-      // Simpan prioritas hasil hitungan dan tanggal baru
       prioritas: mr.prioritas,
       due_date: mr.due_date,
     };
@@ -318,6 +316,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // REVISI: Menggunakan processMrApproval dari service
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!mr || !currentUser) return;
 
@@ -328,64 +327,27 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return;
       }
     }
+
     setActionLoading(true);
-    if (myApprovalIndex === -1) {
-      toast.error("Anda tidak memiliki tugas persetujuan yang aktif.");
-      setActionLoading(false);
-      return;
-    }
-
-    const updatedApprovals = JSON.parse(JSON.stringify(mr.approvals));
-    updatedApprovals[myApprovalIndex].status = decision;
-    updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
-
-    let newMrStatus = mr.status;
-    const currentMrData = mr;
-
-    const dataToUpdate: any = {
-      approvals: updatedApprovals,
-      status: newMrStatus,
-      level: currentMrData.level,
-    };
-
-    if (decision === "rejected") {
-      newMrStatus = "Rejected";
-      dataToUpdate.status = newMrStatus;
-    } else if (decision === "approved") {
-      dataToUpdate.orders = currentMrData.orders;
-      dataToUpdate.cost_estimation = currentMrData.cost_estimation;
-      dataToUpdate.due_date = currentMrData.due_date;
-      dataToUpdate.prioritas = currentMrData.prioritas;
-
-      const isLastApproval = updatedApprovals.every(
-        (app: Approval) => app.status === "approved"
+    try {
+      await processMrApproval(
+        mr.id as any,
+        currentUser.id,
+        decision,
+        mr.approvals
       );
-      if (isLastApproval) {
-        newMrStatus = "Waiting PO";
-        dataToUpdate.status = newMrStatus;
-      }
-    }
 
-    const { error } = await supabase
-      .from("material_requests")
-      .update(dataToUpdate)
-      .eq("id", mr.id);
-
-    if (error) {
-      toast.error("Aksi gagal", { description: error.message });
-    } else {
       toast.success(
         `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
       );
       await fetchMrData();
+      setIsEditing(false);
+    } catch (err: any) {
+      toast.error("Aksi gagal", { description: err.message });
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false);
-    setIsEditing(false);
   };
-
-  // ... (Handlers untuk Item, Attachment, Close MR, dan UI Actions tidak berubah drastis, salin dari implementasi sebelumnya) ...
-  // Agar kode tidak terlalu panjang di chat, saya sertakan bagian Render Utama di bawah ini.
-  // Pastikan Anda menyalin logika handlers (handleItemChange, handleAttachmentUpload, dll) dari file sebelumnya jika belum ada.
 
   const handleItemChange = (
     index: number,
@@ -667,6 +629,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
       case "completed":
         return <Badge className="bg-green-500 text-white">Completed</Badge>;
+      case "po open": // REVISI: Badge baru
+      case "on process":
+        return <Badge className="bg-cyan-500 text-white">PO Open</Badge>;
       default:
         return <Badge>{status || "N/A"}</Badge>;
     }
@@ -804,7 +769,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               value={formatDateFriendly(mr.created_at)}
             />
 
-            {/* --- REVISI: Due Date & Prioritas Live --- */}
+            {/* --- Bagian Due Date (Manual) --- */}
             <div className="space-y-1">
               <Label>Due Date (Target)</Label>
               {isEditing ? (
@@ -863,9 +828,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </span>
               </div>
             </div>
-            {/* --- AKHIR REVISI --- */}
 
-            {/* ... (Info Level, Cost Center, dll sama seperti edit) ... */}
             <div className="space-y-1">
               <div className="flex items-center gap-1">
                 <Label>Level</Label>
@@ -977,7 +940,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   <TableHead className="w-[80px]">Qty</TableHead>
                   <TableHead className="w-[120px]">UoM</TableHead>
                   <TableHead>Estimasi Harga</TableHead>
-                  <TableHead>Total</TableHead>
+                  <TableHead>Total Estimasi</TableHead>
                   <TableHead>Catatan</TableHead>
                   <TableHead>Link</TableHead>
                   {isEditing && (
@@ -1447,16 +1410,24 @@ const InfoItem = ({
   icon: Icon,
   label,
   value,
+  isBlock = false, // Tambahkan prop isBlock
 }: {
   icon: React.ElementType;
   label: string;
-  value: string;
+  value: React.ReactNode; // Ubah tipe ke ReactNode untuk fleksibilitas
+  isBlock?: boolean;
 }) => (
-  <div className="flex items-start gap-3">
-    <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
-    <div>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="font-medium whitespace-pre-wrap">{value}</p>
+  <div
+    className={cn(
+      isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2 items-start"
+    )}
+  >
+    <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2 mt-0.5">
+      <Icon className="h-4 w-4 flex-shrink-0" />
+      {label}
+    </div>
+    <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap break-words">
+      {value}
     </div>
   </div>
 );

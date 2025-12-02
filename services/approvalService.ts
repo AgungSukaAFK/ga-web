@@ -1,7 +1,7 @@
 // src/services/approvalService.ts
 
 import { createClient } from "@/lib/supabase/client";
-import { MaterialRequest, PurchaseOrder } from "@/type"; // REVISI: Impor PurchaseOrder
+import { Approval, MaterialRequest, PurchaseOrder } from "@/type"; // REVISI: Impor PurchaseOrder
 
 const supabase = createClient();
 
@@ -153,4 +153,64 @@ export const fetchMyPendingPoApprovals = async (
   });
 
   return myTurnPOs as PurchaseOrder[];
+};
+
+export const processMrApproval = async (
+  mrId: number,
+  userId: string,
+  decision: "approved" | "rejected",
+  approvalsList: Approval[]
+) => {
+  // 1. Cari index approver saat ini
+  const myIndex = approvalsList.findIndex(
+    (a) => a.userid === userId && a.status === "pending"
+  );
+
+  if (myIndex === -1)
+    throw new Error("User tidak memiliki akses approval pada MR ini.");
+
+  // 2. Update status approver
+  const updatedApprovals = [...approvalsList];
+  updatedApprovals[myIndex] = {
+    ...updatedApprovals[myIndex],
+    status: decision,
+    processed_at: new Date().toISOString(),
+  };
+
+  // 3. Tentukan Status & Level MR Baru
+  let newStatus = "Pending Approval"; // Default
+  let newLevel = undefined; // Default tidak berubah
+
+  if (decision === "rejected") {
+    newStatus = "Rejected";
+  } else {
+    // Cek apakah ini approver terakhir
+    const isLastApprover = myIndex === approvalsList.length - 1;
+    const isAllApproved = updatedApprovals.every(
+      (a) => a.status === "approved"
+    );
+
+    if (isLastApprover && isAllApproved) {
+      newStatus = "Waiting PO";
+      newLevel = "OPEN 2"; // Level naik ke OPEN 2 (Menunggu PO SCM)
+    }
+  }
+
+  // 4. Update Database
+  const payload: any = {
+    approvals: updatedApprovals,
+    status: newStatus,
+  };
+
+  if (newLevel) {
+    payload.level = newLevel;
+  }
+
+  const { error } = await supabase
+    .from("material_requests")
+    .update(payload)
+    .eq("id", mrId);
+
+  if (error) throw error;
+  return { success: true, newStatus, newLevel };
 };

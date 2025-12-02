@@ -280,6 +280,8 @@ export const createPurchaseOrder = async (
     status: "Pending Validation" as const,
     approvals: [],
   };
+
+  // 1. Insert PO Baru
   const { data, error } = await supabase
     .from("purchase_orders")
     .insert([payload])
@@ -287,6 +289,23 @@ export const createPurchaseOrder = async (
     .single();
 
   if (error) throw error;
+
+  // 2. UPDATE STATUS & LEVEL MR (Logika Baru)
+  if (mr_id) {
+    const { error: mrError } = await supabase
+      .from("material_requests")
+      .update({
+        status: "On Process", // Menandakan sedang diproses PO (sebagian/full)
+        level: "OPEN 3A", // OPEN 3A: Menunggu Kirim (Default)
+      })
+      .eq("id", mr_id);
+
+    if (mrError) {
+      console.error("Gagal update status MR saat buat PO:", mrError);
+      // Kita tidak throw error di sini agar PO tetap terbuat, tapi log errornya.
+    }
+  }
+
   return data;
 };
 
@@ -400,5 +419,23 @@ export const closePoWithBast = async (id: number, attachments: any[]) => {
     .single();
 
   if (error) throw error;
+  return data;
+};
+
+export const markGoodsAsReceivedByGA = async (mrId: number) => {
+  const { data, error } = await supabase
+    .from("material_requests")
+    .update({
+      level: "OPEN 5", // Sesuai Enum: Tiba di WH (Belum Kirim ke Site)
+    })
+    .eq("id", mrId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating MR level:", error);
+    throw error;
+  }
+
   return data;
 };

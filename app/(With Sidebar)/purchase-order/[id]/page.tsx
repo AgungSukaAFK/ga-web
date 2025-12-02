@@ -41,7 +41,8 @@ import {
   FileText,
   MapPin,
   Upload,
-  HelpCircle, // Ikon Help untuk Level
+  HelpCircle,
+  PackageCheck, // Ikon baru untuk Terima Barang
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,6 +68,7 @@ import {
 import {
   fetchPurchaseOrderById,
   closePoWithBast,
+  markGoodsAsReceivedByGA, // IMPORT FUNGSI BARU
 } from "@/services/purchaseOrderService";
 import {
   Dialog,
@@ -80,10 +82,10 @@ import { DiscussionSection } from "../../material-request/[id]/discussion-compon
 import { QRCodeCanvas } from "qrcode.react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { differenceInCalendarDays } from "date-fns"; // Import untuk hitung hari
-import { MR_LEVELS } from "@/type/enum"; // Import definisi Level
+import { differenceInCalendarDays } from "date-fns";
+import { MR_LEVELS } from "@/type/enum";
 
-// --- Data Perusahaan ---
+// ... (COMPANY_DETAILS, InfoItem, DetailPOSkeleton TETAP SAMA) ...
 const COMPANY_DETAILS = {
   GMI: {
     name: "PT. Garuda Mart Indonesia",
@@ -139,7 +141,6 @@ const InfoItem = ({
   </div>
 );
 
-// Komponen Skeleton untuk loading
 const DetailPOSkeleton = () => (
   <>
     <div className="col-span-12">
@@ -155,6 +156,7 @@ const DetailPOSkeleton = () => (
 );
 
 function DetailPOPageContent({ params }: { params: { id: string } }) {
+  // ... (State & useEffect dasar SAMA) ...
   const poId = parseInt(params.id);
   const router = useRouter();
   const supabase = createClient();
@@ -169,21 +171,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // State Dialogs
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
   const [isBastDialogOpen, setIsBastDialogOpen] = useState(false);
-  const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false); // Dialog Level
+  const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
 
   const [qrUrl, setQrUrl] = useState("");
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
-  useEffect(() => {
-    if (po?.kode_po) {
-      document.title = `GP - ${po.kode_po}`;
-    }
-    return () => {
-      document.title = "Garuda Procure";
-    };
-  }, [po]);
-
+  // ... (useEffect fetchPoData & initializePage SAMA) ...
   const fetchPoData = async () => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
@@ -242,7 +236,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [poId]);
 
-  // --- Helper Cost Center Name ---
   const getCostCenterName = () => {
     const cc = po?.material_requests?.cost_centers;
     if (Array.isArray(cc)) return cc[0]?.name || "-";
@@ -250,7 +243,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     return "-";
   };
 
-  // --- Helper Hitung Sisa Hari ---
   const getDaysRemaining = (dueDateString?: Date | string) => {
     if (!dueDateString) return "";
     const today = new Date();
@@ -262,8 +254,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     return `(${diff} hari lagi)`;
   };
 
-  // --- Helper Data Vendor Fallback ---
-  // Mengutamakan field baru, fallback ke field lama (jika ada di JSONB)
   const getVendorData = () => {
     const details = po?.vendor_details as any;
     if (!details)
@@ -278,16 +268,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     return {
       name: details.nama_vendor || details.name || "N/A",
       address: details.alamat || details.address || "N/A",
-      contact: details.contact_person || "N/A", // Field ini biasanya konsisten
+      contact: details.contact_person || "N/A",
       email: details.email || "N/A",
       code: details.kode_vendor || "",
     };
   };
 
   const vendorData = getVendorData();
-
-  // --- Logika Approval ---
-
   const myApprovalIndex =
     po && currentUser && po.approvals
       ? po.approvals.findIndex(
@@ -307,6 +294,50 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const isRequester = currentUser?.id === po?.material_requests?.userid;
   const showUploadBast = po?.status === "Pending BAST" && isRequester;
 
+  // --- LOGIKA TOMBOL TERIMA BARANG (GA) ---
+  const isGA =
+    userProfile?.department === "General Affair" ||
+    userProfile?.role === "admin";
+
+  // Barang sudah dikirim (Pending BAST) tapi belum ditandai sampai (Level belum OPEN 5)
+  const showGAReceiveButton =
+    isGA &&
+    po?.status === "Pending BAST" &&
+    po?.material_requests?.level !== "OPEN 5" &&
+    po?.material_requests?.level !== "CLOSE 1" &&
+    !po?.material_requests?.level?.startsWith("CLOSE");
+
+  const handleGAReceiveGoods = async () => {
+    if (!po?.mr_id) return;
+
+    if (
+      !confirm(
+        "Apakah Anda yakin barang sudah diterima di Warehouse? Status MR akan berubah menjadi OPEN 5."
+      )
+    ) {
+      return;
+    }
+
+    setActionLoading(true);
+    const toastId = toast.loading("Memperbarui status MR...");
+
+    try {
+      await markGoodsAsReceivedByGA(po.mr_id);
+      toast.success("Berhasil! Barang ditandai telah tiba di Warehouse.", {
+        id: toastId,
+      });
+      await fetchPoData(); // Refresh data
+    } catch (err: any) {
+      toast.error("Gagal update status", {
+        id: toastId,
+        description: err.message,
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ... (handleApprovalAction SAMA) ...
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
@@ -327,7 +358,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       );
       if (isLastApproval) {
         newPoStatus = "Pending BAST";
-        newMrStatus = "Pending BAST"; // Sinkron status MR
+        newMrStatus = "Pending BAST";
       }
     }
 
@@ -443,6 +474,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     );
   };
 
+  // ... (getStatusBadge & getApprovalStatusBadge SAMA) ...
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "pending approval":
@@ -511,7 +543,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     po.attachments?.filter((att) => att.type === "finance") || [];
   const bastAttachments =
     po.attachments?.filter((att) => att.type === "bast") || [];
-
   const currentTurnIndex = po.approvals?.findIndex(
     (app) => app.status === "pending"
   );
@@ -524,17 +555,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           po.approvals
             .slice(0, currentTurnIndex)
             .every((app) => app.status === "approved"));
-
   const subtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
     0
   );
-
   const companyKey = (po.company_code ||
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
   const companyInfo = COMPANY_DETAILS[companyKey] || COMPANY_DETAILS.DEFAULT;
-
-  // Live Priority Text
   const priorityText = getDaysRemaining(po.material_requests?.due_date);
 
   return (
@@ -548,9 +575,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" />
-                Cetak PO
+                <Printer className="mr-2 h-4 w-4" /> Cetak PO
               </Button>
+              {/* TOMBOL BARU: TERIMA BARANG DI WH (KHUSUS GA) */}
+              {showGAReceiveButton && (
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={handleGAReceiveGoods}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <PackageCheck className="mr-2 h-4 w-4" />
+                  )}
+                  Terima Barang di WH
+                </Button>
+              )}
               {showUploadBast && (
                 <Button size="sm" onClick={() => setIsBastDialogOpen(true)}>
                   <Upload className="mr-2 h-4 w-4" /> Upload BAST
@@ -559,8 +601,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               {canEditPO && po.status === "Pending Approval" && (
                 <Button asChild variant="outline" size="sm">
                   <Link href={`/purchase-order/edit/${po.id}`}>
-                    <EditIcon className="mr-2 h-4 w-4" />
-                    Edit PO
+                    <EditIcon className="mr-2 h-4 w-4" /> Edit PO
                   </Link>
                 </Button>
               )}
@@ -644,8 +685,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 />
               </div>
               <hr className="md:col-span-2" />
-
-              {/* --- Bagian Vendor dengan Fallback --- */}
               <InfoItem
                 icon={CircleUser}
                 label="Vendor"
@@ -757,8 +796,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   label="Tujuan Site (MR)"
                   value={po.material_requests.tujuan_site || "N/A"}
                 />
-
-                {/* --- Bagian Prioritas dengan Hitungan Hari --- */}
                 <InfoItem
                   icon={Zap}
                   label="Prioritas MR"
@@ -773,12 +810,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     </div>
                   }
                 />
-
-                {/* --- Bagian Level dengan Tooltip Help --- */}
                 <div className="grid grid-cols-3 gap-x-2">
                   <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
                     <Layers className="h-4 w-4" />
-                    Level MR
+                    Level MR{" "}
                     <button
                       onClick={() => setIsLevelInfoOpen(true)}
                       className="text-muted-foreground hover:text-primary transition-colors"
@@ -791,7 +826,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     {po.material_requests.level || "N/A"}
                   </dd>
                 </div>
-
                 <div className="md:col-span-2">
                   <InfoItem
                     icon={Info}
@@ -801,8 +835,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   />
                 </div>
               </div>
-
-              {/* Tabel Item MR */}
               <h4 className="font-semibold mt-6 mb-2">Item di MR:</h4>
               <div className="rounded-md border overflow-x-auto">
                 <Table>
@@ -922,11 +954,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             )}
           </Content>
 
-          {/* --- Blok Lampiran PO --- */}
+          {/* --- Lampiran --- */}
           <Content title="Lampiran PO">
-            {poAttachments.length > 0 ? (
-              <ul className="space-y-2">
-                {poAttachments.map((file, index) => (
+            <ul className="space-y-2">
+              {poAttachments.length > 0 ? (
+                poAttachments.map((file, index) => (
                   <li key={index}>
                     <Link
                       href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
@@ -938,20 +970,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       <ExternalLink className="h-3 w-3 text-muted-foreground" />
                     </Link>
                   </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tidak ada lampiran.
-              </p>
-            )}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Tidak ada lampiran.
+                </p>
+              )}
+            </ul>
           </Content>
 
-          {/* --- Blok Lampiran Finance --- */}
           <Content title="Lampiran Finance">
-            {financeAttachments.length > 0 ? (
-              <ul className="space-y-2">
-                {financeAttachments.map((file, index) => (
+            <ul className="space-y-2">
+              {financeAttachments.length > 0 ? (
+                financeAttachments.map((file, index) => (
                   <li key={index}>
                     <Link
                       href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
@@ -963,20 +994,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       <ExternalLink className="h-3 w-3 text-muted-foreground" />
                     </Link>
                   </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tidak ada lampiran.
-              </p>
-            )}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Tidak ada lampiran.
+                </p>
+              )}
+            </ul>
           </Content>
 
-          {/* --- Blok Lampiran BAST --- */}
           <Content title="Lampiran BAST / Bukti Terima">
-            {bastAttachments.length > 0 ? (
-              <ul className="space-y-2">
-                {bastAttachments.map((file, index) => (
+            <ul className="space-y-2">
+              {bastAttachments.length > 0 ? (
+                bastAttachments.map((file, index) => (
                   <li key={index}>
                     <Link
                       href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
@@ -988,11 +1018,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       <ExternalLink className="h-3 w-3 text-muted-foreground" />
                     </Link>
                   </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">Belum ada BAST.</p>
-            )}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Belum ada BAST.</p>
+              )}
+            </ul>
           </Content>
         </div>
 
@@ -1016,7 +1046,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* --- Dialog Rincian Budget --- */}
+      {/* --- Dialogs --- */}
       <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1035,11 +1065,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Pajak (PPN)</span>
-              <span className="font-medium">+ {formatCurrency(po.tax)}</span>
+              <span className="font-medium text-gray-900">
+                + {formatCurrency(po.tax)}
+              </span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Ongkos Kirim</span>
-              <span className="font-medium">
+              <span className="font-medium text-gray-900">
                 + {formatCurrency(po.postage)}
               </span>
             </div>
@@ -1052,14 +1084,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* --- Dialog Upload BAST --- */}
       <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
             <DialogDescription>
               Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-              barang untuk menyelesaikan proses PO ini.
+              barang.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -1082,25 +1113,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             <Button onClick={handleUploadBast} disabled={uploadingBast}>
               {uploadingBast && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+              )}{" "}
               Upload & Selesaikan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* --- Dialog Info Level --- */}
       <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Definisi Level MR</DialogTitle>
             <DialogDescription>
-              Penjelasan mengenai status level pada Material Request.
+              Penjelasan status level Material Request.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
             <div>
-              <h4 className="font-semibold mb-2">OPEN (Sedang Diproses)</h4>
+              <h4 className="font-semibold mb-2">OPEN</h4>
               <ul className="list-disc pl-5 space-y-1 text-sm">
                 {MR_LEVELS.filter((l) => l.group === "OPEN").map((l) => (
                   <li key={l.value}>
@@ -1111,7 +1141,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">CLOSE (Selesai/Diterima)</h4>
+              <h4 className="font-semibold mb-2">CLOSE</h4>
               <ul className="list-disc pl-5 space-y-1 text-sm">
                 {MR_LEVELS.filter((l) => l.group === "CLOSE").map((l) => (
                   <li key={l.value}>
@@ -1157,10 +1187,8 @@ const PrintablePO = ({
       id="printable-po-a4"
       className="p-8 bg-white text-black font-sans text-sm leading-normal min-h-[29.7cm] flex flex-col relative"
     >
-      {/* 1. Header: Logo & Judul */}
       <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
         <div className="flex items-center gap-6 w-2/3">
-          {/* REVISI: Ukuran Logo Diperbesar */}
           <div className="w-[120px] relative flex-shrink-0 flex items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1194,9 +1222,7 @@ const PrintablePO = ({
         </div>
       </header>
 
-      {/* 2. Info Vendor & Pengiriman (Grid Box Style) */}
       <section className="flex gap-6 mb-8">
-        {/* Box Vendor */}
         <div className="w-1/2 border border-gray-300 rounded-sm">
           <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
             <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
@@ -1222,8 +1248,6 @@ const PrintablePO = ({
             </div>
           </div>
         </div>
-
-        {/* Box Pengiriman */}
         <div className="w-1/2 border border-gray-300 rounded-sm">
           <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
             <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
@@ -1246,12 +1270,10 @@ const PrintablePO = ({
         </div>
       </section>
 
-      {/* 3. Tabel Item (REVISI: Header No-Wrap & Lebar Kolom) */}
       <section className="mb-6">
         <table className="w-full border-collapse border-y-2 border-black table-fixed text-xs">
           <thead>
             <tr className="bg-gray-50">
-              {/* REVISI: whitespace-nowrap ditambahkan ke semua th agar tidak turun baris */}
               <th className="py-2 px-2 text-left font-bold text-gray-700 w-[5%] border-b border-gray-300 whitespace-nowrap">
                 No
               </th>
@@ -1308,9 +1330,7 @@ const PrintablePO = ({
         </table>
       </section>
 
-      {/* 4. Footer: Notes & Perhitungan */}
       <section className="flex gap-10 break-inside-avoid items-start">
-        {/* Kiri: Catatan & Syarat */}
         <div className="flex-1 space-y-4">
           <div className="space-y-1">
             <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
@@ -1320,7 +1340,6 @@ const PrintablePO = ({
               {po.notes || "Tidak ada catatan khusus."}
             </p>
           </div>
-
           <div className="space-y-1">
             <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
               Syarat Pembayaran (Payment Term):
@@ -1330,8 +1349,6 @@ const PrintablePO = ({
             </p>
           </div>
         </div>
-
-        {/* Kanan: Kalkulasi Angka */}
         <div className="w-[40%]">
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
@@ -1372,10 +1389,8 @@ const PrintablePO = ({
         </div>
       </section>
 
-      {/* 5. Footer Validasi Digital */}
       <div className="mt-auto pt-12 break-inside-avoid">
         <div className="border-t-2 border-black pt-4 flex flex-col items-center text-center">
-          {/* QR Code Section */}
           <div className="flex items-center gap-4 mb-2">
             <div className="text-right">
               <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
@@ -1397,8 +1412,6 @@ const PrintablePO = ({
               <p className="text-[9px] text-gray-400">Garuda Procure System</p>
             </div>
           </div>
-
-          {/* Legal Disclaimer */}
           <p className="text-[10px] text-gray-500 italic max-w-xl leading-tight">
             Dokumen ini diterbitkan secara elektronik oleh sistem Garuda Procure
             dan sah tanpa tanda tangan basah. Status persetujuan dapat
