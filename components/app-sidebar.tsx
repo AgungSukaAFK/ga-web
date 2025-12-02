@@ -1,3 +1,5 @@
+// components/app-sidebar.tsx
+
 "use client";
 
 import * as React from "react";
@@ -26,10 +28,9 @@ import {
   FileSearch2,
   PackageSearch,
   BadgeDollarSign,
-  DollarSign,
   Briefcase,
   PackagePlus,
-  ArchiveRestore, // Pastikan ikon ini sudah diimpor
+  ArchiveRestore,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -83,11 +84,6 @@ const data = {
       title: "Barang",
       url: "/barang",
       icon: Boxes,
-    },
-    {
-      title: "Request Barang Baru",
-      url: "/request-new-item",
-      icon: PackagePlus,
     },
     {
       title: "Vendor",
@@ -152,51 +148,66 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   );
 
   const mainNavItems = React.useMemo(() => {
-    const baseNav = data.navMain;
+    const baseNav = [...data.navMain];
 
-    let newNav = [...baseNav];
-    if (profile?.role === "approver") {
-      newNav = [
-        baseNav[0],
-        {
-          title: "Approval & Validation",
-          url: "/approval-validation",
-          icon: CheckCheck,
-        },
-        ...newNav.slice(1),
-      ];
+    // 1. Fitur Request Barang Baru (Requester)
+    const barangIndex = baseNav.findIndex((item) => item.title === "Barang");
+    if (barangIndex !== -1) {
+      baseNav.splice(barangIndex + 1, 0, {
+        title: "Request Barang Baru",
+        url: "/request-new-item",
+        icon: PackagePlus,
+      });
     }
 
-    // GA GM -> lihat cost center management
-    if (
-      profile?.department === "General Manager" ||
-      profile?.department === "General Affair"
-    ) {
-      newNav = [
-        newNav[0],
-        {
-          title: "Cost Center Management",
-          url: "/cost-center-management",
-          icon: BadgeDollarSign,
-        },
-        ...newNav.slice(1),
-      ];
-    }
-
-    // Purchasing -> lihat request barang baru
+    // 2. Fitur Incoming Requests (Purchasing/Admin)
     if (profile?.department === "Purchasing" || profile?.role === "admin") {
-      // Masukkan setelah "Request Barang Baru" atau di area Barang
-      const reqIndex = newNav.findIndex(
+      const reqIndex = baseNav.findIndex(
         (item) => item.title === "Request Barang Baru"
       );
-      newNav.splice(reqIndex + 1, 0, {
+      baseNav.splice(reqIndex + 1, 0, {
         title: "Permintaan Barang",
         url: "/item-requests",
         icon: ArchiveRestore,
       });
     }
 
-    return markActive(newNav);
+    // 3. Fitur Approval (Approver)
+    if (profile?.role === "approver") {
+      baseNav.splice(1, 0, {
+        title: "Approval & Validation",
+        url: "/approval-validation",
+        icon: CheckCheck,
+      });
+    }
+
+    // 4. Fitur Cost Center (GA / GM)
+    if (
+      profile?.department === "General Manager" ||
+      profile?.department === "General Affair"
+    ) {
+      baseNav.splice(1, 0, {
+        title: "Cost Center Management",
+        url: "/cost-center-management",
+        icon: BadgeDollarSign,
+      });
+    }
+
+    // 5. Fitur MR Management (Purchasing & GA)
+    // Jika bukan admin (admin sudah punya di navAdmin), tapi Purchasing/GA
+    if (
+      profile?.role !== "admin" &&
+      (profile?.department === "Purchasing" ||
+        profile?.department === "General Affair")
+    ) {
+      baseNav.push({
+        title: "MR Management",
+        url: "/mr-management",
+        icon: FileSearch2,
+      });
+    }
+
+    return markActive(baseNav);
   }, [profile, markActive]);
 
   return (
@@ -219,7 +230,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <NavMain label="Admin" items={markActive(data.navAdmin)} />
         )}
 
-        {/* FIX: Gunakan variabel yang sudah dihitung dengan useMemo */}
         <NavMain items={mainNavItems} />
 
         <NavMain label="About" items={markActive(data.navSecondary)} />
