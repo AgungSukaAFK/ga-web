@@ -1,3 +1,5 @@
+// src/app/(With Sidebar)/barang/edit/[id]/page.tsx
+
 "use client";
 
 import { Content } from "@/components/content";
@@ -33,19 +35,22 @@ export default function EditBarangPage({
   }, [id]);
 
   const handleSubmit = async () => {
+    // REVISI: Hapus pengecekan data.vendor
     if (
       data.part_name === "" ||
       data.part_number === "" ||
       data.category === "" ||
-      data.uom === "" ||
-      data.vendor === ""
+      data.uom === ""
     ) {
       toast.warning("Semua field harus diisi");
       return;
     }
 
     const s = createClient();
-    const { error } = await s.from("barang").update(data).eq("id", id);
+    // REVISI: Pastikan field 'vendor' tidak ikut di-update (jika masih ada di state data lama)
+    const { vendor, ...updatePayload } = data;
+
+    const { error } = await s.from("barang").update(updatePayload).eq("id", id);
     if (error) {
       toast.error("Gagal menyimpan perubahan");
       return;
@@ -123,14 +128,7 @@ export default function EditBarangPage({
               defaultValue={data?.uom}
             />
           </div>
-          <div className="space-y-2">
-            <Label>Vendor</Label>
-            <Input
-              onChange={handleInputChange}
-              name="vendor"
-              defaultValue={data?.vendor}
-            />
-          </div>
+          {/* Field Vendor DIHAPUS */}
         </div>
         <div className="flex justify-end mt-6">
           <Button onClick={handleSubmit}>Simpan Perubahan</Button>

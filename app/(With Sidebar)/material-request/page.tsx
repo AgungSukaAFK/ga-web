@@ -61,7 +61,7 @@ import {
   MR_LEVELS,
 } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
-import { fetchActiveCostCenters } from "@/services/mrService"; // Import service
+import { fetchActiveCostCenters } from "@/services/mrService";
 
 // --- Tipe Data ---
 import { MaterialRequestListItem } from "@/type";
@@ -102,14 +102,6 @@ const SORT_OPTIONS = [
   { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
   { label: "Due Date (Mendesak)", value: "due_date.asc" },
   { label: "Due Date (Lama)", value: "due_date.desc" },
-];
-
-const dataPrioritas: { label: string; value: string }[] = [
-  { label: "P0 (Sangat Mendesak)", value: "P0" },
-  { label: "P1 (Mendesak)", value: "P1" },
-  { label: "P2 (Standar)", value: "P2" },
-  { label: "P3 (Rendah)", value: "P3" },
-  { label: "P4 (Sangat Rendah)", value: "P4" },
 ];
 
 function MaterialRequestContent() {
@@ -222,7 +214,7 @@ function MaterialRequestContent() {
       const to = from + limit - 1;
 
       try {
-        // 1. REVISI QUERY: Tambah cost_centers(code)
+        // 1. Query Utama
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
@@ -233,11 +225,30 @@ function MaterialRequestContent() {
           { count: "exact" }
         );
 
-        // 2. Filter Pencarian & Standar
-        if (searchTerm)
-          query = query.or(
-            `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
-          );
+        // 2. LOGIKA PENCARIAN REVISI (2 Langkah)
+        // Ini untuk menghindari error "failed to parse logic tree" pada relasi
+        if (searchTerm) {
+          // Langkah A: Cari ID user yang namanya mengandung searchTerm
+          const { data: matchingUsers } = await s
+            .from("users_with_profiles")
+            .select("id")
+            .ilike("nama", `%${searchTerm}%`); // ilike = case insensitive
+
+          const userIds = matchingUsers?.map((u) => u.id) || [];
+
+          // Langkah B: Bangun filter .or()
+          // Format: kode_mr.ilike.%term%,remarks.ilike.%term%
+          let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+
+          // Jika ada user yang cocok, tambahkan pencarian by userid
+          if (userIds.length > 0) {
+            orFilter += `,userid.in.(${userIds.join(",")})`;
+          }
+
+          query = query.or(orFilter);
+        }
+
+        // Filter Lainnya
         if (statusFilter) query = query.eq("status", statusFilter);
         if (startDate) query = query.gte("created_at", startDate);
         if (endDate)
@@ -258,12 +269,10 @@ function MaterialRequestContent() {
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
-        // 4. REVISI LOGIC: Filter Company (Gantikan filter 'userid')
-        // "User biasa tetep bisa liat semua MR (company yg sama)"
+        // 4. Filter Company
         if (userProfile.company && userProfile.company !== "LOURDES") {
           query = query.eq("company_code", userProfile.company);
         }
-        // Jika Lourdes, otomatis bisa lihat semua (tidak perlu filter company_code)
 
         const [sortBy, sortOrder] = sortFilter.split(".");
         query = query
@@ -302,7 +311,7 @@ function MaterialRequestContent() {
     s,
     currentPage,
     limit,
-    searchTerm,
+    searchTerm, // Ini memicu fetch ulang saat searchTerm berubah
     statusFilter,
     startDate,
     endDate,
@@ -346,7 +355,6 @@ function MaterialRequestContent() {
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // REVISI QUERY EXCEL: Tambah cost_centers(code)
       let query = s.from("material_requests").select(`
           kode_mr, kategori, department, status, remarks, cost_estimation, 
           tujuan_site, company_code, created_at, due_date,
@@ -355,10 +363,21 @@ function MaterialRequestContent() {
           cost_centers (code)
         `);
 
-      if (searchTerm)
-        query = query.or(
-          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
-        );
+      // --- LOGIKA PENCARIAN EXCEL (SAMA DENGAN FETCH DATA) ---
+      if (searchTerm) {
+        const { data: matchingUsers } = await s
+          .from("users_with_profiles")
+          .select("id")
+          .ilike("nama", `%${searchTerm}%`);
+
+        const userIds = matchingUsers?.map((u) => u.id) || [];
+        let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+        if (userIds.length > 0) {
+          orFilter += `,userid.in.(${userIds.join(",")})`;
+        }
+        query = query.or(orFilter);
+      }
+
       if (statusFilter) query = query.eq("status", statusFilter);
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
@@ -374,7 +393,6 @@ function MaterialRequestContent() {
       if (maxEstimasi)
         query = query.lte("cost_estimation", Number(maxEstimasi));
 
-      // REVISI LOGIC EXCEL: Sama dengan tampilan tabel
       if (currentUser.company && currentUser.company !== "LOURDES") {
         query = query.eq("company_code", currentUser.company);
       }
@@ -397,7 +415,7 @@ function MaterialRequestContent() {
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
-          "Cost Center": mr.cost_centers?.code || "-", // Kolom Baru
+          "Cost Center": mr.cost_centers?.code || "-",
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
@@ -477,7 +495,7 @@ function MaterialRequestContent() {
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Cari Kode MR atau Remarks..."
+              placeholder="Cari Kode MR, Requester, Remarks..."
               className="pl-10"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -689,13 +707,12 @@ function MaterialRequestContent() {
 
       {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
-        {/* REVISI: Tambah min-w dan colSpan header */}
         <Table className="min-w-[1400px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
-              <TableHead>Cost Center</TableHead> {/* Kolom Baru */}
+              <TableHead>Cost Center</TableHead>
               <TableHead>Prioritas</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>

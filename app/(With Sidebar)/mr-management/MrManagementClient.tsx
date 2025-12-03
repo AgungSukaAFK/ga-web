@@ -34,7 +34,7 @@ import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
-import { fetchActiveCostCenters } from "@/services/mrService"; // Import service cost center
+import { fetchActiveCostCenters } from "@/services/mrService";
 
 // --- Konstanta untuk Filter ---
 const dataDepartment: ComboboxData = [
@@ -96,7 +96,7 @@ export function MrManagementClientContent() {
   const searchTerm = searchParams.get("search") || "";
   const statusFilter = searchParams.get("status") || "";
   const companyFilter = searchParams.get("company") || "";
-  const costCenterFilter = searchParams.get("cost_center") || "all"; // Filter baru
+  const costCenterFilter = searchParams.get("cost_center") || "all";
   const limit = Number(searchParams.get("limit") || 25);
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
@@ -198,17 +198,18 @@ export function MrManagementClientContent() {
         { count: "exact" }
       );
 
-      // Filter Pencarian
+      // Filter Pencarian (Updated: Tambah pencarian nama requester)
       if (searchTerm)
         query = query.or(
-          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%`
+          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,users_with_profiles.nama.ilike.%${searchTerm}%`
         );
+
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
 
-      // Filter Cost Center Baru
+      // Filter Cost Center
       if (costCenterFilter && costCenterFilter !== "all") {
         query = query.eq("cost_center_id", costCenterFilter);
       }
@@ -240,7 +241,6 @@ export function MrManagementClientContent() {
             users_with_profiles: Array.isArray(mr.users_with_profiles)
               ? mr.users_with_profiles[0] ?? null
               : mr.users_with_profiles,
-            // Ensure required fields from MaterialRequestListItem exist with safe defaults
             orders: Array.isArray((mr as any).orders) ? (mr as any).orders : [],
             approvals: Array.isArray((mr as any).approvals)
               ? (mr as any).approvals
@@ -263,7 +263,7 @@ export function MrManagementClientContent() {
     searchTerm,
     statusFilter,
     companyFilter,
-    costCenterFilter, // Dependency baru
+    costCenterFilter,
     limit,
     router,
     departmentFilter,
@@ -303,16 +303,19 @@ export function MrManagementClientContent() {
 
     try {
       let query = s.from("material_requests").select(`
-          kode_mr, kategori, department, status, remarks, cost_estimation, tujuan_site, company_code, created_at, due_date,
-          orders, 
+          kode_mr, kategori, department, status, remarks, cost_estimation, 
+          tujuan_site, company_code, created_at, due_date,
+          prioritas, level, orders, 
           users_with_profiles!userid (nama),
           cost_centers (code)
         `);
 
+      // Filter Pencarian Excel (Updated: Tambah pencarian nama requester)
       if (searchTerm)
         query = query.or(
-          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`
+          `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%,department.ilike.%${searchTerm}%,users_with_profiles.nama.ilike.%${searchTerm}%`
         );
+
       if (statusFilter) query = query.eq("status", statusFilter);
       if (companyFilter) query = query.eq("company_code", companyFilter);
       if (departmentFilter) query = query.eq("department", departmentFilter);
@@ -345,7 +348,7 @@ export function MrManagementClientContent() {
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           Kategori: mr.kategori,
-          "Cost Center": mr.cost_centers?.code || "-", // Kolom Baru di Excel
+          "Cost Center": mr.cost_centers?.code || "-",
           Departemen: mr.department,
           Tujuan: mr.tujuan_site,
           Status: mr.status,
@@ -412,7 +415,7 @@ export function MrManagementClientContent() {
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Cari Kode MR, Remarks, Departemen..."
+              placeholder="Cari Kode MR, Requester, Remarks, Departemen..."
               className="pl-10"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -532,7 +535,7 @@ export function MrManagementClientContent() {
               </Select>
             </div>
 
-            {/* 4. Filter Cost Center Baru */}
+            {/* Filter Cost Center */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Cost Center</label>
               <Select
@@ -602,7 +605,7 @@ export function MrManagementClientContent() {
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
-              <TableHead>Cost Center</TableHead> {/* Kolom Baru */}
+              <TableHead>Cost Center</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Departemen</TableHead>
               <TableHead>Tujuan Site</TableHead>

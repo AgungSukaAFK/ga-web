@@ -38,7 +38,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LIMIT_OPTIONS } from "@/type/enum";
 
-
 export function BarangClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -265,7 +264,6 @@ export function BarangClientContent() {
                 </SelectContent>
               </Select>
             </div>
-            {/* Tambahkan filter lain di sini jika perlu, misal 'vendor' */}
           </div>
         </div>
       </div>
@@ -279,7 +277,6 @@ export function BarangClientContent() {
               <TableHead>Part Name</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead>UoM</TableHead>
-              <TableHead>Vendor</TableHead>
               {canModify && <TableHead className="text-right">Aksi</TableHead>}
             </TableRow>
           </TableHeader>
@@ -287,7 +284,7 @@ export function BarangClientContent() {
             {loading || isPending ? (
               Array.from({ length: limit }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={canModify ? 7 : 6}>
+                  <TableCell colSpan={canModify ? 6 : 5}>
                     <Skeleton className="h-8 w-full" />
                   </TableCell>
                 </TableRow>
@@ -306,7 +303,6 @@ export function BarangClientContent() {
                   </TableCell>
                   <TableCell>{item.category}</TableCell>
                   <TableCell>{item.uom}</TableCell>
-                  <TableCell>{item.vendor}</TableCell>
                   {canModify && (
                     <TableCell className="text-right space-x-2">
                       <Button variant={"outline"} size={"sm"} asChild>
@@ -330,7 +326,7 @@ export function BarangClientContent() {
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={canModify ? 7 : 6}
+                  colSpan={canModify ? 6 : 5}
                   className="text-center h-24"
                 >
                   Tidak ada data barang yang ditemukan.
