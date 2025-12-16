@@ -162,6 +162,8 @@ export interface ApprovedMaterialRequest {
   kode_mr: string;
   remarks: string;
   department: string;
+  status: string; // REVISI: Added status
+  created_at: string; // REVISI: Added created_at
 }
 
 export interface Barang {

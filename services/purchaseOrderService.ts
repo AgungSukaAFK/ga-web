@@ -164,12 +164,13 @@ export const fetchPurchaseOrders = async (
   return { data: data as PurchaseOrderListItem[], count };
 };
 
-// ... (Sisa fungsi export lainnya tetap sama: fetchApprovedMaterialRequests, fetchMaterialRequestById, generatePoCode, dll)
-export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
+export const fetchApprovedMaterialRequests = async (
+  searchQuery?: string,
+  limit: number = 50
+) => {
   let query = supabase
     .from("material_requests")
-    .select("id, kode_mr, remarks, department")
-    .eq("status", "Waiting PO");
+    .select("id, kode_mr, remarks, department, status, created_at");
 
   if (searchQuery) {
     const searchTerm = `"%${searchQuery.trim()}%"`;
@@ -178,10 +179,12 @@ export const fetchApprovedMaterialRequests = async (searchQuery?: string) => {
     );
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   if (error) {
-    console.error("Error fetching approved material requests:", error);
+    console.error("Error fetching material requests for PO:", error);
     throw error;
   }
   return data as ApprovedMaterialRequest[];
