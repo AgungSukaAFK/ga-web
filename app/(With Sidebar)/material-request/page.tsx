@@ -50,7 +50,7 @@ import { PaginationComponent } from "@/components/pagination-components";
 import {
   formatCurrency,
   formatDateFriendly,
-  calculatePriority,
+  calculatePriority, // Masih dipakai untuk perhitungan internal (opsional) atau excel
   cn,
 } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -62,8 +62,6 @@ import {
 } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 import { fetchActiveCostCenters } from "@/services/mrService";
-
-// --- Tipe Data ---
 import { MaterialRequestListItem } from "@/type";
 
 // --- Konstanta untuk Filter ---
@@ -117,10 +115,9 @@ function MaterialRequestContent() {
   const [isExporting, setIsExporting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [currentUser, setCurrentUser] = useState<(AuthUser & Profile) | null>(
-    null
+    null,
   );
 
-  // State Filter Cost Center
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
 
   // --- State dari URL ---
@@ -133,13 +130,14 @@ function MaterialRequestContent() {
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
   const sortFilter = searchParams.get("sort") || "created_at.desc";
-  const prioritasFilter = searchParams.get("prioritas") || "";
   const levelFilter = searchParams.get("level") || "";
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
   const costCenterFilter = searchParams.get("cost_center") || "all";
 
-  // --- State untuk Input ---
+  // REVISI: Filter prioritas tetap dibaca dari URL jika ada, tapi UI-nya kita hilangkan
+  const prioritasFilter = searchParams.get("prioritas") || "";
+
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
@@ -165,16 +163,15 @@ function MaterialRequestContent() {
       }
       return params.toString();
     },
-    [searchParams]
+    [searchParams],
   );
 
-  // --- Load Cost Centers ---
   useEffect(() => {
     const loadCC = async () => {
       if (currentUser) {
         try {
           const ccData = await fetchActiveCostCenters(
-            currentUser.company || "LOURDES"
+            currentUser.company || "LOURDES",
           );
           const options = ccData.map((cc: any) => ({
             label: `${cc.code} - ${cc.name}`,
@@ -189,7 +186,6 @@ function MaterialRequestContent() {
     if (currentUser) loadCC();
   }, [currentUser]);
 
-  // --- Efek untuk Fetch Data MR ---
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -214,7 +210,6 @@ function MaterialRequestContent() {
       const to = from + limit - 1;
 
       try {
-        // 1. Query Utama
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date, 
@@ -222,25 +217,18 @@ function MaterialRequestContent() {
             users_with_profiles!userid (nama),
             cost_centers (code)
           `,
-          { count: "exact" }
+          { count: "exact" },
         );
 
-        // 2. LOGIKA PENCARIAN REVISI (2 Langkah)
-        // Ini untuk menghindari error "failed to parse logic tree" pada relasi
         if (searchTerm) {
-          // Langkah A: Cari ID user yang namanya mengandung searchTerm
           const { data: matchingUsers } = await s
             .from("users_with_profiles")
             .select("id")
-            .ilike("nama", `%${searchTerm}%`); // ilike = case insensitive
+            .ilike("nama", `%${searchTerm}%`);
 
           const userIds = matchingUsers?.map((u) => u.id) || [];
-
-          // Langkah B: Bangun filter .or()
-          // Format: kode_mr.ilike.%term%,remarks.ilike.%term%
           let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
 
-          // Jika ada user yang cocok, tambahkan pencarian by userid
           if (userIds.length > 0) {
             orFilter += `,userid.in.(${userIds.join(",")})`;
           }
@@ -248,7 +236,6 @@ function MaterialRequestContent() {
           query = query.or(orFilter);
         }
 
-        // Filter Lainnya
         if (statusFilter) query = query.eq("status", statusFilter);
         if (startDate) query = query.gte("created_at", startDate);
         if (endDate)
@@ -259,7 +246,6 @@ function MaterialRequestContent() {
         if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
         if (levelFilter) query = query.eq("level", levelFilter);
 
-        // 3. Filter Cost Center
         if (costCenterFilter && costCenterFilter !== "all") {
           query = query.eq("cost_center_id", costCenterFilter);
         }
@@ -269,7 +255,6 @@ function MaterialRequestContent() {
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
-        // 4. Filter Company
         if (userProfile.company && userProfile.company !== "LOURDES") {
           query = query.eq("company_code", userProfile.company);
         }
@@ -286,10 +271,10 @@ function MaterialRequestContent() {
           data?.map((mr: any) => ({
             ...mr,
             users_with_profiles: Array.isArray(mr.users_with_profiles)
-              ? mr.users_with_profiles[0] ?? null
+              ? (mr.users_with_profiles[0] ?? null)
               : mr.users_with_profiles,
             cost_centers: Array.isArray(mr.cost_centers)
-              ? mr.cost_centers[0] ?? null
+              ? (mr.cost_centers[0] ?? null)
               : mr.cost_centers,
             orders: Array.isArray(mr.orders) ? mr.orders : [],
             approvals: Array.isArray(mr.approvals) ? mr.approvals : [],
@@ -311,7 +296,7 @@ function MaterialRequestContent() {
     s,
     currentPage,
     limit,
-    searchTerm, // Ini memicu fetch ulang saat searchTerm berubah
+    searchTerm,
     statusFilter,
     startDate,
     endDate,
@@ -325,13 +310,12 @@ function MaterialRequestContent() {
     costCenterFilter,
   ]);
 
-  // Efek debounce pencarian
   useEffect(() => {
     const handler = setTimeout(() => {
       if (searchInput !== searchTerm) {
         startTransition(() => {
           router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
+            `${pathname}?${createQueryString({ search: searchInput })}`,
           );
         });
       }
@@ -339,16 +323,14 @@ function MaterialRequestContent() {
     return () => clearTimeout(handler);
   }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
-  // Handler untuk filter
   const handleFilterChange = (
-    updates: Record<string, string | number | undefined>
+    updates: Record<string, string | number | undefined>,
   ) => {
     startTransition(() => {
       router.push(`${pathname}?${createQueryString(updates)}`);
     });
   };
 
-  // Handler Download Excel
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
@@ -363,7 +345,6 @@ function MaterialRequestContent() {
           cost_centers (code)
         `);
 
-      // --- LOGIKA PENCARIAN EXCEL (SAMA DENGAN FETCH DATA) ---
       if (searchTerm) {
         const { data: matchingUsers } = await s
           .from("users_with_profiles")
@@ -463,7 +444,7 @@ function MaterialRequestContent() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Material Requests");
       XLSX.writeFile(
         workbook,
-        `Material_Requests_${new Date().toISOString().split("T")[0]}.xlsx`
+        `Material_Requests_${new Date().toISOString().split("T")[0]}.xlsx`,
       );
       toast.success("Data MR berhasil diunduh!");
     } catch (error: any) {
@@ -489,7 +470,6 @@ function MaterialRequestContent() {
       }
       className="col-span-12"
     >
-      {/* --- Filter Section --- */}
       <div className="flex flex-col gap-4 mb-6 no-print">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-grow">
@@ -705,7 +685,6 @@ function MaterialRequestContent() {
         </div>
       </div>
 
-      {/* --- Table Section --- */}
       <div className="border rounded-md overflow-x-auto" id="printable-area">
         <Table className="min-w-[1400px]">
           <TableHeader>
@@ -713,7 +692,8 @@ function MaterialRequestContent() {
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
               <TableHead>Cost Center</TableHead>
-              <TableHead>Prioritas</TableHead>
+              {/* REVISI: Hapus TableHead Prioritas */}
+              {/* <TableHead>Prioritas</TableHead> */}
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead>Departemen</TableHead>
@@ -729,7 +709,7 @@ function MaterialRequestContent() {
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center h-24">
+                <TableCell colSpan={13} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -739,7 +719,7 @@ function MaterialRequestContent() {
             ) : dataMR.length > 0 ? (
               dataMR.map((mr, index) => {
                 const livePriority = calculatePriority(
-                  mr.due_date || new Date()
+                  mr.due_date || new Date(),
                 );
 
                 return (
@@ -750,13 +730,14 @@ function MaterialRequestContent() {
                     <TableCell className="font-semibold">
                       {mr.kode_mr}
                     </TableCell>
-                    {/* Kolom Cost Center */}
                     <TableCell>
                       <Badge variant="outline">
                         {(mr as any).cost_centers?.code || "-"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+
+                    {/* REVISI: Hapus Cell Prioritas */}
+                    {/* <TableCell>
                       <Badge
                         variant={
                           livePriority === "P0" ? "destructive" : "outline"
@@ -770,7 +751,8 @@ function MaterialRequestContent() {
                         <Zap className="h-3 w-3 mr-1" />
                         {livePriority}
                       </Badge>
-                    </TableCell>
+                    </TableCell> */}
+
                     <TableCell>
                       <Badge variant="default" className="bg-slate-600">
                         <Layers className="h-3 w-3 mr-1" />
@@ -795,7 +777,7 @@ function MaterialRequestContent() {
                           className={cn(
                             livePriority === "P0"
                               ? "text-destructive font-bold"
-                              : ""
+                              : "",
                           )}
                         >
                           {formatDateFriendly(mr.due_date)}
@@ -817,7 +799,7 @@ function MaterialRequestContent() {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={14} className="text-center h-24">
+                <TableCell colSpan={13} className="text-center h-24">
                   Tidak ada data ditemukan.
                 </TableCell>
               </TableRow>
@@ -826,7 +808,6 @@ function MaterialRequestContent() {
         </Table>
       </div>
 
-      {/* --- Pagination & Limit Section --- */}
       <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

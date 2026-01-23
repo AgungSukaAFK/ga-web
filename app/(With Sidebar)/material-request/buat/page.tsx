@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MaterialRequest, Order, Attachment, Barang } from "@/type"; // REVISI: Import Barang
+import { MaterialRequest, Order, Attachment, Barang } from "@/type";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -54,9 +54,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn, calculatePriority } from "@/lib/utils";
 import { format } from "date-fns";
-import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox"; // REVISI: Import ini
+import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 
-// ... (Konstanta kategoriData, dataLokasi tetap sama)
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },
@@ -77,18 +76,7 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
-// dataUoM tidak lagi wajib di sini jika diambil dari master, tapi bisa buat fallback
-const dataUoM: ComboboxData = [
-  { label: "Pcs", value: "Pcs" },
-  { label: "Unit", value: "Unit" },
-  { label: "Set", value: "Set" },
-  { label: "Box", value: "Box" },
-  { label: "Rim", value: "Rim" },
-  { label: "Roll", value: "Roll" },
-];
-
 export default function BuatMRPage() {
-  // ... (State & Effect utama tidak berubah)
   const router = useRouter();
 
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
@@ -98,7 +86,7 @@ export default function BuatMRPage() {
       kategori: "",
       status: "Pending Validation",
       level: "OPEN 1",
-      prioritas: null,
+      prioritas: "P4", // REVISI: Default ke P4 agar aman di backend
       remarks: "",
       cost_estimation: "0",
       department: "",
@@ -111,7 +99,7 @@ export default function BuatMRPage() {
       approvals: [],
       attachments: [],
       discussions: [],
-    }
+    },
   );
 
   const [userLokasi, setUserLokasi] = useState("");
@@ -133,7 +121,7 @@ export default function BuatMRPage() {
         ) {
           const newKodeMR = await generateMRCode(
             profile.department,
-            profile.lokasi
+            profile.lokasi,
           );
           setUserLokasi(profile.lokasi);
 
@@ -170,6 +158,8 @@ export default function BuatMRPage() {
     setFormattedCost(formatCurrency(total));
   }, [formCreateMR.orders]);
 
+  // REVISI: Nonaktifkan perhitungan prioritas otomatis
+  /*
   useEffect(() => {
     if (formCreateMR.due_date) {
       const priority = calculatePriority(formCreateMR.due_date) as
@@ -189,6 +179,7 @@ export default function BuatMRPage() {
       }));
     }
   }, [formCreateMR.due_date]);
+  */
 
   const handleCBKategori = (value: string) => {
     setFormCreateMR({ ...formCreateMR, kategori: value });
@@ -208,11 +199,10 @@ export default function BuatMRPage() {
     }
   }, [tujuanSamaDenganLokasi, userLokasi]);
 
-  // --- Item Management (REVISI BAGIAN INI) ---
+  // --- Item Management ---
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
-  // State lokal untuk dialog
   const [orderItem, setOrderItem] = useState<Order>({
     name: "",
     qty: "1",
@@ -245,7 +235,6 @@ export default function BuatMRPage() {
     setOpenItemDialog(true);
   };
 
-  // REVISI: Handler saat barang dipilih dari Combobox
   const handleSelectBarang = (barang: Barang) => {
     setOrderItem((prev) => ({
       ...prev,
@@ -257,7 +246,6 @@ export default function BuatMRPage() {
   };
 
   const handleSaveOrUpdateItem = () => {
-    // REVISI: Validasi wajib pilih dari database (barang_id harus ada)
     if (!orderItem.barang_id || !orderItem.name) {
       toast.error("Wajib memilih barang dari database.");
       return;
@@ -292,7 +280,6 @@ export default function BuatMRPage() {
     }));
   };
 
-  // ... (Sisa handlers: FileUpload, RemoveAttachment, AjukanMR tetap sama)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
@@ -308,7 +295,7 @@ export default function BuatMRPage() {
       try {
         const newAttachment = await uploadAttachment(
           file,
-          formCreateMR.kode_mr
+          formCreateMR.kode_mr,
         );
         successfulUploads.push(newAttachment);
       } catch (error) {
@@ -341,7 +328,7 @@ export default function BuatMRPage() {
     try {
       await removeAttachment(path);
       const updatedAttachments = (formCreateMR.attachments || []).filter(
-        (_, i) => i !== index
+        (_, i) => i !== index,
       );
       setFormCreateMR((prev) => ({ ...prev, attachments: updatedAttachments }));
       toast.success("File berhasil dihapus.", { id: toastId });
@@ -364,7 +351,7 @@ export default function BuatMRPage() {
       !formCreateMR.company_code
     ) {
       setAjukanAlert(
-        "Semua data utama (Kategori, Due Date, Remarks, Tujuan) wajib diisi."
+        "Semua data utama (Kategori, Due Date, Remarks, Tujuan) wajib diisi.",
       );
       return;
     }
@@ -374,10 +361,9 @@ export default function BuatMRPage() {
       return;
     }
 
-    // Validasi Level 2: Pastikan semua item punya barang_id
     if (formCreateMR.orders.some((o) => !o.barang_id)) {
       setAjukanAlert(
-        "Terdapat item yang tidak valid (bukan dari database). Hapus dan input ulang."
+        "Terdapat item yang tidak valid (bukan dari database). Hapus dan input ulang.",
       );
       return;
     }
@@ -393,7 +379,7 @@ export default function BuatMRPage() {
       (formCreateMR.attachments || []).length === 0
     ) {
       setAjukanAlert(
-        `Kategori '${formCreateMR.kategori}' wajib menyertakan lampiran.`
+        `Kategori '${formCreateMR.kategori}' wajib menyertakan lampiran.`,
       );
       return;
     }
@@ -410,11 +396,13 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
+      // REVISI: Inject Prioritas Default (P4) di backend
       const finalPayload = {
         ...payload,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
         level: "OPEN 1",
+        prioritas: "P4", // Memaksa P4 agar fitur tetap berjalan di background
       };
 
       await createMaterialRequest(finalPayload as any, user.id, company_code);
@@ -431,16 +419,13 @@ export default function BuatMRPage() {
     }
   };
 
-  // ... (Bagian Render UI)
   return (
     <>
       <Content
         title="Buat Material Request Baru"
         description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
-        {/* ... (Form Header sama persis seperti sebelumnya) ... */}
         <div className="grid grid-cols-12 gap-4">
-          {/* ... field read-only ... */}
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Kode MR</Label>
             <Input readOnly disabled value={formCreateMR.kode_mr} />
@@ -487,7 +472,7 @@ export default function BuatMRPage() {
                   variant="outline"
                   className={cn(
                     "w-full justify-start text-left font-normal",
-                    !formCreateMR.due_date && "text-muted-foreground"
+                    !formCreateMR.due_date && "text-muted-foreground",
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
@@ -513,7 +498,8 @@ export default function BuatMRPage() {
             </Popover>
           </div>
 
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+          {/* REVISI: Sembunyikan Input/Display Prioritas */}
+          {/* <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Estimasi Prioritas (Otomatis)</Label>
             <div
               className={cn(
@@ -524,7 +510,8 @@ export default function BuatMRPage() {
             >
               {formCreateMR.prioritas || "-"}
             </div>
-          </div>
+          </div> 
+          */}
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Tujuan Pengiriman (Site)</Label>
@@ -591,7 +578,6 @@ export default function BuatMRPage() {
           </Button>
         }
       >
-        {/* ... (Tabel Item sama persis) ... */}
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -645,7 +631,6 @@ export default function BuatMRPage() {
         </div>
       </Content>
 
-      {/* --- DIALOG TAMBAH ITEM (MODIFIED) --- */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -656,7 +641,6 @@ export default function BuatMRPage() {
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label className="text-right">Cari Barang (Wajib)</Label>
-              {/* REVISI: Ganti Input dengan BarangSearchCombobox */}
               <BarangSearchCombobox onSelect={handleSelectBarang} />
               {orderItem.name && (
                 <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
@@ -719,7 +703,6 @@ export default function BuatMRPage() {
       </Dialog>
 
       <Content title="Lampiran File" size="sm">
-        {/* ... (Sama persis) ... */}
         <div className="flex flex-col gap-4">
           <Input
             type="file"
@@ -727,7 +710,6 @@ export default function BuatMRPage() {
             onChange={handleFileUpload}
             disabled={isUploading}
           />
-          {/* List Lampiran */}
           {(formCreateMR.attachments || []).length > 0 && (
             <ul className="space-y-2">
               {formCreateMR.attachments.map((att, index) => (

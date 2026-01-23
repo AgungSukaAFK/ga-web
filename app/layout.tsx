@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { CustomThemeProvider } from "@/lib/theme-provider"; // <-- REVISI
+import { CustomThemeProvider } from "@/lib/theme-provider";
 import "./globals.css";
 import { Toaster } from "sonner";
+import { NotificationProvider } from "@/components/providers/NotificationProvider";
 
 const defaultUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -35,7 +36,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <NotificationProvider>{children}</NotificationProvider>
         </CustomThemeProvider>
         <Toaster richColors position="bottom-right" />
       </body>

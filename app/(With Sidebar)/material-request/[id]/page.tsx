@@ -100,9 +100,8 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { processMrApproval } from "@/services/approvalService"; // IMPORT BARU
+import { processMrApproval } from "@/services/approvalService";
 
-// --- Data Konstanta ---
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },
@@ -150,7 +149,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [costCenterName, setCostCenterName] = useState<string | null>(null);
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
 
-  // State UI
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
   const [isCloseMrAlertOpen, setIsCloseMrAlertOpen] = useState(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
@@ -173,7 +171,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         due_date,
         users_with_profiles!userid(nama),
         cost_centers!cost_center_id(name, current_budget) 
-      `
+      `,
       )
       .eq("id", mrId)
       .single();
@@ -228,7 +226,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [mrId]);
 
-  // Auto-Calculate Priority (LIVE)
+  // REVISI (STEP 3): Nonaktifkan auto-calculate priority
+  /*
   useEffect(() => {
     if (mr?.due_date) {
       const newPriority = calculatePriority(mr.due_date);
@@ -244,8 +243,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       }
     }
   }, [mr?.due_date]);
+  */
 
-  // Auto-Calculate Cost
   useEffect(() => {
     if (mr) {
       const total = mr.orders.reduce((acc, item) => {
@@ -256,7 +255,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
       if (String(total) !== mr.cost_estimation) {
         setMr((prevMr) =>
-          prevMr ? { ...prevMr, cost_estimation: String(total) } : null
+          prevMr ? { ...prevMr, cost_estimation: String(total) } : null,
         );
       }
       setFormattedCost(formatCurrency(total));
@@ -266,7 +265,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const myApprovalIndex =
     mr && currentUser && mr.approvals
       ? mr.approvals.findIndex(
-          (a) => a.userid === currentUser.id && a.status === "pending"
+          (a) => a.userid === currentUser.id && a.status === "pending",
         )
       : -1;
 
@@ -316,7 +315,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // REVISI: Menggunakan processMrApproval dari service
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!mr || !currentUser) return;
 
@@ -334,11 +332,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         mr.id as any,
         currentUser.id,
         decision,
-        mr.approvals
+        mr.approvals,
       );
 
       toast.success(
-        `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
+        `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
       );
       await fetchMrData();
       setIsEditing(false);
@@ -352,7 +350,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const handleItemChange = (
     index: number,
     field: keyof Order,
-    value: string | number
+    value: string | number,
   ) => {
     if (!mr) return;
     const newOrders = [...mr.orders];
@@ -423,7 +421,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
@@ -442,7 +440,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     const results = await Promise.all(uploadPromises);
     const successfulUploads = results
       .filter((r) => !r.error)
-      .map((r) => ({ url: r.data!.path, name: r.data!.name } as Attachment));
+      .map((r) => ({ url: r.data!.path, name: r.data!.name }) as Attachment);
     if (successfulUploads.length === 0) {
       toast.error("Semua file gagal diunggah.", { id: toastId });
       setIsUploading(false);
@@ -464,7 +462,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     } else {
       toast.success(
         `${successfulUploads.length} file berhasil diunggah & disimpan.`,
-        { id: toastId }
+        { id: toastId },
       );
       await fetchMrData();
     }
@@ -477,7 +475,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     const attachmentToRemove = mr.attachments[indexToRemove];
     if (!attachmentToRemove) return;
     const updatedAttachments = mr.attachments.filter(
-      (_, i) => i !== indexToRemove
+      (_, i) => i !== indexToRemove,
     );
     setMr({ ...mr, attachments: updatedAttachments });
     supabase.storage.from("mr").remove([attachmentToRemove.url]);
@@ -491,7 +489,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           fetchMrData();
         } else {
           toast.success(
-            `Lampiran "${attachmentToRemove.name}" berhasil dihapus.`
+            `Lampiran "${attachmentToRemove.name}" berhasil dihapus.`,
           );
         }
       });
@@ -629,7 +627,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
       case "completed":
         return <Badge className="bg-green-500 text-white">Completed</Badge>;
-      case "po open": // REVISI: Badge baru
+      case "po open":
       case "on process":
         return <Badge className="bg-cyan-500 text-white">PO Open</Badge>;
       default:
@@ -638,7 +636,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const getApprovalStatusBadge = (
-    status: "pending" | "approved" | "rejected"
+    status: "pending" | "approved" | "rejected",
   ) => {
     switch (status) {
       case "approved":
@@ -662,13 +660,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // Render UI
   if (loading) return <DetailMRSkeleton />;
   if (error || !mr)
     return <Content className="col-span-12">Data tidak ditemukan</Content>;
 
   const currentTurnIndex = mr.approvals.findIndex(
-    (app) => app.status === "pending"
+    (app) => app.status === "pending",
   );
   const allPreviousApproved =
     currentTurnIndex === -1
@@ -678,7 +675,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           .slice(0, currentTurnIndex)
           .every((app) => app.status === "approved");
 
-  // Live Priority
   const livePriority = mr.due_date
     ? calculatePriority(mr.due_date)
     : "Menghitung...";
@@ -769,7 +765,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               value={formatDateFriendly(mr.created_at)}
             />
 
-            {/* --- Bagian Due Date (Manual) --- */}
             <div className="space-y-1">
               <Label>Due Date (Target)</Label>
               {isEditing ? (
@@ -782,7 +777,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                       variant="outline"
                       className={cn(
                         "w-full justify-start text-left font-normal",
-                        !mr.due_date && "text-muted-foreground"
+                        !mr.due_date && "text-muted-foreground",
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -812,6 +807,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               )}
             </div>
 
+            {/* REVISI (STEP 3): Sembunyikan UI Prioritas */}
+            {/*
             <div className="space-y-1">
               <Label>Prioritas (Otomatis)</Label>
               <div
@@ -828,6 +825,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </span>
               </div>
             </div>
+            */}
 
             <div className="space-y-1">
               <div className="flex items-center gap-1">
@@ -865,17 +863,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               )}
             </div>
 
+            {/* REVISI (UPDATE): Logic Tampilan Cost Center Berdasarkan Role */}
             <InfoItem
               icon={Building2}
               label="Cost Center"
               value={
                 costCenterName
-                  ? `${costCenterName} (Sisa: ${formatCurrency(
-                      costCenterBudget ?? 0
-                    )})`
+                  ? userProfile?.role === "requester"
+                    ? costCenterName // Jika Requester, hanya tampilkan nama
+                    : `${costCenterName} (Sisa: ${formatCurrency(
+                        costCenterBudget ?? 0,
+                      )})` // Jika Admin/Lainnya, tampilkan budget
                   : "Belum Ditentukan GA"
               }
             />
+
             <div className="space-y-1">
               <Label>Tujuan (Site)</Label>
               {isEditing ? (
@@ -1098,7 +1100,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     key={index}
                     className={cn(
                       "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
-                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50"
+                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
                     )}
                   >
                     <div>
@@ -1121,7 +1123,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                         )}
                     </div>
                     {getApprovalStatusBadge(
-                      approver.status as "approved" | "rejected" | "pending"
+                      approver.status as "approved" | "rejected" | "pending",
                     )}
                   </li>
                 );
@@ -1419,7 +1421,7 @@ const InfoItem = ({
 }) => (
   <div
     className={cn(
-      isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2 items-start"
+      isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2 items-start",
     )}
   >
     <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2 mt-0.5">

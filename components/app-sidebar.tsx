@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+// Tambahkan import Bell
 import {
   GalleryVerticalEnd,
   Bot,
@@ -31,10 +32,13 @@ import {
   Briefcase,
   PackagePlus,
   ArchiveRestore,
+  Bell, // <-- Import Icon Bell
 } from "lucide-react";
 import Image from "next/image";
 
+// ... (data constant tetap sama) ...
 const data = {
+  // ... data navMain, teams, dll tetap sama
   teams: [
     {
       name: "Lourdes Autoparts",
@@ -116,6 +120,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const [user, setUser] = React.useState<any>(null);
   const [profile, setProfile] = React.useState<any>(null);
+  // State untuk jumlah notifikasi
+  const [unreadCount, setUnreadCount] = React.useState(0);
 
   React.useEffect(() => {
     const getUser = async () => {
@@ -131,13 +137,43 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           .eq("id", data.user.id)
           .single();
         if (profileRes.data) setProfile(profileRes.data);
+
+        // --- FETCH NOTIFIKASI AWAL ---
+        const { count } = await supabase
+          .from("notifications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", data.user.id)
+          .eq("is_read", false);
+        setUnreadCount(count || 0);
+
+        // --- REALTIME LISTENER ---
+        const channel = supabase
+          .channel("sidebar-notif-count")
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${data.user.id}`,
+            },
+            () => {
+              // Jika ada notif baru masuk, tambah counter
+              setUnreadCount((prev) => prev + 1);
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
       }
     };
     getUser();
   }, [supabase]);
 
   const markActive = React.useCallback(
-    (items: typeof data.navMain) =>
+    (items: any[]) =>
       items.map((item) => ({
         ...item,
         isActive:
@@ -149,6 +185,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const mainNavItems = React.useMemo(() => {
     const baseNav = [...data.navMain];
+
+    // --- SISIPKAN MENU NOTIFIKASI ---
+    // Kita taruh di urutan kedua (setelah Dashboard) atau paling atas
+    baseNav.splice(1, 0, {
+      title: `Notifikasi ${unreadCount > 0 ? `(${unreadCount})` : ""}`,
+      url: "/notifications",
+      icon: Bell,
+      // Tambahkan highlight visual jika ada notif (opsional, tergantung komponen NavMain support badge atau tidak)
+    });
+
+    // ... (Logika role existing tetap sama) ...
 
     // 1. Fitur Request Barang Baru (Requester)
     const barangIndex = baseNav.findIndex((item) => item.title === "Barang");
@@ -194,7 +241,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     }
 
     // 5. Fitur MR Management (Purchasing & GA)
-    // Jika bukan admin (admin sudah punya di navAdmin), tapi Purchasing/GA
     if (
       profile?.role !== "admin" &&
       (profile?.department === "Purchasing" ||
@@ -208,7 +254,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     }
 
     return markActive(baseNav);
-  }, [profile, markActive]);
+  }, [profile, markActive, unreadCount]); // Tambahkan unreadCount ke dependency
 
   return (
     <Sidebar collapsible="icon" {...props}>
