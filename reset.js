@@ -1,18 +1,32 @@
+import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+const supabase = createClient("supabase url", "secret key");
 
-async function resetUserPassword() {
-  const { data, error } = await supabase.auth.admin.updateUserById(
-    "d0604137-2985-4274-9279-467f38ae9cb1", // ID user yang mau direset (dari Dashboard → Authentication → Users)
-    {
-      password: process.env.DEFAULT_NEW_PASSWORD, // isi password baru
-      // kamu juga bisa tambahkan: email: 'emailbaru@example.com'
-    }
-  );
+const userId = "userid";
+const email = "email";
 
-  console.log({ data, error });
+async function hardReset() {
+  const { data: before } = await supabase.auth.admin.getUserById(userId);
+  console.log("BEFORE:", before.user.last_sign_in_at);
+
+  const { data, error } = await supabase.auth.admin.updateUserById(userId, {
+    password: "gmi2026",
+    email_confirm: true,
+    banned_until: null,
+  });
+
+  console.log("UPDATE:", { data, error });
+
+  const { data: after } = await supabase.auth.admin.getUserById(userId);
+  console.log("AFTER:", after.user.updated_at);
+
+  const login = await supabase.auth.signInWithPassword({
+    email,
+    password: "gmi2026",
+  });
+
+  console.log("LOGIN:", login);
 }
+
+hardReset();
