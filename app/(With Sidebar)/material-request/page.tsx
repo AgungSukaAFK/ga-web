@@ -728,7 +728,14 @@ function MaterialRequestContent() {
                       {(currentPage - 1) * limit + index + 1}
                     </TableCell>
                     <TableCell className="font-semibold">
-                      {mr.kode_mr}
+                      <Button variant={"ghost"} asChild>
+                        <Link
+                          href={`/material-request/${mr.id}`}
+                          title="Klik untuk melihat detail"
+                        >
+                          {mr.kode_mr}
+                        </Link>
+                      </Button>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">
