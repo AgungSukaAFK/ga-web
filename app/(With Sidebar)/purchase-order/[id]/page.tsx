@@ -278,7 +278,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const myApprovalIndex =
     po && currentUser && po.approvals
       ? po.approvals.findIndex(
-          (a) => a.userid === currentUser.id && a.status === "pending"
+          (a) => a.userid === currentUser.id && a.status === "pending",
         )
       : -1;
 
@@ -312,7 +312,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
     if (
       !confirm(
-        "Apakah Anda yakin barang sudah diterima di Warehouse? Status MR akan berubah menjadi OPEN 5."
+        "Apakah Anda yakin barang sudah diterima di Warehouse? Status MR akan berubah menjadi OPEN 5.",
       )
     ) {
       return;
@@ -354,7 +354,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       newPoStatus = "Rejected";
     } else if (decision === "approved") {
       const isLastApproval = updatedApprovals.every(
-        (app: Approval) => app.status === "approved"
+        (app: Approval) => app.status === "approved",
       );
       if (isLastApproval) {
         newPoStatus = "Pending BAST";
@@ -387,7 +387,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
 
     toast.success(
-      `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`
+      `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
     );
     await fetchPoData();
     setActionLoading(false);
@@ -493,7 +493,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
 
   const getApprovalStatusBadge = (
-    status: "pending" | "approved" | "rejected"
+    status: "pending" | "approved" | "rejected",
   ) => {
     switch (status) {
       case "approved":
@@ -544,7 +544,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const bastAttachments =
     po.attachments?.filter((att) => att.type === "bast") || [];
   const currentTurnIndex = po.approvals?.findIndex(
-    (app) => app.status === "pending"
+    (app) => app.status === "pending",
   );
   const allPreviousApproved =
     currentTurnIndex === -1
@@ -557,7 +557,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             .every((app) => app.status === "approved"));
   const subtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
-    0
+    0,
   );
   const companyKey = (po.company_code ||
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
@@ -598,13 +598,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <Upload className="mr-2 h-4 w-4" /> Upload BAST
                 </Button>
               )}
-              {canEditPO && po.status === "Pending Approval" && (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/purchase-order/edit/${po.id}`}>
-                    <EditIcon className="mr-2 h-4 w-4" /> Edit PO
-                  </Link>
-                </Button>
-              )}
+              {canEditPO &&
+                po.status !== "Completed" &&
+                po.status !== "Rejected" && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/purchase-order/edit/${po.id}`}>
+                      <EditIcon className="mr-2 h-4 w-4" /> Edit PO
+                    </Link>
+                  </Button>
+                )}
               {getStatusBadge(po.status)}
             </div>
           </div>
@@ -866,7 +868,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           </TableCell>
                           <TableCell className="text-right font-medium">
                             {formatCurrency(
-                              Number(order.qty) * order.estimasi_harga
+                              Number(order.qty) * order.estimasi_harga,
                             )}
                           </TableCell>
                           <TableCell>
@@ -883,7 +885,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                             )}
                           </TableCell>
                         </TableRow>
-                      )
+                      ),
                     )}
                   </TableBody>
                 </Table>
@@ -918,7 +920,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       key={index}
                       className={cn(
                         "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
-                        isMyTurn && "bg-primary/10 ring-2 ring-primary/50"
+                        isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
                       )}
                     >
                       <div>
@@ -941,7 +943,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           )}
                       </div>
                       {getApprovalStatusBadge(
-                        approver.status as "approved" | "rejected" | "pending"
+                        approver.status as "approved" | "rejected" | "pending",
                       )}
                     </li>
                   );
@@ -1355,7 +1357,10 @@ const PrintablePO = ({
               <span className="text-gray-600">Subtotal</span>
               <span className="font-medium text-gray-900">
                 {formatCurrency(
-                  po.items.reduce((acc, item) => acc + item.price * item.qty, 0)
+                  po.items.reduce(
+                    (acc, item) => acc + item.price * item.qty,
+                    0,
+                  ),
                 )}
               </span>
             </div>

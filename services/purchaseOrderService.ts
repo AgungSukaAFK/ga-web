@@ -9,6 +9,7 @@ import {
   PurchaseOrderDetail,
   PurchaseOrderPayload,
   PurchaseOrderListItem,
+  Attachment,
 } from "@/type";
 
 const supabase = createClient();
@@ -44,7 +45,7 @@ export const fetchPurchaseOrders = async (
   startDate: string | null,
   endDate: string | null,
   paymentFilter: string | null,
-  paymentTermFilter: string | null
+  paymentTermFilter: string | null,
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -59,7 +60,7 @@ export const fetchPurchaseOrders = async (
         users_with_profiles!userid (nama)
       )
     `,
-    { count: "exact" }
+    { count: "exact" },
   );
 
   if (searchQuery) {
@@ -136,29 +137,29 @@ export const fetchPurchaseOrders = async (
     rawData?.map((po: any) => ({
       ...po,
       users_with_profiles: Array.isArray(po.users_with_profiles)
-        ? po.users_with_profiles[0] ?? null
+        ? (po.users_with_profiles[0] ?? null)
         : po.users_with_profiles,
       material_requests: Array.isArray(po.material_requests)
         ? po.material_requests[0]
           ? {
               ...po.material_requests[0],
               users_with_profiles: Array.isArray(
-                po.material_requests[0].users_with_profiles
+                po.material_requests[0].users_with_profiles,
               )
-                ? po.material_requests[0].users_with_profiles[0] ?? null
+                ? (po.material_requests[0].users_with_profiles[0] ?? null)
                 : po.material_requests[0].users_with_profiles,
             }
           : null
         : po.material_requests
-        ? {
-            ...po.material_requests,
-            users_with_profiles: Array.isArray(
-              po.material_requests.users_with_profiles
-            )
-              ? po.material_requests.users_with_profiles[0] ?? null
-              : po.material_requests.users_with_profiles,
-          }
-        : null,
+          ? {
+              ...po.material_requests,
+              users_with_profiles: Array.isArray(
+                po.material_requests.users_with_profiles,
+              )
+                ? (po.material_requests.users_with_profiles[0] ?? null)
+                : po.material_requests.users_with_profiles,
+            }
+          : null,
     })) || [];
 
   return { data: data as PurchaseOrderListItem[], count };
@@ -166,7 +167,7 @@ export const fetchPurchaseOrders = async (
 
 export const fetchApprovedMaterialRequests = async (
   searchQuery?: string,
-  limit: number = 50
+  limit: number = 50,
 ) => {
   let query = supabase
     .from("material_requests")
@@ -175,7 +176,7 @@ export const fetchApprovedMaterialRequests = async (
   if (searchQuery) {
     const searchTerm = `"%${searchQuery.trim()}%"`;
     query = query.or(
-      `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`
+      `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`,
     );
   }
 
@@ -203,7 +204,7 @@ export const fetchMaterialRequestById = async (mrId: number) => {
         code,
         current_budget
       )
-    `
+    `,
     )
     .eq("id", mrId)
     .single();
@@ -214,7 +215,7 @@ export const fetchMaterialRequestById = async (mrId: number) => {
 
 export const generatePoCode = async (
   company_code: string,
-  lokasi: string
+  lokasi: string,
 ): Promise<string> => {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -273,7 +274,7 @@ export const createPurchaseOrder = async (
   > & { vendor_details: PurchaseOrderPayload["vendor_details"] },
   mr_id: number | null,
   user_id: string,
-  company_code: string
+  company_code: string,
 ) => {
   const payload = {
     ...poData,
@@ -313,7 +314,7 @@ export const createPurchaseOrder = async (
 };
 
 export const fetchPurchaseOrderById = async (
-  id: number
+  id: number,
 ): Promise<PurchaseOrderDetail | null> => {
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -326,7 +327,7 @@ export const fetchPurchaseOrderById = async (
         cost_centers!cost_center_id (name) 
       ), 
       users_with_profiles!user_id (nama, email)
-    `
+    `,
     )
     .eq("id", id)
     .single();
@@ -339,29 +340,29 @@ export const fetchPurchaseOrderById = async (
   const transformedData = {
     ...data,
     users_with_profiles: Array.isArray(data.users_with_profiles)
-      ? data.users_with_profiles[0] ?? null
+      ? (data.users_with_profiles[0] ?? null)
       : data.users_with_profiles,
     material_requests: Array.isArray(data.material_requests)
       ? data.material_requests[0]
         ? {
             ...data.material_requests[0],
             users_with_profiles: Array.isArray(
-              data.material_requests[0].users_with_profiles
+              data.material_requests[0].users_with_profiles,
             )
-              ? data.material_requests[0].users_with_profiles[0] ?? null
+              ? (data.material_requests[0].users_with_profiles[0] ?? null)
               : data.material_requests[0].users_with_profiles,
           }
         : null
       : data.material_requests
-      ? {
-          ...data.material_requests,
-          users_with_profiles: Array.isArray(
-            data.material_requests.users_with_profiles
-          )
-            ? data.material_requests.users_with_profiles[0] ?? null
-            : data.material_requests.users_with_profiles,
-        }
-      : null,
+        ? {
+            ...data.material_requests,
+            users_with_profiles: Array.isArray(
+              data.material_requests.users_with_profiles,
+            )
+              ? (data.material_requests.users_with_profiles[0] ?? null)
+              : data.material_requests.users_with_profiles,
+          }
+        : null,
   };
 
   return transformedData as PurchaseOrderDetail;
@@ -369,7 +370,7 @@ export const fetchPurchaseOrderById = async (
 
 export const updatePurchaseOrder = async (
   id: number,
-  poData: Partial<PurchaseOrderPayload>
+  poData: Partial<PurchaseOrderPayload>,
 ) => {
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -400,7 +401,7 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
 
 export const validatePurchaseOrder = async (
   id: number,
-  approvals: Approval[]
+  approvals: Approval[],
 ) => {
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -440,5 +441,59 @@ export const markGoodsAsReceivedByGA = async (mrId: number) => {
     throw error;
   }
 
+  return data;
+};
+
+/**
+ * Mengunggah file attachment (Invoice, BAST, dll) ke bucket 'po'.
+ */
+export const uploadPoAttachment = async (
+  file: File,
+  kode_po: string,
+  type: "po" | "finance" | "bast" | "invoice",
+): Promise<Attachment> => {
+  // Ganti slash di kode_po dengan dash agar aman di URL
+  const safeKode = kode_po.replace(/\//g, "-");
+  const filePath = `${safeKode}/${Date.now()}_${file.name}`;
+
+  // Upload ke bucket 'po' (Pastikan bucket ini ada di Supabase Storage)
+  const { data, error } = await supabase.storage
+    .from("po")
+    .upload(filePath, file);
+
+  if (error) throw error;
+
+  return { url: data.path, name: file.name, type };
+};
+
+/**
+ * Menambahkan attachment baru ke dalam list attachments PO yang sudah ada.
+ */
+export const addAttachmentToPo = async (
+  poId: number,
+  newAttachment: Attachment,
+) => {
+  // 1. Ambil data attachments saat ini
+  const { data: po, error: fetchError } = await supabase
+    .from("purchase_orders")
+    .select("attachments")
+    .eq("id", poId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  // 2. Gabungkan dengan attachment baru
+  const currentAttachments = (po.attachments as Attachment[]) || [];
+  const updatedAttachments = [...currentAttachments, newAttachment];
+
+  // 3. Update database
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .update({ attachments: updatedAttachments })
+    .eq("id", poId)
+    .select()
+    .single();
+
+  if (error) throw error;
   return data;
 };

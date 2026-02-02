@@ -27,7 +27,7 @@ export interface Order {
 export interface Attachment {
   url: string;
   name: string;
-  type?: "po" | "finance" | "bast";
+  type?: "po" | "finance" | "bast" | "invoice";
 }
 
 // ... (Sisa file tetap sama, tidak perlu diubah semua)
@@ -206,11 +206,10 @@ export interface MaterialRequestForPO {
   level: string;
 }
 
-export interface PurchaseOrderDetail
-  extends Omit<
-    PurchaseOrderPayload,
-    "mr_id" | "user_id" | "vendor_details" | "items"
-  > {
+export interface PurchaseOrderDetail extends Omit<
+  PurchaseOrderPayload,
+  "mr_id" | "user_id" | "vendor_details" | "items"
+> {
   id: number;
   created_at: string;
   updated_at: string;
