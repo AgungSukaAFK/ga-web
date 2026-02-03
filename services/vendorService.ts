@@ -8,7 +8,7 @@ const supabase = createClient();
 export const fetchVendors = async (
   page: number,
   limit: number,
-  searchQuery: string | null
+  searchQuery: string | null,
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -19,7 +19,7 @@ export const fetchVendors = async (
     // SEARCH CASE-INSENSITIVE
     const search = `%${searchQuery}%`;
     query = query.or(
-      `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search}`
+      `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search}`,
     );
   }
 
@@ -32,7 +32,7 @@ export const fetchVendors = async (
 };
 
 export const createVendor = async (
-  newData: Omit<Vendor, "id" | "created_at">
+  newData: Omit<Vendor, "id" | "created_at">,
 ) => {
   const { data, error } = await supabase
     .from("vendors")
@@ -48,7 +48,7 @@ export const createVendor = async (
 
 export const updateVendor = async (
   id: number,
-  updatedData: Partial<Vendor>
+  updatedData: Partial<Vendor>,
 ) => {
   const { data, error } = await supabase
     .from("vendors")
@@ -67,18 +67,27 @@ export const deleteVendor = async (id: number) => {
 
 // SEARCH UNTUK DROPDOWN (CASE-INSENSITIVE)
 export const searchVendors = async (query: string): Promise<Vendor[]> => {
-  if (!query) return [];
+  const supabase = createClient();
 
-  const { data, error } = await supabase
+  // Jika query kosong, ambil 10 vendor pertama saja sebagai default list
+  let dbQuery = supabase
     .from("vendors")
-    .select("*")
-    // Menggunakan ILIKE agar tidak case-sensitive
-    .or(`nama_vendor.ilike.%${query}%,kode_vendor.ilike.%${query}%`)
-    .limit(10);
+    .select("id, kode_vendor, nama_vendor")
+    .limit(10); // LIMIT 10 AGAR RINGAN
+
+  if (query) {
+    // Cari berdasarkan Nama ATAU Kode
+    dbQuery = dbQuery.or(
+      `nama_vendor.ilike.%${query}%,kode_vendor.ilike.%${query}%`,
+    );
+  }
+
+  const { data, error } = await dbQuery;
 
   if (error) {
     console.error("Error searching vendors:", error);
     return [];
   }
-  return data as Vendor[];
+
+  return (data as Vendor[]) || ([] as Vendor[]);
 };

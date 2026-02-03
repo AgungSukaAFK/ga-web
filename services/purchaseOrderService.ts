@@ -388,7 +388,7 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
 
   const { data, error } = await supabase
     .from("barang")
-    .select("*")
+    .select("*, last_purchase_price")
     .or(`part_number.ilike."%${query}%",part_name.ilike."%${query}%"`)
     .limit(10);
 

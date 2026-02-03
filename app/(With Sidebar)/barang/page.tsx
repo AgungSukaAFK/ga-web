@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarangClientContent } from "./BarangClient";
+import BarangClientContent from "./BarangClient";
 
 export default function BarangPage() {
   return (

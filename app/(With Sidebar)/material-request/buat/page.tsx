@@ -19,7 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  LinkIcon,
   Loader2,
   Trash2,
   Edit as EditIcon,
@@ -41,7 +40,6 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   getActiveUserProfile,
@@ -52,7 +50,7 @@ import {
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { formatCurrency, cn, calculatePriority } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 
@@ -86,7 +84,7 @@ export default function BuatMRPage() {
       kategori: "",
       status: "Pending Validation",
       level: "OPEN 1",
-      prioritas: "P4", // REVISI: Default ke P4 agar aman di backend
+      prioritas: "P4",
       remarks: "",
       cost_estimation: "0",
       department: "",
@@ -158,29 +156,6 @@ export default function BuatMRPage() {
     setFormattedCost(formatCurrency(total));
   }, [formCreateMR.orders]);
 
-  // REVISI: Nonaktifkan perhitungan prioritas otomatis
-  /*
-  useEffect(() => {
-    if (formCreateMR.due_date) {
-      const priority = calculatePriority(formCreateMR.due_date) as
-        | "P0"
-        | "P1"
-        | "P2"
-        | "P3"
-        | "P4";
-      setFormCreateMR((prev) => ({
-        ...prev,
-        prioritas: priority,
-      }));
-    } else {
-      setFormCreateMR((prev) => ({
-        ...prev,
-        prioritas: null,
-      }));
-    }
-  }, [formCreateMR.due_date]);
-  */
-
   const handleCBKategori = (value: string) => {
     setFormCreateMR({ ...formCreateMR, kategori: value });
   };
@@ -235,6 +210,7 @@ export default function BuatMRPage() {
     setOpenItemDialog(true);
   };
 
+  // --- LOGIC REVISI: Auto-fill Estimasi Harga dari Last Purchase Price ---
   const handleSelectBarang = (barang: Barang) => {
     setOrderItem((prev) => ({
       ...prev,
@@ -242,7 +218,13 @@ export default function BuatMRPage() {
       part_number: barang.part_number,
       uom: barang.uom || "Pcs",
       barang_id: barang.id,
+      // Jika last_purchase_price ada (dari update sebelumnya), pakai itu. Jika tidak, 0.
+      estimasi_harga: barang.last_purchase_price || 0,
     }));
+
+    if (barang.last_purchase_price && barang.last_purchase_price > 0) {
+      toast.info("Harga estimasi otomatis terisi dari database.");
+    }
   };
 
   const handleSaveOrUpdateItem = () => {
@@ -396,13 +378,12 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
-      // REVISI: Inject Prioritas Default (P4) di backend
       const finalPayload = {
         ...payload,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
         level: "OPEN 1",
-        prioritas: "P4", // Memaksa P4 agar fitur tetap berjalan di background
+        prioritas: "P4",
       };
 
       await createMaterialRequest(finalPayload as any, user.id, company_code);
@@ -497,21 +478,6 @@ export default function BuatMRPage() {
               </PopoverContent>
             </Popover>
           </div>
-
-          {/* REVISI: Sembunyikan Input/Display Prioritas */}
-          {/* <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Estimasi Prioritas (Otomatis)</Label>
-            <div
-              className={cn(
-                "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold transition-colors",
-                formCreateMR.prioritas === "P0" &&
-                  "text-destructive bg-destructive/10 border-destructive/20"
-              )}
-            >
-              {formCreateMR.prioritas || "-"}
-            </div>
-          </div> 
-          */}
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Tujuan Pengiriman (Site)</Label>

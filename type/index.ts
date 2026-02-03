@@ -30,7 +30,6 @@ export interface Attachment {
   type?: "po" | "finance" | "bast" | "invoice";
 }
 
-// ... (Sisa file tetap sama, tidak perlu diubah semua)
 export interface Discussion {
   user_id: string;
   user_name: string;
@@ -175,6 +174,7 @@ export interface Barang {
   uom: string | null;
   vendor: string | null;
   is_asset: boolean;
+  last_purchase_price?: number | null;
 }
 
 export interface Vendor {

@@ -2,10 +2,9 @@
 
 "use client";
 
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination-components";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   Table,
   TableBody,
@@ -15,6 +14,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -22,347 +39,475 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { createClient } from "@/lib/supabase/client";
+import { Content } from "@/components/content";
 import {
-  useEffect,
-  useState,
-  useTransition,
-  useCallback,
-  useMemo,
-} from "react";
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  Edit,
+  Filter,
+  Download,
+  FileSpreadsheet,
+} from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Barang } from "@/type";
-import { Search, Plus, Edit, Trash2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { LIMIT_OPTIONS } from "@/type/enum";
+import { formatCurrency } from "@/lib/utils";
+import * as XLSX from "xlsx"; // Import library Excel
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
-export function BarangClientContent() {
-  const s = createClient();
+// Helper untuk truncate text
+const TruncatedCell = ({
+  text,
+  maxWidth = "200px",
+}: {
+  text: string;
+  maxWidth?: string;
+}) => (
+  <div
+    className="truncate"
+    style={{ maxWidth }}
+    title={text} // Tooltip bawaan browser saat hover
+  >
+    {text}
+  </div>
+);
+
+export default function BarangClient() {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const supabase = createClient();
 
-  // State Data
+  // --- STATE DATA ---
   const [data, setData] = useState<Barang[]>([]);
-  const [totalItems, setTotalItems] = useState(0);
-
-  // State UI
   const [loading, setLoading] = useState(true);
-  const [isPending, startTransition] = useTransition();
-  const [role, setRole] = useState<string>("");
+  const [userRole, setUserRole] = useState<string>("");
 
-  // State Filter dari URL
-  const currentPage = Number(searchParams.get("page") || "1");
-  const limit = Number(searchParams.get("limit") || 25);
-  const searchTerm = searchParams.get("search") || "";
-  const categoryFilter = searchParams.get("category") || "";
+  // --- STATE FILTER & PAGINATION ---
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [isAssetFilter, setIsAssetFilter] = useState<"all" | "true" | "false">(
+    "all",
+  );
 
-  // State untuk Input Form
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // State untuk data filter dinamis
-  const [categories, setCategories] = useState<string[]>([]);
-
-  // Mengambil data kategori unik untuk filter
+  // --- 1. INITIAL FETCH ---
   useEffect(() => {
-    const fetchCategories = async () => {
-      const { data: categoriesData } = await s
-        .from("barang")
-        .select("category")
-        .is("category", { is: "not null" });
+    const fetchData = async () => {
+      setLoading(true);
 
-      if (data) {
-        // Buat daftar kategori unik
-        const uniqueCategories = [
-          ...new Set(categoriesData?.map((item) => item.category) || []),
-        ];
-        setCategories(uniqueCategories.sort());
-      }
-    };
-    fetchCategories();
-  }, [s]);
-
-  // Mengambil profil user
-  useEffect(() => {
-    const fetchProfile = async () => {
+      // Cek Role User
       const {
         data: { user },
-      } = await s.auth.getUser();
+      } = await supabase.auth.getUser();
       if (user) {
-        const { data: profileData } = await s
+        const { data: profile } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", user.id)
           .single();
-        if (profileData) {
-          setRole(profileData.role || "");
-        }
-      }
-    };
-    fetchProfile();
-  }, [s]);
-
-  // Fungsi untuk membuat query string
-  const createQueryString = useCallback(
-    (paramsToUpdate: Record<string, string | number | undefined>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(paramsToUpdate).forEach(([name, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          String(value).trim() !== ""
-        ) {
-          params.set(name, String(value));
-        } else {
-          params.delete(name);
-        }
-      });
-      if (Object.keys(paramsToUpdate).some((k) => k !== "page")) {
-        params.set("page", "1");
-      }
-      return params.toString();
-    },
-    [searchParams]
-  );
-
-  // Fetch data utama
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      const from = (currentPage - 1) * limit;
-      const to = from + limit - 1;
-
-      let query = s.from("barang").select("*", { count: "exact" });
-
-      // Terapkan filter pencarian
-      if (searchTerm) {
-        query = query.or(
-          `part_number.ilike.%${searchTerm}%,part_name.ilike.%${searchTerm}%`
-        );
-      }
-      // Terapkan filter kategori
-      if (categoryFilter) {
-        query = query.eq("category", categoryFilter);
+        setUserRole(profile?.role || "");
       }
 
-      const { data, error, count } = await query
-        .order("created_at", { ascending: false })
-        .range(from, to);
+      // Ambil Semua Data Barang (Client-side filtering lebih cepat untuk < 10k items)
+      // Jika data sangat besar, perlu ubah ke Server-side filtering
+      const { data: barangData, error } = await supabase
+        .from("barang")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
-        toast.error("Gagal mengambil data barang", {
-          description: error.message,
-        });
-        setData([]);
+        toast.error("Gagal mengambil data barang");
       } else {
-        setData(data || []);
-        setTotalItems(count || 0);
+        setData(barangData || []);
       }
       setLoading(false);
-    }
+    };
+
     fetchData();
-  }, [s, currentPage, limit, searchTerm, categoryFilter]);
+  }, []);
 
-  // Debounce untuk input pencarian
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
-          );
-        });
-      }
-    }, 500); // 500ms debounce
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
+  // --- 2. FILTERING LOGIC (Advanced) ---
+  // Menggunakan useMemo agar filter tidak dijalankan ulang saat pagination berubah
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      // Filter Text (Part Number / Nama)
+      const matchesSearch =
+        item.part_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.part_number.toLowerCase().includes(searchTerm.toLowerCase());
 
-  // Handler untuk perubahan filter
-  const handleFilterChange = (
-    updates: Record<string, string | number | undefined>
-  ) => {
-    startTransition(() => {
-      router.push(`${pathname}?${createQueryString(updates)}`);
+      // Filter Kategori
+      const matchesCategory =
+        selectedCategory === "all" || item.category === selectedCategory;
+
+      // Filter Asset
+      let matchesAsset = true;
+      if (isAssetFilter === "true") matchesAsset = item.is_asset === true;
+      if (isAssetFilter === "false") matchesAsset = item.is_asset === false;
+
+      return matchesSearch && matchesCategory && matchesAsset;
     });
-  };
+  }, [data, searchTerm, selectedCategory, isAssetFilter]);
 
-  const handleDeleteBarang = async (id: string) => {
-    const { error } = await s.from("barang").delete().eq("id", id);
-    if (error) {
-      toast.error("Gagal menghapus data barang", {
-        description: error.message,
-      });
+  // List unik kategori untuk dropdown filter
+  const uniqueCategories = useMemo(() => {
+    const cats = data
+      .map((item) => item.category)
+      .filter((c): c is string => !!c); // Hapus null
+    return Array.from(new Set(cats)).sort();
+  }, [data]);
+
+  // Reset halaman ke 1 setiap kali filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, isAssetFilter]);
+
+  // --- 3. PAGINATION LOGIC ---
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
+  );
+
+  // --- 4. EXPORT TO EXCEL ---
+  const handleExportExcel = () => {
+    if (filteredData.length === 0) {
+      toast.warning("Tidak ada data untuk diexport");
       return;
     }
-    setData((prevData) =>
-      prevData.filter((item) => item.id.toString() !== id.toString())
+
+    // Format data agar rapi di Excel
+    const dataToExport = filteredData.map((item, index) => ({
+      No: index + 1,
+      "Part Number": item.part_number,
+      "Nama Barang": item.part_name,
+      Kategori: item.category || "-",
+      UoM: item.uom || "-",
+      Vendor: item.vendor || "-",
+      "Harga Referensi": item.last_purchase_price || 0,
+      "Aset?": item.is_asset ? "Ya" : "Tidak",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Data Barang");
+
+    // Auto width columns (sedikit styling dasar)
+    const max_width = dataToExport.reduce(
+      (w, r) => Math.max(w, r["Nama Barang"]?.length || 10),
+      10,
     );
-    toast.success("Data barang berhasil dihapus");
+    worksheet["!cols"] = [
+      { wch: 5 },
+      { wch: 15 },
+      { wch: max_width },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 10 },
+    ];
+
+    XLSX.writeFile(
+      workbook,
+      `Master_Barang_${new Date().toISOString().split("T")[0]}.xlsx`,
+    );
+    toast.success("File Excel berhasil didownload!");
   };
 
-  // Memoize data hak akses untuk tombol
-  const canModify = useMemo(
-    () =>
-      role === "admin" ||
-      role === "approver" ||
-      role === "Purchasing" ||
-      role === "General Affair",
-    [role]
-  );
+  // --- 5. DELETE HANDLER ---
+  const handleDelete = async (id: number) => {
+    const { error } = await supabase.from("barang").delete().eq("id", id);
+    if (error) {
+      toast.error("Gagal menghapus barang");
+    } else {
+      toast.success("Barang berhasil dihapus");
+      setData((prev) => prev.filter((item) => item.id !== id));
+    }
+  };
+
+  const canModify = [
+    "admin",
+    "approver",
+    "Purchasing",
+    "General Affair",
+  ].includes(userRole);
 
   return (
     <Content
-      title="Data Barang"
-      description="Daftar barang yang tersedia di master data."
+      title="Master Data Barang"
+      description="Kelola daftar barang, sparepart, dan aset perusahaan."
+      size="lg" // Lebarkan content agar tabel muat
       cardAction={
-        canModify && (
-          <Button variant={"outline"} asChild>
-            <Link href="/barang/tambah">
-              <Plus className="mr-2 h-4 w-4" /> Tambah barang
-            </Link>
+        <div className="flex gap-2">
+          {/* Tombol Export */}
+          <Button
+            variant="outline"
+            onClick={handleExportExcel}
+            disabled={loading}
+          >
+            <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600" />
+            Export Excel
           </Button>
-        )
-      }
-      className="col-span-12"
-    >
-      {/* --- Filter Section --- */}
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input
-            placeholder="Cari berdasarkan Part Number atau Nama Barang..."
-            className="pl-10"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-        </div>
 
-        <div className="p-4 border rounded-lg bg-muted/50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Kategori</label>
-              <Select
-                onValueChange={(value) =>
-                  handleFilterChange({
-                    category: value === "all" ? undefined : value,
-                  })
-                }
-                defaultValue={categoryFilter || "all"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter kategori" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Kategori</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {canModify && (
+            <Button onClick={() => router.push("/barang/tambah")}>
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Barang
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        {/* --- FILTER SECTION --- */}
+        <div className="flex flex-col md:flex-row gap-4 bg-muted/20 p-4 rounded-lg border">
+          {/* Search Input */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari Part Number atau Nama Barang..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 bg-background"
+            />
+          </div>
+
+          {/* Filter Kategori */}
+          <div className="w-full md:w-[200px]">
+            <Select
+              value={selectedCategory}
+              onValueChange={setSelectedCategory}
+            >
+              <SelectTrigger className="bg-background">
+                <SelectValue placeholder="Semua Kategori" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Kategori</SelectItem>
+                {uniqueCategories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Filter Asset (Status) */}
+          <div className="w-full md:w-[180px]">
+            <Select
+              value={isAssetFilter}
+              onValueChange={(val: any) => setIsAssetFilter(val)}
+            >
+              <SelectTrigger className="bg-background">
+                <SelectValue placeholder="Status Aset" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Tipe</SelectItem>
+                <SelectItem value="true">Fixed Asset</SelectItem>
+                <SelectItem value="false">Non-Asset (Consumable)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Items Per Page */}
+          <div className="w-[100px]">
+            <Select
+              value={itemsPerPage.toString()}
+              onValueChange={(val) => {
+                setItemsPerPage(Number(val));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / Hal</SelectItem>
+                <SelectItem value="25">25 / Hal</SelectItem>
+                <SelectItem value="50">50 / Hal</SelectItem>
+                <SelectItem value="100">100 / Hal</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-      </div>
 
-      <div className="border rounded-md overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>No</TableHead>
-              <TableHead>Part Number</TableHead>
-              <TableHead>Part Name</TableHead>
-              <TableHead>Kategori</TableHead>
-              <TableHead>UoM</TableHead>
-              {canModify && <TableHead className="text-right">Aksi</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading || isPending ? (
-              Array.from({ length: limit }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={canModify ? 6 : 5}>
-                    <Skeleton className="h-8 w-full" />
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : data.length > 0 ? (
-              data.map((item, index) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {item.part_number}
-                  </TableCell>
-                  <TableCell className="font-semibold">
-                    {item.part_name}
-                  </TableCell>
-                  <TableCell>{item.category}</TableCell>
-                  <TableCell>{item.uom}</TableCell>
-                  {canModify && (
-                    <TableCell className="text-right space-x-2">
-                      <Button variant={"outline"} size={"sm"} asChild>
-                        <Link href={`/barang/edit/${item.id}`}>
-                          <Edit className="h-3 w-3" />
-                        </Link>
-                      </Button>
-                      <ConfirmDialog
-                        title="Hapus data barang"
-                        description="Apakah Anda yakin ingin menghapus data barang ini? Tindakan ini tidak dapat dibatalkan."
-                        onConfirm={() => handleDeleteBarang(item.id.toString())}
-                      >
-                        <Button variant={"destructive"} size={"sm"}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </ConfirmDialog>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
-            ) : (
+        {/* --- TABLE SECTION --- */}
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={canModify ? 6 : 5}
-                  className="text-center h-24"
-                >
-                  Tidak ada data barang yang ditemukan.
-                </TableCell>
+                <TableHead className="w-[50px]">No</TableHead>
+                <TableHead className="w-[120px]">Part Number</TableHead>
+                <TableHead>Nama Barang</TableHead>
+                <TableHead className="w-[150px]">Kategori</TableHead>
+                <TableHead className="w-[80px]">UoM</TableHead>
+                <TableHead className="w-[150px]">Vendor</TableHead>
+                <TableHead className="w-[150px] text-right">
+                  Harga Ref
+                </TableHead>
+                <TableHead className="w-[100px] text-center">Tipe</TableHead>
+                {canModify && (
+                  <TableHead className="w-[100px] text-right">Aksi</TableHead>
+                )}
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center">
+                    <div className="flex justify-center items-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" /> Memuat
+                      data...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : paginatedData.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={9}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    Tidak ada barang ditemukan.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedData.map((item, index) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      {(currentPage - 1) * itemsPerPage + index + 1}
+                    </TableCell>
 
-      <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(value) => handleFilterChange({ limit: value })}
-          >
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {totalItems} barang.</span>
+                    <TableCell className="font-mono text-xs font-medium">
+                      {item.part_number}
+                    </TableCell>
+
+                    {/* TRUNCATED NAME */}
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.part_name || "-"}
+                        maxWidth="250px"
+                      />
+                    </TableCell>
+
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.category || "-"}
+                        maxWidth="140px"
+                      />
+                    </TableCell>
+
+                    <TableCell>{item.uom}</TableCell>
+
+                    {/* TRUNCATED VENDOR */}
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.vendor || "-"}
+                        maxWidth="140px"
+                      />
+                    </TableCell>
+
+                    <TableCell className="text-right font-mono text-xs">
+                      {item.last_purchase_price
+                        ? formatCurrency(item.last_purchase_price)
+                        : "-"}
+                    </TableCell>
+
+                    <TableCell className="text-center">
+                      {item.is_asset ? (
+                        <Badge
+                          variant="default"
+                          className="bg-blue-600 hover:bg-blue-700 text-[10px]"
+                        >
+                          Asset
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Barang
+                        </Badge>
+                      )}
+                    </TableCell>
+
+                    {canModify && (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              router.push(`/barang/edit/${item.id}`)
+                            }
+                          >
+                            <Edit className="h-4 w-4 text-blue-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const confirmed = confirm(
+                                `Anda yakin ingin menghapus ${item.part_name}?`,
+                              );
+                              if (confirmed) handleDelete(item.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
-        <PaginationComponent
-          currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / limit)}
-          limit={limit}
-          basePath={pathname}
-        />
+
+        {/* --- PAGINATION CONTROLS --- */}
+        {totalPages > 1 && (
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  // disabled={currentPage === 1} // Shadcn pagination doesn't have disabled prop on link usually, handled by logic
+                  className={
+                    currentPage === 1
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+
+              {/* Simple Pagination Logic for Compact View */}
+              <PaginationItem>
+                <span className="text-sm px-4">
+                  Halaman {currentPage} dari {totalPages}
+                </span>
+              </PaginationItem>
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  className={
+                    currentPage === totalPages
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
+
+        <div className="text-xs text-muted-foreground text-center">
+          Total {filteredData.length} Barang
+        </div>
       </div>
     </Content>
   );

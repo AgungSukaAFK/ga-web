@@ -1,287 +1,320 @@
-// src/app/(With Sidebar)/barang/tambah/page.tsx
-
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { createClient } from "@/lib/supabase/client";
-import { validateCSV } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-
-// REVISI: Hapus vendor dari type
-type Barang = {
-  part_number: string;
-  part_name: string;
-  category: string;
-  uom: string;
-  // vendor: string; // Dihapus
-};
+import { createClient } from "@/lib/supabase/client";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { Loader2, Upload, FileSpreadsheet } from "lucide-react";
+// IMPORT COMPONENT BARU KITA
+import { VendorSearchCombobox } from "./VendorSearchCombobox";
 
 export default function TambahBarangPage() {
-  const s = createClient();
-
+  const router = useRouter();
+  const supabase = createClient();
   const [loading, setLoading] = useState(false);
-  const [dataBarang, setDataBarang] = useState<Barang>({
+  const [activeTab, setActiveTab] = useState("manual");
+
+  // HAPUS STATE vendorList lama
+  // const [vendorList, setVendorList] = useState<ComboboxData>([]);
+
+  const [form, setForm] = useState({
     part_number: "",
     part_name: "",
     category: "",
     uom: "",
-    // vendor: "", // Dihapus
+    vendor: "",
+    is_asset: false,
+    last_purchase_price: 0,
   });
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
-  const [dataCSV, setDataCSV] = useState("");
 
-  useEffect(() => {
-    if (alertMessage) {
-      toast.info(alertMessage);
-      setAlertMessage(null);
-    }
-  }, [alertMessage]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setDataBarang((prevData) => ({
-      ...prevData,
-      [name]: value,
-    }));
-  };
+  // HAPUS useEffect fetchVendors LAMA
+  // useEffect(() => { ... }, []);
 
-  const handleAddBarang = async () => {
-    if (!dataBarang.part_number) {
-      setAlertMessage("Part number tidak boleh kosong");
+  // --- HANDLER: MANUAL SAVE ---
+  const handleManualSave = async () => {
+    // ... (Kode save tetap sama) ...
+    if (!form.part_number || !form.part_name) {
+      toast.error("Part Number dan Nama Barang wajib diisi.");
       return;
     }
-    if (!dataBarang.part_name) {
-      setAlertMessage("Part name tidak boleh kosong");
-      return;
-    }
-    if (!dataBarang.category) {
-      setAlertMessage("Kategori tidak boleh kosong");
-      return;
-    }
-    if (!dataBarang.uom) {
-      setAlertMessage("UoM tidak boleh kosong");
-      return;
-    }
-    // REVISI: Hapus validasi vendor
 
+    setLoading(true);
     try {
-      setLoading(true);
-      const { error } = await s.from("barang").insert(dataBarang);
+      const { error } = await supabase.from("barang").insert([
+        {
+          part_number: form.part_number,
+          part_name: form.part_name,
+          category: form.category,
+          uom: form.uom,
+          vendor: form.vendor,
+          is_asset: form.is_asset,
+          last_purchase_price: form.last_purchase_price,
+        },
+      ]);
 
-      if (error?.code === "23505") {
-        setAlertMessage("Part number sudah terdaftar");
-        return;
-      }
       if (error) throw error;
-      setAlertMessage("Barang berhasil ditambahkan");
-      clearInput();
-    } catch (error) {
-      console.error("Error tambah barang:", error);
-      setAlertMessage("Terjadi kesalahan saat menambahkan barang");
+      toast.success("Barang berhasil ditambahkan");
+      router.push("/barang");
+    } catch (err: any) {
+      toast.error(`Gagal menyimpan: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // REVISI: Update logika CSV agar tidak validasi/mengambil vendor
-  const handleAddBarangBatch = async () => {
-    // Perlu memastikan fungsi validateCSV di utils juga mendukung format baru
-    // Namun karena validateCSV adalah helper eksternal, kita asumsikan
-    // parsing manual di sini atau sesuaikan csv input.
-    // Untuk amannya, kita parsing manual rows di sini atau sesuaikan expected di utils.
-    // Disini saya gunakan parseCSV manual sederhana jika validateCSV strict terhadap header.
-
-    // Parsing manual sederhana untuk menyesuaikan kolom baru
-    const rows = dataCSV
-      .trim()
-      .split("\n")
-      .map((line) =>
-        line.split(",").map((cell) => cell.replace(/^"|"$/g, "").trim())
-      );
-
-    if (rows.length < 2) {
-      toast.error("Data CSV kosong atau format salah");
+  // --- HANDLER: CSV IMPORT ---
+  const handleCsvUpload = async () => {
+    // ... (Kode CSV tetap sama) ...
+    if (!csvFile) {
+      toast.error("Silakan pilih file CSV terlebih dahulu.");
       return;
     }
 
-    // Hapus header
-    const dataRows = rows.slice(1);
+    setLoading(true);
+    const reader = new FileReader();
 
-    // Validasi Header (Optional, tapi bagus untuk UX)
-    // Header diharapkan: part_number,part_name,category,uom
-
-    try {
-      setLoading(true);
-
-      // Ambil semua part_number yang sudah ada di DB
-      const { data: existing, error: existingError } = await s
-        .from("barang")
-        .select("part_number");
-
-      if (existingError) throw existingError;
-
-      const existingSet = new Set(existing.map((row: any) => row.part_number));
-
-      // Filter hanya part_number yang belum ada di DB
-      const newRows = dataRows.filter((cols) => !existingSet.has(cols[0]));
-
-      if (newRows.length === 0) {
-        toast.info("Tidak ada data baru yang ditambahkan (semua sudah ada)");
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) {
+        toast.error("File kosong.");
+        setLoading(false);
         return;
       }
 
-      // Insert batch
-      const chunkSize = 1000;
-      for (let i = 0; i < newRows.length; i += chunkSize) {
-        const chunk = newRows.slice(i, i + chunkSize).map((cols) => ({
-          part_number: cols[0],
-          part_name: cols[1],
-          category: cols[2],
-          uom: cols[3],
-          // vendor: cols[4], // Dihapus
-        }));
+      const rows = text
+        .split("\n")
+        .map((row) => row.trim())
+        .filter((row) => row.length > 0);
 
-        // Filter out baris kosong jika ada
-        const validChunk = chunk.filter((c) => c.part_number);
+      const dataToInsert = [];
+      const errors = [];
 
-        if (validChunk.length > 0) {
-          const { error } = await s.from("barang").insert(validChunk);
-          if (error) throw error;
+      for (let i = 1; i < rows.length; i++) {
+        const columns = rows[i]
+          .split(",")
+          .map((col) => col.trim().replace(/^"|"$/g, ""));
+
+        if (columns.length < 2) continue;
+
+        const part_number = columns[0];
+        const part_name = columns[1];
+
+        if (!part_number || !part_name) {
+          errors.push(`Baris ${i + 1}: Part Number/Name kosong.`);
+          continue;
         }
+
+        dataToInsert.push({
+          part_number: part_number,
+          part_name: part_name,
+          category: columns[2] || "",
+          uom: columns[3] || "PCS",
+          vendor: columns[4] || "",
+          is_asset: columns[5]?.toLowerCase() === "true" || columns[5] === "1",
+          last_purchase_price: Number(columns[6]) || 0,
+        });
       }
 
-      toast.success(`${newRows.length} data barang berhasil ditambahkan`);
-      clearInputBatch();
-    } catch (err: any) {
-      console.error("Error tambah barang batch:", err.message);
-      toast.error("Gagal menambahkan data batch: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (dataToInsert.length === 0) {
+        toast.error("Tidak ada data valid yang ditemukan dalam CSV.");
+        setLoading(false);
+        return;
+      }
 
-  const clearInput = () => {
-    setDataBarang({
-      part_number: "",
-      part_name: "",
-      category: "",
-      uom: "",
-      // vendor: "", // Dihapus
-    });
-  };
+      try {
+        const { error } = await supabase.from("barang").insert(dataToInsert);
+        if (error) throw error;
 
-  const clearInputBatch = () => {
-    setDataCSV("");
+        toast.success(`Berhasil mengimpor ${dataToInsert.length} item.`);
+        if (errors.length > 0) {
+          toast.warning(`${errors.length} baris gagal (lihat console).`);
+          console.warn("CSV Errors:", errors);
+        }
+        router.push("/barang");
+      } catch (err: any) {
+        toast.error(`Gagal import CSV: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.readAsText(csvFile);
   };
 
   return (
-    <>
-      <Content
-        title="Tambah data barang"
-        size="md"
-        cardAction={
-          <Button variant={"outline"} onClick={clearInput}>
-            Clear
-          </Button>
-        }
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="mb-2 block font-medium">Part Number</label>
-            <Input
-              disabled={loading}
-              name="part_number"
-              onChange={handleInputChange}
-              value={dataBarang.part_number}
-              placeholder="Part number..."
-            />
+    <Content title="Tambah Master Barang">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {/* ... (TabsList tetap sama) ... */}
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="manual">Input Manual</TabsTrigger>
+          <TabsTrigger value="csv">Import CSV</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="manual">
+          <div className="max-w-2xl space-y-4 border p-4 rounded-md bg-card">
+            {/* ... (Input Part Number, Nama, Kategori, UOM tetap sama) ... */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>
+                  Part Number <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={form.part_number}
+                  onChange={(e) =>
+                    setForm({ ...form, part_number: e.target.value })
+                  }
+                  placeholder="Contoh: B-001"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Nama Barang <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={form.part_name}
+                  onChange={(e) =>
+                    setForm({ ...form, part_name: e.target.value })
+                  }
+                  placeholder="Contoh: Laptop Dell"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Kategori</Label>
+                <Input
+                  value={form.category}
+                  onChange={(e) =>
+                    setForm({ ...form, category: e.target.value })
+                  }
+                  placeholder="Elektronik / ATK"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Satuan (UoM)</Label>
+                <Input
+                  value={form.uom}
+                  onChange={(e) => setForm({ ...form, uom: e.target.value })}
+                  placeholder="PCS, UNIT"
+                />
+              </div>
+            </div>
+
+            {/* --- BAGIAN VENDOR DIGANTI DENGAN COMPONENT BARU --- */}
+            <div className="space-y-2">
+              <Label>Vendor / Supplier</Label>
+              <VendorSearchCombobox
+                defaultValue={form.vendor}
+                onSelect={(val) => setForm({ ...form, vendor: val })}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                *Cari berdasarkan Nama atau Kode Vendor.
+              </p>
+            </div>
+
+            {/* ... (Sisa form Harga, Checkbox, Button tetap sama) ... */}
+            <div className="space-y-2 bg-muted/30 p-3 rounded border border-dashed">
+              <Label className="text-primary font-semibold">
+                Harga Referensi Awal (Opsional)
+              </Label>
+              <CurrencyInput
+                value={form.last_purchase_price}
+                onValueChange={(val) =>
+                  setForm({ ...form, last_purchase_price: val })
+                }
+                placeholder="Rp 0"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Harga ini akan menjadi acuan otomatis saat User membuat MR baru.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 border p-3 rounded-md">
+              <Checkbox
+                id="is_asset"
+                checked={form.is_asset}
+                onCheckedChange={(c) =>
+                  setForm({ ...form, is_asset: c as boolean })
+                }
+              />
+              <Label htmlFor="is_asset" className="cursor-pointer">
+                Barang ini termasuk Aset Perusahaan (Fixed Asset)?
+              </Label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => router.back()}>
+                Batal
+              </Button>
+              <Button onClick={handleManualSave} disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Simpan Barang
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="mb-2 block font-medium">Part Name</label>
-            <Input
-              disabled={loading}
-              name="part_name"
-              onChange={handleInputChange}
-              value={dataBarang.part_name}
-              placeholder="Part name..."
-            />
+        </TabsContent>
+
+        {/* ... (Tab CSV Import tetap sama) ... */}
+        <TabsContent value="csv">
+          {/* ... Paste konten Tab CSV Anda sebelumnya disini (tidak ada perubahan logic) ... */}
+          <div className="max-w-2xl space-y-6 border p-4 rounded-md bg-card">
+            <Alert>
+              <FileSpreadsheet className="h-4 w-4" />
+              <AlertTitle>Format File CSV</AlertTitle>
+              <AlertDescription>
+                Pastikan file CSV Anda menggunakan pemisah koma (<code>,</code>)
+                dengan urutan kolom sebagai berikut:
+                <div className="mt-2 p-2 bg-muted rounded font-mono text-xs overflow-x-auto">
+                  part_number, part_name, category, uom, vendor,
+                  is_asset(true/false), price
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  * Baris pertama dianggap sebagai Header dan tidak akan
+                  diimport.
+                  <br />* Kolom <strong>price</strong> (ke-7) adalah untuk Harga
+                  Referensi Awal.
+                </p>
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-2">
+              <Label>Upload File CSV</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                  className="cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => router.back()}>
+                Batal
+              </Button>
+              <Button onClick={handleCsvUpload} disabled={loading || !csvFile}>
+                {loading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Upload & Import
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="mb-2 block font-medium">
-              Kategori{" "}
-              <em className="text-base font-normal">
-                (gunakan tanda koma untuk kategori lebih dari satu)
-              </em>
-            </label>
-            <Input
-              disabled={loading}
-              name="category"
-              onChange={handleInputChange}
-              value={dataBarang.category}
-              placeholder="Kategori..."
-            />
-          </div>
-          <div>
-            <label className="mb-2 block font-medium">UoM</label>
-            <Input
-              disabled={loading}
-              name="uom"
-              onChange={handleInputChange}
-              value={dataBarang.uom}
-              placeholder="UoM..."
-            />
-          </div>
-          {/* Input Vendor DIHAPUS */}
-          <div className="flex justify-end">
-            <Button onClick={handleAddBarang} disabled={loading}>
-              {loading ? "Loading..." : "Tambah"}
-            </Button>
-          </div>
-        </div>
-      </Content>
-      <Content
-        title="Tambah data barang (batch) menggunakan CSV"
-        size="md"
-        cardAction={
-          <Button variant={"outline"} onClick={clearInputBatch}>
-            Clear
-          </Button>
-        }
-      >
-        <div className="space-y-4">
-          <p>Contoh format penulisan CSV yang sesuai (Tanpa Vendor)</p>
-          <div className="text-sm font-light space-y-2">
-            <pre>part_number,part_name,category,uom</pre>
-            <pre>
-              &quot;12345&quot;,&quot;Bolt 12mm&quot;,&quot;Sparepart,
-              Mechanical&quot;,&quot;pcs&quot;
-            </pre>
-            <pre>
-              &quot;67890&quot;,&quot;Oil
-              Filter&quot;,&quot;Engine&quot;,&quot;unit&quot;
-            </pre>
-            <pre>
-              &quot;11223&quot;,&quot;Bearing&quot;,&quot;Mechanical,
-              Rotating&quot;,&quot;pcs&quot;
-            </pre>
-          </div>
-          <Textarea
-            placeholder="Paste data barang dalam format CSV di sini..."
-            rows={10}
-            onChange={(e) => setDataCSV(e.target.value)}
-            value={dataCSV}
-          />
-          <div className="flex justify-end">
-            <Button onClick={handleAddBarangBatch} disabled={loading}>
-              {loading ? "Loading..." : "Tambah"}
-            </Button>
-          </div>
-        </div>
-      </Content>
-    </>
+        </TabsContent>
+      </Tabs>
+    </Content>
   );
 }

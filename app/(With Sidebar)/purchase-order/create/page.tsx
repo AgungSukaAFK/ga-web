@@ -211,7 +211,7 @@ function CreatePOPageContent() {
 
   // State untuk Partial Selection
   const [selectedOrderIndices, setSelectedOrderIndices] = useState<number[]>(
-    []
+    [],
   );
 
   // State untuk Fitur Ganti Barang (Revisi Baru)
@@ -324,7 +324,7 @@ function CreatePOPageContent() {
 
       // Cek apakah item ini sudah ada di poForm.items (untuk preserve qty/price yg sudah diedit)
       const existingItem = poForm.items.find(
-        (i) => i.barang_id === order.barang_id && order.barang_id !== null // Cek ID valid
+        (i) => i.barang_id === order.barang_id && order.barang_id !== null, // Cek ID valid
       );
 
       // Jika item ini dulunya "asal ketik" (barang_id null/0), kita tetap buat baru
@@ -350,7 +350,7 @@ function CreatePOPageContent() {
   useEffect(() => {
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
-      0
+      0,
     );
     let calculatedTax = 0;
     if (!isTaxIncluded) {
@@ -379,7 +379,7 @@ function CreatePOPageContent() {
     if (taxMode === "manual" && !isTaxIncluded) {
       const subtotal = poForm.items.reduce(
         (acc, item) => acc + item.qty * item.price,
-        0
+        0,
       );
       const grandTotal =
         subtotal -
@@ -405,7 +405,7 @@ function CreatePOPageContent() {
   const handleItemChange = (
     index: number,
     field: keyof POItem,
-    value: string | number
+    value: string | number,
   ) => {
     const newItems = [...poForm.items];
     const itemToUpdate = { ...newItems[index] };
@@ -436,12 +436,18 @@ function CreatePOPageContent() {
     item.part_number = barang.part_number;
     item.name = barang.part_name || item.name;
     item.uom = barang.uom || item.uom;
-    // Kita biarkan qty dan price seperti sebelumnya (atau reset jika perlu)
+
+    if (barang.last_purchase_price && barang.last_purchase_price > 0) {
+      item.price = barang.last_purchase_price;
+      item.total_price = item.qty * item.price; // Recalculate total
+      toast.success("Barang diganti & harga diperbarui dari database.");
+    } else {
+      toast.success("Barang diganti (Harga tetap/manual).");
+    }
 
     setPoForm({ ...poForm, items: newItems });
     setIsReplaceDialogOpen(false);
     setReplacingIndex(null);
-    toast.success("Item berhasil diganti dengan data Master Barang.");
   };
 
   const handleSubmit = async () => {
@@ -460,7 +466,7 @@ function CreatePOPageContent() {
         poForm,
         parseInt(mrId!),
         currentUser.id,
-        mrData.company_code
+        mrData.company_code,
       );
       toast.success("PO berhasil diajukan!");
       router.push("/purchase-order");
@@ -474,7 +480,7 @@ function CreatePOPageContent() {
   // Attachment Handlers
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance"
+    type: "po" | "finance",
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -517,7 +523,7 @@ function CreatePOPageContent() {
   // Selection Helper
   const toggleSelection = (index: number) => {
     setSelectedOrderIndices((prev) =>
-      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
     );
   };
 
@@ -541,7 +547,7 @@ function CreatePOPageContent() {
 
   const subtotal = poForm.items.reduce(
     (acc, item) => acc + item.total_price,
-    0
+    0,
   );
   const poAttachments =
     poForm.attachments?.filter((a) => !a.type || a.type === "po") || [];

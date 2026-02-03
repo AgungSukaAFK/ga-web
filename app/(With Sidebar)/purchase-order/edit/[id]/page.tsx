@@ -267,7 +267,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           setIsTaxIncluded(false);
           const subtotalSaatLoad = initialData.items.reduce(
             (acc, item) => acc + item.qty * item.price,
-            0
+            0,
           );
           if (
             subtotalSaatLoad > 0 &&
@@ -289,7 +289,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     if (!poForm) return;
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
-      0
+      0,
     );
 
     let calculatedTax = 0;
@@ -333,7 +333,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
-      0
+      0,
     );
     const grandTotal =
       subtotal -
@@ -362,7 +362,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const handleItemChange = (
     index: number,
     field: keyof POItem,
-    value: string | number
+    value: string | number,
   ) => {
     if (!poForm) return;
     const newItems = [...poForm.items];
@@ -385,19 +385,29 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       name: barang.part_name || "",
       qty: 1,
       uom: barang.uom || "Pcs",
-      price: 0,
-      total_price: 0,
+      price: barang.last_purchase_price || 0,
+      total_price: (barang.last_purchase_price || 0) * 1,
       vendor_name: "",
     };
+
+    // Optional: Kasih notif kecil
+    if (barang.last_purchase_price) {
+      toast.info(
+        `Harga referensi Rp ${barang.last_purchase_price.toLocaleString()} digunakan.`,
+      );
+    }
+
     setPoForm((prev) =>
-      prev ? { ...prev, items: [...prev.items, newItem] } : null
+      prev ? { ...prev, items: [...prev.items, newItem] } : null,
     );
   };
 
   const removeItem = (index: number) => {
     if (!poForm) return;
     setPoForm((prev) =>
-      prev ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : null
+      prev
+        ? { ...prev, items: prev.items.filter((_, i) => i !== index) }
+        : null,
     );
   };
 
@@ -443,7 +453,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   // --- Handle Vendor Change (Manual Edit) ---
   const handleVendorChange = (
     field: "name" | "address" | "contact_person",
-    value: string
+    value: string,
   ) => {
     setPoForm((prev) => {
       if (!prev) return null;
@@ -471,7 +481,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance"
+    type: "po" | "finance",
   ) => {
     const file = e.target.files?.[0];
     if (!file || !poForm) return;
@@ -481,7 +491,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     setIsLoading(true);
 
     const toastId = toast.loading(
-      `Mengunggah lampiran ${type.toUpperCase()}...`
+      `Mengunggah lampiran ${type.toUpperCase()}...`,
     );
     const supabase = createClient();
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
@@ -511,7 +521,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const updatedAttachments = [...currentAttachments, newAttachment];
 
     setPoForm((prev) =>
-      prev ? { ...prev, attachments: updatedAttachments } : null
+      prev ? { ...prev, attachments: updatedAttachments } : null,
     );
     toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
       id: toastId,
@@ -526,17 +536,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     if (!attachmentToRemove) return;
 
     const updatedAttachments = poForm.attachments?.filter(
-      (_, index) => index !== indexToRemove
+      (_, index) => index !== indexToRemove,
     );
     setPoForm((prev) =>
-      prev ? { ...prev, attachments: updatedAttachments } : null
+      prev ? { ...prev, attachments: updatedAttachments } : null,
     );
 
     const supabase = createClient();
     supabase.storage.from("mr").remove([attachmentToRemove.url]);
 
     toast.info(
-      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`
+      `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`,
     );
   };
 
@@ -561,7 +571,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const subtotal = poForm.items.reduce(
     (acc, item) => acc + item.qty * item.price,
-    0
+    0,
   );
 
   return (
@@ -670,7 +680,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCurrency(
-                            Number(order.qty) * order.estimasi_harga
+                            Number(order.qty) * order.estimasi_harga,
                           )}
                         </TableCell>
                         <TableCell>
@@ -687,7 +697,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                           )}
                         </TableCell>
                       </TableRow>
-                    )
+                    ),
                   )}
                 </TableBody>
               </Table>
@@ -844,7 +854,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 value={poForm.shipping_address || ""}
                 onChange={(e) =>
                   setPoForm((p) =>
-                    p ? { ...p, shipping_address: e.target.value } : null
+                    p ? { ...p, shipping_address: e.target.value } : null,
                   )
                 }
               />
