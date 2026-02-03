@@ -276,6 +276,8 @@ export const createPurchaseOrder = async (
   user_id: string,
   company_code: string,
 ) => {
+  const supabase = createClient();
+
   const payload = {
     ...poData,
     mr_id,
@@ -294,19 +296,36 @@ export const createPurchaseOrder = async (
 
   if (error) throw error;
 
-  // 2. UPDATE STATUS & LEVEL MR (Logika Baru)
+  // 2. FITUR BARU: Update Harga Barang (Last Purchase Price)
+  if (poData.items && poData.items.length > 0) {
+    const updatePromises = poData.items.map(async (item) => {
+      if (item.barang_id && item.price > 0) {
+        return supabase
+          .from("barang")
+          .update({ last_purchase_price: item.price })
+          .eq("id", item.barang_id);
+      }
+    });
+
+    try {
+      await Promise.all(updatePromises);
+    } catch (err) {
+      console.error("Gagal update harga master barang:", err);
+    }
+  }
+
+  // 3. UPDATE STATUS & LEVEL MR (Logika Lama)
   if (mr_id) {
     const { error: mrError } = await supabase
       .from("material_requests")
       .update({
-        status: "On Process", // Menandakan sedang diproses PO (sebagian/full)
-        level: "OPEN 3A", // OPEN 3A: Menunggu Kirim (Default)
+        status: "On Process",
+        level: "OPEN 3A",
       })
       .eq("id", mr_id);
 
     if (mrError) {
       console.error("Gagal update status MR saat buat PO:", mrError);
-      // Kita tidak throw error di sini agar PO tetap terbuat, tapi log errornya.
     }
   }
 
