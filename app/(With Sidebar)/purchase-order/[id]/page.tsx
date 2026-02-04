@@ -1061,7 +1061,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Diskon</span>
-              <span className="font-medium text-destructive-foreground">
+              <span className="font-medium text-destructive-foregrounde">
                 - {formatCurrency(po.discount)}
               </span>
             </div>
