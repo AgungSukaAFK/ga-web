@@ -1061,19 +1061,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Diskon</span>
-              <span className="font-medium text-destructive">
+              <span className="font-medium text-destructive-foreground">
                 - {formatCurrency(po.discount)}
               </span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Pajak (PPN)</span>
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-muted-foreground">
                 + {formatCurrency(po.tax)}
               </span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Ongkos Kirim</span>
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-muted-foreground">
                 + {formatCurrency(po.postage)}
               </span>
             </div>
