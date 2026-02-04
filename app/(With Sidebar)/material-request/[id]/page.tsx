@@ -572,14 +572,32 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const ApprovalActions = () => {
-    if (!mr || !currentUser || mr.status !== "Pending Approval") return null;
+    // REVISI: Jangan hanya cek "Pending Approval".
+    // Izinkan tombol muncul jika status BUKAN terminal (Completed/Rejected)
+    // dan statusnya "On Process" (kasus Anda), "Pending Validation", atau "Pending Approval".
+
+    // Status yang dianggap "Aktif" dimana approval masih mungkin terjadi
+    const activeStatuses = [
+      "Pending Approval",
+      "Pending Validation",
+      "On Process",
+    ];
+
+    if (!mr || !currentUser) return null;
+
+    // Jika status MR tidak ada dalam daftar aktif, sembunyikan tombol
+    if (!activeStatuses.includes(mr.status)) return null;
+
+    // Jika user tidak ada dalam daftar approval (atau sudah approve), sembunyikan
     if (myApprovalIndex === -1) return null;
+
     if (!isMyTurnForApproval)
       return (
         <p className="text-sm text-muted-foreground text-center">
           Menunggu persetujuan dari approver sebelumnya.
         </p>
       );
+
     return (
       <div className="flex gap-2">
         <Button
