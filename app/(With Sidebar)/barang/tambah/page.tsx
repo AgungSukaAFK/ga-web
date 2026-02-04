@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Loader2, Upload, FileSpreadsheet } from "lucide-react";
-// IMPORT COMPONENT BARU KITA
+// Import Component Vendor Search
 import { VendorSearchCombobox } from "./VendorSearchCombobox";
 
 export default function TambahBarangPage() {
@@ -21,9 +21,6 @@ export default function TambahBarangPage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("manual");
-
-  // HAPUS STATE vendorList lama
-  // const [vendorList, setVendorList] = useState<ComboboxData>([]);
 
   const [form, setForm] = useState({
     part_number: "",
@@ -33,18 +30,21 @@ export default function TambahBarangPage() {
     vendor: "",
     is_asset: false,
     last_purchase_price: 0,
+    link: "", // Field link baru
   });
 
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
-  // HAPUS useEffect fetchVendors LAMA
-  // useEffect(() => { ... }, []);
-
   // --- HANDLER: MANUAL SAVE ---
   const handleManualSave = async () => {
-    // ... (Kode save tetap sama) ...
+    // 1. Validasi Wajib Diisi (Termasuk Harga)
     if (!form.part_number || !form.part_name) {
       toast.error("Part Number dan Nama Barang wajib diisi.");
+      return;
+    }
+
+    if (!form.last_purchase_price || form.last_purchase_price <= 0) {
+      toast.error("Harga Referensi wajib diisi dan harus lebih dari 0.");
       return;
     }
 
@@ -59,6 +59,7 @@ export default function TambahBarangPage() {
           vendor: form.vendor,
           is_asset: form.is_asset,
           last_purchase_price: form.last_purchase_price,
+          link: form.link,
         },
       ]);
 
@@ -74,7 +75,6 @@ export default function TambahBarangPage() {
 
   // --- HANDLER: CSV IMPORT ---
   const handleCsvUpload = async () => {
-    // ... (Kode CSV tetap sama) ...
     if (!csvFile) {
       toast.error("Silakan pilih file CSV terlebih dahulu.");
       return;
@@ -122,6 +122,7 @@ export default function TambahBarangPage() {
           vendor: columns[4] || "",
           is_asset: columns[5]?.toLowerCase() === "true" || columns[5] === "1",
           last_purchase_price: Number(columns[6]) || 0,
+          link: columns[7] || "", // Asumsi kolom ke-8 adalah link
         });
       }
 
@@ -153,7 +154,6 @@ export default function TambahBarangPage() {
   return (
     <Content title="Tambah Master Barang">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* ... (TabsList tetap sama) ... */}
         <TabsList className="grid w-full grid-cols-2 mb-4">
           <TabsTrigger value="manual">Input Manual</TabsTrigger>
           <TabsTrigger value="csv">Import CSV</TabsTrigger>
@@ -161,7 +161,6 @@ export default function TambahBarangPage() {
 
         <TabsContent value="manual">
           <div className="max-w-2xl space-y-4 border p-4 rounded-md bg-card">
-            {/* ... (Input Part Number, Nama, Kategori, UOM tetap sama) ... */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>
@@ -210,7 +209,6 @@ export default function TambahBarangPage() {
               </div>
             </div>
 
-            {/* --- BAGIAN VENDOR DIGANTI DENGAN COMPONENT BARU --- */}
             <div className="space-y-2">
               <Label>Vendor / Supplier</Label>
               <VendorSearchCombobox
@@ -222,21 +220,33 @@ export default function TambahBarangPage() {
               </p>
             </div>
 
-            {/* ... (Sisa form Harga, Checkbox, Button tetap sama) ... */}
-            <div className="space-y-2 bg-muted/30 p-3 rounded border border-dashed">
-              <Label className="text-primary font-semibold">
-                Harga Referensi Awal (Opsional)
-              </Label>
-              <CurrencyInput
-                value={form.last_purchase_price}
-                onValueChange={(val) =>
-                  setForm({ ...form, last_purchase_price: val })
-                }
-                placeholder="Rp 0"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Harga ini akan menjadi acuan otomatis saat User membuat MR baru.
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 bg-muted/30 p-3 rounded border border-dashed">
+                <Label className="text-primary font-semibold">
+                  Harga Referensi Awal <span className="text-red-500">*</span>
+                </Label>
+                <CurrencyInput
+                  value={form.last_purchase_price}
+                  onValueChange={(val) =>
+                    setForm({ ...form, last_purchase_price: val })
+                  }
+                  placeholder="Rp 0"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Wajib diisi sebagai acuan budget.
+                </p>
+              </div>
+
+              <div className="space-y-2 bg-muted/30 p-3 rounded border border-dashed">
+                <Label className="text-primary font-semibold">
+                  Link Pembelian / Katalog
+                </Label>
+                <Input
+                  value={form.link}
+                  onChange={(e) => setForm({ ...form, link: e.target.value })}
+                  placeholder="https://tokopedia..."
+                />
+              </div>
             </div>
 
             <div className="flex items-center space-x-2 border p-3 rounded-md">
@@ -264,9 +274,7 @@ export default function TambahBarangPage() {
           </div>
         </TabsContent>
 
-        {/* ... (Tab CSV Import tetap sama) ... */}
         <TabsContent value="csv">
-          {/* ... Paste konten Tab CSV Anda sebelumnya disini (tidak ada perubahan logic) ... */}
           <div className="max-w-2xl space-y-6 border p-4 rounded-md bg-card">
             <Alert>
               <FileSpreadsheet className="h-4 w-4" />
@@ -276,7 +284,7 @@ export default function TambahBarangPage() {
                 dengan urutan kolom sebagai berikut:
                 <div className="mt-2 p-2 bg-muted rounded font-mono text-xs overflow-x-auto">
                   part_number, part_name, category, uom, vendor,
-                  is_asset(true/false), price
+                  is_asset(true/false), price, link
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   * Baris pertama dianggap sebagai Header dan tidak akan

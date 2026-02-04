@@ -1,5 +1,3 @@
-// src/app/(With Sidebar)/item-requests/page.tsx
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -97,7 +95,7 @@ export default function ItemRequestPage() {
     const uniqueUserIds = Array.from(
       new Set(reqData.map((r) => r.requester_id)),
     ).filter(Boolean);
-    const profilesMap: Record<string, any> = {};
+    let profilesMap: Record<string, any> = {};
 
     if (uniqueUserIds.length > 0) {
       const { data: profilesData } = await supabase
@@ -155,8 +153,15 @@ export default function ItemRequestPage() {
   // --- 3. ACTIONS ---
   const handleApprove = async () => {
     if (!selectedReq) return;
+
+    // VALIDASI WAJIB (Termasuk Harga)
     if (!finalForm.part_number || !finalForm.part_name) {
       toast.warning("Part Number & Nama Barang wajib diisi.");
+      return;
+    }
+
+    if (!finalForm.price || finalForm.price <= 0) {
+      toast.warning("Harga Referensi wajib diisi dan tidak boleh 0.");
       return;
     }
 
@@ -352,11 +357,10 @@ export default function ItemRequestPage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG PROSES (REVISI: SINGLE COLUMN - 1 BARIS 1 INPUT) --- */}
-      {/* Menggunakan max-w-3xl agar lebar tapi fokus di tengah (seperti formulir kertas) */}
+      {/* --- DIALOG PROSES (SINGLE COLUMN CLEAN) --- */}
       <Dialog open={isProcessOpen} onOpenChange={setIsProcessOpen}>
         <DialogContent className="max-w-3xl w-full max-h-[95vh] overflow-y-auto p-0 gap-0">
-          {/* HEADER (Sticky) */}
+          {/* HEADER */}
           <DialogHeader className="p-6 border-b bg-background sticky top-0 z-20">
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <Package className="h-5 w-5 text-primary" />
@@ -369,9 +373,9 @@ export default function ItemRequestPage() {
           </DialogHeader>
 
           <div className="p-6 md:p-8 space-y-8 bg-muted/5">
-            {/* 1. CARD DATA REQUESTER (Highlight Box) */}
-            <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-5">
-              <h4 className="text-xs font-bold uppercase tracking-wide text-blue-700 flex items-center gap-2 mb-3">
+            {/* 1. DATA REQUESTER */}
+            <div className="bg-muted border-blue-100 rounded-lg p-5">
+              <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
                 <User className="h-3 w-3" /> Data Referensi User
               </h4>
               <div className="space-y-3">
@@ -380,7 +384,7 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       Proposed Name
                     </span>
-                    <span className="font-medium text-blue-900">
+                    <span className="font-medium text-foreground">
                       {selectedReq?.proposed_name}
                     </span>
                   </div>
@@ -388,7 +392,7 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       Category
                     </span>
-                    <span className="font-medium text-blue-900">
+                    <span className="font-medium text-foreground">
                       {selectedReq?.proposed_category}
                     </span>
                   </div>
@@ -396,14 +400,14 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       UoM
                     </span>
-                    <span className="font-medium text-blue-900">
+                    <span className="font-medium text-foreground">
                       {selectedReq?.proposed_uom}
                     </span>
                   </div>
                 </div>
                 {selectedReq?.description && (
                   <div className="text-xs text-muted-foreground italic border-t border-blue-100 pt-2 mt-2">
-                    &quot;Note User: {selectedReq.description}&quot;
+                    "Note User: {selectedReq.description}"
                   </div>
                 )}
               </div>
@@ -411,8 +415,7 @@ export default function ItemRequestPage() {
 
             <Separator />
 
-            {/* 2. FORM INPUT MASTER (Single Column / 1 Input per Row) */}
-            {/* Menggunakan space-y-5 agar jarak antar input lega */}
+            {/* 2. FORM INPUT MASTER */}
             <div className="space-y-6">
               <div className="flex items-center gap-2 mb-4">
                 <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded">
@@ -423,7 +426,6 @@ export default function ItemRequestPage() {
                 </span>
               </div>
 
-              {/* Input 1: Part Number */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">
                   Part Number (Kode Unik){" "}
@@ -442,7 +444,6 @@ export default function ItemRequestPage() {
                 </p>
               </div>
 
-              {/* Input 2: Nama Barang */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">
                   Nama Barang Resmi <span className="text-red-500">*</span>
@@ -456,7 +457,6 @@ export default function ItemRequestPage() {
                 />
               </div>
 
-              {/* Input 3: Kategori */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold flex items-center gap-2">
                   <Tag className="h-3 w-3" /> Kategori Barang
@@ -470,7 +470,6 @@ export default function ItemRequestPage() {
                 />
               </div>
 
-              {/* Input 4: UoM */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Satuan (UoM)</Label>
                 <Input
@@ -483,7 +482,6 @@ export default function ItemRequestPage() {
                 />
               </div>
 
-              {/* Input 5: Vendor */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">
                   Vendor Default (Opsional)
@@ -499,10 +497,10 @@ export default function ItemRequestPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-6">
-                {/* Input 6: Harga */}
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold flex items-center gap-2">
-                    <DollarSign className="h-3 w-3" /> Harga Referensi
+                    <DollarSign className="h-3 w-3" />
+                    Harga Referensi <span className="text-red-500">*</span>
                   </Label>
                   <CurrencyInput
                     value={finalForm.price}
@@ -511,9 +509,11 @@ export default function ItemRequestPage() {
                     }
                     className="h-11 bg-background border-muted-foreground/30"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    Wajib diisi, tidak boleh 0.
+                  </p>
                 </div>
 
-                {/* Input 7: Link */}
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold flex items-center gap-2">
                     <LinkIcon className="h-3 w-3" /> Link Pembelian
@@ -541,7 +541,6 @@ export default function ItemRequestPage() {
                 </div>
               </div>
 
-              {/* Input 8: Checkbox Asset */}
               <div
                 className="flex items-center space-x-3 p-4 border rounded-md bg-muted/10 cursor-pointer hover:bg-muted/20 transition-all"
                 onClick={() =>
@@ -569,7 +568,6 @@ export default function ItemRequestPage() {
                 </div>
               </div>
 
-              {/* Input 9: Notes */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold flex items-center gap-2">
                   <FileText className="h-3 w-3" /> Catatan Admin
@@ -586,7 +584,6 @@ export default function ItemRequestPage() {
             </div>
           </div>
 
-          {/* FOOTER (Sticky Bottom) */}
           <DialogFooter className="p-6 border-t bg-background sticky bottom-0 z-20 gap-3">
             <Button
               variant="outline"
