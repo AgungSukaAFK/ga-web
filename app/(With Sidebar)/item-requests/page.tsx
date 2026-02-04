@@ -1,10 +1,9 @@
-// src/app/(With Sidebar)/barang/requests/page.tsx
+// src/app/(With Sidebar)/item-requests/page.tsx
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { Content } from "@/components/content";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -13,322 +12,600 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
-import { ItemRequest } from "@/type";
-import { Check, Loader2, X, History } from "lucide-react";
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { formatDateFriendly } from "@/lib/utils";
+import {
+  Loader2,
+  Check,
+  ExternalLink,
+  ArrowRight,
+  Ban,
+  User,
+  Package,
+  FileText,
+  DollarSign,
+  Link as LinkIcon,
+  Tag,
+} from "lucide-react";
+import { ItemRequest } from "@/type";
+import { format } from "date-fns";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { VendorSearchCombobox } from "../barang/tambah/VendorSearchCombobox";
 
-export default function ManageItemRequestsPage() {
+export default function ItemRequestPage() {
   const [requests, setRequests] = useState<ItemRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<string>("pending"); // 'pending' | 'all'
 
-  // State Dialog Approve
+  // State Dialogs
   const [selectedReq, setSelectedReq] = useState<ItemRequest | null>(null);
-  const [isApproveOpen, setIsApproveOpen] = useState(false);
-  const [finalData, setFinalData] = useState({
+  const [isProcessOpen, setIsProcessOpen] = useState(false);
+  const [isRejectOpen, setIsRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  // Form Finalisasi
+  const [finalForm, setFinalForm] = useState({
     part_number: "",
     part_name: "",
     category: "",
     uom: "",
+    vendor: "",
+    price: 0,
+    link: "",
+    is_asset: false,
+    admin_notes: "",
   });
 
   const supabase = createClient();
 
+  // --- 1. FETCH REQUESTS ---
   const fetchRequests = async () => {
     setLoading(true);
-    let query = supabase
+    const { data: reqData, error: reqError } = await supabase
       .from("item_requests")
-      .select(`*, users_with_profiles!requester_id(nama, department)`)
+      .select("*")
+      .eq("status", "pending")
       .order("created_at", { ascending: false });
 
-    if (filterStatus === "pending") {
-      query = query.eq("status", "pending");
+    if (reqError) {
+      console.error("Error fetching requests:", reqError);
+      toast.error("Gagal mengambil data request");
+      setLoading(false);
+      return;
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      toast.error("Gagal memuat request");
-    } else {
-      setRequests(data as any);
+    if (!reqData || reqData.length === 0) {
+      setRequests([]);
+      setLoading(false);
+      return;
     }
+
+    const uniqueUserIds = Array.from(
+      new Set(reqData.map((r) => r.requester_id)),
+    ).filter(Boolean);
+    let profilesMap: Record<string, any> = {};
+
+    if (uniqueUserIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, nama, department")
+        .in("id", uniqueUserIds);
+
+      if (profilesData) {
+        profilesData.forEach((p) => {
+          profilesMap[p.id] = p;
+        });
+      }
+    }
+
+    const mappedRequests = reqData.map((item: any) => {
+      const profile = profilesMap[item.requester_id];
+      return {
+        ...item,
+        requester_name: profile?.nama || "Unknown User",
+        requester_dept: profile?.department || "-",
+      };
+    });
+
+    setRequests(mappedRequests);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchRequests();
-  }, [filterStatus]);
+  }, []);
 
-  const handleOpenApprove = (req: ItemRequest) => {
+  // --- 2. HANDLERS ---
+  const handleOpenProcess = (req: ItemRequest) => {
     setSelectedReq(req);
-    setFinalData({
+    setFinalForm({
       part_number: "",
       part_name: req.proposed_name,
       category: req.proposed_category,
       uom: req.proposed_uom,
+      vendor: "",
+      price: 0,
+      link: "",
+      is_asset: false,
+      admin_notes: "",
     });
-    setIsApproveOpen(true);
+    setIsProcessOpen(true);
   };
 
-  const handleConfirmApprove = async () => {
+  const handleOpenReject = (req: ItemRequest) => {
+    setSelectedReq(req);
+    setRejectReason("");
+    setIsRejectOpen(true);
+  };
+
+  // --- 3. ACTIONS ---
+  const handleApprove = async () => {
     if (!selectedReq) return;
-    if (!finalData.part_number) {
-      toast.error("Part Number wajib diisi.");
+    if (!finalForm.part_number || !finalForm.part_name) {
+      toast.warning("Part Number & Nama Barang wajib diisi.");
       return;
     }
 
+    const toastId = toast.loading("Menyimpan...");
+
     try {
-      const { error: barangError } = await supabase.from("barang").insert({
-        part_number: finalData.part_number,
-        part_name: finalData.part_name,
-        category: finalData.category,
-        uom: finalData.uom,
-        vendor: null,
-        is_asset: false,
-      });
+      const { error: insertError } = await supabase.from("barang").insert([
+        {
+          part_number: finalForm.part_number,
+          part_name: finalForm.part_name,
+          category: finalForm.category,
+          uom: finalForm.uom,
+          vendor: finalForm.vendor,
+          last_purchase_price: finalForm.price,
+          link: finalForm.link,
+          is_asset: finalForm.is_asset,
+          created_at: new Date(),
+        },
+      ]);
 
-      if (barangError) throw barangError;
+      if (insertError) {
+        if (insertError.code === "23505")
+          throw new Error("Part Number sudah ada.");
+        throw insertError;
+      }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      await supabase
+      const { error: updateError } = await supabase
         .from("item_requests")
         .update({
           status: "approved",
-          processed_by: user?.id,
-          processed_at: new Date().toISOString(),
-          admin_notes: `Added as Part Number: ${finalData.part_number}`,
+          admin_notes: `Approved. PN: ${finalForm.part_number}. ${finalForm.admin_notes}`,
+          processed_at: new Date(),
         })
         .eq("id", selectedReq.id);
 
-      toast.success("Barang berhasil ditambahkan!");
-      setIsApproveOpen(false);
+      if (updateError) throw updateError;
+
+      toast.success("Berhasil di-approve!", { id: toastId });
+      setIsProcessOpen(false);
       fetchRequests();
-    } catch (error: any) {
-      if (error.code === "23505") {
-        toast.error("Part Number sudah ada di database.");
-      } else {
-        toast.error("Gagal memproses: " + error.message);
-      }
+    } catch (err: any) {
+      toast.error(`Gagal: ${err.message}`, { id: toastId });
     }
   };
 
-  const handleReject = async (id: number) => {
-    const reason = prompt("Masukkan alasan penolakan:");
-    if (!reason) return;
+  const handleReject = async () => {
+    if (!selectedReq) return;
+    const notes = isRejectOpen ? rejectReason : finalForm.admin_notes;
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from("item_requests")
-      .update({
-        status: "rejected",
-        processed_by: user?.id,
-        processed_at: new Date().toISOString(),
-        admin_notes: reason,
-      })
-      .eq("id", id);
+    if (!notes) {
+      toast.warning("Wajib mengisi alasan penolakan.");
+      return;
+    }
 
-    if (error) toast.error("Gagal menolak request");
-    else {
-      toast.success("Request ditolak.");
+    const toastId = toast.loading("Menolak...");
+    try {
+      const { error } = await supabase
+        .from("item_requests")
+        .update({
+          status: "rejected",
+          admin_notes: notes,
+          processed_at: new Date(),
+        })
+        .eq("id", selectedReq.id);
+
+      if (error) throw error;
+      toast.success("Request ditolak.", { id: toastId });
+      setIsProcessOpen(false);
+      setIsRejectOpen(false);
       fetchRequests();
+    } catch (err: any) {
+      toast.error(err.message, { id: toastId });
     }
   };
 
   return (
-    <>
-      <Content
-        title="Incoming Item Requests"
-        description="Kelola permintaan barang baru dari user."
-        size="lg"
-        cardAction={
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pending">Pending (Baru)</SelectItem>
-              <SelectItem value="all">Semua Riwayat</SelectItem>
-            </SelectContent>
-          </Select>
-        }
-      >
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
+    <Content
+      title="Daftar Permintaan Barang (Pending)"
+      description="List request item baru yang perlu diproses atau ditolak."
+      size="lg"
+    >
+      <div className="rounded-md border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[150px]">Tanggal</TableHead>
+              <TableHead className="w-[200px]">Requester</TableHead>
+              <TableHead>Item Proposed</TableHead>
+              <TableHead>Kategori</TableHead>
+              <TableHead>Desc</TableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead>Tanggal</TableHead>
-                <TableHead>Requester</TableHead>
-                <TableHead>Usulan Nama</TableHead>
-                <TableHead>Keterangan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Tanggal Pengusulan</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
+                <TableCell colSpan={6} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
-                    <Loader2 className="animate-spin mx-auto" />
+            ) : requests.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  Tidak ada permintaan pending.
+                </TableCell>
+              </TableRow>
+            ) : (
+              requests.map((req) => (
+                <TableRow key={req.id}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {format(new Date(req.created_at), "dd MMM yyyy HH:mm")}
                   </TableCell>
-                </TableRow>
-              ) : requests.length === 0 ? (
-                <TableRow>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-sm">
+                        {(req as any).requester_name}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {(req as any).requester_dept}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {req.proposed_name}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {req.proposed_category}
+                  </TableCell>
                   <TableCell
-                    colSpan={6}
-                    className="text-center h-24 text-muted-foreground"
+                    className="max-w-[150px] truncate text-xs text-muted-foreground"
+                    title={req.description || ""}
                   >
-                    Tidak ada data.
+                    {req.description || "-"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleOpenReject(req)}
+                      >
+                        Tolak
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700"
+                        onClick={() => handleOpenProcess(req)}
+                      >
+                        Proses <ArrowRight className="ml-1 h-3 w-3" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
-              ) : (
-                requests.map((req) => (
-                  <TableRow key={req.id}>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDateFriendly(req.created_at)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">
-                        {req.users_with_profiles?.nama || "Unknown"}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {req.users_with_profiles?.department}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {req.proposed_name}
-                      <div className="text-xs text-muted-foreground">
-                        {req.proposed_category} | {req.proposed_uom}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className="max-w-xs truncate"
-                      title={req.description || ""}
-                    >
-                      {req.description || "-"}
-                    </TableCell>
-                    <TableCell>
-                      {req.status === "pending" ? (
-                        <Badge variant="secondary">Pending</Badge>
-                      ) : req.status === "approved" ? (
-                        <Badge className="bg-green-500">Approved</Badge>
-                      ) : (
-                        <Badge variant="destructive">Rejected</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{formatDateFriendly(req.created_at)}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {req.status === "pending" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            onClick={() => handleOpenApprove(req)}
-                          >
-                            <Check className="h-4 w-4 mr-1" /> Process
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleReject(req.id)}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                      {req.status !== "pending" && (
-                        <span className="text-xs text-muted-foreground italic">
-                          {req.admin_notes
-                            ? `Note: ${req.admin_notes}`
-                            : "Selesai"}
-                        </span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </Content>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-      <Dialog open={isApproveOpen} onOpenChange={setIsApproveOpen}>
-        <DialogContent>
+      {/* --- DIALOG REJECT --- */}
+      <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Tambahkan ke Master Barang</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Ban className="h-5 w-5" /> Tolak Permintaan
+            </DialogTitle>
+            <DialogDescription>
+              Berikan alasan penolakan untuk{" "}
+              <strong>{selectedReq?.proposed_name}</strong>.
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>Part Number (Wajib)</Label>
-              <Input
-                placeholder="Generate/Input Part Number"
-                value={finalData.part_number}
-                onChange={(e) =>
-                  setFinalData({ ...finalData, part_number: e.target.value })
-                }
-              />
+          <div className="py-2">
+            <Label>Alasan Penolakan</Label>
+            <Textarea
+              placeholder="Contoh: Barang duplikat atau tidak disetujui..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRejectOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleReject}>
+              Konfirmasi Tolak
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG PROSES (REVISI: SINGLE COLUMN - 1 BARIS 1 INPUT) --- */}
+      {/* Menggunakan max-w-3xl agar lebar tapi fokus di tengah (seperti formulir kertas) */}
+      <Dialog open={isProcessOpen} onOpenChange={setIsProcessOpen}>
+        <DialogContent className="max-w-3xl w-full max-h-[95vh] overflow-y-auto p-0 gap-0">
+          {/* HEADER (Sticky) */}
+          <DialogHeader className="p-6 border-b bg-background sticky top-0 z-20">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" />
+              Proses & Finalisasi Barang
+            </DialogTitle>
+            <DialogDescription>
+              Review permintaan user dan lengkapi data Master Barang di bawah
+              ini.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 md:p-8 space-y-8 bg-muted/5">
+            {/* 1. CARD DATA REQUESTER (Highlight Box) */}
+            <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-5">
+              <h4 className="text-xs font-bold uppercase tracking-wide text-blue-700 flex items-center gap-2 mb-3">
+                <User className="h-3 w-3" /> Data Referensi User
+              </h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-xs text-muted-foreground block">
+                      Proposed Name
+                    </span>
+                    <span className="font-medium text-blue-900">
+                      {selectedReq?.proposed_name}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">
+                      Category
+                    </span>
+                    <span className="font-medium text-blue-900">
+                      {selectedReq?.proposed_category}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">
+                      UoM
+                    </span>
+                    <span className="font-medium text-blue-900">
+                      {selectedReq?.proposed_uom}
+                    </span>
+                  </div>
+                </div>
+                {selectedReq?.description && (
+                  <div className="text-xs text-muted-foreground italic border-t border-blue-100 pt-2 mt-2">
+                    "Note User: {selectedReq.description}"
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label>Nama Barang</Label>
-              <Input
-                value={finalData.part_name}
-                onChange={(e) =>
-                  setFinalData({ ...finalData, part_name: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Kategori</Label>
+
+            <Separator />
+
+            {/* 2. FORM INPUT MASTER (Single Column / 1 Input per Row) */}
+            {/* Menggunakan space-y-5 agar jarak antar input lega */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded">
+                  FORM MASTER BARANG
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  * Wajib Diisi
+                </span>
+              </div>
+
+              {/* Input 1: Part Number */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Part Number (Kode Unik){" "}
+                  <span className="text-red-500">*</span>
+                </Label>
                 <Input
-                  value={finalData.category}
+                  placeholder="Contoh: EL-LPT-001"
+                  value={finalForm.part_number}
                   onChange={(e) =>
-                    setFinalData({ ...finalData, category: e.target.value })
+                    setFinalForm({ ...finalForm, part_number: e.target.value })
                   }
+                  className="h-11 bg-background font-mono border-muted-foreground/30 focus-visible:ring-2 focus-visible:ring-primary"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Pastikan Part Number belum pernah digunakan sebelumnya.
+                </p>
+              </div>
+
+              {/* Input 2: Nama Barang */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Nama Barang Resmi <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={finalForm.part_name}
+                  onChange={(e) =>
+                    setFinalForm({ ...finalForm, part_name: e.target.value })
+                  }
+                  className="h-11 bg-background border-muted-foreground/30"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label>UoM</Label>
+
+              {/* Input 3: Kategori */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Tag className="h-3 w-3" /> Kategori Barang
+                </Label>
                 <Input
-                  value={finalData.uom}
+                  value={finalForm.category}
                   onChange={(e) =>
-                    setFinalData({ ...finalData, uom: e.target.value })
+                    setFinalForm({ ...finalForm, category: e.target.value })
                   }
+                  className="h-11 bg-background border-muted-foreground/30"
+                />
+              </div>
+
+              {/* Input 4: UoM */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Satuan (UoM)</Label>
+                <Input
+                  value={finalForm.uom}
+                  onChange={(e) =>
+                    setFinalForm({ ...finalForm, uom: e.target.value })
+                  }
+                  className="h-11 bg-background border-muted-foreground/30"
+                  placeholder="PCS, UNIT, SET..."
+                />
+              </div>
+
+              {/* Input 5: Vendor */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Vendor Default (Opsional)
+                </Label>
+                <div className="h-11">
+                  <VendorSearchCombobox
+                    defaultValue={finalForm.vendor}
+                    onSelect={(val) =>
+                      setFinalForm({ ...finalForm, vendor: val })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                {/* Input 6: Harga */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <DollarSign className="h-3 w-3" /> Harga Referensi
+                  </Label>
+                  <CurrencyInput
+                    value={finalForm.price}
+                    onValueChange={(val) =>
+                      setFinalForm({ ...finalForm, price: val })
+                    }
+                    className="h-11 bg-background border-muted-foreground/30"
+                  />
+                </div>
+
+                {/* Input 7: Link */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <LinkIcon className="h-3 w-3" /> Link Pembelian
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      value={finalForm.link}
+                      onChange={(e) =>
+                        setFinalForm({ ...finalForm, link: e.target.value })
+                      }
+                      placeholder="https://..."
+                      className="h-11 pr-10 bg-background border-muted-foreground/30"
+                    />
+                    {finalForm.link && (
+                      <a
+                        href={finalForm.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 bg-muted p-1 rounded hover:bg-muted/80"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Input 8: Checkbox Asset */}
+              <div
+                className="flex items-center space-x-3 p-4 border rounded-md bg-muted/10 cursor-pointer hover:bg-muted/20 transition-all"
+                onClick={() =>
+                  setFinalForm((p) => ({ ...p, is_asset: !p.is_asset }))
+                }
+              >
+                <Checkbox
+                  id="is-asset-final"
+                  checked={finalForm.is_asset}
+                  onCheckedChange={(c) =>
+                    setFinalForm({ ...finalForm, is_asset: c as boolean })
+                  }
+                />
+                <div className="grid gap-0.5">
+                  <Label
+                    htmlFor="is-asset-final"
+                    className="cursor-pointer font-semibold text-sm"
+                  >
+                    Tandai sebagai Fixed Asset
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    Barang ini akan dicatat sebagai aset perusahaan, bukan
+                    barang habis pakai.
+                  </span>
+                </div>
+              </div>
+
+              {/* Input 9: Notes */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-3 w-3" /> Catatan Admin
+                </Label>
+                <Textarea
+                  placeholder="Tulis catatan approval di sini..."
+                  value={finalForm.admin_notes}
+                  onChange={(e) =>
+                    setFinalForm({ ...finalForm, admin_notes: e.target.value })
+                  }
+                  className="min-h-[100px] bg-background border-muted-foreground/30 resize-none p-3"
                 />
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsApproveOpen(false)}>
+
+          {/* FOOTER (Sticky Bottom) */}
+          <DialogFooter className="p-6 border-t bg-background sticky bottom-0 z-20 gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-12 px-6 flex-1 sm:flex-none"
+              onClick={() => setIsProcessOpen(false)}
+            >
               Batal
             </Button>
-            <Button onClick={handleConfirmApprove}>Simpan ke Database</Button>
+            <Button
+              size="lg"
+              className="h-12 px-8 bg-green-600 hover:bg-green-700 text-base font-semibold flex-1 sm:flex-none min-w-[200px]"
+              onClick={handleApprove}
+            >
+              <Check className="mr-2 h-5 w-5" /> Simpan & Approve
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </Content>
   );
 }

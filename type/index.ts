@@ -175,6 +175,7 @@ export interface Barang {
   vendor: string | null;
   is_asset: boolean;
   last_purchase_price?: number | null;
+  link?: string | null;
 }
 
 export interface Vendor {
