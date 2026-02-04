@@ -97,7 +97,7 @@ export default function ItemRequestPage() {
     const uniqueUserIds = Array.from(
       new Set(reqData.map((r) => r.requester_id)),
     ).filter(Boolean);
-    let profilesMap: Record<string, any> = {};
+    const profilesMap: Record<string, any> = {};
 
     if (uniqueUserIds.length > 0) {
       const { data: profilesData } = await supabase
@@ -403,7 +403,7 @@ export default function ItemRequestPage() {
                 </div>
                 {selectedReq?.description && (
                   <div className="text-xs text-muted-foreground italic border-t border-blue-100 pt-2 mt-2">
-                    "Note User: {selectedReq.description}"
+                    &quot;Note User: {selectedReq.description}&quot;
                   </div>
                 )}
               </div>
