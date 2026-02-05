@@ -37,12 +37,9 @@ import {
   Printer,
   Zap,
   Layers,
-  User,
-  FileText,
-  MapPin,
-  Upload,
   HelpCircle,
-  PackageCheck, // Ikon baru untuk Terima Barang
+  PackageCheck,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,19 +53,17 @@ import {
   Profile,
   Attachment,
   Discussion,
-  POItem,
 } from "@/type";
 import {
   formatCurrency,
   formatDateFriendly,
   cn,
   formatDateWithTime,
-  calculatePriority,
 } from "@/lib/utils";
 import {
   fetchPurchaseOrderById,
   closePoWithBast,
-  markGoodsAsReceivedByGA, // IMPORT FUNGSI BARU
+  markGoodsAsReceivedByGA,
 } from "@/services/purchaseOrderService";
 import {
   Dialog,
@@ -85,7 +80,6 @@ import { Label } from "@/components/ui/label";
 import { differenceInCalendarDays } from "date-fns";
 import { MR_LEVELS } from "@/type/enum";
 
-// ... (COMPANY_DETAILS, InfoItem, DetailPOSkeleton TETAP SAMA) ...
 const COMPANY_DETAILS = {
   GMI: {
     name: "PT. Garuda Mart Indonesia",
@@ -156,7 +150,6 @@ const DetailPOSkeleton = () => (
 );
 
 function DetailPOPageContent({ params }: { params: { id: string } }) {
-  // ... (State & useEffect dasar SAMA) ...
   const poId = parseInt(params.id);
   const router = useRouter();
   const supabase = createClient();
@@ -177,7 +170,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
-  // ... (useEffect fetchPoData & initializePage SAMA) ...
   const fetchPoData = async () => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
@@ -268,7 +260,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     return {
       name: details.nama_vendor || details.name || "N/A",
       address: details.alamat || details.address || "N/A",
-      contact: details.contact_person || "N/A",
+      contact: details.contact_person || details.cp || details.contact || "N/A",
       email: details.email || "N/A",
       code: details.kode_vendor || "",
     };
@@ -294,12 +286,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const isRequester = currentUser?.id === po?.material_requests?.userid;
   const showUploadBast = po?.status === "Pending BAST" && isRequester;
 
-  // --- LOGIKA TOMBOL TERIMA BARANG (GA) ---
   const isGA =
     userProfile?.department === "General Affair" ||
     userProfile?.role === "admin";
 
-  // Barang sudah dikirim (Pending BAST) tapi belum ditandai sampai (Level belum OPEN 5)
   const showGAReceiveButton =
     isGA &&
     po?.status === "Pending BAST" &&
@@ -326,7 +316,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       toast.success("Berhasil! Barang ditandai telah tiba di Warehouse.", {
         id: toastId,
       });
-      await fetchPoData(); // Refresh data
+      await fetchPoData();
     } catch (err: any) {
       toast.error("Gagal update status", {
         id: toastId,
@@ -337,7 +327,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // ... (handleApprovalAction SAMA) ...
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
@@ -474,7 +463,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     );
   };
 
-  // ... (getStatusBadge & getApprovalStatusBadge SAMA) ...
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "pending approval":
@@ -555,10 +543,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           po.approvals
             .slice(0, currentTurnIndex)
             .every((app) => app.status === "approved"));
+
+  // Hitung subtotal dengan fallback jika item.total_price nol
   const subtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
     0,
   );
+
   const companyKey = (po.company_code ||
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
   const companyInfo = COMPANY_DETAILS[companyKey] || COMPANY_DETAILS.DEFAULT;
@@ -577,7 +568,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <Button variant="outline" size="sm" onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" /> Cetak PO
               </Button>
-              {/* TOMBOL BARU: TERIMA BARANG DI WH (KHUSUS GA) */}
               {showGAReceiveButton && (
                 <Button
                   size="sm"
@@ -613,7 +603,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </div>
 
         <div className="col-span-12 lg:col-span-8 space-y-6">
-          {/* --- Info Utama PO --- */}
           <Content title="Informasi Utama">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <InfoItem
@@ -724,7 +713,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- Info Item PO --- */}
           <Content title="Order Items (PO)">
             <div className="rounded-md border overflow-x-auto">
               <Table>
@@ -750,8 +738,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       <TableCell className="text-right">
                         {formatCurrency(item.price)}
                       </TableCell>
+                      {/* FIX: Use fallback to avoid 0 if total_price is missing */}
                       <TableCell className="text-right font-medium">
-                        {formatCurrency(item.total_price)}
+                        {formatCurrency(
+                          item.total_price || item.price * item.qty,
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -760,7 +751,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- Info Referensi MR (jika ada) --- */}
+          {/* --- Info Referensi MR --- */}
           {po.material_requests && (
             <Content
               title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
@@ -837,65 +828,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   />
                 </div>
               </div>
-              <h4 className="font-semibold mt-6 mb-2">Item di MR:</h4>
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama Item</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead className="text-right">
-                        Estimasi Harga
-                      </TableHead>
-                      <TableHead className="text-right">
-                        Total Estimasi
-                      </TableHead>
-                      <TableHead>Link</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(po.material_requests.orders as Order[]).map(
-                      (order, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">
-                            {order.name}
-                          </TableCell>
-                          <TableCell>
-                            {order.qty} {order.uom}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(order.estimasi_harga)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatCurrency(
-                              Number(order.qty) * order.estimasi_harga,
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {order.url && (
-                              <Button asChild variant={"outline"} size="sm">
-                                <Link
-                                  href={order.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <LinkIcon className="h-3 w-3" />
-                                </Link>
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ),
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
             </Content>
           )}
         </div>
 
         <div className="col-span-12 lg:col-span-4 space-y-6">
-          {/* --- Blok Tindakan --- */}
           <Content title="Tindakan">
             <ApprovalActions />
             {po.status === "Completed" && (
@@ -907,7 +844,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             )}
           </Content>
 
-          {/* --- Blok Jalur Approval --- */}
           <Content title="Jalur Approval">
             {po.approvals && po.approvals.length > 0 ? (
               <ul className="space-y-2">
@@ -924,14 +860,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       )}
                     >
                       <div>
-                        <p className="font-semibold">
+                        {/* FIX: Ganti p menjadi div untuk mencegah hydration error */}
+                        <div className="font-semibold flex items-center">
                           {approver.nama}{" "}
                           <span className="ml-2">
                             <Badge variant={"outline"}>
                               {approver.department}
                             </Badge>
                           </span>
-                        </p>
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           {approver.type}
                         </p>
@@ -956,7 +893,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             )}
           </Content>
 
-          {/* --- Lampiran --- */}
           <Content title="Lampiran PO">
             <ul className="space-y-2">
               {poAttachments.length > 0 ? (
@@ -1028,7 +964,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           </Content>
         </div>
 
-        {/* --- Blok Diskusi --- */}
         <div className="col-span-12">
           {po.material_requests ? (
             <DiscussionSection
@@ -1048,7 +983,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* --- Dialogs --- */}
       <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1059,34 +993,43 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-medium">{formatCurrency(subtotal)}</span>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Diskon</span>
-              <span className="font-medium text-destructive-foregrounde">
-                - {formatCurrency(po.discount)}
-              </span>
+            {po.discount > 0 && (
+              <div className="flex justify-between items-center text-sm text-red-600">
+                <span>Diskon</span>
+                <span>- {formatCurrency(po.discount)}</span>
+              </div>
+            )}
+            {/* PPH BARU - FIX: Gunakan logic > 0 agar 0 tidak ter-render */}
+            {(po.pph_amount || 0) > 0 && (
+              <div className="flex justify-between items-center text-sm text-red-600">
+                <span>PPH ({po.pph_rate || 0}%)</span>
+                <span>- {formatCurrency(po.pph_amount || 0)}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center text-sm text-blue-600">
+              <span>Pajak (PPN)</span>
+              <span>+ {formatCurrency(po.tax)}</span>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Pajak (PPN)</span>
-              <span className="font-medium text-muted-foreground">
-                + {formatCurrency(po.tax)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Ongkos Kirim</span>
-              <span className="font-medium text-muted-foreground">
-                + {formatCurrency(po.postage)}
-              </span>
+            <div className="flex justify-between items-center text-sm text-blue-600">
+              <span>Ongkos Kirim</span>
+              <span>+ {formatCurrency(po.postage)}</span>
             </div>
             <hr className="my-2" />
             <div className="flex justify-between items-center text-lg font-bold">
               <span>Grand Total</span>
               <span>{formatCurrency(po.total_price)}</span>
             </div>
+            {(po.pph_amount || 0) > 0 && (
+              <p className="text-xs text-right text-muted-foreground italic">
+                *Net Payable
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
+        {/* ... (Dialog Upload BAST sama) ... */}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
@@ -1123,6 +1066,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       </Dialog>
 
       <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
+        {/* ... (Dialog Level Info sama) ... */}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Definisi Level MR</DialogTitle>
@@ -1160,7 +1104,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* --- Komponen Cetak PO --- */}
       <div className="print-only">
         <PrintablePO
           po={po}
@@ -1323,8 +1266,9 @@ const PrintablePO = ({
                 <td className="py-3 px-2 text-right align-top whitespace-nowrap text-gray-900">
                   {formatCurrency(item.price)}
                 </td>
+                {/* FIX: Gunakan fallback calculation untuk menghindari 0 di print */}
                 <td className="py-3 px-2 text-right align-top whitespace-nowrap font-semibold text-gray-900 bg-gray-50">
-                  {formatCurrency(item.total_price)}
+                  {formatCurrency(item.total_price || item.price * item.qty)}
                 </td>
               </tr>
             ))}
@@ -1344,7 +1288,7 @@ const PrintablePO = ({
           </div>
           <div className="space-y-1">
             <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
-              Syarat Pembayaran (Payment Term):
+              Syarat Pembayaran:
             </h4>
             <p className="text-xs font-medium text-gray-800 pt-1">
               {po.payment_term}
@@ -1370,6 +1314,15 @@ const PrintablePO = ({
                 <span>- {formatCurrency(po.discount)}</span>
               </div>
             )}
+
+            {/* PPH di Cetakan - FIX: Gunakan logic > 0 */}
+            {(po.pph_amount || 0) > 0 && (
+              <div className="flex justify-between text-xs text-red-600">
+                <span>PPH ({po.pph_rate}%)</span>
+                <span>- {formatCurrency(po.pph_amount || 0)}</span>
+              </div>
+            )}
+
             <div className="flex justify-between text-xs">
               <span className="text-gray-600">Pajak (PPN)</span>
               <span className="font-medium text-gray-900">

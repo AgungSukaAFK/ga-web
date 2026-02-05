@@ -117,7 +117,10 @@ export interface PurchaseOrderPayload {
   notes: string;
   attachments?: Attachment[];
   approvals?: Approval[];
-  repeated_from_po_id?: number | null;
+  repeated_from_po_id?: number | null; // fitur ini sudah ditinggalkan
+  pph_type?: string | null;
+  pph_rate?: number | null;
+  pph_amount?: number | null;
 }
 
 export interface MaterialRequestListItem {
@@ -261,6 +264,10 @@ export interface PurchaseOrder {
   approvals: Approval[] | null;
   created_at: string;
   updated_at: string;
+
+  pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
+  pph_rate?: number | null; // Persentase (misal: 1.5)
+  pph_amount?: number | null; // Nominal Rupiah
 
   users_with_profiles?: {
     nama: string;

@@ -1,3 +1,5 @@
+// src/app/(With Sidebar)/item-requests/page.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -154,16 +156,13 @@ export default function ItemRequestPage() {
   const handleApprove = async () => {
     if (!selectedReq) return;
 
-    // VALIDASI WAJIB (Termasuk Harga)
+    // VALIDASI WAJIB (Hanya PN dan Nama Barang)
     if (!finalForm.part_number || !finalForm.part_name) {
       toast.warning("Part Number & Nama Barang wajib diisi.");
       return;
     }
 
-    if (!finalForm.price || finalForm.price <= 0) {
-      toast.warning("Harga Referensi wajib diisi dan tidak boleh 0.");
-      return;
-    }
+    // Harga sekarang OPSIONAL, jadi tidak perlu validasi > 0
 
     const toastId = toast.loading("Menyimpan...");
 
@@ -374,7 +373,7 @@ export default function ItemRequestPage() {
 
           <div className="p-6 md:p-8 space-y-8 bg-muted/5">
             {/* 1. DATA REQUESTER */}
-            <div className="bg-muted border-blue-100 rounded-lg p-5">
+            <div className="border border-muted rounded-lg p-5">
               <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
                 <User className="h-3 w-3" /> Data Referensi User
               </h4>
@@ -384,7 +383,7 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       Proposed Name
                     </span>
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-muted-foreground">
                       {selectedReq?.proposed_name}
                     </span>
                   </div>
@@ -392,7 +391,7 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       Category
                     </span>
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-muted-foreground">
                       {selectedReq?.proposed_category}
                     </span>
                   </div>
@@ -400,7 +399,7 @@ export default function ItemRequestPage() {
                     <span className="text-xs text-muted-foreground block">
                       UoM
                     </span>
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-muted-foreground">
                       {selectedReq?.proposed_uom}
                     </span>
                   </div>
@@ -484,7 +483,10 @@ export default function ItemRequestPage() {
 
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">
-                  Vendor Default (Opsional)
+                  Vendor Default{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <div className="h-11">
                   <VendorSearchCombobox
@@ -500,7 +502,10 @@ export default function ItemRequestPage() {
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold flex items-center gap-2">
                     <DollarSign className="h-3 w-3" />
-                    Harga Referensi <span className="text-red-500">*</span>
+                    Harga Referensi{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      (Optional)
+                    </span>
                   </Label>
                   <CurrencyInput
                     value={finalForm.price}
@@ -510,13 +515,16 @@ export default function ItemRequestPage() {
                     className="h-11 bg-background border-muted-foreground/30"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    Wajib diisi, tidak boleh 0.
+                    Boleh dikosongkan (0) jika belum ada.
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold flex items-center gap-2">
-                    <LinkIcon className="h-3 w-3" /> Link Pembelian
+                    <LinkIcon className="h-3 w-3" /> Link Pembelian{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      (Optional)
+                    </span>
                   </Label>
                   <div className="relative">
                     <Input
@@ -570,7 +578,10 @@ export default function ItemRequestPage() {
 
               <div className="space-y-2">
                 <Label className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="h-3 w-3" /> Catatan Admin
+                  <FileText className="h-3 w-3" /> Catatan Admin{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <Textarea
                   placeholder="Tulis catatan approval di sini..."

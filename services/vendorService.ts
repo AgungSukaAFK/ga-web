@@ -70,10 +70,7 @@ export const searchVendors = async (query: string): Promise<Vendor[]> => {
   const supabase = createClient();
 
   // Jika query kosong, ambil 10 vendor pertama saja sebagai default list
-  let dbQuery = supabase
-    .from("vendors")
-    .select("id, kode_vendor, nama_vendor")
-    .limit(10); // LIMIT 10 AGAR RINGAN
+  let dbQuery = supabase.from("vendors").select("*").limit(10); // LIMIT 10 AGAR RINGAN
 
   if (query) {
     // Cari berdasarkan Nama ATAU Kode

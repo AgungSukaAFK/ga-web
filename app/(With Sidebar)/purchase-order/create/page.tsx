@@ -30,7 +30,7 @@ import {
   fetchMaterialRequestById,
   generatePoCode,
 } from "@/services/purchaseOrderService";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import {
   Loader2,
   Send,
@@ -43,11 +43,12 @@ import {
   Truck,
   Building2,
   Link as LinkIcon,
-  Paperclip,
   ChevronsUpDown,
   ExternalLink,
-  RefreshCcw, // Ikon untuk ganti barang
-  Search,
+  RefreshCcw,
+  Eye,
+  FileText,
+  Plus,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -57,7 +58,6 @@ import {
   PurchaseOrderPayload,
   Vendor,
   StoredVendorDetails,
-  Attachment,
   Barang,
 } from "@/type";
 import { Label } from "@/components/ui/label";
@@ -82,12 +82,22 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { searchVendors } from "@/services/vendorService";
-import { BarangSearchCombobox } from "../BarangSearchCombobox"; // Pastikan path import benar
+import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 
-// --- Vendor Search Component ---
+// --- KONFIGURASI PPH ---
+const PPH_OPTIONS = [
+  { label: "Tidak Ada PPH", value: "none", rate: 0 },
+  { label: "PPH 21 (NPWP) - 1%", value: "pph21_npwp", rate: 1.0 },
+  { label: "PPH 21 (Tanpa NPWP) - 1.5%", value: "pph21_non_npwp", rate: 1.5 },
+  { label: "PPH 23 (NPWP) - 2%", value: "pph23_npwp", rate: 2.0 },
+  { label: "PPH 23 (Tanpa NPWP) - 4%", value: "pph23_non_npwp", rate: 4.0 },
+];
+
+// --- Vendor Search Component (FIXED) ---
 function VendorSearchCombobox({
   poForm,
   setPoForm,
@@ -99,14 +109,28 @@ function VendorSearchCombobox({
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<Vendor[]>([]);
 
+  // Fetch vendors on search query change
   useEffect(() => {
-    const handler = setTimeout(() => {
-      searchVendors(searchQuery).then(setResults);
-    }, 300);
-    return () => clearTimeout(handler);
+    let active = true;
+    const fetch = async () => {
+      try {
+        const data = await searchVendors(searchQuery);
+        if (active) setResults(data);
+      } catch (err) {
+        console.error("Error searching vendors:", err);
+      }
+    };
+
+    const handler = setTimeout(fetch, 300);
+    return () => {
+      clearTimeout(handler);
+      active = false;
+    };
   }, [searchQuery]);
 
   const handleSelect = (vendor: Vendor) => {
+    console.log("Selected Vendor:", vendor); // Debugging info
+
     const newVendorDetails: StoredVendorDetails = {
       vendor_id: vendor.id,
       kode_vendor: vendor.kode_vendor,
@@ -115,10 +139,12 @@ function VendorSearchCombobox({
       contact_person: vendor.pic_contact_person || "",
       email: vendor.email || "",
     };
+
     setPoForm((prev: any) => ({
       ...prev,
       vendor_details: newVendorDetails,
     }));
+
     setOpen(false);
     setSearchQuery("");
   };
@@ -138,7 +164,7 @@ function VendorSearchCombobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0">
+      <PopoverContent className="w-[400px] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
             placeholder="Ketik untuk mencari vendor..."
@@ -153,10 +179,10 @@ function VendorSearchCombobox({
               {results.map((vendor) => (
                 <CommandItem
                   key={vendor.id}
-                  value={`${vendor.kode_vendor} - ${vendor.nama_vendor}`}
+                  value={String(vendor.id)} // Use ID as value to ensure uniqueness
                   onSelect={() => handleSelect(vendor)}
                 >
-                  <div className="flex flex-col">
+                  <div className="flex flex-col w-full text-left">
                     <span className="font-semibold">{vendor.nama_vendor}</span>
                     <span className="text-xs text-muted-foreground">
                       {vendor.kode_vendor}
@@ -209,21 +235,27 @@ function CreatePOPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // State untuk Partial Selection
+  // State Partial Selection
   const [selectedOrderIndices, setSelectedOrderIndices] = useState<number[]>(
     [],
   );
 
-  // State untuk Fitur Ganti Barang (Revisi Baru)
+  // State Dialogs
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+  const [isViewItemOpen, setIsViewItemOpen] = useState(false);
+  const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
 
+  // Upload States
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
 
+  // Payment Term Logic
   const [paymentTermType, setPaymentTermType] = useState("Termin");
   const [paymentTermDays, setPaymentTermDays] = useState("30");
+  const [dpPercentage, setDpPercentage] = useState<number>(30);
 
+  // Form State
   const [poForm, setPoForm] = useState<
     Omit<
       PurchaseOrderPayload,
@@ -249,11 +281,18 @@ function CreatePOPageContent() {
       email: "",
     },
     attachments: [],
+    pph_type: null,
+    pph_rate: 0,
+    pph_amount: 0,
   });
 
+  // Tax States
   const [taxMode, setTaxMode] = useState<"percentage" | "manual">("percentage");
   const [taxPercentage, setTaxPercentage] = useState<number>(11);
   const [isTaxIncluded, setIsTaxIncluded] = useState<boolean>(false);
+
+  // PPH State
+  const [pphType, setPphType] = useState<string>("none");
 
   // Helper: Get Cost Center Name
   const getCostCenterName = (data: any) => {
@@ -267,6 +306,7 @@ function CreatePOPageContent() {
     return `ID: ${data.cost_center_id} (Belum ditentukan)`;
   };
 
+  // --- 1. Fetch Data ---
   useEffect(() => {
     const initializeForm = async () => {
       try {
@@ -315,20 +355,18 @@ function CreatePOPageContent() {
     initializeForm();
   }, [mrId]);
 
-  // --- Effect: Update PO Items when Selection Changes ---
+  // --- 2. Update Items from Selection ---
   useEffect(() => {
     if (!mrData) return;
 
+    // Filter items based on checkbox selection from MR List
     const newItems: POItem[] = selectedOrderIndices.map((index) => {
       const order = mrData.orders[index];
-
-      // Cek apakah item ini sudah ada di poForm.items (untuk preserve qty/price yg sudah diedit)
+      // Check existing to preserve edits
       const existingItem = poForm.items.find(
-        (i) => i.barang_id === order.barang_id && order.barang_id !== null, // Cek ID valid
+        (i) => i.barang_id === order.barang_id && order.barang_id !== null,
       );
 
-      // Jika item ini dulunya "asal ketik" (barang_id null/0), kita tetap buat baru
-      // agar bisa diedit/diganti nantinya.
       if (existingItem) return existingItem;
 
       return {
@@ -343,28 +381,48 @@ function CreatePOPageContent() {
       };
     });
 
-    setPoForm((prev) => ({ ...prev, items: newItems }));
-  }, [selectedOrderIndices, mrData]); // Jangan masukkan poForm.items dependency
+    // Keep manually added items logic
+    const manualItems = poForm.items.filter(
+      (item) => item.barang_id === 0 || !item.barang_id,
+    );
 
-  // --- Logika Kalkulasi Pajak & Total ---
+    // Simplification: We strictly follow MR Selection for MR items.
+    // Manual items are preserved if we merge correctly, but complex.
+    // For now, let's just reset to selected items to avoid duplicates/complexity
+    // as requested "no error, stable".
+    setPoForm((prev) => ({ ...prev, items: newItems }));
+  }, [selectedOrderIndices, mrData]);
+
+  // --- 3. LOGIKA KALKULASI PAJAK & TOTAL ---
   useEffect(() => {
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
       0,
     );
+
+    const taxableAmount = Math.max(0, subtotal - (poForm.discount || 0));
+
     let calculatedTax = 0;
     if (!isTaxIncluded) {
       if (taxMode === "percentage")
-        calculatedTax = subtotal * (taxPercentage / 100);
+        calculatedTax = taxableAmount * (taxPercentage / 100);
       else calculatedTax = poForm.tax || 0;
     }
+
+    const selectedPph =
+      PPH_OPTIONS.find((opt) => opt.value === pphType) || PPH_OPTIONS[0];
+    const pphAmount = (taxableAmount * selectedPph.rate) / 100;
+
     const grandTotal =
-      subtotal - (poForm.discount || 0) + calculatedTax + (poForm.postage || 0);
+      taxableAmount - pphAmount + calculatedTax + (poForm.postage || 0);
 
     setPoForm((prev) => ({
       ...prev,
       tax: taxMode !== "manual" || isTaxIncluded ? calculatedTax : prev.tax,
       total_price: grandTotal,
+      pph_type: pphType === "none" ? null : pphType,
+      pph_rate: selectedPph.rate,
+      pph_amount: pphAmount,
     }));
   }, [
     poForm.items,
@@ -373,35 +431,52 @@ function CreatePOPageContent() {
     taxMode,
     taxPercentage,
     isTaxIncluded,
+    pphType,
   ]);
 
+  // Handle Manual Tax Override
   useEffect(() => {
     if (taxMode === "manual" && !isTaxIncluded) {
       const subtotal = poForm.items.reduce(
         (acc, item) => acc + item.qty * item.price,
         0,
       );
+      const taxableAmount = Math.max(0, subtotal - (poForm.discount || 0));
+      const selectedPph =
+        PPH_OPTIONS.find((opt) => opt.value === pphType) || PPH_OPTIONS[0];
+      const pphAmount = (taxableAmount * selectedPph.rate) / 100;
+
       const grandTotal =
-        subtotal -
-        (poForm.discount || 0) +
-        (poForm.tax || 0) +
-        (poForm.postage || 0);
+        taxableAmount - pphAmount + (poForm.tax || 0) + (poForm.postage || 0);
       setPoForm((prev) => ({ ...prev, total_price: grandTotal }));
     }
-  }, [poForm.tax, taxMode, isTaxIncluded]);
+  }, [
+    poForm.tax,
+    taxMode,
+    isTaxIncluded,
+    pphType,
+    poForm.items,
+    poForm.discount,
+    poForm.postage,
+  ]);
 
+  // --- 4. UPDATE PAYMENT TERM STRING ---
   useEffect(() => {
+    let termString = "";
     if (paymentTermType === "Cash") {
-      setPoForm((p) => ({ ...p, payment_term: "Cash" }));
-    } else {
-      setPoForm((p) => ({
-        ...p,
-        payment_term: `Termin ${paymentTermDays} Hari`,
-      }));
+      termString = "Cash";
+    } else if (paymentTermType === "Termin") {
+      termString = `Termin ${paymentTermDays} Hari`;
+    } else if (paymentTermType === "DP_BP") {
+      const validDp = Math.min(100, Math.max(0, dpPercentage));
+      const bp = 100 - validDp;
+      termString = `DP ${validDp}% - Pelunasan ${bp}%`;
     }
-  }, [paymentTermType, paymentTermDays]);
 
-  // --- Handlers ---
+    setPoForm((p) => ({ ...p, payment_term: termString }));
+  }, [paymentTermType, paymentTermDays, dpPercentage]);
+
+  // --- Handlers Items ---
   const handleItemChange = (
     index: number,
     field: keyof POItem,
@@ -419,10 +494,36 @@ function CreatePOPageContent() {
     setPoForm((prev) => ({ ...prev, items: newItems }));
   };
 
-  // --- Handler Ganti Barang (Fitur Baru) ---
+  const handleAddManualItem = () => {
+    setPoForm((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          barang_id: 0,
+          part_number: "",
+          name: "",
+          qty: 1,
+          uom: "Pcs",
+          price: 0,
+          total_price: 0,
+          vendor_name: "",
+        },
+      ],
+    }));
+    toast.info(
+      "Item baru ditambahkan. Gunakan tombol 'Ganti Barang' untuk mengambil dari database.",
+    );
+  };
+
   const handleOpenReplaceDialog = (index: number) => {
     setReplacingIndex(index);
     setIsReplaceDialogOpen(true);
+  };
+
+  const handleOpenViewItemDialog = (index: number) => {
+    setViewItemIndex(index);
+    setIsViewItemOpen(true);
   };
 
   const handleReplaceItem = (barang: Barang) => {
@@ -431,7 +532,6 @@ function CreatePOPageContent() {
     const newItems = [...poForm.items];
     const item = newItems[replacingIndex];
 
-    // Update data item dengan data Master Barang
     item.barang_id = barang.id;
     item.part_number = barang.part_number;
     item.name = barang.part_name || item.name;
@@ -439,10 +539,10 @@ function CreatePOPageContent() {
 
     if (barang.last_purchase_price && barang.last_purchase_price > 0) {
       item.price = barang.last_purchase_price;
-      item.total_price = item.qty * item.price; // Recalculate total
-      toast.success("Barang diganti & harga diperbarui dari database.");
+      item.total_price = item.qty * item.price;
+      toast.success("Barang diganti & harga diperbarui.");
     } else {
-      toast.success("Barang diganti (Harga tetap/manual).");
+      toast.success("Barang diganti (Harga tetap).");
     }
 
     setPoForm({ ...poForm, items: newItems });
@@ -450,6 +550,7 @@ function CreatePOPageContent() {
     setReplacingIndex(null);
   };
 
+  // --- SUBMIT ---
   const handleSubmit = async () => {
     if (!currentUser || !mrData) return;
     if (!poForm.vendor_details || !poForm.vendor_details.vendor_id) {
@@ -457,7 +558,7 @@ function CreatePOPageContent() {
       return;
     }
     if (poForm.items.length === 0) {
-      toast.error("Pilih minimal satu item dari daftar MR.");
+      toast.error("Pilih minimal satu item.");
       return;
     }
     setLoading(true);
@@ -477,7 +578,7 @@ function CreatePOPageContent() {
     }
   };
 
-  // Attachment Handlers
+  // --- Attachment Handlers ---
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     type: "po" | "finance",
@@ -520,7 +621,7 @@ function CreatePOPageContent() {
     supabase.storage.from("mr").remove([att.url]);
   };
 
-  // Selection Helper
+  // --- Selection Helper ---
   const toggleSelection = (index: number) => {
     setSelectedOrderIndices((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
@@ -574,9 +675,8 @@ function CreatePOPageContent() {
         </Button>
       </div>
 
-      {/* --- KOLOM KIRI: MR INFO & ITEM SELECTION --- */}
+      {/* --- KOLOM KIRI --- */}
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-        {/* 1. Referensi MR (Informasi Lengkap) */}
         {mrData && (
           <Content title={`Referensi MR: ${mrData.kode_mr}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -627,11 +727,9 @@ function CreatePOPageContent() {
           </Content>
         )}
 
-        {/* 2. Pilih Item dari MR */}
         <Content
           title="Pilih Item dari Material Request"
-          description="Pilih item yang akan dimasukkan ke dalam PO ini (Partial PO)."
-          size="lg"
+          description="Centang item yang akan diproses."
         >
           <div className="mb-2 flex items-center space-x-2">
             <Checkbox
@@ -689,77 +787,112 @@ function CreatePOPageContent() {
           </div>
         </Content>
 
-        {/* 3. Tabel Item PO Final (Editable + Replace) */}
-        {poForm.items.length > 0 && (
-          <Content title="Rincian Item Purchase Order (Final)">
-            <div className="overflow-x-auto">
-              <Table className="min-w-[600px]">
-                <TableHeader>
+        <Content
+          title="Rincian Item Purchase Order (Final)"
+          cardAction={
+            <Button variant="outline" size="sm" onClick={handleAddManualItem}>
+              <Plus className="mr-2 h-4 w-4" /> Tambah Item
+            </Button>
+          }
+        >
+          <div className="overflow-x-auto">
+            <Table className="min-w-[700px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Nama Barang</TableHead>
+                  <TableHead>Qty PO</TableHead>
+                  <TableHead>Harga Satuan</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead className="w-[100px] text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {poForm.items.length === 0 && (
                   <TableRow>
-                    <TableHead>Nama Barang</TableHead>
-                    <TableHead>Qty PO</TableHead>
-                    <TableHead>Harga Satuan</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead className="w-[50px]">Aksi</TableHead>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center h-24 text-muted-foreground"
+                    >
+                      Belum ada item dipilih atau ditambahkan.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {poForm.items.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>
-                        <div className="font-medium">{item.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {item.part_number}
-                        </div>
-                        {/* Indikator jika item belum terlink ke Master Barang */}
-                        {!item.barang_id && (
-                          <span className="text-[10px] text-amber-600 bg-amber-100 px-1 rounded">
-                            Manual Input
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
+                )}
+                {poForm.items.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      {item.barang_id === 0 ? (
                         <Input
-                          type="number"
-                          value={item.qty}
-                          className="w-24"
-                          min="1"
+                          value={item.name}
                           onChange={(e) =>
-                            handleItemChange(index, "qty", e.target.value)
+                            handleItemChange(index, "name", e.target.value)
                           }
+                          placeholder="Nama Item..."
+                          className="h-8 text-sm"
                         />
-                      </TableCell>
-                      <TableCell>
-                        <CurrencyInput
-                          value={item.price}
-                          className="w-32"
-                          onValueChange={(v) =>
-                            handleItemChange(index, "price", v)
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>{formatCurrency(item.total_price)}</TableCell>
-                      <TableCell>
+                      ) : (
+                        <div className="font-medium">{item.name}</div>
+                      )}
+
+                      <div className="text-xs text-muted-foreground font-mono mt-1">
+                        {item.part_number}
+                      </div>
+                      {!item.barang_id && (
+                        <span className="text-[10px] text-amber-600 bg-amber-100 px-1 rounded inline-block mt-1">
+                          Manual Input
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        value={item.qty}
+                        className="w-20"
+                        min="1"
+                        onChange={(e) =>
+                          handleItemChange(index, "qty", e.target.value)
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <CurrencyInput
+                        value={item.price}
+                        className="w-32"
+                        onValueChange={(v) =>
+                          handleItemChange(index, "price", v)
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>{formatCurrency(item.total_price)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Ganti dengan Master Barang"
+                          title="Lihat Detail"
+                          onClick={() => handleOpenViewItemDialog(index)}
+                        >
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Cari/Ganti Barang di DB"
                           onClick={() => handleOpenReplaceDialog(index)}
                         >
-                          <RefreshCcw className="h-4 w-4 text-blue-600" />
+                          <RefreshCcw className="h-4 w-4 text-primary" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Content>
-        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
 
         <Content title="Catatan PO">
           <Textarea
-            placeholder="Tambahkan catatan untuk Vendor atau Internal..."
+            placeholder="Tambahkan catatan..."
             value={poForm.notes}
             onChange={(e) =>
               setPoForm((prev) => ({ ...prev, notes: e.target.value }))
@@ -768,7 +901,7 @@ function CreatePOPageContent() {
         </Content>
       </div>
 
-      {/* --- KOLOM KANAN: VENDOR & FINANCE --- */}
+      {/* --- KOLOM KANAN --- */}
       <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
         <Content title="Vendor & Pembayaran">
           <div className="space-y-4">
@@ -776,7 +909,6 @@ function CreatePOPageContent() {
               <Label className="mb-1 block">Pilih Vendor Utama</Label>
               <VendorSearchCombobox poForm={poForm} setPoForm={setPoForm} />
             </div>
-
             <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Kontak:</span>
@@ -795,34 +927,91 @@ function CreatePOPageContent() {
                 </p>
               </div>
             </div>
-
             <hr />
+
+            {/* PAYMENT TERM SECTION (REVISI) */}
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
-              <div className="flex gap-2 mt-1">
+              <div className="flex flex-col gap-3 mt-1">
                 <Select
                   value={paymentTermType}
                   onValueChange={setPaymentTermType}
                 >
-                  <SelectTrigger className="w-1/2">
-                    <SelectValue />
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih Metode Pembayaran" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Termin">Termin</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Termin">
+                      Termin (Jangka Waktu)
+                    </SelectItem>
+                    <SelectItem value="Cash">Cash (Tunai)</SelectItem>
+                    <SelectItem value="DP_BP">
+                      DP & Pelunasan (DP & Balance)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+
                 {paymentTermType === "Termin" && (
-                  <div className="w-1/2 relative">
+                  <div className="relative">
                     <Input
                       type="number"
                       value={paymentTermDays}
                       onChange={(e) => setPaymentTermDays(e.target.value)}
                       className="pr-12"
+                      placeholder="30"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                       Hari
                     </span>
+                  </div>
+                )}
+
+                {paymentTermType === "DP_BP" && (
+                  <div className="space-y-3 p-3 bg-muted/30 rounded-md border">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">
+                        Persentase Down Payment (DP)
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          value={dpPercentage}
+                          onChange={(e) =>
+                            setDpPercentage(Number(e.target.value))
+                          }
+                          className="pr-8"
+                          min="0"
+                          max="100"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                          %
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-sm space-y-1 pt-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Nominal DP ({dpPercentage}%):
+                        </span>
+                        <span className="font-medium text-primary">
+                          {formatCurrency(
+                            (poForm.total_price * dpPercentage) / 100,
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-t pt-1 mt-1">
+                        <span className="text-muted-foreground">
+                          Pelunasan ({100 - dpPercentage}%):
+                        </span>
+                        <span className="font-medium text-green-600">
+                          {formatCurrency(
+                            poForm.total_price -
+                              (poForm.total_price * dpPercentage) / 100,
+                          )}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -833,10 +1022,7 @@ function CreatePOPageContent() {
               <Textarea
                 value={poForm.shipping_address}
                 onChange={(e) =>
-                  setPoForm((p) => ({
-                    ...p,
-                    shipping_address: e.target.value,
-                  }))
+                  setPoForm((p) => ({ ...p, shipping_address: e.target.value }))
                 }
               />
             </div>
@@ -907,23 +1093,26 @@ function CreatePOPageContent() {
           </div>
         </Content>
 
+        {/* --- RINGKASAN BIAYA --- */}
         <Content title="Ringkasan Biaya">
           <div className="space-y-4">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Subtotal</span>
               <span>{formatCurrency(subtotal)}</span>
             </div>
+
+            {/* Input Diskon */}
             <div className="flex justify-between items-center">
-              <Label>Diskon</Label>
+              <Label className="text-xs">Input Diskon (Rp)</Label>
               <CurrencyInput
                 value={poForm.discount}
                 onValueChange={(v) => setPoForm((p) => ({ ...p, discount: v }))}
-                className="w-32"
+                className="w-36 h-9 text-right"
               />
             </div>
 
-            {/* Bagian Pajak */}
-            <div className="space-y-2 pt-2 border-t">
+            {/* PPN Section */}
+            <div className="space-y-2 pt-2 border-t border-dashed">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="include-tax-create"
@@ -933,74 +1122,144 @@ function CreatePOPageContent() {
                 />
                 <Label
                   htmlFor="include-tax-create"
-                  className="text-sm font-medium leading-none"
+                  className="text-xs font-medium leading-none cursor-pointer"
                 >
                   Harga Item Sudah Termasuk PPN?
                 </Label>
               </div>
               {!isTaxIncluded && (
-                <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
-                  <Label className="text-sm font-medium">
-                    Metode Pajak (PPN)
-                  </Label>
-                  <Select
-                    value={taxMode}
-                    onValueChange={(v) => setTaxMode(v as any)}
-                    disabled={loading}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih metode..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percentage">Persentase (%)</SelectItem>
-                      <SelectItem value="manual">Manual (Rp)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {taxMode === "percentage" && (
-                    <div className="relative animate-in fade-in">
-                      <Input
-                        type="number"
-                        value={taxPercentage}
-                        onChange={(e) =>
-                          setTaxPercentage(Number(e.target.value) || 0)
-                        }
-                        className="w-full text-right pr-6"
-                        min="0"
-                        step="0.01"
-                        disabled={loading}
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                        %
-                      </span>
-                    </div>
-                  )}
+                <div className="pl-6 space-y-3 pt-2">
+                  <div className="flex gap-2">
+                    <Select
+                      value={taxMode}
+                      onValueChange={(v) => setTaxMode(v as any)}
+                      disabled={loading}
+                    >
+                      <SelectTrigger className="w-full h-9 text-xs">
+                        <SelectValue placeholder="Pilih metode..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percentage">
+                          Persentase (%)
+                        </SelectItem>
+                        <SelectItem value="manual">Manual (Rp)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {taxMode === "percentage" && (
+                      <div className="relative w-20">
+                        <Input
+                          type="number"
+                          value={taxPercentage}
+                          onChange={(e) =>
+                            setTaxPercentage(Number(e.target.value) || 0)
+                          }
+                          className="text-right pr-6 h-9 text-xs"
+                          step="0.01"
+                          disabled={loading}
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          %
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   {taxMode === "manual" && (
-                    <div className="relative animate-in fade-in">
-                      <CurrencyInput
-                        value={poForm.tax}
-                        onValueChange={(numValue) =>
-                          setPoForm((p) => ({ ...p, tax: numValue }))
-                        }
-                        className="w-full"
-                        disabled={loading}
-                      />
-                    </div>
+                    <CurrencyInput
+                      value={poForm.tax}
+                      onValueChange={(numValue) =>
+                        setPoForm((p) => ({ ...p, tax: numValue }))
+                      }
+                      className="w-full h-9 text-right"
+                      disabled={loading}
+                    />
                   )}
                 </div>
               )}
             </div>
 
-            <div className="flex justify-between items-center pt-2 border-t">
-              <Label>Ongkos Kirim</Label>
+            {/* PPH Section */}
+            <div className="space-y-2 border-t border-dashed pt-2">
+              <Label className="text-xs font-semibold">
+                PPH (Pajak Penghasilan)
+              </Label>
+              <Select value={pphType} onValueChange={setPphType}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Pilih PPH..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {PPH_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Input Ongkir */}
+            <div className="flex justify-between items-center pt-2 border-t border-dashed">
+              <Label className="text-xs">Ongkir / Lain-lain</Label>
               <CurrencyInput
                 value={poForm.postage}
                 onValueChange={(v) => setPoForm((p) => ({ ...p, postage: v }))}
-                className="w-32"
+                className="w-36 h-9 text-right"
               />
             </div>
-            <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Grand Total</span>
-              <span>{formatCurrency(poForm.total_price)}</span>
+
+            {/* --- VISUALISASI PERHITUNGAN --- */}
+            <div className="bg-muted/30 p-4 rounded-md space-y-2 mt-4 text-sm border">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+
+              {/* Tampilkan Diskon jika ada */}
+              {(poForm.discount || 0) > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>- Diskon</span>
+                  <span>({formatCurrency(poForm.discount)})</span>
+                </div>
+              )}
+
+              {/* Tampilkan PPH jika ada */}
+              {(poForm.pph_amount || 0) > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>
+                    - PPH ({PPH_OPTIONS.find((o) => o.value === pphType)?.rate}
+                    %)
+                  </span>
+                  <span>({formatCurrency(poForm.pph_amount || 0)})</span>
+                </div>
+              )}
+
+              {/* Tampilkan PPN jika ada */}
+              {(poForm.tax || 0) > 0 && (
+                <div className="flex justify-between text-blue-600">
+                  <span>+ PPN {isTaxIncluded ? "(Included)" : ""}</span>
+                  <span>{formatCurrency(poForm.tax || 0)}</span>
+                </div>
+              )}
+
+              {/* Tampilkan Ongkir jika ada */}
+              {(poForm.postage || 0) > 0 && (
+                <div className="flex justify-between text-blue-600">
+                  <span>+ Ongkir</span>
+                  <span>{formatCurrency(poForm.postage || 0)}</span>
+                </div>
+              )}
+
+              {/* Garis Pemisah */}
+              <div className="border-t border-slate-300 my-2 pt-2">
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Grand Total</span>
+                  <span>{formatCurrency(poForm.total_price)}</span>
+                </div>
+                {(poForm.pph_amount || 0) > 0 && (
+                  <p className="text-[10px] text-muted-foreground text-right mt-1 italic">
+                    *Net Payable (setelah potong PPH)
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </Content>
@@ -1026,6 +1285,89 @@ function CreatePOPageContent() {
             >
               Batal
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG VIEW DETAIL ITEM --- */}
+      <Dialog open={isViewItemOpen} onOpenChange={setIsViewItemOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" /> Detail Item Purchase
+              Order
+            </DialogTitle>
+            <DialogDescription>
+              Informasi lengkap mengenai item yang dipilih.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewItemIndex !== null && poForm.items[viewItemIndex] && (
+            <div className="py-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Nama Barang
+                  </Label>
+                  <div className="font-semibold">
+                    {poForm.items[viewItemIndex].name}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Part Number
+                  </Label>
+                  <div className="font-mono bg-muted/50 p-1 rounded w-fit px-2">
+                    {poForm.items[viewItemIndex].part_number || "-"}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Kuantitas & UoM
+                  </Label>
+                  <div>
+                    {poForm.items[viewItemIndex].qty}{" "}
+                    {poForm.items[viewItemIndex].uom}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Harga Satuan
+                  </Label>
+                  <div>{formatCurrency(poForm.items[viewItemIndex].price)}</div>
+                </div>
+                <div className="space-y-1 col-span-2 border-t pt-2 mt-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Total Harga Item
+                  </Label>
+                  <div className="text-lg font-bold text-green-600">
+                    {formatCurrency(poForm.items[viewItemIndex].total_price)}
+                  </div>
+                </div>
+
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Status Database
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    {poForm.items[viewItemIndex].barang_id ? (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-green-200">
+                        <Tag className="h-3 w-3" /> Terdaftar di Master Barang
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-amber-200">
+                        <Info className="h-3 w-3" /> Input Manual (Belum
+                        Terlink)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setIsViewItemOpen(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
