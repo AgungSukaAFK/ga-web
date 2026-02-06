@@ -3,12 +3,12 @@
 import { Suspense } from "react";
 import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MrManagementClientContent } from "./MrManagementClient";
+import MrManagementClient from "./MrManagementClient";
 
 export default function MrManagementPage() {
   return (
     <Suspense fallback={<MrManagementSkeleton />}>
-      <MrManagementClientContent />
+      <MrManagementClient />
     </Suspense>
   );
 }

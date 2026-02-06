@@ -254,3 +254,66 @@ export const fetchAvailableMRsForPO = async (
 
   return data;
 };
+
+export const fetchMaterialRequests = async (
+  page: number,
+  limit: number,
+  searchQuery: string,
+  companyCode: string | null,
+  statusFilter: string | null,
+  startDate: string | null,
+  endDate: string | null,
+) => {
+  const supabase = createClient();
+
+  // Hitung offset
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  // GUNAKAN FOREIGN KEY EKSPLISIT (!fk_material_requests_profiles)
+  let query = supabase.from("material_requests").select(
+    `
+      *,
+      users_with_profiles:profiles!fk_material_requests_profiles (nama, email),
+      cost_centers (name, code)
+    `,
+    { count: "exact" },
+  );
+
+  // Filter Company
+  if (companyCode && companyCode !== "LOURDES") {
+    query = query.eq("company_code", companyCode);
+  }
+
+  // Filter Search (Hapus users_with_profiles.nama untuk mencegah crash Logic Tree)
+  if (searchQuery) {
+    query = query.or(
+      `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%,department.ilike.%${searchQuery}%,status.ilike.%${searchQuery}%,kategori.ilike.%${searchQuery}%`,
+    );
+  }
+
+  // Filter Status
+  if (statusFilter && statusFilter !== "all") {
+    query = query.eq("status", statusFilter);
+  }
+
+  // Filter Tanggal
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+  }
+
+  // Pagination & Sort
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    console.error("Error fetching MRs:", error); // Debugging
+    throw new Error(error.message);
+  }
+
+  return { data, count };
+};
