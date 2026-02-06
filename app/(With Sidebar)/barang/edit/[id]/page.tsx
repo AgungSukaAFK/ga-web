@@ -121,7 +121,6 @@ function EditBarangContent({ params }: { params: { id: string } }) {
           link: formData.link || null,
           description: formData.description || null,
           is_asset: formData.is_asset,
-          // Jangan update created_at, update updated_at jika ada kolomnya
         })
         .eq("id", id);
 

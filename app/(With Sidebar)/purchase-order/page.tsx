@@ -40,6 +40,11 @@ import {
   User,
   Mail,
   MapPin,
+  Plus,
+  ArrowRight,
+  MoreHorizontal,
+  Eye,
+  Edit,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -65,6 +70,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { LIMIT_OPTIONS } from "@/type/enum";
 
 const STATUS_OPTIONS = [
@@ -222,7 +234,7 @@ function PurchaseOrderPageContent() {
       }
       return params.toString();
     },
-    [searchParams]
+    [searchParams],
   );
 
   useEffect(() => {
@@ -255,7 +267,7 @@ function PurchaseOrderPageContent() {
           startDate || null,
           endDate || null,
           paymentFilter || null,
-          paymentTermFilter || null
+          paymentTermFilter || null,
         );
 
         setDataPO(data || []);
@@ -288,7 +300,7 @@ function PurchaseOrderPageContent() {
       if (searchInput !== (searchTerm || "")) {
         startTransition(() => {
           router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
+            `${pathname}?${createQueryString({ search: searchInput })}`,
           );
         });
       }
@@ -297,7 +309,7 @@ function PurchaseOrderPageContent() {
   }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleFilterChange = (
-    updates: Record<string, string | number | undefined>
+    updates: Record<string, string | number | undefined>,
   ) => {
     startTransition(() => {
       router.push(`${pathname}?${createQueryString(updates)}`);
@@ -309,14 +321,17 @@ function PurchaseOrderPageContent() {
     setIsVendorModalOpen(true);
   };
 
-  // ... (Function handleDownloadExcel logic sama seperti sebelumnya) ...
+  const handleCreatePO = () => {
+    // Navigasi langsung ke create page (mode Direct PO default, nanti user bisa link MR di sana)
+    router.push("/purchase-order/create");
+  };
+
   const handleDownloadExcel = async () => {
     if (!userProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
-      // REVISI: Tambahkan vendor_details ke select
       let query = s.from("purchase_orders").select(
         `
             kode_po, status, total_price, company_code, created_at,
@@ -326,7 +341,7 @@ function PurchaseOrderPageContent() {
               kode_mr,
               users_with_profiles!userid (nama)
             )
-          `
+          `,
       );
 
       if (searchTerm) {
@@ -338,7 +353,6 @@ function PurchaseOrderPageContent() {
         const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
         const searchTermLike = `"%${searchTerm}%"`;
         let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
-        // Tambahkan pencarian Vendor di Excel juga
         orFilter += `,vendor_details->>nama_vendor.ilike.${searchTermLike}`;
         orFilter += `,vendor_details->>kode_vendor.ilike.${searchTermLike}`;
 
@@ -347,7 +361,6 @@ function PurchaseOrderPageContent() {
         }
         query = query.or(orFilter);
       }
-      // ... (filter lain sama) ...
       if (statusFilter) query = query.eq("status", statusFilter);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
@@ -385,13 +398,13 @@ function PurchaseOrderPageContent() {
           (po.approvals as Approval[])?.some(
             (app) =>
               app.userid === PAYMENT_VALIDATOR_USER_ID &&
-              app.status === "approved"
+              app.status === "approved",
           ) ?? false;
 
         const basePoInfo = {
           "Kode PO": po.kode_po,
           "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
-          Vendor: po.vendor_details?.nama_vendor || "N/A", // Tambah Kolom Vendor
+          Vendor: po.vendor_details?.nama_vendor || "N/A",
           "Requester MR":
             po.material_requests?.users_with_profiles?.nama || "N/A",
           Status: po.status,
@@ -435,7 +448,7 @@ function PurchaseOrderPageContent() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase Orders");
       XLSX.writeFile(
         workbook,
-        `Detail_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`
+        `Detail_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`,
       );
 
       toast.success("Data PO detail berhasil diunduh!");
@@ -451,6 +464,25 @@ function PurchaseOrderPageContent() {
       userProfile?.department === "Purchasing") ||
     userProfile?.role === "admin";
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "Pending Approval":
+        return <Badge variant="secondary">Pending Approval</Badge>;
+      case "Pending Validation":
+        return <Badge variant="secondary">Pending Validation</Badge>;
+      case "Pending BAST":
+        return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
+      case "Completed":
+        return <Badge className="bg-green-500 text-white">Completed</Badge>;
+      case "Rejected":
+        return <Badge variant="destructive">Rejected</Badge>;
+      case "Draft":
+        return <Badge variant="outline">Draft</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
   return (
     <>
       <Content
@@ -458,9 +490,14 @@ function PurchaseOrderPageContent() {
         description="Kelola seluruh data Purchase Order (PO)"
         cardAction={
           canCreatePO && (
-            <Button onClick={() => setIsModalOpen(true)}>
-              Buat Purchase Order
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setIsModalOpen(true)} variant="outline">
+                <Search className="mr-2 h-4 w-4" /> Cari MR untuk PO
+              </Button>
+              <Button onClick={handleCreatePO}>
+                <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
+              </Button>
+            </div>
           )
         }
         className="col-span-12"
@@ -493,7 +530,6 @@ function PurchaseOrderPageContent() {
             </div>
 
             <div className="p-4 border rounded-lg bg-muted/50">
-              {/* ... (Filter Components tetap sama) ... */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Status PO</label>
@@ -654,7 +690,6 @@ function PurchaseOrderPageContent() {
                 <TableRow>
                   <TableHead>Kode PO</TableHead>
                   <TableHead>Ref. Kode MR</TableHead>
-                  {/* REVISI: Ganti Requester MR dengan Vendor */}
                   <TableHead>Vendor</TableHead>
                   <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
@@ -688,7 +723,6 @@ function PurchaseOrderPageContent() {
                         {po.material_requests?.kode_mr || "N/A"}
                       </TableCell>
 
-                      {/* REVISI: Kolom Vendor Clickable */}
                       <TableCell>
                         {po.vendor_details ? (
                           <button
@@ -717,7 +751,7 @@ function PurchaseOrderPageContent() {
                         {po.approvals?.some(
                           (app: Approval) =>
                             app.userid === PAYMENT_VALIDATOR_USER_ID &&
-                            app.status === "approved"
+                            app.status === "approved",
                         ) ? (
                           <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
                             <CreditCard className="h-3 w-3" />
@@ -734,9 +768,41 @@ function PurchaseOrderPageContent() {
                       </TableCell>
                       <TableCell>{formatDateFriendly(po.created_at)}</TableCell>
                       <TableCell className="text-right no-print">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/purchase-order/${po.id}`}>View</Link>
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <span className="sr-only">Open menu</span>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Aksi</DropdownMenuLabel>
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/purchase-order/${po.id}`}
+                                className="cursor-pointer"
+                              >
+                                <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                              </Link>
+                            </DropdownMenuItem>
+
+                            {(po.status === "Draft" ||
+                              po.status === "Rejected" ||
+                              po.status.includes("Pending")) &&
+                              canCreatePO && (
+                                <>
+                                  <DropdownMenuItem asChild>
+                                    <Link
+                                      href={`/purchase-order/edit/${po.id}`}
+                                      className="cursor-pointer"
+                                    >
+                                      <Edit className="mr-2 h-4 w-4" /> Edit
+                                    </Link>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))
@@ -751,7 +817,6 @@ function PurchaseOrderPageContent() {
             </Table>
           </div>
         </div>
-        {/* ... (Pagination tetap sama) ... */}
         <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Tampilkan</span>
@@ -788,7 +853,6 @@ function PurchaseOrderPageContent() {
         />
       )}
 
-      {/* REVISI: Render Modal Vendor */}
       <VendorDetailModal
         isOpen={isVendorModalOpen}
         onClose={() => setIsVendorModalOpen(false)}

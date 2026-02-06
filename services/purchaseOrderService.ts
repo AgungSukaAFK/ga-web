@@ -276,14 +276,12 @@ export const createPurchaseOrder = async (
   user_id: string,
   company_code: string,
 ) => {
-  const supabase = createClient();
-
   const payload = {
     ...poData,
     mr_id,
     user_id,
     company_code,
-    status: "Pending Validation" as const,
+    status: "Pending Validation" as const, // Default status awal
     approvals: [],
   };
 
@@ -314,7 +312,7 @@ export const createPurchaseOrder = async (
     }
   }
 
-  // 3. UPDATE STATUS & LEVEL MR (Logika Lama)
+  // 3. UPDATE STATUS & LEVEL MR (Hanya jika ada MR)
   if (mr_id) {
     const { error: mrError } = await supabase
       .from("material_requests")

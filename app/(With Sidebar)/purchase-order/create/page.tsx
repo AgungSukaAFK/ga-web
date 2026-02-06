@@ -30,7 +30,8 @@ import {
   fetchMaterialRequestById,
   generatePoCode,
 } from "@/services/purchaseOrderService";
-import { formatCurrency, cn } from "@/lib/utils";
+import { fetchAvailableMRsForPO } from "@/services/mrService";
+import { formatCurrency, cn, formatDateFriendly } from "@/lib/utils";
 import {
   Loader2,
   Send,
@@ -49,6 +50,12 @@ import {
   Eye,
   FileText,
   Plus,
+  Link2,
+  AlertTriangle,
+  XCircle,
+  PackagePlus,
+  Unlink,
+  HelpCircle,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -83,10 +90,28 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
+  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { searchVendors } from "@/services/vendorService";
 import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 
 // --- KONFIGURASI PPH ---
 const PPH_OPTIONS = [
@@ -97,7 +122,7 @@ const PPH_OPTIONS = [
   { label: "PPH 23 (Tanpa NPWP) - 4%", value: "pph23_non_npwp", rate: 4.0 },
 ];
 
-// --- Vendor Search Component (FIXED) ---
+// --- Vendor Search Component ---
 function VendorSearchCombobox({
   poForm,
   setPoForm,
@@ -109,28 +134,14 @@ function VendorSearchCombobox({
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<Vendor[]>([]);
 
-  // Fetch vendors on search query change
   useEffect(() => {
-    let active = true;
-    const fetch = async () => {
-      try {
-        const data = await searchVendors(searchQuery);
-        if (active) setResults(data);
-      } catch (err) {
-        console.error("Error searching vendors:", err);
-      }
-    };
-
-    const handler = setTimeout(fetch, 300);
-    return () => {
-      clearTimeout(handler);
-      active = false;
-    };
+    const handler = setTimeout(() => {
+      searchVendors(searchQuery).then(setResults);
+    }, 300);
+    return () => clearTimeout(handler);
   }, [searchQuery]);
 
   const handleSelect = (vendor: Vendor) => {
-    console.log("Selected Vendor:", vendor); // Debugging info
-
     const newVendorDetails: StoredVendorDetails = {
       vendor_id: vendor.id,
       kode_vendor: vendor.kode_vendor,
@@ -139,12 +150,10 @@ function VendorSearchCombobox({
       contact_person: vendor.pic_contact_person || "",
       email: vendor.email || "",
     };
-
     setPoForm((prev: any) => ({
       ...prev,
       vendor_details: newVendorDetails,
     }));
-
     setOpen(false);
     setSearchQuery("");
   };
@@ -179,7 +188,7 @@ function VendorSearchCombobox({
               {results.map((vendor) => (
                 <CommandItem
                   key={vendor.id}
-                  value={String(vendor.id)} // Use ID as value to ensure uniqueness
+                  value={String(vendor.id)}
                   onSelect={() => handleSelect(vendor)}
                 >
                   <div className="flex flex-col w-full text-left">
@@ -227,21 +236,31 @@ const InfoItem = ({
 function CreatePOPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mrId = searchParams.get("mrId");
+  const mrIdParam = searchParams.get("mrId");
   const supabase = createClient();
 
   const [mrData, setMrData] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // State Dialogs & Modals
+  const [isLinkMROpen, setIsLinkMROpen] = useState(false);
+  const [availableMRs, setAvailableMRs] = useState<any[]>([]);
+  const [isLoadingMRs, setIsLoadingMRs] = useState(false);
+  const [searchMrQuery, setSearchMrQuery] = useState("");
+  const [isConfirmDirectPOOpen, setIsConfirmDirectPOOpen] = useState(false);
+  const [isUnlinkDialogOpen, setIsUnlinkDialogOpen] = useState(false); // New: Untuk putuskan MR
 
   // State Partial Selection
   const [selectedOrderIndices, setSelectedOrderIndices] = useState<number[]>(
     [],
   );
 
-  // State Dialogs
+  // State Item Dialogs
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
   const [isViewItemOpen, setIsViewItemOpen] = useState(false);
   const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
@@ -294,7 +313,6 @@ function CreatePOPageContent() {
   // PPH State
   const [pphType, setPphType] = useState<string>("none");
 
-  // Helper: Get Cost Center Name
   const getCostCenterName = (data: any) => {
     const cc = data.cost_centers;
     if (Array.isArray(cc)) {
@@ -306,14 +324,10 @@ function CreatePOPageContent() {
     return `ID: ${data.cost_center_id} (Belum ditentukan)`;
   };
 
-  // --- 1. Fetch Data ---
   useEffect(() => {
     const initializeForm = async () => {
       try {
         setLoading(true);
-        if (!mrId)
-          throw new Error("ID Material Request tidak ditemukan di URL.");
-
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -327,24 +341,16 @@ function CreatePOPageContent() {
           .single();
 
         if (!profile || !profile.company) {
-          throw new Error("Profil Anda tidak lengkap.");
+          throw new Error("Profil Anda tidak lengkap (Company/Lokasi).");
         }
+        setUserProfile(profile);
 
-        const [newPoCode, fetchedMr] = await Promise.all([
-          generatePoCode(profile.company, profile.lokasi),
-          fetchMaterialRequestById(parseInt(mrId)),
-        ]);
+        const newPoCode = await generatePoCode(profile.company, profile.lokasi);
+        setPoForm((prev) => ({ ...prev, kode_po: newPoCode }));
 
-        if (!fetchedMr) throw new Error("Data MR tidak ditemukan.");
-
-        setMrData(fetchedMr as any);
-        setPoForm((prev) => ({
-          ...prev,
-          kode_po: newPoCode,
-          items: [],
-          shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
-          attachments: [],
-        }));
+        if (mrIdParam) {
+          await loadMRData(parseInt(mrIdParam));
+        }
       } catch (err: any) {
         toast.error("Gagal memuat data", { description: err.message });
         setError(err.message);
@@ -353,22 +359,86 @@ function CreatePOPageContent() {
       }
     };
     initializeForm();
-  }, [mrId]);
+  }, [mrIdParam]);
 
-  // --- 2. Update Items from Selection ---
+  const loadMRData = async (id: number) => {
+    const fetchedMr = await fetchMaterialRequestById(id);
+    if (!fetchedMr) {
+      toast.error("Data MR tidak ditemukan.");
+      return;
+    }
+    setMrData(fetchedMr as any);
+    setPoForm((prev) => ({
+      ...prev,
+      items: [],
+      shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
+    }));
+
+    if (fetchedMr.orders && fetchedMr.orders.length > 0) {
+      setSelectedOrderIndices(fetchedMr.orders.map((_: any, i: number) => i));
+    }
+  };
+
+  const handleOpenLinkMR = async () => {
+    if (!userProfile?.company) return;
+    setIsLinkMROpen(true);
+    setIsLoadingMRs(true);
+    try {
+      const res = await fetchAvailableMRsForPO(
+        userProfile.company,
+        searchMrQuery,
+      );
+      setAvailableMRs(res || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoadingMRs(false);
+    }
+  };
+
+  const handleSelectMR = async (mr: any) => {
+    if (poForm.items.length > 0) {
+      if (!confirm("Menautkan MR akan mereset item yang sudah ada. Lanjutkan?"))
+        return;
+    }
+    setIsLinkMROpen(false);
+    setLoading(true);
+    await loadMRData(mr.id);
+    setLoading(false);
+    toast.success(`MR ${mr.kode_mr} berhasil dikaitkan.`);
+  };
+
+  // --- HANDLER UNLINK MR (PUTUSKAN KONEKSI) ---
+  const handleUnlinkMR = () => {
+    setMrData(null);
+    setPoForm((prev) => ({
+      ...prev,
+      items: [], // Reset item untuk mencegah konflik
+    }));
+    setSelectedOrderIndices([]);
+    setIsUnlinkDialogOpen(false);
+    toast.info("Koneksi ke MR diputuskan. Mode Direct PO aktif.");
+  };
+
+  useEffect(() => {
+    if (!isLinkMROpen || !userProfile?.company) return;
+    const handler = setTimeout(() => {
+      setIsLoadingMRs(true);
+      fetchAvailableMRsForPO(userProfile.company, searchMrQuery)
+        .then(setAvailableMRs)
+        .finally(() => setIsLoadingMRs(false));
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchMrQuery, isLinkMROpen]);
+
   useEffect(() => {
     if (!mrData) return;
-
-    // Filter items based on checkbox selection from MR List
     const newItems: POItem[] = selectedOrderIndices.map((index) => {
       const order = mrData.orders[index];
-      // Check existing to preserve edits
       const existingItem = poForm.items.find(
-        (i) => i.barang_id === order.barang_id && order.barang_id !== null,
+        (i) => i.name === order.name && i.qty === Number(order.qty),
       );
-
       if (existingItem) return existingItem;
-
       return {
         barang_id: order.barang_id || 0,
         part_number: order.part_number || "N/A",
@@ -380,39 +450,24 @@ function CreatePOPageContent() {
         vendor_name: "",
       };
     });
-
-    // Keep manually added items logic
-    const manualItems = poForm.items.filter(
-      (item) => item.barang_id === 0 || !item.barang_id,
-    );
-
-    // Simplification: We strictly follow MR Selection for MR items.
-    // Manual items are preserved if we merge correctly, but complex.
-    // For now, let's just reset to selected items to avoid duplicates/complexity
-    // as requested "no error, stable".
     setPoForm((prev) => ({ ...prev, items: newItems }));
   }, [selectedOrderIndices, mrData]);
 
-  // --- 3. LOGIKA KALKULASI PAJAK & TOTAL ---
   useEffect(() => {
     const subtotal = poForm.items.reduce(
       (acc, item) => acc + item.qty * item.price,
       0,
     );
-
     const taxableAmount = Math.max(0, subtotal - (poForm.discount || 0));
-
     let calculatedTax = 0;
     if (!isTaxIncluded) {
       if (taxMode === "percentage")
         calculatedTax = taxableAmount * (taxPercentage / 100);
       else calculatedTax = poForm.tax || 0;
     }
-
     const selectedPph =
       PPH_OPTIONS.find((opt) => opt.value === pphType) || PPH_OPTIONS[0];
     const pphAmount = (taxableAmount * selectedPph.rate) / 100;
-
     const grandTotal =
       taxableAmount - pphAmount + calculatedTax + (poForm.postage || 0);
 
@@ -434,33 +489,6 @@ function CreatePOPageContent() {
     pphType,
   ]);
 
-  // Handle Manual Tax Override
-  useEffect(() => {
-    if (taxMode === "manual" && !isTaxIncluded) {
-      const subtotal = poForm.items.reduce(
-        (acc, item) => acc + item.qty * item.price,
-        0,
-      );
-      const taxableAmount = Math.max(0, subtotal - (poForm.discount || 0));
-      const selectedPph =
-        PPH_OPTIONS.find((opt) => opt.value === pphType) || PPH_OPTIONS[0];
-      const pphAmount = (taxableAmount * selectedPph.rate) / 100;
-
-      const grandTotal =
-        taxableAmount - pphAmount + (poForm.tax || 0) + (poForm.postage || 0);
-      setPoForm((prev) => ({ ...prev, total_price: grandTotal }));
-    }
-  }, [
-    poForm.tax,
-    taxMode,
-    isTaxIncluded,
-    pphType,
-    poForm.items,
-    poForm.discount,
-    poForm.postage,
-  ]);
-
-  // --- 4. UPDATE PAYMENT TERM STRING ---
   useEffect(() => {
     let termString = "";
     if (paymentTermType === "Cash") {
@@ -472,11 +500,9 @@ function CreatePOPageContent() {
       const bp = 100 - validDp;
       termString = `DP ${validDp}% - Pelunasan ${bp}%`;
     }
-
     setPoForm((p) => ({ ...p, payment_term: termString }));
   }, [paymentTermType, paymentTermDays, dpPercentage]);
 
-  // --- Handlers Items ---
   const handleItemChange = (
     index: number,
     field: keyof POItem,
@@ -494,26 +520,31 @@ function CreatePOPageContent() {
     setPoForm((prev) => ({ ...prev, items: newItems }));
   };
 
-  const handleAddManualItem = () => {
+  const handleAddItemFromDB = (barang: Barang) => {
+    const newItem: POItem = {
+      barang_id: barang.id,
+      part_number: barang.part_number,
+      name: barang.part_name || "",
+      qty: 1,
+      uom: barang.uom || "Pcs",
+      price: barang.last_purchase_price || 0,
+      total_price: (barang.last_purchase_price || 0) * 1,
+      vendor_name: "",
+    };
+
     setPoForm((prev) => ({
       ...prev,
-      items: [
-        ...prev.items,
-        {
-          barang_id: 0,
-          part_number: "",
-          name: "",
-          qty: 1,
-          uom: "Pcs",
-          price: 0,
-          total_price: 0,
-          vendor_name: "",
-        },
-      ],
+      items: [...prev.items, newItem],
     }));
-    toast.info(
-      "Item baru ditambahkan. Gunakan tombol 'Ganti Barang' untuk mengambil dari database.",
-    );
+    setIsAddItemDialogOpen(false);
+    toast.success("Barang ditambahkan ke PO.");
+  };
+
+  const removeItem = (index: number) => {
+    setPoForm((prev) => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index),
+    }));
   };
 
   const handleOpenReplaceDialog = (index: number) => {
@@ -528,15 +559,12 @@ function CreatePOPageContent() {
 
   const handleReplaceItem = (barang: Barang) => {
     if (replacingIndex === null) return;
-
     const newItems = [...poForm.items];
     const item = newItems[replacingIndex];
-
     item.barang_id = barang.id;
     item.part_number = barang.part_number;
     item.name = barang.part_name || item.name;
     item.uom = barang.uom || item.uom;
-
     if (barang.last_purchase_price && barang.last_purchase_price > 0) {
       item.price = barang.last_purchase_price;
       item.total_price = item.qty * item.price;
@@ -544,15 +572,13 @@ function CreatePOPageContent() {
     } else {
       toast.success("Barang diganti (Harga tetap).");
     }
-
     setPoForm({ ...poForm, items: newItems });
     setIsReplaceDialogOpen(false);
     setReplacingIndex(null);
   };
 
-  // --- SUBMIT ---
-  const handleSubmit = async () => {
-    if (!currentUser || !mrData) return;
+  const handleCheckSubmit = () => {
+    if (!currentUser) return;
     if (!poForm.vendor_details || !poForm.vendor_details.vendor_id) {
       toast.error("Vendor Utama wajib dipilih.");
       return;
@@ -561,13 +587,23 @@ function CreatePOPageContent() {
       toast.error("Pilih minimal satu item.");
       return;
     }
+    if (!mrData) {
+      setIsConfirmDirectPOOpen(true);
+      return;
+    }
+    handleSubmit(parseInt(mrData.id));
+  };
+
+  const handleSubmit = async (mrIdToSubmit: number | null) => {
+    if (!currentUser) return;
     setLoading(true);
+    setIsConfirmDirectPOOpen(false);
     try {
       await createPurchaseOrder(
         poForm,
-        parseInt(mrId!),
+        mrIdToSubmit,
         currentUser.id,
-        mrData.company_code,
+        userProfile?.company || "GMI",
       );
       toast.success("PO berhasil diajukan!");
       router.push("/purchase-order");
@@ -578,7 +614,6 @@ function CreatePOPageContent() {
     }
   };
 
-  // --- Attachment Handlers ---
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     type: "po" | "finance",
@@ -586,7 +621,6 @@ function CreatePOPageContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (poForm.kode_po === "Generating...") return;
-
     const setIsLoading =
       type === "po" ? setIsUploadingPO : setIsUploadingFinance;
     setIsLoading(true);
@@ -594,7 +628,6 @@ function CreatePOPageContent() {
     const { data, error } = await supabase.storage
       .from("mr")
       .upload(filePath, file);
-
     if (error) {
       toast.error("Gagal upload", { description: error.message });
     } else {
@@ -621,7 +654,6 @@ function CreatePOPageContent() {
     supabase.storage.from("mr").remove([att.url]);
   };
 
-  // --- Selection Helper ---
   const toggleSelection = (index: number) => {
     setSelectedOrderIndices((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
@@ -638,12 +670,13 @@ function CreatePOPageContent() {
     }
   };
 
-  if (loading && !mrData)
+  if (loading && !mrData && !poForm.kode_po)
     return (
       <div className="col-span-12">
         <Skeleton className="h-[80vh] w-full" />
       </div>
     );
+
   if (error) return <div className="col-span-12 text-center">{error}</div>;
 
   const subtotal = poForm.items.reduce(
@@ -657,27 +690,91 @@ function CreatePOPageContent() {
 
   return (
     <>
-      <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Buat Purchase Order (Partial)</h1>
-          <p className="text-muted-foreground">
-            PO:{" "}
-            <span className="font-semibold text-primary">{poForm.kode_po}</span>
-          </p>
+      <TooltipProvider>
+        <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Buat Purchase Order</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-muted-foreground">PO:</span>
+              <span className="font-semibold text-primary">
+                {poForm.kode_po}
+              </span>
+              {mrData ? (
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge
+                      variant="outline"
+                      className="bg-primary/10 text-primary border-primary/20 flex items-center gap-1 cursor-help"
+                    >
+                      Ref MR: {mrData.kode_mr}{" "}
+                      <HelpCircle className="h-3 w-3" />
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>PO ini terhubung ke MR. Item diambil dari MR.</p>
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-100 text-amber-700 border-amber-200 flex items-center gap-1 cursor-help"
+                    >
+                      Direct PO (Tanpa MR) <HelpCircle className="h-3 w-3" />
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>
+                      PO ini dibuat langsung tanpa referensi MR.
+                      <br />
+                      Anda perlu menambahkan item secara manual.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {/* Tombol Kaitkan/Ganti/Putuskan MR */}
+            {mrData ? (
+              <div className="flex gap-1">
+                <Button variant="outline" onClick={handleOpenLinkMR}>
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Ganti MR
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() => setIsUnlinkDialogOpen(true)}
+                  title="Putuskan Koneksi MR"
+                >
+                  <Unlink className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" onClick={handleOpenLinkMR}>
+                <Link2 className="mr-2 h-4 w-4" />
+                Kaitkan Material Request
+              </Button>
+            )}
+
+            <Button onClick={handleCheckSubmit} disabled={loading}>
+              {loading ? (
+                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}{" "}
+              Ajukan PO
+            </Button>
+          </div>
         </div>
-        <Button onClick={handleSubmit} disabled={loading}>
-          {loading ? (
-            <Loader2 className="animate-spin mr-2 h-4 w-4" />
-          ) : (
-            <Send className="mr-2 h-4 w-4" />
-          )}{" "}
-          Ajukan PO
-        </Button>
-      </div>
+      </TooltipProvider>
 
       {/* --- KOLOM KIRI --- */}
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-        {mrData && (
+        {mrData ? (
           <Content title={`Referensi MR: ${mrData.kode_mr}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <InfoItem
@@ -725,77 +822,100 @@ function CreatePOPageContent() {
               </div>
             </div>
           </Content>
+        ) : (
+          <Content className="bg-muted/40 border-dashed border-2">
+            <div className="flex items-center gap-4 text-muted-foreground p-4">
+              <Info className="h-8 w-8" />
+              <div>
+                <h4 className="font-semibold text-foreground">
+                  Mode Direct PO
+                </h4>
+                <p className="text-sm">
+                  PO ini dibuat tanpa referensi Material Request. Pastikan ini
+                  sesuai prosedur perusahaan.
+                </p>
+              </div>
+            </div>
+          </Content>
         )}
 
-        <Content
-          title="Pilih Item dari Material Request"
-          description="Centang item yang akan diproses."
-        >
-          <div className="mb-2 flex items-center space-x-2">
-            <Checkbox
-              id="select-all"
-              checked={mrData?.orders.length === selectedOrderIndices.length}
-              onCheckedChange={selectAll}
-            />
-            <label
-              htmlFor="select-all"
-              className="text-sm font-medium cursor-pointer"
-            >
-              Pilih Semua
-            </label>
-          </div>
-          <div className="border rounded-md overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]">Pilih</TableHead>
-                  <TableHead>Nama Barang</TableHead>
-                  <TableHead>Qty (MR)</TableHead>
-                  <TableHead>Est. Harga</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mrData?.orders.map((order, index) => (
-                  <TableRow
-                    key={index}
-                    className={
-                      selectedOrderIndices.includes(index) ? "bg-muted/50" : ""
-                    }
-                  >
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedOrderIndices.includes(index)}
-                        onCheckedChange={() => toggleSelection(index)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{order.name}</div>
-                      <div className="text-xs text-muted-foreground font-mono">
-                        {order.part_number || "-"}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {order.qty} {order.uom}
-                    </TableCell>
-                    <TableCell>
-                      {formatCurrency(order.estimasi_harga)}
-                    </TableCell>
+        {mrData && (
+          <Content
+            title="Pilih Item dari Material Request"
+            description="Centang item yang akan diproses."
+          >
+            <div className="mb-2 flex items-center space-x-2">
+              <Checkbox
+                id="select-all"
+                checked={mrData?.orders.length === selectedOrderIndices.length}
+                onCheckedChange={selectAll}
+              />
+              <label
+                htmlFor="select-all"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Pilih Semua
+              </label>
+            </div>
+            <div className="border rounded-md overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[50px]">Pilih</TableHead>
+                    <TableHead>Nama Barang</TableHead>
+                    <TableHead>Qty (MR)</TableHead>
+                    <TableHead>Est. Harga</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Content>
+                </TableHeader>
+                <TableBody>
+                  {mrData?.orders.map((order, index) => (
+                    <TableRow
+                      key={index}
+                      className={
+                        selectedOrderIndices.includes(index)
+                          ? "bg-muted/50"
+                          : ""
+                      }
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedOrderIndices.includes(index)}
+                          onCheckedChange={() => toggleSelection(index)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{order.name}</div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {order.part_number || "-"}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {order.qty} {order.uom}
+                      </TableCell>
+                      <TableCell>
+                        {formatCurrency(order.estimasi_harga)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        )}
 
         <Content
           title="Rincian Item Purchase Order (Final)"
           cardAction={
-            <Button variant="outline" size="sm" onClick={handleAddManualItem}>
-              <Plus className="mr-2 h-4 w-4" /> Tambah Item
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddItemDialogOpen(true)}
+            >
+              <PackagePlus className="mr-2 h-4 w-4" /> Tambah Item
             </Button>
           }
         >
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto border rounded-md">
             <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
@@ -820,27 +940,11 @@ function CreatePOPageContent() {
                 {poForm.items.map((item, index) => (
                   <TableRow key={index}>
                     <TableCell>
-                      {item.barang_id === 0 ? (
-                        <Input
-                          value={item.name}
-                          onChange={(e) =>
-                            handleItemChange(index, "name", e.target.value)
-                          }
-                          placeholder="Nama Item..."
-                          className="h-8 text-sm"
-                        />
-                      ) : (
-                        <div className="font-medium">{item.name}</div>
-                      )}
-
+                      {/* REVISI: Selalu READ-ONLY karena harus dari DB */}
+                      <div className="font-medium">{item.name}</div>
                       <div className="text-xs text-muted-foreground font-mono mt-1">
                         {item.part_number}
                       </div>
-                      {!item.barang_id && (
-                        <span className="text-[10px] text-amber-600 bg-amber-100 px-1 rounded inline-block mt-1">
-                          Manual Input
-                        </span>
-                      )}
                     </TableCell>
                     <TableCell>
                       <Input
@@ -880,6 +984,14 @@ function CreatePOPageContent() {
                           onClick={() => handleOpenReplaceDialog(index)}
                         >
                           <RefreshCcw className="h-4 w-4 text-primary" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Hapus Item"
+                          onClick={() => removeItem(index)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
@@ -929,7 +1041,7 @@ function CreatePOPageContent() {
             </div>
             <hr />
 
-            {/* PAYMENT TERM SECTION (REVISI) */}
+            {/* PAYMENT TERM SECTION */}
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
               <div className="flex flex-col gap-3 mt-1">
@@ -1215,7 +1327,7 @@ function CreatePOPageContent() {
 
               {/* Tampilkan Diskon jika ada */}
               {(poForm.discount || 0) > 0 && (
-                <div className="flex justify-between text-red-600">
+                <div className="flex justify-between text-destructive">
                   <span>- Diskon</span>
                   <span>({formatCurrency(poForm.discount)})</span>
                 </div>
@@ -1223,7 +1335,7 @@ function CreatePOPageContent() {
 
               {/* Tampilkan PPH jika ada */}
               {(poForm.pph_amount || 0) > 0 && (
-                <div className="flex justify-between text-red-600">
+                <div className="flex justify-between text-destructive">
                   <span>
                     - PPH ({PPH_OPTIONS.find((o) => o.value === pphType)?.rate}
                     %)
@@ -1234,7 +1346,7 @@ function CreatePOPageContent() {
 
               {/* Tampilkan PPN jika ada */}
               {(poForm.tax || 0) > 0 && (
-                <div className="flex justify-between text-blue-600">
+                <div className="flex justify-between text-primary">
                   <span>+ PPN {isTaxIncluded ? "(Included)" : ""}</span>
                   <span>{formatCurrency(poForm.tax || 0)}</span>
                 </div>
@@ -1242,14 +1354,14 @@ function CreatePOPageContent() {
 
               {/* Tampilkan Ongkir jika ada */}
               {(poForm.postage || 0) > 0 && (
-                <div className="flex justify-between text-blue-600">
+                <div className="flex justify-between text-primary">
                   <span>+ Ongkir</span>
                   <span>{formatCurrency(poForm.postage || 0)}</span>
                 </div>
               )}
 
               {/* Garis Pemisah */}
-              <div className="border-t border-slate-300 my-2 pt-2">
+              <div className="border-t border-muted-foreground/30 my-2 pt-2">
                 <div className="flex justify-between font-bold text-lg">
                   <span>Grand Total</span>
                   <span>{formatCurrency(poForm.total_price)}</span>
@@ -1264,6 +1376,136 @@ function CreatePOPageContent() {
           </div>
         </Content>
       </div>
+
+      {/* --- DIALOG LINK MR (FITUR BARU) --- */}
+      <Dialog open={isLinkMROpen} onOpenChange={setIsLinkMROpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle>Kaitkan Material Request</DialogTitle>
+            <DialogDescription>
+              Pilih MR yang sudah disetujui untuk dibuatkan PO.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6 pt-2 flex-1 overflow-y-auto">
+            <Input
+              placeholder="Cari No MR atau Remarks..."
+              value={searchMrQuery}
+              onChange={(e) => setSearchMrQuery(e.target.value)}
+              className="mb-4"
+            />
+
+            {isLoadingMRs ? (
+              <div className="py-8 text-center">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+              </div>
+            ) : availableMRs.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                Tidak ada MR yang tersedia (Approved).
+              </div>
+            ) : (
+              <div className="border rounded-md overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Kode MR</TableHead>
+                      <TableHead>Remarks</TableHead>
+                      <TableHead>Nilai Est.</TableHead>
+                      <TableHead className="text-right">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {availableMRs.map((mr) => (
+                      <TableRow key={mr.id}>
+                        <TableCell className="font-medium">
+                          {mr.kode_mr}
+                        </TableCell>
+                        <TableCell
+                          className="text-xs text-muted-foreground max-w-[200px] truncate"
+                          title={mr.remarks}
+                        >
+                          {mr.remarks || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {formatCurrency(mr.cost_estimation)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" onClick={() => handleSelectMR(mr)}>
+                            Pilih
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="p-4 border-t bg-muted/20">
+            <Button variant="outline" onClick={() => setIsLinkMROpen(false)}>
+              Batal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- CONFIRMATION DIALOG DIRECT PO --- */}
+      <AlertDialog
+        open={isConfirmDirectPOOpen}
+        onOpenChange={setIsConfirmDirectPOOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-yellow-600">
+              <AlertTriangle className="h-5 w-5" /> Konfirmasi Direct PO
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Anda akan membuat Purchase Order{" "}
+              <strong>tanpa referensi Material Request (MR)</strong>.
+              <br />
+              <br />
+              Apakah Anda yakin ingin melanjutkan? Pastikan ini sesuai dengan
+              prosedur perusahaan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleSubmit(null)}>
+              Ya, Lanjutkan (Direct PO)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* --- CONFIRMATION DIALOG UNLINK MR --- */}
+      <AlertDialog
+        open={isUnlinkDialogOpen}
+        onOpenChange={setIsUnlinkDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Unlink className="h-5 w-5" /> Putuskan Koneksi MR?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tindakan ini akan <strong>menghapus semua item</strong> yang
+              diambil dari MR <strong>{mrData?.kode_mr}</strong> dan mengubah PO
+              ini menjadi Direct PO.
+              <br />
+              <br />
+              Apakah Anda yakin?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnlinkMR}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Putuskan & Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* --- DIALOG GANTI BARANG --- */}
       <Dialog open={isReplaceDialogOpen} onOpenChange={setIsReplaceDialogOpen}>
@@ -1282,6 +1524,29 @@ function CreatePOPageContent() {
             <Button
               variant="outline"
               onClick={() => setIsReplaceDialogOpen(false)}
+            >
+              Batal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG TAMBAH BARANG (BARU) --- */}
+      <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Item ke PO</DialogTitle>
+            <DialogDescription>
+              Cari dan pilih barang dari database master.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <BarangSearchCombobox onSelect={handleAddItemFromDB} />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddItemDialogOpen(false)}
             >
               Batal
             </Button>

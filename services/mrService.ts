@@ -80,7 +80,7 @@ export const getActiveUserProfile = async (): Promise<Profile | null> => {
  */
 export const generateMRCode = async (
   department: string,
-  lokasi: string
+  lokasi: string,
 ): Promise<string> => {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -125,7 +125,7 @@ export const generateMRCode = async (
  */
 export const uploadAttachment = async (
   file: File,
-  kode_mr: string
+  kode_mr: string,
 ): Promise<Attachment> => {
   const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
 
@@ -162,7 +162,7 @@ export const createMaterialRequest = async (
     | "company_code"
   >,
   userId: string,
-  company_code: string
+  company_code: string,
 ): Promise<MaterialRequest> => {
   // Hapus properti 'cost_center' (text) jika masih ada di state
   // Dan pastikan 'cost_center_id' (number) yang dikirim
@@ -190,7 +190,7 @@ export const createMaterialRequest = async (
     if (error.code === "42703") {
       // "column ... does not exist"
       throw new Error(
-        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database (Langkah 1)."
+        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database (Langkah 1).",
       );
     }
     throw error;
@@ -213,5 +213,44 @@ export const fetchActiveCostCenters = async (company_code: string) => {
     console.error("Error fetching cost centers:", error);
     throw error;
   }
+  return data;
+};
+
+export const fetchAvailableMRsForPO = async (
+  companyCode: string,
+  searchQuery: string = "",
+) => {
+  let query = supabase
+    .from("material_requests")
+    .select(
+      `
+      id,
+      kode_mr,
+      status,
+      remarks,
+      cost_estimation,
+      created_at,
+      department,
+      users_with_profiles (nama)
+    `,
+    )
+    .eq("company_code", companyCode)
+    .order("created_at", { ascending: false })
+    .limit(10); // Ringan, Max 10
+
+  // Jika ada pencarian
+  if (searchQuery) {
+    query = query.or(
+      `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%`,
+    );
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Error fetching available MRs:", error);
+    return [];
+  }
+
   return data;
 };

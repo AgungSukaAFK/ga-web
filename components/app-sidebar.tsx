@@ -160,7 +160,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             () => {
               // Jika ada notif baru masuk, tambah counter
               setUnreadCount((prev) => prev + 1);
-            }
+            },
           )
           .subscribe();
 
@@ -180,7 +180,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           currentPath === item.url ||
           (item.url !== "/dashboard" && currentPath.startsWith(item.url)),
       })),
-    [currentPath]
+    [currentPath],
   );
 
   const mainNavItems = React.useMemo(() => {
@@ -210,7 +210,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     // 2. Fitur Incoming Requests (Purchasing/Admin)
     if (profile?.department === "Purchasing" || profile?.role === "admin") {
       const reqIndex = baseNav.findIndex(
-        (item) => item.title === "Request Barang Baru"
+        (item) => item.title === "Request Barang Baru",
       );
       baseNav.splice(reqIndex + 1, 0, {
         title: "Permintaan Barang",
@@ -240,18 +240,18 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       });
     }
 
-    // 5. Fitur MR Management (Purchasing & GA)
-    if (
-      profile?.role !== "admin" &&
-      (profile?.department === "Purchasing" ||
-        profile?.department === "General Affair")
-    ) {
-      baseNav.push({
-        title: "MR Management",
-        url: "/mr-management",
-        icon: FileSearch2,
-      });
-    }
+    // 5. Fitur MR Management (Purchasing & GA) dijadikan admin only
+    // if (
+    //   profile?.role !== "admin" &&
+    //   (profile?.department === "Purchasing" ||
+    //     profile?.department === "General Affair")
+    // ) {
+    //   baseNav.push({
+    //     title: "MR Management",
+    //     url: "/mr-management",
+    //     icon: FileSearch2,
+    //   });
+    // }
 
     return markActive(baseNav);
   }, [profile, markActive, unreadCount]); // Tambahkan unreadCount ke dependency
