@@ -24,7 +24,6 @@ import {
   Info,
   Truck,
   Building2,
-  Link as LinkIcon,
   AlertTriangle,
   Check,
   X,
@@ -40,6 +39,7 @@ import {
   HelpCircle,
   PackageCheck,
   Upload,
+  ArrowRightLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +49,6 @@ import { User as AuthUser } from "@supabase/supabase-js";
 import {
   PurchaseOrderDetail,
   Approval,
-  Order,
   Profile,
   Attachment,
   Discussion,
@@ -186,6 +185,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         material_requests: data.material_requests
           ? {
               ...data.material_requests,
+              orders: Array.isArray(data.material_requests.orders)
+                ? data.material_requests.orders
+                : [],
               discussions: Array.isArray(data.material_requests.discussions)
                 ? data.material_requests.discussions
                 : [],
@@ -265,6 +267,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       code: details.kode_vendor || "",
     };
   };
+
+  // --- REVISI LOGIC: STRICT PART NUMBER CHECK ---
+  const isMrItemInPO = (mrItem: any) => {
+    if (!po?.items) return false;
+
+    // Jika item di MR tidak punya Part Number, otomatis dianggap TIDAK MATCH
+    // karena kita butuh kepastian absolut berdasarkan PN.
+    if (!mrItem.part_number) return false;
+
+    return po.items.some((poItem) => poItem.part_number === mrItem.part_number);
+  };
+  // --------------------------------------------------
 
   const vendorData = getVendorData();
   const myApprovalIndex =
@@ -738,7 +752,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       <TableCell className="text-right">
                         {formatCurrency(item.price)}
                       </TableCell>
-                      {/* FIX: Use fallback to avoid 0 if total_price is missing */}
                       <TableCell className="text-right font-medium">
                         {formatCurrency(
                           item.total_price || item.price * item.qty,
@@ -750,6 +763,59 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </Table>
             </div>
           </Content>
+
+          {/* --- BAGIAN BARU: REFERENSI BARANG MR (STRICT PN CHECK) --- */}
+          {po.material_requests &&
+            po.material_requests.orders &&
+            po.material_requests.orders.length > 0 && (
+              <Content title="Referensi Barang dari MR (Permintaan Awal)">
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nama Item (MR)</TableHead>
+                        <TableHead>Part Number</TableHead>
+                        <TableHead>Qty (Diminta)</TableHead>
+                        <TableHead>Status di PO ini</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {po.material_requests.orders.map((mrItem: any, idx) => {
+                        const isInPO = isMrItemInPO(mrItem);
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">
+                              {mrItem.name}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {mrItem.part_number || "-"}
+                            </TableCell>
+                            <TableCell>
+                              {mrItem.qty} {mrItem.uom}
+                            </TableCell>
+                            <TableCell>
+                              {isInPO ? (
+                                <Badge className="bg-green-600 hover:bg-green-700">
+                                  <Check className="w-3 h-3 mr-1" /> Sudah di-PO
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-muted-foreground"
+                                >
+                                  Belum / PO Lain
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Content>
+            )}
+          {/* ---------------------------------------------------------------------- */}
 
           {/* --- Info Referensi MR --- */}
           {po.material_requests && (
@@ -999,7 +1065,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <span>- {formatCurrency(po.discount)}</span>
               </div>
             )}
-            {/* PPH BARU - FIX: Gunakan logic > 0 agar 0 tidak ter-render */}
             {(po.pph_amount || 0) > 0 && (
               <div className="flex justify-between items-center text-sm text-red-600">
                 <span>PPH ({po.pph_rate || 0}%)</span>
@@ -1029,7 +1094,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       </Dialog>
 
       <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
-        {/* ... (Dialog Upload BAST sama) ... */}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
@@ -1066,7 +1130,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       </Dialog>
 
       <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
-        {/* ... (Dialog Level Info sama) ... */}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Definisi Level MR</DialogTitle>
@@ -1266,7 +1329,6 @@ const PrintablePO = ({
                 <td className="py-3 px-2 text-right align-top whitespace-nowrap text-gray-900">
                   {formatCurrency(item.price)}
                 </td>
-                {/* FIX: Gunakan fallback calculation untuk menghindari 0 di print */}
                 <td className="py-3 px-2 text-right align-top whitespace-nowrap font-semibold text-gray-900 bg-gray-50">
                   {formatCurrency(item.total_price || item.price * item.qty)}
                 </td>
@@ -1314,15 +1376,12 @@ const PrintablePO = ({
                 <span>- {formatCurrency(po.discount)}</span>
               </div>
             )}
-
-            {/* PPH di Cetakan - FIX: Gunakan logic > 0 */}
             {(po.pph_amount || 0) > 0 && (
               <div className="flex justify-between text-xs text-red-600">
                 <span>PPH ({po.pph_rate}%)</span>
                 <span>- {formatCurrency(po.pph_amount || 0)}</span>
               </div>
             )}
-
             <div className="flex justify-between text-xs">
               <span className="text-gray-600">Pajak (PPN)</span>
               <span className="font-medium text-gray-900">

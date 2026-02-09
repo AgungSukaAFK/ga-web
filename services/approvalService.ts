@@ -32,7 +32,7 @@ export const fetchPendingValidationMRs = async (): Promise<
     .from("material_requests")
     // REVISI: Tambahkan join ke cost_centers
     .select(
-      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)"
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)",
     )
     .eq("status", "Pending Validation")
     .order("created_at", { ascending: false });
@@ -49,13 +49,13 @@ export const fetchPendingValidationMRs = async (): Promise<
  * dan sudah merupakan gilirannya untuk approve.
  */
 export const fetchMyPendingMrApprovals = async (
-  userId: string
+  userId: string,
 ): Promise<MaterialRequest[]> => {
   const { data: allPendingMRs, error } = await supabase
     .from("material_requests")
     // REVISI: Tambahkan join ke cost_centers
     .select(
-      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)"
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)",
     )
     .eq("status", "Pending Approval");
 
@@ -71,7 +71,7 @@ export const fetchMyPendingMrApprovals = async (
 
     // REVISI: Logika findIndex diubah untuk mencari task pending pertama
     const myApprovalIndex = mr.approvals.findIndex(
-      (app: any) => app.userid === userId && app.status === "pending"
+      (app: any) => app.userid === userId && app.status === "pending",
     );
 
     if (myApprovalIndex === -1) {
@@ -114,13 +114,13 @@ export const fetchMyDraftPOs = async (userId: string) => {
  * dan sudah merupakan gilirannya untuk approve.
  */
 export const fetchMyPendingPoApprovals = async (
-  userId: string
+  userId: string,
 ): Promise<PurchaseOrder[]> => {
   // ... (fungsi ini tetap sama)
   const { data: allPendingPOs, error } = await supabase
     .from("purchase_orders")
     .select(
-      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr)"
+      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr)",
     )
     .eq("status", "Pending Approval");
 
@@ -137,7 +137,7 @@ export const fetchMyPendingPoApprovals = async (
 
     // REVISI: Logika findIndex diubah untuk mencari task pending pertama
     const myApprovalIndex = po.approvals.findIndex(
-      (app: any) => app.userid === userId && app.status === "pending"
+      (app: any) => app.userid === userId && app.status === "pending",
     );
 
     if (myApprovalIndex === -1) {
@@ -155,48 +155,76 @@ export const fetchMyPendingPoApprovals = async (
   return myTurnPOs as PurchaseOrder[];
 };
 
+// Pastikan import tetap ada di atas file
+// import { createClient } from "@/lib/supabase/client";
+// import { Approval, MaterialRequest, PurchaseOrder } from "@/type";
+
 export const processMrApproval = async (
   mrId: number,
   userId: string,
   decision: "approved" | "rejected",
-  approvalsList: Approval[]
+  approvalsList: Approval[],
 ) => {
-  // 1. Cari index approver saat ini
-  const myIndex = approvalsList.findIndex(
-    (a) => a.userid === userId && a.status === "pending"
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("approvals, status, level")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR terbaru untuk validasi.");
+  }
+
+  // Gunakan data dari DB sebagai referensi utama
+  const dbApprovals = mr.approvals as Approval[];
+
+  const myIndex = dbApprovals.findIndex(
+    (a) => a.userid === userId && a.status === "pending",
   );
 
-  if (myIndex === -1)
-    throw new Error("User tidak memiliki akses approval pada MR ini.");
+  if (myIndex === -1) {
+    const alreadyApproved = dbApprovals.find(
+      (a) => a.userid === userId && a.status !== "pending",
+    );
+    if (alreadyApproved) {
+      return { success: true, newStatus: mr.status, newLevel: mr.level };
+    }
+    throw new Error("User tidak memiliki akses approval aktif pada MR ini.");
+  }
 
-  // 2. Update status approver
-  const updatedApprovals = [...approvalsList];
+  const updatedApprovals = [...dbApprovals];
   updatedApprovals[myIndex] = {
     ...updatedApprovals[myIndex],
     status: decision,
     processed_at: new Date().toISOString(),
   };
 
-  // 3. Tentukan Status & Level MR Baru
-  let newStatus = "Pending Approval"; // Default
-  let newLevel = undefined; // Default tidak berubah
+  let newStatus = mr.status;
+  let newLevel = mr.level;
 
   if (decision === "rejected") {
     newStatus = "Rejected";
   } else {
-    // Cek apakah ini approver terakhir
-    const isLastApprover = myIndex === approvalsList.length - 1;
+    // KUNCI PERBAIKAN:
+    // Kita cek array 'updatedApprovals' yang LENGKAP dari DB.
+    // Cek apakah SEMUA orang statusnya sudah 'approved'
     const isAllApproved = updatedApprovals.every(
-      (a) => a.status === "approved"
+      (a) => a.status === "approved",
     );
 
-    if (isLastApprover && isAllApproved) {
+    // Jika TRUE (semua sudah approve), baru ubah jadi Waiting PO
+    if (isAllApproved) {
       newStatus = "Waiting PO";
-      newLevel = "OPEN 2"; // Level naik ke OPEN 2 (Menunggu PO SCM)
+      newLevel = "OPEN 2"; // Naik ke level SCM
+    } else {
+      // Jika belum semua, status tetap Pending Approval
+      newStatus = "Pending Approval";
     }
   }
 
-  // 4. Update Database
+  // ------------------------------------------------------------------
+  // LANGKAH 5: UPDATE DATABASE
+  // ------------------------------------------------------------------
   const payload: any = {
     approvals: updatedApprovals,
     status: newStatus,
@@ -212,5 +240,6 @@ export const processMrApproval = async (
     .eq("id", mrId);
 
   if (error) throw error;
+
   return { success: true, newStatus, newLevel };
 };
