@@ -13,15 +13,22 @@ export interface Approval {
 
 // REVISI: Tambahkan field untuk integrasi Master Barang
 export interface Order {
+  // --- FIELD LAMA (JANGAN DIUBAH) ---
   name: string;
-  qty: string;
+  qty: string; // Tetap string sesuai kode Anda
   uom: string;
   estimasi_harga: number;
   note: string;
   url: string;
-  // Field Baru
   barang_id?: number | null;
   part_number?: string | null;
+
+  // --- FIELD BARU (TRACKING) - Semuanya Optional (?) ---
+  status?: MrItemStatus; // Default nanti: 'Pending'
+  po_refs?: string[]; // Array Kode PO, misal ["PO/001"]
+  status_note?: string; // Alasan pembatalan/penggantian
+  updated_by?: string; // User ID purchasing yang ubah
+  updated_at?: string; // Waktu perubahan
 }
 
 export interface Attachment {
@@ -349,3 +356,10 @@ export interface Notification {
   link: string;
   is_read: boolean;
 }
+
+export type MrItemStatus =
+  | "Pending"
+  | "Processing" // Sedang diproses (misal masuk Draft PO)
+  | "PO Created" // Sudah resmi ada di PO
+  | "Cancelled" // Dibatalkan oleh Purchasing
+  | "Replaced"; // Diganti dengan barang lain

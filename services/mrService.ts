@@ -266,11 +266,9 @@ export const fetchMaterialRequests = async (
 ) => {
   const supabase = createClient();
 
-  // Hitung offset
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
-  // GUNAKAN FOREIGN KEY EKSPLISIT (!fk_material_requests_profiles)
   let query = supabase.from("material_requests").select(
     `
       *,
@@ -280,24 +278,18 @@ export const fetchMaterialRequests = async (
     { count: "exact" },
   );
 
-  // Filter Company
+  // ... (Bagian Filter Company, Search, Status, Tanggal TETAP SAMA, tidak diubah) ...
   if (companyCode && companyCode !== "LOURDES") {
     query = query.eq("company_code", companyCode);
   }
-
-  // Filter Search (Hapus users_with_profiles.nama untuk mencegah crash Logic Tree)
   if (searchQuery) {
     query = query.or(
       `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%,department.ilike.%${searchQuery}%,status.ilike.%${searchQuery}%,kategori.ilike.%${searchQuery}%`,
     );
   }
-
-  // Filter Status
   if (statusFilter && statusFilter !== "all") {
     query = query.eq("status", statusFilter);
   }
-
-  // Filter Tanggal
   if (startDate) {
     query = query.gte("created_at", startDate);
   }
@@ -305,15 +297,162 @@ export const fetchMaterialRequests = async (
     query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
 
-  // Pagination & Sort
   const { data, error, count } = await query
     .order("created_at", { ascending: false })
     .range(from, to);
 
   if (error) {
-    console.error("Error fetching MRs:", error); // Debugging
+    console.error("Error fetching MRs:", error);
     throw new Error(error.message);
   }
 
-  return { data, count };
+  // --- PERUBAHAN DISINI: Normalisasi Data ---
+  const normalizedData = data?.map((mr) => ({
+    ...mr,
+    // Pastikan orders dinormalisasi agar punya status
+    orders: normalizeMrOrders(mr.orders as any[]),
+  }));
+
+  return { data: normalizedData, count };
+};
+
+export const normalizeMrOrders = (orders: any[]): Order[] => {
+  if (!Array.isArray(orders)) return [];
+
+  return orders.map((item) => ({
+    // Copy semua properti lama (name, qty, dll)
+    ...item,
+
+    // Inject default value hanya jika field tersebut tidak ada
+    status: item.status || "Pending",
+    po_refs: Array.isArray(item.po_refs) ? item.po_refs : [],
+    status_note: item.status_note || "",
+  }));
+};
+
+// src/services/mrService.ts
+/**
+ * Mengupdate status, po_refs, atau catatan untuk SATU item spesifik di dalam MR.
+ * Fungsi ini memanipulasi JSON array 'orders' secara aman.
+ * * @param mrId ID Material Request (number)
+ * @param partNumber Part Number item yang akan diupdate (identifier utama)
+ * @param updates Object berisi field yang mau diubah (status, poRef, note)
+ * @param userId ID User yang melakukan perubahan (untuk audit trail)
+ */
+export const updateMrItemStatus = async (
+  mrId: number,
+  partNumber: string,
+  updates: {
+    status?: string; // Menggunakan string agar fleksibel menerima value dari enum
+    poRef?: string; // Kode PO baru untuk ditambahkan (jika ada)
+    note?: string; // Catatan (alasan ganti/batal)
+  },
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  // 1. Ambil data MR saat ini (hanya kolom orders)
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk update item.");
+  }
+
+  // Casting ke any[] agar mudah dimanipulasi
+  const currentOrders = mr.orders as any[];
+
+  // 2. Cari index item berdasarkan part_number
+  // Pastikan part_number tidak null sebelum membandingkan
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+
+  if (itemIndex === -1) {
+    console.warn(
+      `Item dengan Part Number '${partNumber}' tidak ditemukan di MR ID ${mrId}`,
+    );
+    // Kita return false/null daripada error agar tidak mematikan proses bulk update
+    return { success: false, message: "Item not found" };
+  }
+
+  // 3. Update data item di memori
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+
+  // Update Status
+  if (updates.status) {
+    itemToUpdate.status = updates.status;
+  }
+
+  // Tambahkan PO Ref (Array)
+  if (updates.poRef) {
+    // Pastikan po_refs berupa array
+    const currentRefs = Array.isArray(itemToUpdate.po_refs)
+      ? itemToUpdate.po_refs
+      : [];
+
+    // Cek duplikasi, hanya masukkan jika belum ada
+    if (!currentRefs.includes(updates.poRef)) {
+      itemToUpdate.po_refs = [...currentRefs, updates.poRef];
+    }
+  }
+
+  // Update Note
+  if (updates.note !== undefined) {
+    itemToUpdate.status_note = updates.note;
+  }
+
+  // Update Metadata Audit
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  // Kembalikan item yang sudah diupdate ke array
+  currentOrders[itemIndex] = itemToUpdate;
+
+  // 4. Simpan kembali JSON array yang sudah dimodifikasi ke Database
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError) {
+    throw new Error(
+      "Gagal menyimpan update status item MR: " + updateError.message,
+    );
+  }
+
+  return { success: true };
+};
+
+export const fetchMaterialRequestById = async (mrId: number) => {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("material_requests")
+    .select(
+      `
+      *, 
+      users_with_profiles!userid(nama, lokasi),
+      cost_centers (
+        id,
+        name,
+        code,
+        current_budget
+      )
+    `,
+    )
+    .eq("id", mrId)
+    .single();
+
+  if (error) throw error;
+
+  // Normalisasi data orders agar punya field status & po_refs
+  if (data && data.orders) {
+    data.orders = normalizeMrOrders(data.orders as any[]);
+  }
+
+  return data;
 };

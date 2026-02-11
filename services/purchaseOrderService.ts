@@ -11,6 +11,7 @@ import {
   PurchaseOrderListItem,
   Attachment,
 } from "@/type";
+import { normalizeMrOrders, updateMrItemStatus } from "./mrService";
 
 const supabase = createClient();
 
@@ -192,6 +193,9 @@ export const fetchApprovedMaterialRequests = async (
 };
 
 export const fetchMaterialRequestById = async (mrId: number) => {
+  // Pastikan createClient dipanggil jika belum ada di scope global file ini
+  const supabase = createClient();
+
   const { data, error } = await supabase
     .from("material_requests")
     .select(
@@ -210,6 +214,12 @@ export const fetchMaterialRequestById = async (mrId: number) => {
     .single();
 
   if (error) throw error;
+
+  // --- PERUBAHAN DISINI: Normalisasi Data ---
+  if (data && data.orders) {
+    data.orders = normalizeMrOrders(data.orders as any[]);
+  }
+
   return data;
 };
 
@@ -262,6 +272,8 @@ export const generatePoCode = async (
   return `${prefix}/PO/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
 
+// src/services/purchaseOrderService.ts
+
 export const createPurchaseOrder = async (
   poData: Omit<
     PurchaseOrderPayload,
@@ -281,12 +293,13 @@ export const createPurchaseOrder = async (
     mr_id,
     user_id,
     company_code,
-    status: "Pending Validation" as const, // Default status awal
+    status: "Pending Validation" as const,
     approvals: [],
   };
 
   // 1. Insert PO Baru
-  const { data, error } = await supabase
+  // Kita ganti nama variabel 'data' jadi 'newPo' agar lebih jelas
+  const { data: newPo, error } = await supabase
     .from("purchase_orders")
     .insert([payload])
     .select()
@@ -294,9 +307,9 @@ export const createPurchaseOrder = async (
 
   if (error) throw error;
 
-  // 2. FITUR BARU: Update Harga Barang (Last Purchase Price)
+  // 2. Update Harga Barang (Last Purchase Price) - FITUR LAMA
   if (poData.items && poData.items.length > 0) {
-    const updatePromises = poData.items.map(async (item) => {
+    const updatePricePromises = poData.items.map(async (item) => {
       if (item.barang_id && item.price > 0) {
         return supabase
           .from("barang")
@@ -306,13 +319,44 @@ export const createPurchaseOrder = async (
     });
 
     try {
-      await Promise.all(updatePromises);
+      await Promise.all(updatePricePromises);
     } catch (err) {
       console.error("Gagal update harga master barang:", err);
     }
   }
 
-  // 3. UPDATE STATUS & LEVEL MR (Hanya jika ada MR)
+  // -----------------------------------------------------------
+  // 3. (BARU) UPDATE STATUS ITEM DI MR TERKAIT
+  // -----------------------------------------------------------
+  if (mr_id && newPo && poData.items && poData.items.length > 0) {
+    const updateMrItemPromises = poData.items.map(async (poItem) => {
+      // Syarat Strict: Harus punya part_number untuk dicocokkan ke MR
+      if (poItem.part_number) {
+        try {
+          await updateMrItemStatus(
+            mr_id,
+            poItem.part_number,
+            {
+              status: "PO Created", // Status berubah jadi PO Created
+              poRef: newPo.kode_po, // Masukkan Kode PO baru ke array po_refs
+            },
+            user_id,
+          );
+        } catch (err) {
+          // Kita log error tapi jangan throw agar proses pembuatan PO tidak batal
+          console.error(
+            `Gagal update status item MR untuk Part ${poItem.part_number}:`,
+            err,
+          );
+        }
+      }
+    });
+
+    await Promise.all(updateMrItemPromises);
+  }
+  // -----------------------------------------------------------
+
+  // 4. UPDATE STATUS & LEVEL MR (Hanya jika ada MR) - GESER JADI LANGKAH 4
   if (mr_id) {
     const { error: mrError } = await supabase
       .from("material_requests")
@@ -327,7 +371,7 @@ export const createPurchaseOrder = async (
     }
   }
 
-  return data;
+  return newPo;
 };
 
 export const fetchPurchaseOrderById = async (

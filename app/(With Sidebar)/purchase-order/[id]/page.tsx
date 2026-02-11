@@ -40,6 +40,8 @@ import {
   PackageCheck,
   Upload,
   ArrowRightLeft,
+  Pencil,
+  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,6 +54,7 @@ import {
   Profile,
   Attachment,
   Discussion,
+  Order,
 } from "@/type";
 import {
   formatCurrency,
@@ -65,6 +68,10 @@ import {
   markGoodsAsReceivedByGA,
 } from "@/services/purchaseOrderService";
 import {
+  updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
+  normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
+} from "@/services/mrService";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -72,12 +79,24 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 import { QRCodeCanvas } from "qrcode.react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { differenceInCalendarDays } from "date-fns";
-import { MR_LEVELS } from "@/type/enum";
+import {
+  MR_LEVELS,
+  MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_LABELS,
+} from "@/type/enum";
 
 const COMPANY_DETAILS = {
   GMI: {
@@ -165,6 +184,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [isBastDialogOpen, setIsBastDialogOpen] = useState(false);
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
 
+  // --- STATE UNTUK EDIT STATUS MR ITEM (BARU) ---
+  const [isEditStatusOpen, setIsEditStatusOpen] = useState(false);
+  const [selectedItemToEdit, setSelectedItemToEdit] = useState<Order | null>(
+    null,
+  );
+  const [editForm, setEditForm] = useState({
+    status: "",
+    note: "",
+  });
+  // ----------------------------------------------
+
   const [qrUrl, setQrUrl] = useState("");
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
@@ -185,9 +215,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         material_requests: data.material_requests
           ? {
               ...data.material_requests,
-              orders: Array.isArray(data.material_requests.orders)
-                ? data.material_requests.orders
-                : [],
+              // GUNAKAN normalizeMrOrders AGAR FIELD STATUS AMAN
+              orders: normalizeMrOrders(
+                Array.isArray(data.material_requests.orders)
+                  ? data.material_requests.orders
+                  : [],
+              ),
               discussions: Array.isArray(data.material_requests.discussions)
                 ? data.material_requests.discussions
                 : [],
@@ -268,17 +301,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     };
   };
 
-  // --- REVISI LOGIC: STRICT PART NUMBER CHECK ---
   const isMrItemInPO = (mrItem: any) => {
     if (!po?.items) return false;
-
-    // Jika item di MR tidak punya Part Number, otomatis dianggap TIDAK MATCH
-    // karena kita butuh kepastian absolut berdasarkan PN.
+    // Strict Part Number check
     if (!mrItem.part_number) return false;
-
     return po.items.some((poItem) => poItem.part_number === mrItem.part_number);
   };
-  // --------------------------------------------------
 
   const vendorData = getVendorData();
   const myApprovalIndex =
@@ -299,6 +327,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     userProfile?.role === "approver" || userProfile?.role === "admin";
   const isRequester = currentUser?.id === po?.material_requests?.userid;
   const showUploadBast = po?.status === "Pending BAST" && isRequester;
+
+  // --- CEK ROLE PURCHASING (Untuk fitur edit status MR Item) ---
+  const isPurchasing =
+    userProfile?.department === "Purchasing" ||
+    userProfile?.department === "Procurement" ||
+    userProfile?.role === "admin";
+  // -------------------------------------------------------------
 
   const isGA =
     userProfile?.department === "General Affair" ||
@@ -436,6 +471,41 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // --- LOGIC EDIT STATUS MR ITEM ---
+  const handleOpenEditStatus = (item: Order) => {
+    setSelectedItemToEdit(item);
+    setEditForm({
+      status: item.status || "Pending",
+      note: item.status_note || "",
+    });
+    setIsEditStatusOpen(true);
+  };
+
+  const handleSaveStatusUpdate = async () => {
+    if (!po?.mr_id || !selectedItemToEdit?.part_number || !currentUser) return;
+
+    setActionLoading(true);
+    try {
+      await updateMrItemStatus(
+        po.mr_id,
+        selectedItemToEdit.part_number,
+        {
+          status: editForm.status,
+          note: editForm.note,
+        },
+        currentUser.id,
+      );
+      toast.success("Status barang berhasil diperbarui");
+      setIsEditStatusOpen(false);
+      fetchPoData(); // Refresh data
+    } catch (err: any) {
+      toast.error("Gagal update status", { description: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+  // ---------------------------------
+
   const ApprovalActions = () => {
     if (!po || !currentUser || po.status !== "Pending Approval") return null;
     if (myApprovalIndex === -1) return null;
@@ -558,7 +628,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             .slice(0, currentTurnIndex)
             .every((app) => app.status === "approved"));
 
-  // Hitung subtotal dengan fallback jika item.total_price nol
   const subtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
     0,
@@ -764,52 +833,108 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
           </Content>
 
-          {/* --- BAGIAN BARU: REFERENSI BARANG MR (STRICT PN CHECK) --- */}
+          {/* --- BAGIAN REVISI: TABEL REFERENSI MR DENGAN FITUR EDIT --- */}
           {po.material_requests &&
             po.material_requests.orders &&
             po.material_requests.orders.length > 0 && (
-              <Content title="Referensi Barang dari MR (Permintaan Awal)">
+              <Content title="Referensi Barang dari MR (Tracking Status)">
                 <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Nama Item (MR)</TableHead>
+                        <TableHead className="w-[30%]">
+                          Nama Item (MR)
+                        </TableHead>
                         <TableHead>Part Number</TableHead>
-                        <TableHead>Qty (Diminta)</TableHead>
-                        <TableHead>Status di PO ini</TableHead>
+                        <TableHead>Status & PO Refs</TableHead>
+                        <TableHead>Tracking PO Ini</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {po.material_requests.orders.map((mrItem: any, idx) => {
-                        const isInPO = isMrItemInPO(mrItem);
-                        return (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">
-                              {mrItem.name}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {mrItem.part_number || "-"}
-                            </TableCell>
-                            <TableCell>
-                              {mrItem.qty} {mrItem.uom}
-                            </TableCell>
-                            <TableCell>
-                              {isInPO ? (
-                                <Badge className="bg-green-600 hover:bg-green-700">
-                                  <Check className="w-3 h-3 mr-1" /> Sudah di-PO
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="text-muted-foreground"
-                                >
-                                  Belum / PO Lain
-                                </Badge>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {po.material_requests.orders.map(
+                        (mrItem: Order, idx: number) => {
+                          const isInPO = isMrItemInPO(mrItem);
+                          const statusColor =
+                            MR_ITEM_STATUS_COLORS[mrItem.status || "Pending"] ||
+                            "bg-gray-100";
+                          const statusLabel =
+                            MR_ITEM_STATUS_LABELS[mrItem.status || "Pending"] ||
+                            mrItem.status;
+
+                          return (
+                            <TableRow key={idx}>
+                              <TableCell>
+                                <div className="font-medium">{mrItem.name}</div>
+                                {mrItem.status_note && (
+                                  <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                                    <FileText className="w-3 h-3 mt-0.5" />
+                                    <span className="italic">
+                                      {mrItem.status_note}
+                                    </span>
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {mrItem.part_number || "-"}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Badge Status Utama */}
+                                  <Badge
+                                    variant="outline"
+                                    className={cn("capitalize", statusColor)}
+                                  >
+                                    {statusLabel}
+                                  </Badge>
+
+                                  {/* Tombol Edit (Hanya untuk Purchasing/Admin) */}
+                                  {isPurchasing && mrItem.part_number && (
+                                    <button
+                                      onClick={() =>
+                                        handleOpenEditStatus(mrItem)
+                                      }
+                                      className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+                                      title="Edit Status Barang"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* List PO References */}
+                                {mrItem.po_refs &&
+                                  mrItem.po_refs.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                      {mrItem.po_refs.map((ref, i) => (
+                                        <Badge
+                                          key={i}
+                                          variant="secondary"
+                                          className="text-[10px] h-5 px-1.5 font-mono"
+                                        >
+                                          {ref}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                              </TableCell>
+                              <TableCell>
+                                {isInPO ? (
+                                  <Badge className="bg-green-600 hover:bg-green-700">
+                                    <Check className="w-3 h-3 mr-1" /> Termuat
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-muted-foreground"
+                                  >
+                                    -
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        },
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -926,7 +1051,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       )}
                     >
                       <div>
-                        {/* FIX: Ganti p menjadi div untuk mencegah hydration error */}
                         <div className="font-semibold flex items-center">
                           {approver.nama}{" "}
                           <span className="ml-2">
@@ -1128,6 +1252,70 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* --- DIALOG EDIT STATUS BARANG MR --- */}
+      <Dialog open={isEditStatusOpen} onOpenChange={setIsEditStatusOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update Status Barang MR</DialogTitle>
+            <DialogDescription>
+              Ubah status barang <strong>{selectedItemToEdit?.name}</strong>{" "}
+              secara manual.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="status">Status Barang</Label>
+              <Select
+                value={editForm.status}
+                onValueChange={(val) =>
+                  setEditForm({ ...editForm, status: val })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(MR_ITEM_STATUS_LABELS).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="note">Catatan / Alasan</Label>
+              <Textarea
+                id="note"
+                placeholder="Contoh: Stok habis, diganti dengan tipe X..."
+                value={editForm.note}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, note: e.target.value })
+                }
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditStatusOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleSaveStatusUpdate} disabled={actionLoading}>
+              {actionLoading && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Simpan Perubahan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* -------------------------------------- */}
 
       <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
         <DialogContent>

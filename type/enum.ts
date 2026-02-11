@@ -94,3 +94,27 @@ export const DATA_LEVEL = MR_LEVELS.map((l) => ({
   label: l.label,
   value: l.value,
 }));
+
+export const MR_ITEM_STATUSES = {
+  PENDING: "Pending",
+  PROCESSING: "Processing",
+  PO_CREATED: "PO Created",
+  CANCELLED: "Cancelled",
+  REPLACED: "Replaced",
+} as const;
+
+export const MR_ITEM_STATUS_LABELS: Record<string, string> = {
+  Pending: "Menunggu",
+  Processing: "Proses PO",
+  "PO Created": "Sudah PO",
+  Cancelled: "Dibatalkan",
+  Replaced: "Diganti",
+};
+
+export const MR_ITEM_STATUS_COLORS: Record<string, string> = {
+  Pending: "bg-gray-100 text-gray-800 border-gray-200",
+  Processing: "bg-blue-50 text-blue-700 border-blue-200",
+  "PO Created": "bg-green-50 text-green-700 border-green-200",
+  Cancelled: "bg-red-50 text-red-700 border-red-200",
+  Replaced: "bg-yellow-50 text-yellow-700 border-yellow-200",
+};

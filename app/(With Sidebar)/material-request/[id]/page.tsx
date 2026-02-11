@@ -3,6 +3,7 @@
 "use client";
 
 import { use, useEffect, useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,13 @@ import {
   HelpCircle,
   CheckCheck,
   Calendar as CalendarIcon,
+  FileText,
+  MapPin,
+  MessageSquare,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,6 +60,7 @@ import {
   Order,
   Profile,
   Attachment,
+  MrItemStatus,
 } from "@/type";
 import {
   formatCurrency,
@@ -81,7 +90,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useRouter } from "next/navigation";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,7 +100,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { MR_LEVELS } from "@/type/enum";
+import {
+  MR_LEVELS,
+  MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_LABELS,
+} from "@/type/enum";
 import {
   Popover,
   PopoverContent,
@@ -101,6 +113,7 @@ import {
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
+import { fetchMaterialRequestById } from "@/services/mrService"; // Pastikan sudah ada di service
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -134,6 +147,7 @@ const dataUoM: ComboboxData = [
 function DetailMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
   const router = useRouter();
+  const supabase = createClient();
 
   const [mr, setMr] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -153,53 +167,38 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [isCloseMrAlertOpen, setIsCloseMrAlertOpen] = useState(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
-  const supabase = createClient();
-
+  // --- FETCH DATA ---
   const fetchMrData = async () => {
     if (isNaN(mrId)) {
       setError("ID Material Request tidak valid.");
       return null;
     }
 
-    const { data: mrData, error: mrError } = await supabase
-      .from("material_requests")
-      .select(
-        `
-        *, 
-        prioritas, 
-        level, 
-        due_date,
-        users_with_profiles!userid(nama),
-        cost_centers!cost_center_id(name, current_budget) 
-      `,
-      )
-      .eq("id", mrId)
-      .single();
+    try {
+      const data = await fetchMaterialRequestById(mrId);
 
-    if (mrError) {
-      setError("Gagal memuat data MR.");
-      toast.error("Gagal memuat data", { description: mrError.message });
-      return null;
-    } else {
+      if (!data) throw new Error("Data tidak ditemukan");
+
       const initialData = {
-        ...mrData,
-        attachments: Array.isArray(mrData.attachments)
-          ? mrData.attachments
-          : [],
-        discussions: Array.isArray(mrData.discussions)
-          ? mrData.discussions
-          : [],
-        approvals: Array.isArray(mrData.approvals) ? mrData.approvals : [],
-        orders: Array.isArray(mrData.orders) ? mrData.orders : [],
-        due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
+        ...data,
+        attachments: Array.isArray(data.attachments) ? data.attachments : [],
+        discussions: Array.isArray(data.discussions) ? data.discussions : [],
+        approvals: Array.isArray(data.approvals) ? data.approvals : [],
+        orders: Array.isArray(data.orders) ? data.orders : [],
+        due_date: data.due_date ? new Date(data.due_date) : undefined,
       };
+
       setMr(initialData as any);
 
-      const ccData = mrData.cost_centers as any;
+      const ccData = data.cost_centers as any;
       setCostCenterName(ccData?.name || null);
       setCostCenterBudget(ccData?.current_budget ?? null);
 
       return initialData;
+    } catch (err: any) {
+      setError("Gagal memuat data MR.");
+      toast.error("Gagal memuat data", { description: err.message });
+      return null;
     }
   };
 
@@ -226,25 +225,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     initializePage();
   }, [mrId]);
 
-  // REVISI (STEP 3): Nonaktifkan auto-calculate priority
-  /*
-  useEffect(() => {
-    if (mr?.due_date) {
-      const newPriority = calculatePriority(mr.due_date);
-      if (mr.prioritas !== newPriority) {
-        setMr((prev) =>
-          prev
-            ? {
-                ...prev,
-                prioritas: newPriority as MaterialRequest["prioritas"],
-              }
-            : null
-        );
-      }
-    }
-  }, [mr?.due_date]);
-  */
-
+  // --- EFFECT: Calculate Total Cost ---
   useEffect(() => {
     if (mr) {
       const total = mr.orders.reduce((acc, item) => {
@@ -252,12 +233,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         const price = Number(item.estimasi_harga) || 0;
         return acc + qty * price;
       }, 0);
-
-      if (String(total) !== mr.cost_estimation) {
-        setMr((prevMr) =>
-          prevMr ? { ...prevMr, cost_estimation: String(total) } : null,
-        );
-      }
       setFormattedCost(formatCurrency(total));
     }
   }, [mr?.orders]);
@@ -281,16 +256,22 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     userProfile?.role === "approver" ||
     (userProfile?.role === "requester" && mr?.status === "Pending Validation");
 
+  // --- ACTIONS ---
+
   const handleSaveChanges = async () => {
     if (!mr) return;
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan perubahan...");
 
+    const totalCost = mr.orders.reduce((acc, item) => {
+      return acc + (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0);
+    }, 0);
+
     const { users_with_profiles, cost_centers, ...restOfData } = mr as any;
 
     const updateData = {
       ...restOfData,
-      cost_estimation: String(mr.cost_estimation),
+      cost_estimation: String(totalCost),
       prioritas: mr.prioritas,
       due_date: mr.due_date,
     };
@@ -347,6 +328,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Apakah Anda yakin ingin menghapus MR ini?")) return;
+    try {
+      const { error } = await supabase
+        .from("material_requests")
+        .delete()
+        .eq("id", mrId);
+
+      if (error) throw error;
+
+      toast.success("MR berhasil dihapus");
+      router.push("/material-request");
+    } catch (error: any) {
+      toast.error("Gagal menghapus MR", { description: error.message });
+    }
+  };
+
+  // --- ITEM MANAGEMENT (CRUD in Memory) ---
+
   const handleItemChange = (
     index: number,
     field: keyof Order,
@@ -360,15 +360,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [orderItem, setOrderItem] = useState<
-    Omit<Order, "vendor" | "vendor_contact">
-  >({
+
+  const [orderItem, setOrderItem] = useState<Partial<Order>>({
     name: "",
     qty: "1",
     uom: "Pcs",
     estimasi_harga: 0,
     url: "",
     note: "",
+    status: "Pending",
+    po_refs: [],
   });
 
   const handleOpenAddItemDialog = () => {
@@ -380,6 +381,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       estimasi_harga: 0,
       url: "",
       note: "",
+      status: "Pending",
+      po_refs: [],
     });
     setOpenItemDialog(true);
   };
@@ -387,24 +390,35 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const handleOpenEditItemDialog = (index: number) => {
     if (!mr) return;
     setEditingIndex(index);
-    setOrderItem(mr.orders[index]);
+    setOrderItem({ ...mr.orders[index] });
     setOpenItemDialog(true);
   };
 
   const handleSaveOrUpdateItem = () => {
     if (
-      !orderItem.name.trim() ||
-      !orderItem.qty.trim() ||
-      !orderItem.uom.trim()
+      !orderItem.name?.trim() ||
+      !String(orderItem.qty).trim() ||
+      !orderItem.uom?.trim()
     ) {
       toast.error("Nama item, quantity, dan UoM harus diisi.");
       return;
     }
     if (!mr) return;
+
     const itemToSave: Order = {
-      ...orderItem,
+      name: orderItem.name || "",
+      qty: String(orderItem.qty),
+      uom: orderItem.uom || "Pcs",
       estimasi_harga: Number(orderItem.estimasi_harga) || 0,
+      url: orderItem.url || "",
+      note: orderItem.note || "",
+      part_number: orderItem.part_number || null,
+      barang_id: orderItem.barang_id || null,
+      status: (orderItem.status as MrItemStatus) || "Pending",
+      po_refs: orderItem.po_refs || [],
+      status_note: orderItem.status_note || "",
     };
+
     const updatedOrders = [...mr.orders];
     if (editingIndex !== null) {
       updatedOrders[editingIndex] = itemToSave;
@@ -419,6 +433,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     if (!mr) return;
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
   };
+
+  // --- ATTACHMENT HANDLERS ---
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -572,11 +588,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const ApprovalActions = () => {
-    // REVISI: Jangan hanya cek "Pending Approval".
-    // Izinkan tombol muncul jika status BUKAN terminal (Completed/Rejected)
-    // dan statusnya "On Process" (kasus Anda), "Pending Validation", atau "Pending Approval".
-
-    // Status yang dianggap "Aktif" dimana approval masih mungkin terjadi
     const activeStatuses = [
       "Pending Approval",
       "Pending Validation",
@@ -584,11 +595,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     ];
 
     if (!mr || !currentUser) return null;
-
-    // Jika status MR tidak ada dalam daftar aktif, sembunyikan tombol
     if (!activeStatuses.includes(mr.status)) return null;
-
-    // Jika user tidak ada dalam daftar approval (atau sudah approve), sembunyikan
     if (myApprovalIndex === -1) return null;
 
     if (!isMyTurnForApproval)
@@ -653,8 +660,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // --- FIXED: Menambahkan fungsi getApprovalStatusBadge yang sebelumnya hilang ---
   const getApprovalStatusBadge = (
-    status: "pending" | "approved" | "rejected",
+    status: "pending" | "approved" | "rejected" | string,
   ) => {
     switch (status) {
       case "approved":
@@ -678,6 +686,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  const getCostCenterName = () => {
+    const cc = mr?.cost_centers;
+    if (Array.isArray(cc) && cc.length > 0) return cc[0].name;
+    if (cc && typeof cc === "object" && "name" in cc) return (cc as any).name;
+    return "-";
+  };
+
   if (loading) return <DetailMRSkeleton />;
   if (error || !mr)
     return <Content className="col-span-12">Data tidak ditemukan</Content>;
@@ -693,19 +708,29 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           .slice(0, currentTurnIndex)
           .every((app) => app.status === "approved");
 
-  const livePriority = mr.due_date
-    ? calculatePriority(mr.due_date)
-    : "Menghitung...";
+  const isOwner = currentUser?.id === mr.userid;
+  const canDelete =
+    isOwner && (mr.status === "Pending Validation" || mr.status === "Draft");
 
   return (
     <>
       <div className="col-span-12">
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold">{mr.kode_mr}</h1>
-            <p className="text-muted-foreground">Detail Material Request</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-muted-foreground text-sm">
+                Dibuat pada {formatDateFriendly(mr.created_at)}
+              </span>
+              {getStatusBadge(mr.status)}
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {canDelete && (
+              <Button variant="destructive" size="sm" onClick={handleDelete}>
+                Hapus MR
+              </Button>
+            )}
             {canEdit && !isEditing && mr.status === "Pending Approval" && (
               <Button
                 variant="outline"
@@ -742,9 +767,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </Button>
               </>
             )}
-            <span className="text-lg">Status:</span>
-            {getStatusBadge(mr.status)}
-            <Badge variant="default">{mr.level || "N/A"}</Badge>
+            <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
           </div>
         </div>
       </div>
@@ -825,26 +848,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               )}
             </div>
 
-            {/* REVISI (STEP 3): Sembunyikan UI Prioritas */}
-            {/*
-            <div className="space-y-1">
-              <Label>Prioritas (Otomatis)</Label>
-              <div
-                className={cn(
-                  "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold transition-colors",
-                  livePriority === "P0" &&
-                    "text-destructive bg-destructive/10 border-destructive/20"
-                )}
-              >
-                <Zap className="h-4 w-4 mr-2" />
-                {livePriority}
-                <span className="text-xs font-normal text-muted-foreground ml-2">
-                  (Live by Date)
-                </span>
-              </div>
-            </div>
-            */}
-
             <div className="space-y-1">
               <div className="flex items-center gap-1">
                 <Label>Level</Label>
@@ -881,17 +884,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               )}
             </div>
 
-            {/* REVISI (UPDATE): Logic Tampilan Cost Center Berdasarkan Role */}
             <InfoItem
               icon={Building2}
               label="Cost Center"
               value={
                 costCenterName
                   ? userProfile?.role === "requester"
-                    ? costCenterName // Jika Requester, hanya tampilkan nama
+                    ? costCenterName
                     : `${costCenterName} (Sisa: ${formatCurrency(
                         costCenterBudget ?? 0,
-                      )})` // Jika Admin/Lainnya, tampilkan budget
+                      )})`
                   : "Belum Ditentukan GA"
               }
             />
@@ -938,8 +940,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
+        {/* --- ORDER ITEMS SECTION (REVISI: Menampilkan Status & Tracking PO) --- */}
         <Content
-          title="Order Items"
+          title="Daftar Barang (Item Request)"
           cardAction={
             isEditing && (
               <Button
@@ -956,133 +959,225 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <Table className="min-w-[1000px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nama</TableHead>
+                  <TableHead className="w-[30%]">Nama Barang</TableHead>
                   <TableHead className="w-[80px]">Qty</TableHead>
                   <TableHead className="w-[120px]">UoM</TableHead>
                   <TableHead>Estimasi Harga</TableHead>
                   <TableHead>Total Estimasi</TableHead>
-                  <TableHead>Catatan</TableHead>
                   <TableHead>Link</TableHead>
+                  {/* KOLOM BARU: Status & Tracking */}
+                  <TableHead className="w-[200px]">Status & Tracking</TableHead>
                   {isEditing && (
                     <TableHead className="w-[100px]">Aksi</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mr.orders.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>
-                      {isEditing ? (
-                        <Input
-                          value={item.name}
-                          onChange={(e) =>
-                            handleItemChange(index, "name", e.target.value)
-                          }
-                          disabled={actionLoading}
-                        />
-                      ) : (
-                        <span className="font-medium">{item.name}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {isEditing ? (
-                        <Input
-                          value={item.qty}
-                          onChange={(e) =>
-                            handleItemChange(index, "qty", e.target.value)
-                          }
-                          className="w-20"
-                          type="number"
-                          disabled={actionLoading}
-                        />
-                      ) : (
-                        item.qty
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {isEditing ? (
-                        <Input
-                          value={item.uom}
-                          onChange={(e) =>
-                            handleItemChange(index, "uom", e.target.value)
-                          }
-                          className="w-24"
-                          disabled={actionLoading}
-                        />
-                      ) : (
-                        item.uom
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {isEditing ? (
-                        <CurrencyInput
-                          value={item.estimasi_harga}
-                          onValueChange={(value) =>
-                            handleItemChange(index, "estimasi_harga", value)
-                          }
-                          disabled={actionLoading}
-                          className="w-32"
-                        />
-                      ) : (
-                        formatCurrency(item.estimasi_harga)
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(Number(item.qty) * item.estimasi_harga)}
-                    </TableCell>
-                    <TableCell>
-                      {isEditing ? (
-                        <Input
-                          value={item.note}
-                          onChange={(e) =>
-                            handleItemChange(index, "note", e.target.value)
-                          }
-                          disabled={actionLoading}
-                        />
-                      ) : (
-                        <span className="max-w-xs truncate">
-                          {item.note || "-"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {isEditing ? (
-                        <Input
-                          value={item.url}
-                          onChange={(e) =>
-                            handleItemChange(index, "url", e.target.value)
-                          }
-                          disabled={actionLoading}
-                          type="url"
-                        />
-                      ) : (
-                        item.url && (
-                          <Button asChild variant={"outline"} size="sm">
-                            <Link
-                              href={item.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                {mr.orders && mr.orders.length > 0 ? (
+                  mr.orders.map((item, index) => {
+                    // Tentukan warna dan label status
+                    const statusColor =
+                      MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
+                      "bg-gray-100";
+                    const statusLabel =
+                      MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+                      item.status;
+
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>
+                          {isEditing ? (
+                            <div className="space-y-1">
+                              <Input
+                                value={item.name}
+                                onChange={(e) =>
+                                  handleItemChange(
+                                    index,
+                                    "name",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={actionLoading}
+                                placeholder="Nama Item"
+                              />
+                              <Input
+                                value={item.part_number || ""}
+                                onChange={(e) =>
+                                  handleItemChange(
+                                    index,
+                                    "part_number",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={actionLoading}
+                                placeholder="Part Number (Opsional)"
+                                className="text-xs h-8"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="font-medium">{item.name}</div>
+                              {item.part_number && (
+                                <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                                  PN: {item.part_number}
+                                </div>
+                              )}
+                              {item.note && (
+                                <div className="text-xs text-muted-foreground mt-1 italic">
+                                  &quot;{item.note}&quot;
+                                </div>
+                              )}
+                              {/* Tampilkan Note Status jika ada (misal: alasan Cancel) */}
+                              {item.status_note && (
+                                <div className="text-xs text-amber-600 mt-1 italic flex items-start gap-1">
+                                  <Info className="w-3 h-3 mt-0.5" />
+                                  {item.status_note}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Input
+                              value={item.qty}
+                              onChange={(e) =>
+                                handleItemChange(index, "qty", e.target.value)
+                              }
+                              className="w-20"
+                              type="number"
+                              disabled={actionLoading}
+                            />
+                          ) : (
+                            item.qty
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Input
+                              value={item.uom}
+                              onChange={(e) =>
+                                handleItemChange(index, "uom", e.target.value)
+                              }
+                              className="w-24"
+                              disabled={actionLoading}
+                            />
+                          ) : (
+                            item.uom
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isEditing ? (
+                            <CurrencyInput
+                              value={item.estimasi_harga}
+                              onValueChange={(value) =>
+                                handleItemChange(index, "estimasi_harga", value)
+                              }
+                              disabled={actionLoading}
+                              className="w-32"
+                            />
+                          ) : (
+                            formatCurrency(item.estimasi_harga)
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(
+                            Number(item.qty) * item.estimasi_harga,
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Input
+                              value={item.url}
+                              onChange={(e) =>
+                                handleItemChange(index, "url", e.target.value)
+                              }
+                              disabled={actionLoading}
+                              type="url"
+                              placeholder="URL Link"
+                            />
+                          ) : (
+                            item.url && (
+                              <Button asChild variant={"outline"} size="sm">
+                                <Link
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <LinkIcon className="h-3 w-3" />
+                                </Link>
+                              </Button>
+                            )
+                          )}
+                        </TableCell>
+
+                        {/* CELL BARU: STATUS BADGE & PO REFS */}
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "capitalize font-normal",
+                                statusColor,
+                              )}
                             >
-                              <LinkIcon className="h-3 w-3" />
-                            </Link>
-                          </Button>
-                        )
-                      )}
+                              {statusLabel}
+                            </Badge>
+
+                            {/* Link ke PO jika sudah ada */}
+                            {item.po_refs && item.po_refs.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {item.po_refs.map((ref, idx) => (
+                                  <Link
+                                    key={idx}
+                                    href={`/purchase-order?search=${encodeURIComponent(ref)}`}
+                                    className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
+                                    target="_blank"
+                                  >
+                                    <LinkIcon className="w-3 h-3" />
+                                    {ref}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {isEditing && (
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleOpenEditItemDialog(index)}
+                                disabled={actionLoading}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                onClick={() => removeItem(index)}
+                                disabled={actionLoading}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={isEditing ? 8 : 7}
+                      className="text-center text-muted-foreground h-24"
+                    >
+                      Tidak ada barang.
                     </TableCell>
-                    {isEditing && (
-                      <TableCell>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          disabled={actionLoading}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    )}
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
@@ -1223,7 +1318,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         />
       </div>
 
-      {/* Dialog Item */}
+      {/* Dialog Item (Updated with Part Number & Status Preservation) */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1243,6 +1338,20 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 onChange={(e) =>
                   setOrderItem({ ...orderItem, name: e.target.value })
                 }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="itemPnDlg" className="text-right">
+                Part Number
+              </Label>
+              <Input
+                id="itemPnDlg"
+                className="col-span-3"
+                value={orderItem.part_number || ""}
+                onChange={(e) =>
+                  setOrderItem({ ...orderItem, part_number: e.target.value })
+                }
+                placeholder="(Opsional)"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
@@ -1430,11 +1539,11 @@ const InfoItem = ({
   icon: Icon,
   label,
   value,
-  isBlock = false, // Tambahkan prop isBlock
+  isBlock = false,
 }: {
   icon: React.ElementType;
   label: string;
-  value: React.ReactNode; // Ubah tipe ke ReactNode untuk fleksibilitas
+  value: React.ReactNode;
   isBlock?: boolean;
 }) => (
   <div
