@@ -5,6 +5,20 @@ import { MaterialRequest, Order, Attachment, Profile } from "@/type";
 
 const supabase = createClient();
 
+// --- HELPER: Normalisasi Data Item MR (Agar status aman) ---
+export const normalizeMrOrders = (orders: any[]): Order[] => {
+  if (!Array.isArray(orders)) return [];
+
+  return orders.map((item) => ({
+    ...item,
+    // Inject default value jika field tidak ada
+    status: item.status || "Pending",
+    po_refs: Array.isArray(item.po_refs) ? item.po_refs : [],
+    status_note: item.status_note || "",
+  }));
+};
+// -----------------------------------------------------------
+
 // Peta untuk singkatan departemen (untuk user HO)
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
@@ -56,9 +70,6 @@ const toRoman = (num: number): string => {
   return romanMap[String(num)] || "";
 };
 
-/**
- * Mengambil profil (department, lokasi, company) user yang sedang login.
- */
 export const getActiveUserProfile = async (): Promise<Profile | null> => {
   const {
     data: { user },
@@ -75,9 +86,6 @@ export const getActiveUserProfile = async (): Promise<Profile | null> => {
   return profile as Profile | null;
 };
 
-/**
- * Membuat Kode MR baru berdasarkan profil user.
- */
 export const generateMRCode = async (
   department: string,
   lokasi: string,
@@ -120,38 +128,24 @@ export const generateMRCode = async (
   return `GMI/MR/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
 
-/**
- * Mengunggah satu file lampiran ke storage.
- */
 export const uploadAttachment = async (
   file: File,
   kode_mr: string,
 ): Promise<Attachment> => {
   const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
-
   const { data, error } = await supabase.storage
     .from("mr")
     .upload(filePath, file);
-
   if (error) throw error;
-
   return { url: data.path, name: file.name };
 };
 
-/**
- * Menghapus satu file lampiran dari storage.
- */
 export const removeAttachment = async (path: string): Promise<void> => {
   const { error } = await supabase.storage.from("mr").remove([path]);
-
   if (error) throw error;
 };
 
-/**
- * Menyimpan data Material Request baru ke database.
- */
 export const createMaterialRequest = async (
-  // REVISI: Pastikan tipe formData sekarang MUNGKIN memiliki cost_center_id
   formData: Omit<
     MaterialRequest,
     | "id"
@@ -164,13 +158,11 @@ export const createMaterialRequest = async (
   userId: string,
   company_code: string,
 ): Promise<MaterialRequest> => {
-  // Hapus properti 'cost_center' (text) jika masih ada di state
-  // Dan pastikan 'cost_center_id' (number) yang dikirim
   const { cost_center, ...restOfData } = formData as any;
 
   const payload = {
     ...restOfData,
-    cost_center_id: formData.cost_center_id, // Pastikan ini terkirim
+    cost_center_id: formData.cost_center_id,
     userid: userId,
     company_code: company_code,
     status: "Pending Validation" as const,
@@ -186,11 +178,9 @@ export const createMaterialRequest = async (
 
   if (error) {
     console.error("Error creating MR:", error);
-    // Cek error spesifik jika kolom 'cost_center_id' tidak ada
     if (error.code === "42703") {
-      // "column ... does not exist"
       throw new Error(
-        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database (Langkah 1).",
+        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database.",
       );
     }
     throw error;
@@ -199,15 +189,114 @@ export const createMaterialRequest = async (
   return data as MaterialRequest;
 };
 
+// --- FUNGSI DELETE MR ---
+export const deleteMaterialRequest = async (mrId: number) => {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("material_requests")
+    .delete()
+    .eq("id", mrId);
+
+  if (error) throw new Error(error.message);
+  return true;
+};
+
+// --- FUNGSI UPDATE STATUS ITEM ---
+export const updateMrItemStatus = async (
+  mrId: number,
+  partNumber: string,
+  updates: {
+    status?: string;
+    poRef?: string;
+    note?: string;
+  },
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk update item.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+
+  if (itemIndex === -1) {
+    return { success: false, message: "Item not found" };
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+
+  if (updates.status) itemToUpdate.status = updates.status;
+  if (updates.poRef) {
+    const currentRefs = Array.isArray(itemToUpdate.po_refs)
+      ? itemToUpdate.po_refs
+      : [];
+    if (!currentRefs.includes(updates.poRef)) {
+      itemToUpdate.po_refs = [...currentRefs, updates.poRef];
+    }
+  }
+  if (updates.note !== undefined) itemToUpdate.status_note = updates.note;
+
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal update status item: " + updateError.message);
+
+  return { success: true };
+};
+
+// --- FUNGSI FETCH MR BY ID (NORMALIZED) ---
+export const fetchMaterialRequestById = async (mrId: number) => {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("material_requests")
+    .select(
+      `
+      *, 
+      users_with_profiles!userid(nama, lokasi),
+      cost_centers (
+        id,
+        name,
+        code,
+        current_budget
+      )
+    `,
+    )
+    .eq("id", mrId)
+    .single();
+
+  if (error) throw error;
+
+  // Normalisasi orders
+  if (data && data.orders) {
+    data.orders = normalizeMrOrders(data.orders as any[]);
+  }
+
+  return data;
+};
+
 export const fetchActiveCostCenters = async (company_code: string) => {
   let query = supabase
     .from("cost_centers")
     .select("id, name, code, current_budget");
-
-  // if (company_code !== "LOURDES") {
-  //   query = query.eq("company_code", company_code);
-  // }
-
   const { data, error } = await query.order("name", { ascending: true });
   if (error) {
     console.error("Error fetching cost centers:", error);
@@ -223,22 +312,24 @@ export const fetchAvailableMRsForPO = async (
   let query = supabase
     .from("material_requests")
     .select(
-      `
-      id,
-      kode_mr,
-      status,
-      remarks,
-      cost_estimation,
-      created_at,
-      department,
-      users_with_profiles (nama)
-    `,
+      `id, kode_mr, status, remarks, cost_estimation, created_at, department, users_with_profiles (nama)`,
     )
-    .eq("company_code", companyCode)
     .order("created_at", { ascending: false })
-    .limit(10); // Ringan, Max 10
+    .limit(10);
 
-  // Jika ada pencarian
+  // LOGIC VISIBILITAS UNTUK PEMBUATAN PO (Disamakan dengan Riwayat MR)
+  if (companyCode) {
+    if (companyCode === "LOURDES") {
+      // LOURDES melihat semua
+    } else if (["GMI", "GIS"].includes(companyCode)) {
+      // GMI/GIS melihat company mereka + LOURDES
+      query = query.in("company_code", [companyCode, "LOURDES"]);
+    } else {
+      // Default behavior
+      query = query.eq("company_code", companyCode);
+    }
+  }
+
   if (searchQuery) {
     query = query.or(
       `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%`,
@@ -246,12 +337,10 @@ export const fetchAvailableMRsForPO = async (
   }
 
   const { data, error } = await query;
-
   if (error) {
     console.error("Error fetching available MRs:", error);
     return [];
   }
-
   return data;
 };
 
@@ -259,29 +348,67 @@ export const fetchMaterialRequests = async (
   page: number,
   limit: number,
   searchQuery: string,
-  companyCode: string | null,
+  userCompany: string | null, // Context: Perusahaan User Login
+  selectedCompanies: string[], // Filter: Checkbox yang dipilih user
   statusFilter: string | null,
   startDate: string | null,
   endDate: string | null,
 ) => {
   const supabase = createClient();
-
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
-  let query = supabase.from("material_requests").select(
-    `
-      *,
-      users_with_profiles:profiles!fk_material_requests_profiles (nama, email),
-      cost_centers (name, code)
-    `,
-    { count: "exact" },
-  );
+  let query = supabase
+    .from("material_requests")
+    .select(
+      `*, users_with_profiles:profiles!fk_material_requests_profiles (nama, email), cost_centers (name, code)`,
+      { count: "exact" },
+    );
 
-  // ... (Bagian Filter Company, Search, Status, Tanggal TETAP SAMA, tidak diubah) ...
-  if (companyCode && companyCode !== "LOURDES") {
-    query = query.eq("company_code", companyCode);
+  // --- LOGIKA VISIBILITAS & FILTER ---
+  // 1. Tentukan Scope (Apa yang BOLEH dilihat user)
+  let allowedScope: string[] = [];
+
+  if (userCompany === "LOURDES") {
+    // Lourdes boleh lihat semua (GMI, GIS, LOURDES, dll)
+    // Kita tidak membatasi scope, kecuali user memilih spesifik di filter
+    allowedScope = ["ALL"];
+  } else if (["GMI", "GIS"].includes(userCompany || "")) {
+    // GMI/GIS boleh lihat diri sendiri + LOURDES
+    allowedScope = [userCompany!, "LOURDES"];
+  } else {
+    // Default: Hanya lihat diri sendiri
+    allowedScope = userCompany ? [userCompany] : [];
   }
+
+  // 2. Terapkan Filter Checkbox (Intersection dengan Scope)
+  if (selectedCompanies.length > 0) {
+    if (allowedScope.includes("ALL")) {
+      // Jika user LOURDES, langsung pakai apa yang dipilih
+      query = query.in("company_code", selectedCompanies);
+    } else {
+      // Jika user GMI/GIS, pastikan filter yang dipilih valid dalam scope mereka
+      // Contoh: User GMI centang "GIS" (ilegal) -> filter ini akan diabaikan
+      const validFilters = selectedCompanies.filter((c) =>
+        allowedScope.includes(c),
+      );
+
+      if (validFilters.length > 0) {
+        query = query.in("company_code", validFilters);
+      } else {
+        // User memilih sesuatu di luar hak aksesnya -> Return kosong
+        // Hack: query ID -1 agar hasil kosong
+        query = query.eq("id", -1);
+      }
+    }
+  } else {
+    // Jika tidak ada filter yang dipilih (Default State), tampilkan sesuai scope default
+    if (!allowedScope.includes("ALL")) {
+      query = query.in("company_code", allowedScope);
+    }
+  }
+  // ----------------------------------------------
+
   if (searchQuery) {
     query = query.or(
       `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%,department.ilike.%${searchQuery}%,status.ilike.%${searchQuery}%,kategori.ilike.%${searchQuery}%`,
@@ -306,153 +433,10 @@ export const fetchMaterialRequests = async (
     throw new Error(error.message);
   }
 
-  // --- PERUBAHAN DISINI: Normalisasi Data ---
   const normalizedData = data?.map((mr) => ({
     ...mr,
-    // Pastikan orders dinormalisasi agar punya status
     orders: normalizeMrOrders(mr.orders as any[]),
   }));
 
   return { data: normalizedData, count };
-};
-
-export const normalizeMrOrders = (orders: any[]): Order[] => {
-  if (!Array.isArray(orders)) return [];
-
-  return orders.map((item) => ({
-    // Copy semua properti lama (name, qty, dll)
-    ...item,
-
-    // Inject default value hanya jika field tersebut tidak ada
-    status: item.status || "Pending",
-    po_refs: Array.isArray(item.po_refs) ? item.po_refs : [],
-    status_note: item.status_note || "",
-  }));
-};
-
-// src/services/mrService.ts
-/**
- * Mengupdate status, po_refs, atau catatan untuk SATU item spesifik di dalam MR.
- * Fungsi ini memanipulasi JSON array 'orders' secara aman.
- * * @param mrId ID Material Request (number)
- * @param partNumber Part Number item yang akan diupdate (identifier utama)
- * @param updates Object berisi field yang mau diubah (status, poRef, note)
- * @param userId ID User yang melakukan perubahan (untuk audit trail)
- */
-export const updateMrItemStatus = async (
-  mrId: number,
-  partNumber: string,
-  updates: {
-    status?: string; // Menggunakan string agar fleksibel menerima value dari enum
-    poRef?: string; // Kode PO baru untuk ditambahkan (jika ada)
-    note?: string; // Catatan (alasan ganti/batal)
-  },
-  userId: string,
-) => {
-  const supabase = createClient();
-
-  // 1. Ambil data MR saat ini (hanya kolom orders)
-  const { data: mr, error: fetchError } = await supabase
-    .from("material_requests")
-    .select("orders")
-    .eq("id", mrId)
-    .single();
-
-  if (fetchError || !mr) {
-    throw new Error("Gagal mengambil data MR untuk update item.");
-  }
-
-  // Casting ke any[] agar mudah dimanipulasi
-  const currentOrders = mr.orders as any[];
-
-  // 2. Cari index item berdasarkan part_number
-  // Pastikan part_number tidak null sebelum membandingkan
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
-
-  if (itemIndex === -1) {
-    console.warn(
-      `Item dengan Part Number '${partNumber}' tidak ditemukan di MR ID ${mrId}`,
-    );
-    // Kita return false/null daripada error agar tidak mematikan proses bulk update
-    return { success: false, message: "Item not found" };
-  }
-
-  // 3. Update data item di memori
-  const itemToUpdate = { ...currentOrders[itemIndex] };
-
-  // Update Status
-  if (updates.status) {
-    itemToUpdate.status = updates.status;
-  }
-
-  // Tambahkan PO Ref (Array)
-  if (updates.poRef) {
-    // Pastikan po_refs berupa array
-    const currentRefs = Array.isArray(itemToUpdate.po_refs)
-      ? itemToUpdate.po_refs
-      : [];
-
-    // Cek duplikasi, hanya masukkan jika belum ada
-    if (!currentRefs.includes(updates.poRef)) {
-      itemToUpdate.po_refs = [...currentRefs, updates.poRef];
-    }
-  }
-
-  // Update Note
-  if (updates.note !== undefined) {
-    itemToUpdate.status_note = updates.note;
-  }
-
-  // Update Metadata Audit
-  itemToUpdate.updated_by = userId;
-  itemToUpdate.updated_at = new Date().toISOString();
-
-  // Kembalikan item yang sudah diupdate ke array
-  currentOrders[itemIndex] = itemToUpdate;
-
-  // 4. Simpan kembali JSON array yang sudah dimodifikasi ke Database
-  const { error: updateError } = await supabase
-    .from("material_requests")
-    .update({ orders: currentOrders })
-    .eq("id", mrId);
-
-  if (updateError) {
-    throw new Error(
-      "Gagal menyimpan update status item MR: " + updateError.message,
-    );
-  }
-
-  return { success: true };
-};
-
-export const fetchMaterialRequestById = async (mrId: number) => {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from("material_requests")
-    .select(
-      `
-      *, 
-      users_with_profiles!userid(nama, lokasi),
-      cost_centers (
-        id,
-        name,
-        code,
-        current_budget
-      )
-    `,
-    )
-    .eq("id", mrId)
-    .single();
-
-  if (error) throw error;
-
-  // Normalisasi data orders agar punya field status & po_refs
-  if (data && data.orders) {
-    data.orders = normalizeMrOrders(data.orders as any[]);
-  }
-
-  return data;
 };
