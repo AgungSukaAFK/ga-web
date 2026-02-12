@@ -31,7 +31,7 @@ import {
   generatePoCode,
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
-import { formatCurrency, cn, formatDateFriendly } from "@/lib/utils";
+import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import {
   Loader2,
   Send,
@@ -49,13 +49,13 @@ import {
   RefreshCcw,
   Eye,
   FileText,
-  Plus,
   Link2,
   AlertTriangle,
-  XCircle,
   PackagePlus,
   Unlink,
   HelpCircle,
+  MessageSquare,
+  StickyNote,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -90,7 +90,6 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -112,6 +111,15 @@ import { searchVendors } from "@/services/vendorService";
 import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+// --- INTERFACE EXTENSION ---
+// Kita extend POItem lokal di sini agar tidak error TS
+// karena di type/index.ts Anda belum ada 'description' dan 'link' pada POItem.
+interface ExtendedPOItem extends POItem {
+  description?: string;
+  link?: string;
+}
 
 // --- KONFIGURASI PPH ---
 const PPH_OPTIONS = [
@@ -251,7 +259,8 @@ function CreatePOPageContent() {
   const [isLoadingMRs, setIsLoadingMRs] = useState(false);
   const [searchMrQuery, setSearchMrQuery] = useState("");
   const [isConfirmDirectPOOpen, setIsConfirmDirectPOOpen] = useState(false);
-  const [isUnlinkDialogOpen, setIsUnlinkDialogOpen] = useState(false); // New: Untuk putuskan MR
+  const [isUnlinkDialogOpen, setIsUnlinkDialogOpen] = useState(false);
+  const [isDiscussionOpen, setIsDiscussionOpen] = useState(false);
 
   // State Partial Selection
   const [selectedOrderIndices, setSelectedOrderIndices] = useState<number[]>(
@@ -278,8 +287,11 @@ function CreatePOPageContent() {
   const [poForm, setPoForm] = useState<
     Omit<
       PurchaseOrderPayload,
-      "mr_id" | "user_id" | "status" | "approvals" | "company_code"
-    > & { vendor_details: StoredVendorDetails | undefined }
+      "mr_id" | "user_id" | "status" | "approvals" | "company_code" | "items"
+    > & {
+      vendor_details: StoredVendorDetails | undefined;
+      items: ExtendedPOItem[];
+    }
   >({
     kode_po: "Generating...",
     items: [],
@@ -408,12 +420,11 @@ function CreatePOPageContent() {
     toast.success(`MR ${mr.kode_mr} berhasil dikaitkan.`);
   };
 
-  // --- HANDLER UNLINK MR (PUTUSKAN KONEKSI) ---
   const handleUnlinkMR = () => {
     setMrData(null);
     setPoForm((prev) => ({
       ...prev,
-      items: [], // Reset item untuk mencegah konflik
+      items: [],
     }));
     setSelectedOrderIndices([]);
     setIsUnlinkDialogOpen(false);
@@ -431,14 +442,28 @@ function CreatePOPageContent() {
     return () => clearTimeout(handler);
   }, [searchMrQuery, isLinkMROpen]);
 
+  // --- MAPPING ITEM DARI MR KE PO ITEM ---
   useEffect(() => {
     if (!mrData) return;
-    const newItems: POItem[] = selectedOrderIndices.map((index) => {
+    const newItems: ExtendedPOItem[] = selectedOrderIndices.map((index) => {
       const order = mrData.orders[index];
+      // Cek apakah item ini sudah ada di form (untuk menjaga state qty/harga yg sudah diedit user)
       const existingItem = poForm.items.find(
         (i) => i.name === order.name && i.qty === Number(order.qty),
       );
-      if (existingItem) return existingItem;
+
+      // Mapping Logic:
+      // Order.note -> POItem.description
+      // Order.url -> POItem.link
+
+      if (existingItem) {
+        return {
+          ...existingItem,
+          link: existingItem.link || order.url || "",
+          description: existingItem.description || order.note || "",
+        };
+      }
+
       return {
         barang_id: order.barang_id || 0,
         part_number: order.part_number || "N/A",
@@ -448,6 +473,8 @@ function CreatePOPageContent() {
         price: order.estimasi_harga || 0,
         total_price: Number(order.qty) * (order.estimasi_harga || 0),
         vendor_name: "",
+        link: order.url || "",
+        description: order.note || "",
       };
     });
     setPoForm((prev) => ({ ...prev, items: newItems }));
@@ -505,7 +532,7 @@ function CreatePOPageContent() {
 
   const handleItemChange = (
     index: number,
-    field: keyof POItem,
+    field: keyof ExtendedPOItem,
     value: string | number,
   ) => {
     const newItems = [...poForm.items];
@@ -521,7 +548,7 @@ function CreatePOPageContent() {
   };
 
   const handleAddItemFromDB = (barang: Barang) => {
-    const newItem: POItem = {
+    const newItem: ExtendedPOItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
       name: barang.part_name || "",
@@ -530,6 +557,8 @@ function CreatePOPageContent() {
       price: barang.last_purchase_price || 0,
       total_price: (barang.last_purchase_price || 0) * 1,
       vendor_name: "",
+      link: barang.link || "",
+      description: "", // Barang master biasanya tidak punya deskripsi spesifik per PO
     };
 
     setPoForm((prev) => ({
@@ -565,6 +594,9 @@ function CreatePOPageContent() {
     item.part_number = barang.part_number;
     item.name = barang.part_name || item.name;
     item.uom = barang.uom || item.uom;
+    // Update link dari master barang jika ada
+    item.link = barang.link || item.link;
+
     if (barang.last_purchase_price && barang.last_purchase_price > 0) {
       item.price = barang.last_purchase_price;
       item.total_price = item.qty * item.price;
@@ -737,7 +769,6 @@ function CreatePOPageContent() {
           </div>
 
           <div className="flex gap-2">
-            {/* Tombol Kaitkan/Ganti/Putuskan MR */}
             {mrData ? (
               <div className="flex gap-1">
                 <Button variant="outline" onClick={handleOpenLinkMR}>
@@ -775,7 +806,20 @@ function CreatePOPageContent() {
       {/* --- KOLOM KIRI --- */}
       <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
         {mrData ? (
-          <Content title={`Referensi MR: ${mrData.kode_mr}`}>
+          <Content
+            title={`Referensi MR: ${mrData.kode_mr}`}
+            cardAction={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary hover:text-primary/80 h-8"
+                onClick={() => setIsDiscussionOpen(true)}
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Lihat Diskusi Internal
+              </Button>
+            }
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <InfoItem
                 icon={CircleUser}
@@ -811,13 +855,14 @@ function CreatePOPageContent() {
                   isBlock
                 />
               </div>
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 border-t pt-2 mt-2">
                 <Link
                   href={`/material-request/${mrData.id}`}
                   target="_blank"
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  className="text-xs text-primary hover:underline flex items-center gap-1 w-fit"
                 >
-                  Lihat Detail MR Asli <ExternalLink className="h-3 w-3" />
+                  Buka Halaman Detail MR Lengkap{" "}
+                  <ExternalLink className="h-3 w-3" />
                 </Link>
               </div>
             </div>
@@ -842,7 +887,7 @@ function CreatePOPageContent() {
         {mrData && (
           <Content
             title="Pilih Item dari Material Request"
-            description="Centang item yang akan diproses."
+            description="Centang item yang akan diproses ke PO."
           >
             <div className="mb-2 flex items-center space-x-2">
               <Checkbox
@@ -863,7 +908,8 @@ function CreatePOPageContent() {
                   <TableRow>
                     <TableHead className="w-[50px]">Pilih</TableHead>
                     <TableHead>Nama Barang</TableHead>
-                    <TableHead>Qty (MR)</TableHead>
+                    <TableHead>Info MR</TableHead>
+                    <TableHead>Qty</TableHead>
                     <TableHead>Est. Harga</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -887,6 +933,52 @@ function CreatePOPageContent() {
                         <div className="font-medium">{order.name}</div>
                         <div className="text-xs text-muted-foreground font-mono">
                           {order.part_number || "-"}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {order.note && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  title="Lihat Catatan"
+                                >
+                                  <StickyNote className="h-3 w-3 text-amber-600" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-80 text-sm p-3">
+                                <p className="font-semibold mb-1">
+                                  Catatan MR:
+                                </p>
+                                <p>{order.note}</p>
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                          {order.url && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              asChild
+                              title="Buka Link"
+                            >
+                              <a
+                                href={order.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <LinkIcon className="h-3 w-3 text-blue-600" />
+                              </a>
+                            </Button>
+                          )}
+                          {!order.note && !order.url && (
+                            <span className="text-muted-foreground text-[10px]">
+                              -
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -940,8 +1032,18 @@ function CreatePOPageContent() {
                 {poForm.items.map((item, index) => (
                   <TableRow key={index}>
                     <TableCell>
-                      {/* REVISI: Selalu READ-ONLY karena harus dari DB */}
-                      <div className="font-medium">{item.name}</div>
+                      <div className="font-medium flex items-center gap-2">
+                        {item.name}
+                        {/* Indikator Link/Notes di Table Final */}
+                        <div className="flex gap-0.5">
+                          {item.link && (
+                            <LinkIcon className="h-3 w-3 text-blue-500" />
+                          )}
+                          {item.description && (
+                            <StickyNote className="h-3 w-3 text-amber-500" />
+                          )}
+                        </div>
+                      </div>
                       <div className="text-xs text-muted-foreground font-mono mt-1">
                         {item.part_number}
                       </div>
@@ -972,7 +1074,7 @@ function CreatePOPageContent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Lihat Detail"
+                          title="Lihat Detail & Info Barang"
                           onClick={() => handleOpenViewItemDialog(index)}
                         >
                           <Eye className="h-4 w-4 text-muted-foreground" />
@@ -1004,7 +1106,7 @@ function CreatePOPageContent() {
 
         <Content title="Catatan PO">
           <Textarea
-            placeholder="Tambahkan catatan..."
+            placeholder="Tambahkan catatan untuk vendor atau internal..."
             value={poForm.notes}
             onChange={(e) =>
               setPoForm((prev) => ({ ...prev, notes: e.target.value }))
@@ -1325,7 +1427,6 @@ function CreatePOPageContent() {
                 <span>{formatCurrency(subtotal)}</span>
               </div>
 
-              {/* Tampilkan Diskon jika ada */}
               {(poForm.discount || 0) > 0 && (
                 <div className="flex justify-between text-destructive">
                   <span>- Diskon</span>
@@ -1333,7 +1434,6 @@ function CreatePOPageContent() {
                 </div>
               )}
 
-              {/* Tampilkan PPH jika ada */}
               {(poForm.pph_amount || 0) > 0 && (
                 <div className="flex justify-between text-destructive">
                   <span>
@@ -1344,7 +1444,6 @@ function CreatePOPageContent() {
                 </div>
               )}
 
-              {/* Tampilkan PPN jika ada */}
               {(poForm.tax || 0) > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>+ PPN {isTaxIncluded ? "(Included)" : ""}</span>
@@ -1352,7 +1451,6 @@ function CreatePOPageContent() {
                 </div>
               )}
 
-              {/* Tampilkan Ongkir jika ada */}
               {(poForm.postage || 0) > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>+ Ongkir</span>
@@ -1360,7 +1458,6 @@ function CreatePOPageContent() {
                 </div>
               )}
 
-              {/* Garis Pemisah */}
               <div className="border-t border-muted-foreground/30 my-2 pt-2">
                 <div className="flex justify-between font-bold text-lg">
                   <span>Grand Total</span>
@@ -1377,7 +1474,7 @@ function CreatePOPageContent() {
         </Content>
       </div>
 
-      {/* --- DIALOG LINK MR (FITUR BARU) --- */}
+      {/* --- DIALOG LINK MR --- */}
       <Dialog open={isLinkMROpen} onOpenChange={setIsLinkMROpen}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
@@ -1444,6 +1541,50 @@ function CreatePOPageContent() {
             <Button variant="outline" onClick={() => setIsLinkMROpen(false)}>
               Batal
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG LIHAT DISKUSI MR (NEW) --- */}
+      <Dialog open={isDiscussionOpen} onOpenChange={setIsDiscussionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Diskusi Internal MR</DialogTitle>
+            <DialogDescription>
+              Riwayat percakapan pada {mrData?.kode_mr}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[300px] w-full rounded-md border p-4 bg-muted/20">
+            {mrData?.discussions &&
+            Array.isArray(mrData.discussions) &&
+            mrData.discussions.length > 0 ? (
+              <div className="space-y-4">
+                {mrData.discussions.map((chat: any, i: number) => (
+                  <div key={i} className="flex flex-col space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">
+                        {chat.user_name || "User"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDateFriendly(chat.created_at)}
+                      </span>
+                    </div>
+                    <div
+                      className="bg-background border rounded-md p-2 text-sm shadow-sm"
+                      dangerouslySetInnerHTML={{ __html: chat.message }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm">
+                <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
+                <p>Belum ada diskusi pada MR ini.</p>
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter>
+            <Button onClick={() => setIsDiscussionOpen(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1531,7 +1672,7 @@ function CreatePOPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG TAMBAH BARANG (BARU) --- */}
+      {/* --- DIALOG TAMBAH BARANG --- */}
       <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1554,7 +1695,7 @@ function CreatePOPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG VIEW DETAIL ITEM --- */}
+      {/* --- DIALOG VIEW DETAIL ITEM (UPDATED) --- */}
       <Dialog open={isViewItemOpen} onOpenChange={setIsViewItemOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1609,6 +1750,39 @@ function CreatePOPageContent() {
                     {formatCurrency(poForm.items[viewItemIndex].total_price)}
                   </div>
                 </div>
+
+                {/* NEW: Tampilkan Link dan Deskripsi jika ada */}
+                {(poForm.items[viewItemIndex].link ||
+                  poForm.items[viewItemIndex].description) && (
+                  <div className="col-span-2 space-y-3 bg-muted/20 p-3 rounded-md border mt-1">
+                    {poForm.items[viewItemIndex].link && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <LinkIcon className="h-3 w-3" /> Link Referensi
+                        </Label>
+                        <a
+                          href={poForm.items[viewItemIndex].link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-xs break-all"
+                        >
+                          {poForm.items[viewItemIndex].link}
+                        </a>
+                      </div>
+                    )}
+                    {poForm.items[viewItemIndex].description && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <StickyNote className="h-3 w-3" /> Catatan /
+                          Spesifikasi
+                        </Label>
+                        <p className="text-sm whitespace-pre-wrap">
+                          {poForm.items[viewItemIndex].description}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-1 col-span-2">
                   <Label className="text-xs text-muted-foreground">

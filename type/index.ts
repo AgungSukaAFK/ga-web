@@ -97,6 +97,10 @@ export interface POItem {
   price: number;
   total_price: number;
   vendor_name: string;
+
+  // --- TAMBAHAN BARU ---
+  description?: string; // Untuk menampung 'note' dari Order MR
+  link?: string; // Untuk menampung 'url' dari Order MR
 }
 
 export interface PurchaseOrderPayload {
