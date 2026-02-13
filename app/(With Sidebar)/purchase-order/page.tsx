@@ -25,14 +25,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { fetchPurchaseOrders } from "@/services/purchaseOrderService";
-import { PaginationComponent } from "@/components/pagination-components";
+import { CustomPagination } from "@/components/custom-pagination";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { CreatePOModal } from "./CreatePOModal";
 import {
-  FileText,
   Newspaper,
-  Printer,
   Search,
   Loader2,
   CreditCard,
@@ -41,7 +38,6 @@ import {
   Mail,
   MapPin,
   Plus,
-  ArrowRight,
   MoreHorizontal,
   Eye,
   Edit,
@@ -215,6 +211,7 @@ function PurchaseOrderPageContent() {
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
   const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
 
+  // Handler Update URL Params
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -229,6 +226,7 @@ function PurchaseOrderPageContent() {
           params.delete(name);
         }
       });
+      // Reset ke halaman 1 jika filter berubah selain page
       if (Object.keys(paramsToUpdate).some((k) => k !== "page")) {
         params.set("page", "1");
       }
@@ -237,6 +235,16 @@ function PurchaseOrderPageContent() {
     [searchParams],
   );
 
+  // Handler Pagination (Mempertahankan Filter)
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(page));
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`);
+    });
+  };
+
+  // --- Main Data Fetching ---
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -256,21 +264,137 @@ function PurchaseOrderPageContent() {
           setUserProfile(profile);
         }
 
-        const { data, count } = await fetchPurchaseOrders(
-          currentPage,
-          limit,
-          searchTerm,
-          profile?.company || null,
-          statusFilter || null,
-          minPrice || null,
-          maxPrice || null,
-          startDate || null,
-          endDate || null,
-          paymentFilter || null,
-          paymentTermFilter || null,
+        const from = (currentPage - 1) * limit;
+        const to = from + limit - 1;
+
+        // Query Utama
+        let query = s.from("purchase_orders").select(
+          `
+            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term,
+            users_with_profiles!user_id (nama), 
+            material_requests!mr_id (
+              kode_mr,
+              users_with_profiles!userid (nama)
+            )
+          `,
+          { count: "exact" },
         );
 
-        setDataPO(data || []);
+        // --- 1. FILTER COMPANY ACCESS LOGIC ---
+        // GMI -> Melihat GMI + LOURDES
+        // GIS -> Melihat GIS + LOURDES
+        // LOURDES -> Melihat SEMUA
+        const userCompany = profile?.company;
+
+        if (userCompany === "LOURDES") {
+          // LOURDES: Bebas melihat semua, atau filter spesifik jika dipilih
+          if (companyFilter && companyFilter !== "all") {
+            query = query.eq("company_code", companyFilter);
+          }
+        } else if (userCompany === "GMI") {
+          // GMI: Melihat GMI & LOURDES
+          if (companyFilter === "GMI") {
+            query = query.eq("company_code", "GMI");
+          } else if (companyFilter === "LOURDES") {
+            query = query.eq("company_code", "LOURDES");
+          } else {
+            // Default view: GMI + LOURDES
+            query = query.in("company_code", ["GMI", "LOURDES"]);
+          }
+        } else if (userCompany === "GIS") {
+          // GIS: Melihat GIS & LOURDES
+          if (companyFilter === "GIS") {
+            query = query.eq("company_code", "GIS");
+          } else if (companyFilter === "LOURDES") {
+            query = query.eq("company_code", "LOURDES");
+          } else {
+            // Default view: GIS + LOURDES
+            query = query.in("company_code", ["GIS", "LOURDES"]);
+          }
+        } else {
+          // Lainnya: Hanya milik sendiri
+          if (userCompany) {
+            query = query.eq("company_code", userCompany);
+          }
+        }
+
+        // --- 2. FILTER SEARCH TEXT ---
+        if (searchTerm) {
+          const { data: matchingMRs } = await s
+            .from("material_requests")
+            .select("id")
+            .ilike("kode_mr", `%${searchTerm}%`);
+
+          const matchingMrIds = matchingMRs
+            ? matchingMRs.map((mr) => mr.id)
+            : [];
+          const searchTermLike = `"%${searchTerm}%"`;
+          let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
+          orFilter += `,vendor_details->>nama_vendor.ilike.${searchTermLike}`;
+          orFilter += `,vendor_details->>kode_vendor.ilike.${searchTermLike}`;
+
+          if (matchingMrIds.length > 0) {
+            orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+          }
+          query = query.or(orFilter);
+        }
+
+        // --- 3. FILTER STANDAR ---
+        if (statusFilter) query = query.eq("status", statusFilter);
+        if (minPrice) query = query.gte("total_price", Number(minPrice));
+        if (maxPrice) query = query.lte("total_price", Number(maxPrice));
+        if (startDate) query = query.gte("created_at", startDate);
+        if (endDate)
+          query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+
+        const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
+        if (paymentFilter === "paid") {
+          query = query.contains("approvals", paymentApprovalObject);
+        } else if (paymentFilter === "unpaid") {
+          query = query.not("approvals", "cs", paymentApprovalObject);
+        }
+        if (paymentTermFilter) {
+          query = query.ilike("payment_term", `%${paymentTermFilter}%`);
+        }
+
+        // Eksekusi Query
+        query = query.order("created_at", { ascending: false }).range(from, to);
+
+        const { data, count, error } = await query;
+
+        if (error) throw error;
+
+        // Transform Data
+        const transformedData =
+          data?.map((po: any) => ({
+            ...po,
+            users_with_profiles: Array.isArray(po.users_with_profiles)
+              ? (po.users_with_profiles[0] ?? null)
+              : po.users_with_profiles,
+            material_requests: Array.isArray(po.material_requests)
+              ? po.material_requests[0]
+                ? {
+                    ...po.material_requests[0],
+                    users_with_profiles: Array.isArray(
+                      po.material_requests[0].users_with_profiles,
+                    )
+                      ? (po.material_requests[0].users_with_profiles[0] ?? null)
+                      : po.material_requests[0].users_with_profiles,
+                  }
+                : null
+              : po.material_requests
+                ? {
+                    ...po.material_requests,
+                    users_with_profiles: Array.isArray(
+                      po.material_requests.users_with_profiles,
+                    )
+                      ? (po.material_requests.users_with_profiles[0] ?? null)
+                      : po.material_requests.users_with_profiles,
+                  }
+                : null,
+          })) || [];
+
+        setDataPO(transformedData as PurchaseOrderListItem[]);
         setTotalItems(count || 0);
       } catch (err: any) {
         toast.error("Gagal memuat data PO", { description: err.message });
@@ -322,7 +446,6 @@ function PurchaseOrderPageContent() {
   };
 
   const handleCreatePO = () => {
-    // Navigasi langsung ke create page (mode Direct PO default, nanti user bisa link MR di sana)
     router.push("/purchase-order/create");
   };
 
@@ -343,6 +466,27 @@ function PurchaseOrderPageContent() {
             )
           `,
       );
+
+      // --- LOGIKA FILTER EXCEL (MIRIP DENGAN TABLE) ---
+      const userCompany = userProfile.company;
+
+      if (userCompany === "LOURDES") {
+        if (companyFilter && companyFilter !== "all") {
+          query = query.eq("company_code", companyFilter);
+        }
+      } else if (userCompany === "GMI") {
+        if (companyFilter === "GMI") query = query.eq("company_code", "GMI");
+        else if (companyFilter === "LOURDES")
+          query = query.eq("company_code", "LOURDES");
+        else query = query.in("company_code", ["GMI", "LOURDES"]);
+      } else if (userCompany === "GIS") {
+        if (companyFilter === "GIS") query = query.eq("company_code", "GIS");
+        else if (companyFilter === "LOURDES")
+          query = query.eq("company_code", "LOURDES");
+        else query = query.in("company_code", ["GIS", "LOURDES"]);
+      } else {
+        if (userCompany) query = query.eq("company_code", userCompany);
+      }
 
       if (searchTerm) {
         const { data: matchingMRs } = await s
@@ -366,21 +510,6 @@ function PurchaseOrderPageContent() {
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-
-      const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
-      if (paymentFilter === "paid") {
-        query = query.contains("approvals", paymentApprovalObject);
-      } else if (paymentFilter === "unpaid") {
-        query = query.not("approvals", "cs", paymentApprovalObject);
-      }
-      if (paymentTermFilter) {
-        query = query.ilike("payment_term", `%${paymentTermFilter}%`);
-      }
-
-      if (companyFilter) query = query.eq("company_code", companyFilter);
-      if (userProfile.company && userProfile.company !== "LOURDES") {
-        query = query.eq("company_code", userProfile.company);
-      }
 
       const { data, error } = await query.order("created_at", {
         ascending: false,
@@ -463,25 +592,6 @@ function PurchaseOrderPageContent() {
     (userProfile?.role === "approver" &&
       userProfile?.department === "Purchasing") ||
     userProfile?.role === "admin";
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "Pending Approval":
-        return <Badge variant="secondary">Pending Approval</Badge>;
-      case "Pending Validation":
-        return <Badge variant="secondary">Pending Validation</Badge>;
-      case "Pending BAST":
-        return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
-      case "Completed":
-        return <Badge className="bg-green-500 text-white">Completed</Badge>;
-      case "Rejected":
-        return <Badge variant="destructive">Rejected</Badge>;
-      case "Draft":
-        return <Badge variant="outline">Draft</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
 
   return (
     <>
@@ -604,7 +714,10 @@ function PurchaseOrderPageContent() {
                   </Select>
                 </div>
 
-                {userProfile?.company === "LOURDES" && (
+                {/* FILTER COMPANY DINAMIS */}
+                {(userProfile?.company === "LOURDES" ||
+                  userProfile?.company === "GMI" ||
+                  userProfile?.company === "GIS") && (
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Perusahaan</label>
                     <Select
@@ -619,15 +732,41 @@ function PurchaseOrderPageContent() {
                         <SelectValue placeholder="Filter perusahaan" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Semua Perusahaan</SelectItem>
-                        <SelectItem value="GMI">GMI</SelectItem>
-                        <SelectItem value="GIS">GIS</SelectItem>
-                        <SelectItem value="LOURDES">LOURDES</SelectItem>
+                        <SelectItem value="all">
+                          Semua (Sesuai Akses)
+                        </SelectItem>
+
+                        {/* LOURDES: Bisa lihat GMI & GIS */}
+                        {userProfile.company === "LOURDES" && (
+                          <>
+                            <SelectItem value="GMI">GMI</SelectItem>
+                            <SelectItem value="GIS">GIS</SelectItem>
+                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                          </>
+                        )}
+
+                        {/* GMI: Bisa lihat LOURDES */}
+                        {userProfile.company === "GMI" && (
+                          <>
+                            <SelectItem value="GMI">GMI</SelectItem>
+                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                          </>
+                        )}
+
+                        {/* GIS: Bisa lihat LOURDES */}
+                        {userProfile.company === "GIS" && (
+                          <>
+                            <SelectItem value="GIS">GIS</SelectItem>
+                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
               </div>
+
+              {/* Filter Tanggal & Harga */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Dari Tanggal</label>
@@ -837,11 +976,11 @@ function PurchaseOrderPageContent() {
             </Select>
             <span>dari {totalItems} hasil.</span>
           </div>
-          <PaginationComponent
+          {/* Custom Pagination Implementation */}
+          <CustomPagination
             currentPage={currentPage}
             totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
+            onPageChange={handlePageChange}
           />
         </div>
       </Content>
