@@ -85,7 +85,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// --- Konstanta Filter (Sama dengan halaman User) ---
+// --- Konstanta Filter ---
 const dataDepartment: ComboboxData = [
   { label: "Human Resources", value: "Human Resources" },
   { label: "General Affair", value: "General Affair" },
@@ -542,7 +542,11 @@ export default function MrManagementClient() {
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "approved":
-        return <Badge className="bg-green-100 text-green-800">Approved</Badge>;
+        return (
+          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 dark:border-green-800">
+            Approved
+          </Badge>
+        );
       case "rejected":
         return <Badge variant="destructive">Rejected</Badge>;
       case "pending approval":
@@ -551,16 +555,22 @@ export default function MrManagementClient() {
         return (
           <Badge
             variant="outline"
-            className="border-orange-200 text-orange-700 bg-orange-50"
+            className="border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800"
           >
             Validation
           </Badge>
         );
       case "waiting po":
-        return <Badge className="bg-blue-100 text-blue-800">Waiting PO</Badge>;
+        return (
+          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-800">
+            Waiting PO
+          </Badge>
+        );
       case "completed":
         return (
-          <Badge className="bg-emerald-100 text-emerald-800">Completed</Badge>
+          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800">
+            Completed
+          </Badge>
         );
       default:
         return <Badge variant="secondary">{status}</Badge>;
@@ -579,7 +589,7 @@ export default function MrManagementClient() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
               placeholder="Cari Kode MR, Requester, Remarks..."
-              className="pl-10"
+              className="pl-10 bg-background"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
@@ -619,7 +629,7 @@ export default function MrManagementClient() {
                   handleFilterChange({ status: v === "all" ? undefined : v })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -638,7 +648,7 @@ export default function MrManagementClient() {
                 value={costCenterFilter}
                 onValueChange={(v) => handleFilterChange({ cost_center: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Cost Center" />
                 </SelectTrigger>
                 <SelectContent>
@@ -659,7 +669,7 @@ export default function MrManagementClient() {
                   handleFilterChange({ level: v === "all" ? undefined : v })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Level" />
                 </SelectTrigger>
                 <SelectContent>
@@ -682,7 +692,7 @@ export default function MrManagementClient() {
                   })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Departemen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -708,7 +718,7 @@ export default function MrManagementClient() {
                   })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-background">
                   <SelectValue placeholder="Site" />
                 </SelectTrigger>
                 <SelectContent>
@@ -728,6 +738,7 @@ export default function MrManagementClient() {
                 placeholder="Rp 0"
                 value={minEstimasiInput}
                 onChange={(e) => setMinEstimasiInput(e.target.value)}
+                className="bg-background"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -737,6 +748,7 @@ export default function MrManagementClient() {
                 placeholder="Rp Max"
                 value={maxEstimasiInput}
                 onChange={(e) => setMaxEstimasiInput(e.target.value)}
+                className="bg-background"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -745,6 +757,7 @@ export default function MrManagementClient() {
                 type="date"
                 value={startDateInput}
                 onChange={(e) => setStartDateInput(e.target.value)}
+                className="bg-background"
               />
             </div>
           </div>
@@ -756,6 +769,7 @@ export default function MrManagementClient() {
                 type="date"
                 value={endDateInput}
                 onChange={(e) => setEndDateInput(e.target.value)}
+                className="bg-background"
               />
             </div>
 
@@ -766,7 +780,7 @@ export default function MrManagementClient() {
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
-                    className="w-full justify-between bg-white font-normal"
+                    className="w-full justify-between bg-background font-normal"
                   >
                     <span className="flex items-center gap-2 truncate">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -820,11 +834,11 @@ export default function MrManagementClient() {
 
       {/* --- Table Data --- */}
       <div
-        className="border rounded-md overflow-x-auto bg-white"
+        className="border rounded-md overflow-x-auto bg-card"
         id="printable-area"
       >
         <Table className="min-w-[1600px]">
-          <TableHeader className="bg-gray-50/50">
+          <TableHeader className="bg-muted/50">
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
@@ -853,23 +867,27 @@ export default function MrManagementClient() {
               dataMR.map((mr, index) => (
                 <TableRow
                   key={mr.id}
-                  className="hover:bg-gray-50/60 transition-colors cursor-pointer group"
+                  className="hover:bg-muted/50 transition-colors cursor-pointer group"
                   onClick={() => handleRowClick(mr)}
                 >
                   <TableCell className="text-muted-foreground">
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
 
-                  <TableCell className="font-semibold text-gray-900">
+                  <TableCell className="font-semibold text-foreground">
                     {mr.kode_mr}
                   </TableCell>
+
                   <TableCell>
                     <Badge variant="outline">
                       {(mr as any).cost_centers?.code || "-"}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="default" className="bg-slate-600">
+                    <Badge
+                      variant="default"
+                      className="bg-slate-600 dark:bg-slate-700"
+                    >
                       <Layers className="h-3 w-3 mr-1" /> {mr.level || "OPEN 1"}
                     </Badge>
                   </TableCell>
@@ -953,7 +971,7 @@ export default function MrManagementClient() {
             value={String(limit)}
             onValueChange={(val) => handleFilterChange({ limit: val, page: 1 })}
           >
-            <SelectTrigger className="w-[80px] h-8">
+            <SelectTrigger className="w-[80px] h-8 bg-background">
               <SelectValue placeholder={limit} />
             </SelectTrigger>
             <SelectContent>
@@ -1051,7 +1069,7 @@ export default function MrManagementClient() {
                 </h4>
                 <div className="border rounded-md overflow-hidden">
                   <Table>
-                    <TableHeader className="bg-gray-50">
+                    <TableHeader className="bg-muted/50">
                       <TableRow>
                         <TableHead>Nama Barang</TableHead>
                         <TableHead>Qty</TableHead>
