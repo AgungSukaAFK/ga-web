@@ -37,6 +37,7 @@ import {
   MapPin,
   Tag,
   DollarSign,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -52,12 +53,7 @@ import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
 import * as XLSX from "xlsx";
 import { CustomPagination } from "@/components/custom-pagination";
-import {
-  formatCurrency,
-  formatDateFriendly,
-  calculatePriority,
-  cn,
-} from "@/lib/utils";
+import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
@@ -113,6 +109,14 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
+// Opsi Priority untuk Filter
+const PRIORITY_OPTIONS = [
+  { label: "P0 (Emergency)", value: "P0" },
+  { label: "P1 (High)", value: "P1" },
+  { label: "P2 (Medium)", value: "P2" },
+  { label: "P3 (Low)", value: "P3" },
+];
+
 const SORT_OPTIONS = [
   { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
   { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
@@ -162,7 +166,7 @@ function MaterialRequestContent() {
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
   const costCenterFilter = searchParams.get("cost_center") || "all";
-  const prioritasFilter = searchParams.get("prioritas") || "";
+  const prioritasFilter = searchParams.get("prioritas") || ""; // Filter Prioritas
 
   // Local Input State
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -288,7 +292,10 @@ function MaterialRequestContent() {
           query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
         if (departmentFilter) query = query.eq("department", departmentFilter);
         if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-        if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
+        // Filter Prioritas
+        if (prioritasFilter && prioritasFilter !== "all") {
+          query = query.eq("prioritas", prioritasFilter);
+        }
         if (levelFilter) query = query.eq("level", levelFilter);
         if (costCenterFilter && costCenterFilter !== "all") {
           query = query.eq("cost_center_id", costCenterFilter);
@@ -349,6 +356,7 @@ function MaterialRequestContent() {
               Array.isArray(mr.orders) ? mr.orders : [],
             ),
             company_code: mr.company_code ?? null,
+            prioritas: mr.prioritas || "P3", // Default P3 jika null
           })) || [];
 
         setDataMR(transformedData as MaterialRequestListItem[]);
@@ -456,6 +464,7 @@ function MaterialRequestContent() {
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
       if (departmentFilter) query = query.eq("department", departmentFilter);
       if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+      if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
       if (levelFilter) query = query.eq("level", levelFilter);
 
       const userCompany = currentUser.company;
@@ -489,6 +498,7 @@ function MaterialRequestContent() {
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
           "Cost Center": mr.cost_centers?.code || "-",
+          Priority: mr.prioritas || "-",
           Level: mr.level,
           Kategori: mr.kategori,
           Departemen: mr.department,
@@ -582,6 +592,35 @@ function MaterialRequestContent() {
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
+  };
+
+  const getPriorityBadge = (p?: string | null) => {
+    if (!p) return null;
+    let colorClass = "";
+    switch (p) {
+      case "P0":
+        colorClass = "border-red-500 text-red-600 bg-red-50 text-sm";
+        break;
+      case "P1":
+        colorClass = "border-orange-500 text-orange-600 bg-orange-50 text-sm";
+        break;
+      case "P2":
+        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50 text-sm";
+        break;
+      case "P3":
+        colorClass = "border-green-500 text-green-600 bg-green-50 text-sm";
+        break;
+      default:
+        colorClass = "border-gray-300 text-gray-500 bg-gray-50 text-sm";
+    }
+    return (
+      <Badge
+        variant="outline"
+        className={cn("px-1 py-0 text-[10px]", colorClass)}
+      >
+        {p}
+      </Badge>
+    );
   };
 
   return (
@@ -678,21 +717,21 @@ function MaterialRequestContent() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Level</label>
+              <label className="text-sm font-medium">Priority</label>
               <Select
-                value={levelFilter || "all"}
+                value={prioritasFilter || "all"}
                 onValueChange={(v) =>
-                  handleFilterChange({ level: v === "all" ? undefined : v })
+                  handleFilterChange({ prioritas: v === "all" ? undefined : v })
                 }
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Level" />
+                  <SelectValue placeholder="Priority" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Level</SelectItem>
-                  {MR_LEVELS.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
-                      {l.label}
+                  <SelectItem value="all">Semua Prioritas</SelectItem>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -858,6 +897,7 @@ function MaterialRequestContent() {
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
+              <TableHead>Priority</TableHead>
               <TableHead>Cost Center</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
@@ -875,7 +915,7 @@ function MaterialRequestContent() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={14} className="h-24 text-center">
+                <TableCell colSpan={15} className="h-24 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
@@ -884,17 +924,27 @@ function MaterialRequestContent() {
                 <TableRow
                   key={mr.id}
                   className="hover:bg-muted/50 transition-colors cursor-pointer group"
-                  onClick={() => handleRowClick(mr)}
+                  onClick={() => handleRowClick(mr)} // Klik baris biasa buka Quick View
                 >
                   <TableCell className="text-muted-foreground">
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
 
-                  {/* Kode MR */}
+                  {/* 1. KODE MR (Klik langsung ke Detail Page) */}
                   <TableCell className="font-semibold text-foreground">
-                    {mr.kode_mr}
+                    <Link
+                      href={`/material-request/${mr.id}`}
+                      onClick={(e) => e.stopPropagation()} // Stop row click event
+                      className="hover:underline hover:text-blue-600 decoration-blue-600 underline-offset-4"
+                    >
+                      {mr.kode_mr}
+                    </Link>
                   </TableCell>
 
+                  {/* 2. PRIORITY (Kolom Terpisah) */}
+                  <TableCell>{getPriorityBadge(mr.prioritas)}</TableCell>
+
+                  {/* Sisa Kolom Lainnya */}
                   <TableCell>
                     <Badge variant="outline">
                       {(mr as any).cost_centers?.code || "-"}
@@ -928,7 +978,6 @@ function MaterialRequestContent() {
                     {formatCurrency(Number(mr.cost_estimation))}
                   </TableCell>
 
-                  {/* Aksi: Hanya View */}
                   <TableCell className="text-right no-print">
                     <Button
                       variant="outline"
@@ -944,7 +993,7 @@ function MaterialRequestContent() {
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={14}
+                  colSpan={15}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Tidak ada data ditemukan.
@@ -1040,9 +1089,9 @@ function MaterialRequestContent() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs flex items-center gap-1">
-                    <Layers className="h-3 w-3" /> Level
+                    <AlertCircle className="h-3 w-3" /> Priority
                   </p>
-                  <p className="font-medium">{selectedMr.level}</p>
+                  {getPriorityBadge(selectedMr.prioritas)}
                 </div>
                 <div className="col-span-2">
                   <p className="text-muted-foreground text-xs flex items-center gap-1">

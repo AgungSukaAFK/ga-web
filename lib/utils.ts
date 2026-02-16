@@ -62,7 +62,8 @@ export function parseCSV(csv: string): string[][] {
     .trim()
     .split("\n")
     .map(
-      (line) => line.split(",").map((cell) => cell.replace(/^"|"$/g, "").trim()) // buang tanda kutip
+      (line) =>
+        line.split(",").map((cell) => cell.replace(/^"|"$/g, "").trim()), // buang tanda kutip
     );
 }
 
@@ -160,18 +161,43 @@ export const formatDateWithTime = (date?: Date | string | null): string => {
   );
 };
 
-export const calculatePriority = (dueDate: string | Date): string => {
-  const today = new Date();
-  const target = new Date(dueDate);
+export const calculatePriority = (
+  dueDate: Date | string | undefined | null,
+  startDate?: Date | string | undefined | null,
+): string => {
+  // 1. Jika due date kosong, kembalikan default P4 (paling rendah)
+  if (!dueDate) return "P4";
 
-  // Hitung selisih hari (Target - Hari ini)
-  const diffDays = differenceInCalendarDays(target, today);
+  // 2. Tentukan Start Date (Hari ini atau Created At)
+  const start = startDate ? new Date(startDate) : new Date();
+  start.setHours(0, 0, 0, 0); // Reset jam ke 00:00
 
-  if (diffDays <= 2) return "P0"; // Sangat Mendesak (< 2 hari)
-  if (diffDays <= 10) return "P1"; // Mendesak (3-10 hari)
-  if (diffDays <= 15) return "P2"; // Standar (11-15 hari)
-  if (diffDays <= 30) return "P3"; // Rendah (16-30 hari)
-  return "P4"; // Sangat Rendah (> 30 hari)
+  // 3. Tentukan Due Date
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0); // Reset jam ke 00:00
+
+  // Validasi tanggal
+  if (isNaN(due.getTime()) || isNaN(start.getTime())) return "P4";
+
+  // 4. Hitung Selisih (dalam milidetik)
+  const diffTime = due.getTime() - start.getTime();
+  // Konversi ke hari (pembulatan ke atas)
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  // <= 2 Hari -> P0
+  if (diffDays <= 2) return "P0";
+
+  // 3 sampai 10 Hari -> P1
+  if (diffDays <= 10) return "P1";
+
+  // 11 sampai 15 Hari -> P2
+  if (diffDays <= 15) return "P2";
+
+  // 16 sampai 25 Hari -> P3
+  if (diffDays <= 25) return "P3";
+
+  // > 25 Hari -> P4
+  return "P4";
 };
 
 // Helper untuk mendapatkan warna badge berdasarkan prioritas (Opsional)

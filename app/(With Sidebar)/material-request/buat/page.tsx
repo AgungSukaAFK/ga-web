@@ -47,12 +47,14 @@ import {
   uploadAttachment,
   removeAttachment,
   createMaterialRequest,
+  calculatePriority, // <--- UPDATE: Import logic hitung prioritas
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
+import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -106,6 +108,27 @@ export default function BuatMRPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+
+  // --- LOGIC REVISI: Hitung Prioritas untuk Preview ---
+  const priorityPreview = formCreateMR.due_date
+    ? calculatePriority(formCreateMR.due_date)
+    : null;
+
+  const getPriorityColor = (p: string) => {
+    switch (p) {
+      case "P0":
+        return "bg-red-600 hover:bg-red-700";
+      case "P1":
+        return "bg-orange-500 hover:bg-orange-600";
+      case "P2":
+        return "bg-yellow-500 hover:bg-yellow-600";
+      case "P3":
+        return "bg-green-600 hover:bg-green-700";
+      default:
+        return "bg-gray-500";
+    }
+  };
+  // ----------------------------------------------------
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -378,12 +401,16 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
+      // Note: Logic createMaterialRequest di service sudah menghitung ulang priority
+      // jadi kita tidak perlu pass 'prioritas' secara manual di sini,
+      // tapi payload tetap butuh structure yang valid.
       const finalPayload = {
         ...payload,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
         level: "OPEN 1",
-        prioritas: "P4",
+        // Prioritas akan di-override di service, tapi kita kirim default dulu
+        prioritas: priorityPreview || "P4",
       };
 
       await createMaterialRequest(finalPayload as any, user.id, company_code);
@@ -443,7 +470,15 @@ export default function BuatMRPage() {
           </div>
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Due Date (Target Pemakaian)</Label>
+            <div className="flex justify-between items-center">
+              <Label>Due Date (Target Pemakaian)</Label>
+              {/* UPDATE: Tampilkan Preview Priority */}
+              {priorityPreview && (
+                <Badge className={getPriorityColor(priorityPreview)}>
+                  {priorityPreview}
+                </Badge>
+              )}
+            </div>
             <Popover
               open={isDatePopoverOpen}
               onOpenChange={setIsDatePopoverOpen}
@@ -477,6 +512,11 @@ export default function BuatMRPage() {
                 />
               </PopoverContent>
             </Popover>
+            {priorityPreview && (
+              <p className="text-[10px] text-muted-foreground">
+                *Prioritas {priorityPreview} ditentukan otomatis.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">

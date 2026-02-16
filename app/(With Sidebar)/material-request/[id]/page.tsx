@@ -47,6 +47,7 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  AlertCircle, // <--- Added Icon
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,7 +68,7 @@ import {
   formatDateFriendly,
   cn,
   formatDateWithTime,
-  calculatePriority,
+  calculatePriority, // <--- Pastikan ini terimport
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
@@ -113,7 +114,7 @@ import {
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
-import { fetchMaterialRequestById } from "@/services/mrService"; // Pastikan sudah ada di service
+import { fetchMaterialRequestById } from "@/services/mrService";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -660,7 +661,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // --- FIXED: Menambahkan fungsi getApprovalStatusBadge yang sebelumnya hilang ---
   const getApprovalStatusBadge = (
     status: "pending" | "approved" | "rejected" | string,
   ) => {
@@ -684,6 +684,35 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </Badge>
         );
     }
+  };
+
+  const getPriorityBadge = (p?: string | null) => {
+    if (!p) return null;
+    let colorClass = "";
+    switch (p) {
+      case "P0":
+        colorClass = "border-red-500 text-red-600 bg-red-50";
+        break;
+      case "P1":
+        colorClass = "border-orange-500 text-orange-600 bg-orange-50";
+        break;
+      case "P2":
+        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50";
+        break;
+      case "P3":
+        colorClass = "border-green-500 text-green-600 bg-green-50";
+        break;
+      default:
+        colorClass = "border-gray-300 text-gray-500 bg-gray-50";
+    }
+    return (
+      <Badge
+        variant="outline"
+        className={cn("px-2 py-0.5 text-xs", colorClass)}
+      >
+        {p}
+      </Badge>
+    );
   };
 
   const getCostCenterName = () => {
@@ -775,153 +804,225 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       <div className="col-span-12 lg:col-span-8 space-y-6">
         <Content title="Informasi Utama">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            <InfoItem
-              icon={CircleUser}
-              label="Pembuat"
-              value={(mr as any).users_with_profiles?.nama || "N/A"}
-            />
-            <InfoItem
-              icon={Building}
-              label="Departemen"
-              value={mr.department}
-            />
+            {/* 1. PEMBUAT (Selalu Read-Only) */}
+            <div className="space-y-1">
+              <Label>Pembuat</Label>
+              <div className="flex items-center gap-2">
+                <CircleUser className="w-4 h-4 text-muted-foreground" />
+                {/* Kotak mirip input tapi bukan input */}
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {(mr as any).users_with_profiles?.nama || "N/A"}
+                </div>
+              </div>
+            </div>
+
+            {/* 2. DEPARTEMEN (Selalu Read-Only) */}
+            <div className="space-y-1">
+              <Label>Departemen</Label>
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-muted-foreground" />
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {mr.department}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. KATEGORI */}
             <div className="space-y-1">
               <Label>Kategori</Label>
-              {isEditing ? (
-                <Combobox
-                  data={kategoriData}
-                  onChange={(v) => setMr({ ...mr, kategori: v })}
-                  defaultValue={mr.kategori}
-                  disabled={actionLoading}
-                />
-              ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                  {mr.kategori}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-muted-foreground" />
+                <div className="w-full">
+                  {isEditing ? (
+                    <Combobox
+                      data={kategoriData}
+                      onChange={(v) => setMr({ ...mr, kategori: v })}
+                      defaultValue={mr.kategori}
+                      disabled={actionLoading}
+                      placeholder="Pilih Kategori"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                      {mr.kategori}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <InfoItem
-              icon={Calendar}
-              label="Tanggal Dibuat"
-              value={formatDateFriendly(mr.created_at)}
-            />
 
+            {/* 4. TANGGAL DIBUAT */}
+            <div className="space-y-1">
+              <Label>Tanggal Dibuat</Label>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {formatDateFriendly(mr.created_at)}
+                </div>
+              </div>
+            </div>
+
+            {/* 5. DUE DATE */}
             <div className="space-y-1">
               <Label>Due Date (Target)</Label>
-              {isEditing ? (
-                <Popover
-                  open={isDatePopoverOpen}
-                  onOpenChange={setIsDatePopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !mr.due_date && "text-muted-foreground",
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {mr.due_date ? (
-                        format(new Date(mr.due_date), "PPP")
-                      ) : (
-                        <span>Pilih tanggal...</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <CalendarComponent
-                      mode="single"
-                      selected={mr.due_date ? new Date(mr.due_date) : undefined}
-                      onSelect={(date) => {
-                        setMr({ ...mr, due_date: date });
-                        setIsDatePopoverOpen(false);
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                  {formatDateFriendly(mr.due_date)}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                {isEditing ? (
+                  <Popover
+                    open={isDatePopoverOpen}
+                    onOpenChange={setIsDatePopoverOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal bg-background",
+                          !mr.due_date && "text-muted-foreground",
+                        )}
+                      >
+                        {mr.due_date ? (
+                          format(new Date(mr.due_date), "PPP")
+                        ) : (
+                          <span>Pilih tanggal...</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <CalendarComponent
+                        mode="single"
+                        selected={
+                          mr.due_date ? new Date(mr.due_date) : undefined
+                        }
+                        onSelect={(date) => {
+                          const newPriority = date
+                            ? (calculatePriority(date) as any)
+                            : mr.prioritas;
+                          setMr({
+                            ...mr,
+                            due_date: date,
+                            prioritas: newPriority,
+                          });
+                          setIsDatePopoverOpen(false);
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                    {formatDateFriendly(mr.due_date)}
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* 6. PRIORITAS */}
             <div className="space-y-1">
-              <div className="flex items-center gap-1">
+              <Label>Prioritas</Label>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {getPriorityBadge(mr.prioritas)}
+                  {isEditing && (
+                    <span className="ml-2 text-[10px] text-muted-foreground">
+                      *Ditentukan berdasarkan due date dan tanggal MR
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 7. LEVEL */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
                 <Label>Level</Label>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5"
+                  className="h-4 w-4"
                   onClick={() => setIsLevelInfoOpen(true)}
                 >
-                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </Button>
               </div>
-              {isEditing ? (
-                <Select
-                  onValueChange={(v) => setMr({ ...mr, level: v as any })}
-                  defaultValue={mr.level || ""}
-                  disabled={actionLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih level..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MR_LEVELS.map((lvl) => (
-                      <SelectItem key={lvl.value} value={lvl.value}>
-                        {lvl.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
-                  <Layers className="h-4 w-4" /> {mr.level || "N/A"}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-muted-foreground" />
+                {isEditing ? (
+                  <Select
+                    onValueChange={(v) => setMr({ ...mr, level: v as any })}
+                    value={mr.level || ""}
+                    disabled={actionLoading}
+                  >
+                    <SelectTrigger className="w-full bg-background">
+                      <SelectValue placeholder="Pilih level..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MR_LEVELS.map((lvl) => (
+                        <SelectItem key={lvl.value} value={lvl.value}>
+                          {lvl.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                    {mr.level || "N/A"}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <InfoItem
-              icon={Building2}
-              label="Cost Center"
-              value={
-                costCenterName
-                  ? userProfile?.role === "requester"
-                    ? costCenterName
-                    : `${costCenterName} (Sisa: ${formatCurrency(
-                        costCenterBudget ?? 0,
-                      )})`
-                  : "Belum Ditentukan GA"
-              }
-            />
+            {/* 8. COST CENTER */}
+            <div className="space-y-1">
+              <Label>Cost Center</Label>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-muted-foreground" />
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {costCenterName
+                    ? userProfile?.role === "requester"
+                      ? costCenterName
+                      : `${costCenterName} (Sisa: ${formatCurrency(
+                          costCenterBudget ?? 0,
+                        )})`
+                    : "Belum Ditentukan GA"}
+                </div>
+              </div>
+            </div>
 
+            {/* 9. TUJUAN SITE */}
             <div className="space-y-1">
               <Label>Tujuan (Site)</Label>
-              {isEditing ? (
-                <Combobox
-                  data={dataLokasi}
-                  onChange={(v) => setMr({ ...mr, tujuan_site: v })}
-                  defaultValue={mr.tujuan_site}
-                  disabled={actionLoading}
-                />
-              ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
-                  <Truck className="h-4 w-4" /> {mr.tujuan_site || "N/A"}
-                </p>
-              )}
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-muted-foreground" />
+                <div className="w-full">
+                  {isEditing ? (
+                    <Combobox
+                      data={dataLokasi}
+                      onChange={(v) => setMr({ ...mr, tujuan_site: v })}
+                      defaultValue={mr.tujuan_site}
+                      disabled={actionLoading}
+                      placeholder="Pilih Site"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                      {mr.tujuan_site || "N/A"}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* 10. TOTAL ESTIMASI */}
             <div className="space-y-1">
-              <Label>Total Estimasi Biaya (Otomatis)</Label>
-              <Input
-                readOnly
-                disabled
-                value={formattedCost}
-                className="font-bold"
-              />
+              <Label>Total Estimasi Biaya</Label>
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-muted-foreground" />
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm font-bold">
+                  {formattedCost}
+                </div>
+              </div>
             </div>
+
+            {/* 11. REMARKS (Full Width) */}
             <div className="md:col-span-2 space-y-1">
               <Label>Remarks</Label>
               {isEditing ? (
@@ -930,17 +1031,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   onChange={(e) => setMr({ ...mr, remarks: e.target.value })}
                   disabled={actionLoading}
                   rows={3}
+                  className="bg-background resize-none"
                 />
               ) : (
-                <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] whitespace-pre-wrap">
+                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px] whitespace-pre-wrap">
                   {mr.remarks || "-"}
-                </p>
+                </div>
               )}
             </div>
           </div>
         </Content>
 
-        {/* --- ORDER ITEMS SECTION (REVISI: Menampilkan Status & Tracking PO) --- */}
+        {/* --- ORDER ITEMS SECTION --- */}
         <Content
           title="Daftar Barang (Item Request)"
           cardAction={
@@ -965,7 +1067,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   <TableHead>Estimasi Harga</TableHead>
                   <TableHead>Total Estimasi</TableHead>
                   <TableHead>Link</TableHead>
-                  {/* KOLOM BARU: Status & Tracking */}
                   <TableHead className="w-[200px]">Status & Tracking</TableHead>
                   {isEditing && (
                     <TableHead className="w-[100px]">Aksi</TableHead>
@@ -975,7 +1076,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <TableBody>
                 {mr.orders && mr.orders.length > 0 ? (
                   mr.orders.map((item, index) => {
-                    // Tentukan warna dan label status
                     const statusColor =
                       MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
                       "bg-gray-100";
@@ -1027,7 +1127,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                   &quot;{item.note}&quot;
                                 </div>
                               )}
-                              {/* Tampilkan Note Status jika ada (misal: alasan Cancel) */}
                               {item.status_note && (
                                 <div className="text-xs text-amber-600 mt-1 italic flex items-start gap-1">
                                   <Info className="w-3 h-3 mt-0.5" />
@@ -1111,7 +1210,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                           )}
                         </TableCell>
 
-                        {/* CELL BARU: STATUS BADGE & PO REFS */}
                         <TableCell>
                           <div className="flex flex-col items-start gap-2">
                             <Badge
@@ -1124,13 +1222,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               {statusLabel}
                             </Badge>
 
-                            {/* Link ke PO jika sudah ada */}
                             {item.po_refs && item.po_refs.length > 0 && (
                               <div className="flex flex-wrap gap-1">
                                 {item.po_refs.map((ref, idx) => (
                                   <Link
                                     key={idx}
-                                    href={`/purchase-order?search=${encodeURIComponent(ref)}`}
+                                    href={`/purchase-order?search=${encodeURIComponent(
+                                      ref,
+                                    )}`}
                                     className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
                                     target="_blank"
                                   >

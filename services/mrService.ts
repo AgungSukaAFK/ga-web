@@ -145,6 +145,8 @@ export const removeAttachment = async (path: string): Promise<void> => {
   if (error) throw error;
 };
 
+// services/mrService.ts
+
 export const createMaterialRequest = async (
   formData: Omit<
     MaterialRequest,
@@ -160,11 +162,19 @@ export const createMaterialRequest = async (
 ): Promise<MaterialRequest> => {
   const { cost_center, ...restOfData } = formData as any;
 
+  const fixedPriority = calculatePriority(formData.due_date);
+
+  // 3. Susun Payload
   const payload = {
     ...restOfData,
     cost_center_id: formData.cost_center_id,
     userid: userId,
     company_code: company_code,
+
+    // Inject Priority yang sudah dihitung
+    prioritas: fixedPriority,
+
+    // Default values
     status: "Pending Validation" as const,
     approvals: [],
     discussions: [],
@@ -439,4 +449,40 @@ export const fetchMaterialRequests = async (
   }));
 
   return { data: normalizedData, count };
+};
+
+export const calculatePriority = (
+  dueDate: Date | string | undefined | null,
+): string => {
+  // 1. Validasi: Jika tanggal kosong/invalid, default ke P4 (paling santai)
+  if (!dueDate) return "P4";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset jam hari ini ke 00:00
+
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0); // Reset jam due date ke 00:00
+
+  // 2. Validasi Tanggal: Jika format salah
+  if (isNaN(due.getTime())) return "P4";
+
+  // 3. Hitung Selisih Hari
+  const diffTime = due.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  // 4. LOGIKA BARU (Thresholds)
+  // Handle tanggal masa lalu atau hari ini/besok/lusa (<= 2 hari)
+  if (diffDays <= 2) return "P0";
+
+  // 3 sampai 10 hari
+  if (diffDays <= 10) return "P1";
+
+  // 11 sampai 15 hari
+  if (diffDays <= 15) return "P2";
+
+  // 16 sampai 25 hari (Menggabungkan request P3=20 & P3=25)
+  if (diffDays <= 25) return "P3";
+
+  // Lebih dari 25 hari (misal 30 hari)
+  return "P4";
 };
