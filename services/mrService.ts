@@ -86,18 +86,38 @@ export const getActiveUserProfile = async (): Promise<Profile | null> => {
   return profile as Profile | null;
 };
 
+export const uploadAttachment = async (
+  file: File,
+  kode_mr: string,
+): Promise<Attachment> => {
+  const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
+  const { data, error } = await supabase.storage
+    .from("mr")
+    .upload(filePath, file);
+  if (error) throw error;
+  return { url: data.path, name: file.name };
+};
+
+export const removeAttachment = async (path: string): Promise<void> => {
+  const { error } = await supabase.storage.from("mr").remove([path]);
+  if (error) throw error;
+};
+
 export const generateMRCode = async (
   department: string,
   lokasi: string,
+  company_code: string = "GMI", // Default fallback, pastikan frontend mengirim parameter ini
 ): Promise<string> => {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentYearYY = currentYear.toString().slice(-2);
   const currentMonthRoman = toRoman(now.getMonth() + 1);
 
+  // FIX 1: Filter nomor terakhir berdasarkan company_code
   const { data: lastMr, error } = await supabase
     .from("material_requests")
     .select("kode_mr")
+    .eq("company_code", company_code)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
     .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
     .order("id", { ascending: false })
@@ -125,27 +145,9 @@ export const generateMRCode = async (
       ? deptAbbreviations[department] || department
       : lokasiAbbreviations[lokasi] || lokasi;
 
-  return `GMI/MR/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
+  // FIX 2: Gunakan company_code, bukan hardcode "GMI"
+  return `${company_code}/MR/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
-
-export const uploadAttachment = async (
-  file: File,
-  kode_mr: string,
-): Promise<Attachment> => {
-  const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
-  const { data, error } = await supabase.storage
-    .from("mr")
-    .upload(filePath, file);
-  if (error) throw error;
-  return { url: data.path, name: file.name };
-};
-
-export const removeAttachment = async (path: string): Promise<void> => {
-  const { error } = await supabase.storage.from("mr").remove([path]);
-  if (error) throw error;
-};
-
-// services/mrService.ts
 
 export const createMaterialRequest = async (
   formData: Omit<
@@ -161,42 +163,73 @@ export const createMaterialRequest = async (
   company_code: string,
 ): Promise<MaterialRequest> => {
   const { cost_center, ...restOfData } = formData as any;
-
   const fixedPriority = calculatePriority(formData.due_date);
 
-  // 3. Susun Payload
   const payload = {
     ...restOfData,
     cost_center_id: formData.cost_center_id,
     userid: userId,
     company_code: company_code,
-
-    // Inject Priority yang sudah dihitung
     prioritas: fixedPriority,
-
-    // Default values
     status: "Pending Validation" as const,
     approvals: [],
     discussions: [],
   };
 
-  const { data, error } = await supabase
-    .from("material_requests")
-    .insert([payload])
-    .select()
-    .single();
+  // FIX 3: Mekanisme Auto-Retry (Race Condition)
+  let attempts = 0;
+  const maxAttempts = 5;
 
-  if (error) {
-    console.error("Error creating MR:", error);
-    if (error.code === "42703") {
-      throw new Error(
-        "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database.",
-      );
+  while (attempts < maxAttempts) {
+    const { data, error } = await supabase
+      .from("material_requests")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      // 23505 adalah kode error PostgreSQL untuk duplikasi data (Unique Constraint)
+      if (error.code === "23505" && error.message.includes("kode_mr")) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw new Error(
+            "Sistem sedang sibuk dan terjadi bentrok nomor MR. Silakan coba submit ulang.",
+          );
+        }
+
+        // Ambil nomor urut terbaru di database untuk company ini lalu increment
+        const { data: latestMr } = await supabase
+          .from("material_requests")
+          .select("kode_mr")
+          .eq("company_code", company_code)
+          .gte("created_at", `${new Date().getFullYear()}-01-01T00:00:00Z`)
+          .order("id", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (latestMr) {
+          const parts = latestMr.kode_mr.split("/");
+          const lastNum = parseInt(parts[parts.length - 1] || "0", 10);
+          const currentParts = payload.kode_mr.split("/");
+          currentParts[currentParts.length - 1] = (lastNum + 1).toString();
+          payload.kode_mr = currentParts.join("/");
+        }
+        continue; // Ulangi proses insert dengan kode baru
+      }
+
+      console.error("Error creating MR:", error);
+      if (error.code === "42703") {
+        throw new Error(
+          "Kolom 'cost_center_id' tidak ditemukan. Jalankan migrasi database.",
+        );
+      }
+      throw error;
     }
-    throw error;
+
+    return data as MaterialRequest;
   }
 
-  return data as MaterialRequest;
+  throw new Error("Gagal membuat MR.");
 };
 
 // --- FUNGSI DELETE MR ---

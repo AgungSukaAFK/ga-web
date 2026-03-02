@@ -143,6 +143,7 @@ export default function BuatMRPage() {
           const newKodeMR = await generateMRCode(
             profile.department,
             profile.lokasi,
+            profile.company,
           );
           setUserLokasi(profile.lokasi);
 

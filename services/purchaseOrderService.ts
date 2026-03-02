@@ -232,9 +232,13 @@ export const generatePoCode = async (
   const currentYearYY = currentYear.toString().slice(-2);
   const currentMonthRoman = toRoman(now.getMonth() + 1);
 
+  const prefix = company_code || "GMI";
+
+  // FIX 1: Filter nomor PO terakhir berdasarkan company_code
   const { data: lastPo, error } = await supabase
     .from("purchase_orders")
     .select("kode_po")
+    .eq("company_code", prefix)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
     .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
     .order("id", { ascending: false })
@@ -267,12 +271,9 @@ export const generatePoCode = async (
   };
 
   const identifier = lokasiAbbreviations[lokasi] || lokasi;
-  const prefix = company_code || "GMI";
 
   return `${prefix}/PO/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
-
-// src/services/purchaseOrderService.ts
 
 export const createPurchaseOrder = async (
   poData: Omit<
@@ -297,17 +298,55 @@ export const createPurchaseOrder = async (
     approvals: [],
   };
 
-  // 1. Insert PO Baru
-  // Kita ganti nama variabel 'data' jadi 'newPo' agar lebih jelas
-  const { data: newPo, error } = await supabase
-    .from("purchase_orders")
-    .insert([payload])
-    .select()
-    .single();
+  let newPo;
+  let attempts = 0;
+  const maxAttempts = 5;
 
-  if (error) throw error;
+  // FIX 2: Mekanisme Auto-Retry (Race Condition)
+  while (attempts < maxAttempts) {
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .insert([payload])
+      .select()
+      .single();
 
-  // 2. Update Harga Barang (Last Purchase Price) - FITUR LAMA
+    if (error) {
+      // 23505 adalah kode error PostgreSQL untuk duplikasi data (Unique Constraint)
+      if (error.code === "23505" && error.message.includes("kode_po")) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw new Error(
+            "Sistem sedang sibuk dan terjadi bentrok nomor PO. Silakan coba submit ulang.",
+          );
+        }
+
+        // Ambil nomor urut PO terbaru untuk dire-generate
+        const { data: latestPo } = await supabase
+          .from("purchase_orders")
+          .select("kode_po")
+          .eq("company_code", company_code)
+          .gte("created_at", `${new Date().getFullYear()}-01-01T00:00:00Z`)
+          .order("id", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (latestPo) {
+          const parts = latestPo.kode_po.split("/");
+          const lastNum = parseInt(parts[parts.length - 1] || "0", 10);
+          const currentParts = payload.kode_po.split("/");
+          currentParts[currentParts.length - 1] = (lastNum + 1).toString();
+          payload.kode_po = currentParts.join("/");
+        }
+        continue;
+      }
+      throw error;
+    }
+
+    newPo = data;
+    break; // Berhasil insert, keluar dari loop
+  }
+
+  // 2. Update Harga Barang (Last Purchase Price)
   if (poData.items && poData.items.length > 0) {
     const updatePricePromises = poData.items.map(async (item) => {
       if (item.barang_id && item.price > 0) {
@@ -325,25 +364,21 @@ export const createPurchaseOrder = async (
     }
   }
 
-  // -----------------------------------------------------------
-  // 3. (BARU) UPDATE STATUS ITEM DI MR TERKAIT
-  // -----------------------------------------------------------
+  // 3. UPDATE STATUS ITEM DI MR TERKAIT
   if (mr_id && newPo && poData.items && poData.items.length > 0) {
     const updateMrItemPromises = poData.items.map(async (poItem) => {
-      // Syarat Strict: Harus punya part_number untuk dicocokkan ke MR
       if (poItem.part_number) {
         try {
           await updateMrItemStatus(
             mr_id,
             poItem.part_number,
             {
-              status: "PO Created", // Status berubah jadi PO Created
-              poRef: newPo.kode_po, // Masukkan Kode PO baru ke array po_refs
+              status: "PO Created",
+              poRef: newPo.kode_po,
             },
             user_id,
           );
         } catch (err) {
-          // Kita log error tapi jangan throw agar proses pembuatan PO tidak batal
           console.error(
             `Gagal update status item MR untuk Part ${poItem.part_number}:`,
             err,
@@ -354,9 +389,8 @@ export const createPurchaseOrder = async (
 
     await Promise.all(updateMrItemPromises);
   }
-  // -----------------------------------------------------------
 
-  // 4. UPDATE STATUS & LEVEL MR (Hanya jika ada MR) - GESER JADI LANGKAH 4
+  // 4. UPDATE STATUS & LEVEL MR
   if (mr_id) {
     const { error: mrError } = await supabase
       .from("material_requests")
