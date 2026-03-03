@@ -1,13 +1,10 @@
 // src/services/approvalService.ts
 
 import { createClient } from "@/lib/supabase/client";
-import { Approval, MaterialRequest, PurchaseOrder } from "@/type"; // REVISI: Impor PurchaseOrder
+import { Approval, MaterialRequest, PurchaseOrder } from "@/type";
 
 const supabase = createClient();
 
-/**
- * Mengambil semua Purchase Order yang menunggu validasi oleh GA.
- */
 export const fetchPendingValidationPOs = async () => {
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -89,9 +86,6 @@ export const fetchMyPendingMrApprovals = async (
   return myTurnMRs as MaterialRequest[];
 };
 
-/**
- * Mengambil semua Purchase Order berstatus 'Draft' yang dibuat oleh user tertentu.
- */
 export const fetchMyDraftPOs = async (userId: string) => {
   // ... (fungsi ini tetap sama)
   const { data, error } = await supabase
@@ -154,10 +148,6 @@ export const fetchMyPendingPoApprovals = async (
 
   return myTurnPOs as PurchaseOrder[];
 };
-
-// Pastikan import tetap ada di atas file
-// import { createClient } from "@/lib/supabase/client";
-// import { Approval, MaterialRequest, PurchaseOrder } from "@/type";
 
 export const processMrApproval = async (
   mrId: number,
