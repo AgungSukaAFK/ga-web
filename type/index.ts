@@ -367,3 +367,57 @@ export type MrItemStatus =
   | "PO Created" // Sudah resmi ada di PO
   | "Cancelled" // Dibatalkan oleh Purchasing
   | "Replaced"; // Diganti dengan barang lain
+
+// ==========================================
+// KEBUTUHAN MODUL PETTY CASH (STANDALONE)
+// ==========================================
+
+export type PettyCashType = "Reimbursement" | "Cash Advance";
+
+export type PettyCashStatus =
+  | "Pending Validation"
+  | "In Approval"
+  | "Cash Distributed"
+  | "Pending Settlement"
+  | "Settled"
+  | "Rejected";
+export interface PettyCashRequest {
+  id: number;
+  kode_pc: string;
+  user_id: string;
+  company_code: string;
+  department: string;
+  cost_center_id: number | null;
+  type: PettyCashType;
+  amount: number;
+  actual_amount: number | null;
+  purpose: string;
+  status: PettyCashStatus;
+  discussions: any[];
+  approvals: Approval[];
+  attachments: Attachment[];
+  settlement_attachments: Attachment[];
+  needed_date: string | Date;
+  created_at: string | Date;
+  updated_at: string | Date;
+
+  // Field relasi (saat di-join dengan tabel lain)
+  users_with_profiles?: { nama: string; email?: string } | null;
+  cost_centers?: { name: string; current_budget: number } | null;
+}
+
+export interface PettyCashPayload {
+  company_code: string;
+  department: string;
+  cost_center_id: number;
+  type: PettyCashType;
+  amount: number;
+  purpose: string;
+  needed_date: string;
+  attachments: Attachment[];
+}
+
+export interface PettyCashSettlementPayload {
+  actual_amount: number;
+  settlement_attachments: Attachment[];
+}
