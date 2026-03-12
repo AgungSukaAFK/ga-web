@@ -457,6 +457,8 @@ export default function PettyCashDetailPage() {
               <p className="text-slate-600">{pc.kode_pc}</p>
             </div>
             <Image
+              width={20}
+              height={20}
               src={qrUrl}
               alt="QR Code URL"
               className="w-20 h-20 border p-1"
