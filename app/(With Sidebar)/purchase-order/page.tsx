@@ -455,6 +455,7 @@ function PurchaseOrderPageContent() {
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
+      // Penambahan query department dan cost_centers untuk data Excel
       let query = s.from("purchase_orders").select(
         `
             kode_po, status, total_price, company_code, created_at,
@@ -462,6 +463,8 @@ function PurchaseOrderPageContent() {
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
+              department,
+              cost_centers (name),
               users_with_profiles!userid (nama)
             )
           `,
@@ -530,12 +533,26 @@ function PurchaseOrderPageContent() {
               app.status === "approved",
           ) ?? false;
 
+        // Ekstrak data MR dengan aman (menghindari issue jika Supabase mereturn array)
+        const mrData = Array.isArray(po.material_requests)
+          ? po.material_requests[0]
+          : po.material_requests;
+        const ccData = mrData?.cost_centers;
+        const costCenterName = Array.isArray(ccData)
+          ? ccData[0]?.name
+          : ccData?.name;
+        const requesterData = mrData?.users_with_profiles;
+        const requesterName = Array.isArray(requesterData)
+          ? requesterData[0]?.nama
+          : requesterData?.nama;
+
         const basePoInfo = {
           "Kode PO": po.kode_po,
-          "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
+          "Ref. Kode MR": mrData?.kode_mr || "N/A",
+          "Departemen MR": mrData?.department || "N/A",
+          "Cost Center": costCenterName || "N/A",
           Vendor: po.vendor_details?.nama_vendor || "N/A",
-          "Requester MR":
-            po.material_requests?.users_with_profiles?.nama || "N/A",
+          "Requester MR": requesterName || "N/A",
           Status: po.status,
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
           "Jenis Pembayaran": po.payment_term || "N/A",
