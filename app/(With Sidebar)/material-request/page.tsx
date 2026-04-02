@@ -38,6 +38,7 @@ import {
   Tag,
   DollarSign,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -109,7 +110,6 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
 ];
 
-// Opsi Priority untuk Filter
 const PRIORITY_OPTIONS = [
   { label: "P0 (Emergency)", value: "P0" },
   { label: "P1 (High)", value: "P1" },
@@ -124,7 +124,6 @@ const SORT_OPTIONS = [
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
-// Opsi Limit sesuai permintaan
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
 
 function MaterialRequestContent() {
@@ -166,7 +165,7 @@ function MaterialRequestContent() {
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
   const costCenterFilter = searchParams.get("cost_center") || "all";
-  const prioritasFilter = searchParams.get("prioritas") || ""; // Filter Prioritas
+  const prioritasFilter = searchParams.get("prioritas") || "";
 
   // Local Input State
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -175,7 +174,6 @@ function MaterialRequestContent() {
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
   const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
 
-  // --- Helper: Create Query String ---
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -190,7 +188,6 @@ function MaterialRequestContent() {
           params.delete(name);
         }
       });
-      // Reset page jika parameter selain 'page' berubah
       if (
         Object.keys(paramsToUpdate).some((k) => k !== "page" && k !== "limit")
       ) {
@@ -201,7 +198,6 @@ function MaterialRequestContent() {
     [searchParams],
   );
 
-  // --- Helper: Handle Page Change ---
   const handlePageChange = (page: number) => {
     const queryString = createQueryString({ page });
     startTransition(() => {
@@ -209,7 +205,6 @@ function MaterialRequestContent() {
     });
   };
 
-  // --- Load User ---
   useEffect(() => {
     const loadUser = async () => {
       const {
@@ -252,7 +247,7 @@ function MaterialRequestContent() {
     loadUser();
   }, []);
 
-  // --- Fetch Data ---
+  // --- Fetch Data Tabel ---
   useEffect(() => {
     if (!currentUser) return;
 
@@ -286,25 +281,27 @@ function MaterialRequestContent() {
           query = query.or(orFilter);
         }
 
-        if (statusFilter) query = query.eq("status", statusFilter);
+        if (statusFilter && statusFilter !== "all")
+          query = query.eq("status", statusFilter);
         if (startDate) query = query.gte("created_at", startDate);
         if (endDate)
           query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-        if (departmentFilter) query = query.eq("department", departmentFilter);
-        if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-        // Filter Prioritas
-        if (prioritasFilter && prioritasFilter !== "all") {
+        if (departmentFilter && departmentFilter !== "all")
+          query = query.eq("department", departmentFilter);
+        if (siteFilter && siteFilter !== "all")
+          query = query.eq("tujuan_site", siteFilter);
+        if (prioritasFilter && prioritasFilter !== "all")
           query = query.eq("prioritas", prioritasFilter);
-        }
-        if (levelFilter) query = query.eq("level", levelFilter);
-        if (costCenterFilter && costCenterFilter !== "all") {
+        if (levelFilter && levelFilter !== "all")
+          query = query.eq("level", levelFilter);
+        if (costCenterFilter && costCenterFilter !== "all")
           query = query.eq("cost_center_id", costCenterFilter);
-        }
         if (minEstimasi)
           query = query.gte("cost_estimation", Number(minEstimasi));
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
+        // FILTER PERUSAHAAN (Untuk Tabel)
         const userCompany = currentUser.company;
         let allowedScope: string[] = [];
 
@@ -356,7 +353,7 @@ function MaterialRequestContent() {
               Array.isArray(mr.orders) ? mr.orders : [],
             ),
             company_code: mr.company_code ?? null,
-            prioritas: mr.prioritas || "P3", // Default P3 jika null
+            prioritas: mr.prioritas || "P3",
           })) || [];
 
         setDataMR(transformedData as MaterialRequestListItem[]);
@@ -444,72 +441,148 @@ function MaterialRequestContent() {
     return [myCompany || ""];
   };
 
+  // --- Fungsi EXCEL (Sudah Diperbaiki Logika Izin Aksesnya) ---
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap...");
+    toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
       let query = s.from("material_requests").select(`
-            kode_mr, kategori, department, status, remarks, cost_estimation, 
-            tujuan_site, company_code, created_at, due_date,
-            prioritas, level, orders, 
-            users_with_profiles!userid (nama),
-            cost_centers (code)
-        `);
+          kode_mr, kategori, department, status, remarks, cost_estimation, 
+          tujuan_site, company_code, created_at, due_date,
+          prioritas, level, orders, approvals,
+          users_with_profiles!userid (nama),
+          cost_centers (code)
+      `);
 
-      if (searchTerm) query = query.or(`kode_mr.ilike.%${searchTerm}%`);
-      if (statusFilter) query = query.eq("status", statusFilter);
+      // FILTER PENCARIAN (Sama persis dengan tabel)
+      if (searchTerm) {
+        const { data: matchingUsers } = await s
+          .from("users_with_profiles")
+          .select("id")
+          .ilike("nama", `%${searchTerm}%`);
+
+        const userIds = matchingUsers?.map((u) => u.id) || [];
+        let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+        if (userIds.length > 0) {
+          orFilter += `,userid.in.(${userIds.join(",")})`;
+        }
+        query = query.or(orFilter);
+      }
+
+      if (statusFilter && statusFilter !== "all")
+        query = query.eq("status", statusFilter);
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-      if (departmentFilter) query = query.eq("department", departmentFilter);
-      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-      if (prioritasFilter) query = query.eq("prioritas", prioritasFilter);
-      if (levelFilter) query = query.eq("level", levelFilter);
+      if (departmentFilter && departmentFilter !== "all")
+        query = query.eq("department", departmentFilter);
+      if (siteFilter && siteFilter !== "all")
+        query = query.eq("tujuan_site", siteFilter);
+      if (prioritasFilter && prioritasFilter !== "all")
+        query = query.eq("prioritas", prioritasFilter);
+      if (levelFilter && levelFilter !== "all")
+        query = query.eq("level", levelFilter);
+      if (costCenterFilter && costCenterFilter !== "all")
+        query = query.eq("cost_center_id", costCenterFilter);
+      if (minEstimasiInput)
+        query = query.gte("cost_estimation", Number(minEstimasiInput));
+      if (maxEstimasiInput)
+        query = query.lte("cost_estimation", Number(maxEstimasiInput));
 
+      // FILTER PERUSAHAAN UNTUK EXCEL (Mengembalikan Hak Akses yg Benar)
       const userCompany = currentUser.company;
-      if (userCompany !== "LOURDES") {
-        const allowed = ["GMI", "GIS"].includes(userCompany || "")
-          ? [userCompany!, "LOURDES"]
-          : [userCompany!];
-        if (selectedCompanies.length > 0) {
-          const valid = selectedCompanies.filter((c) => allowed.includes(c));
-          if (valid.length > 0) query = query.in("company_code", valid);
-          else query = query.eq("id", -1);
+      let allowedScope: string[] = [];
+
+      if (userCompany === "LOURDES") {
+        allowedScope = ["ALL"];
+      } else if (["GMI", "GIS"].includes(userCompany || "")) {
+        allowedScope = [userCompany!, "LOURDES"];
+      } else {
+        allowedScope = userCompany ? [userCompany] : [];
+      }
+
+      if (selectedCompanies.length > 0) {
+        if (allowedScope.includes("ALL")) {
+          query = query.in("company_code", selectedCompanies);
         } else {
-          query = query.in("company_code", allowed);
+          const validFilters = selectedCompanies.filter((c) =>
+            allowedScope.includes(c),
+          );
+          if (validFilters.length > 0) {
+            query = query.in("company_code", validFilters);
+          } else {
+            query = query.eq("id", -1);
+          }
         }
-      } else if (selectedCompanies.length > 0) {
-        query = query.in("company_code", selectedCompanies);
+      } else {
+        if (!allowedScope.includes("ALL")) {
+          query = query.in("company_code", allowedScope);
+        }
       }
 
       const { data, error } = await query
         .order("created_at", { ascending: false })
-        .limit(1000);
+        .limit(2500); // Batas aman untuk excel
 
       if (error) throw error;
       if (!data || data.length === 0) {
-        toast.warning("Tidak ada data untuk diekspor.");
+        toast.warning("Tidak ada data untuk diekspor sesuai filter.");
         setIsExporting(false);
         return;
       }
 
       const formattedData = data.flatMap((mr: any) => {
+        // TANGGAL APPROVE / REJECT BUNGA RATNANI
+        let fullApproveDate = "-";
+        let rejectDate = "-";
+
+        if (Array.isArray(mr.approvals)) {
+          const bungaApproval = mr.approvals.find(
+            (app: any) =>
+              app.email === "bunga@garudamart.com" ||
+              app.userid === "5dd1ac8e-ac88-4626-9540-e6f484e011c2",
+          );
+
+          if (bungaApproval) {
+            if (
+              bungaApproval.status === "approved" &&
+              bungaApproval.processed_at
+            ) {
+              fullApproveDate = formatDateFriendly(bungaApproval.processed_at);
+            } else if (
+              bungaApproval.status === "rejected" &&
+              bungaApproval.processed_at
+            ) {
+              rejectDate = formatDateFriendly(bungaApproval.processed_at);
+            }
+          }
+        }
+
+        const ccData = Array.isArray(mr.cost_centers)
+          ? mr.cost_centers[0]
+          : mr.cost_centers;
+        const requesterData = Array.isArray(mr.users_with_profiles)
+          ? mr.users_with_profiles[0]
+          : mr.users_with_profiles;
+
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
-          "Cost Center": mr.cost_centers?.code || "-",
+          "Cost Center": ccData?.code || "-",
           Priority: mr.prioritas || "-",
           Level: mr.level,
           Kategori: mr.kategori,
           Departemen: mr.department,
           "Tujuan Site": mr.tujuan_site,
-          Requester: mr.users_with_profiles?.nama || "N/A",
+          Requester: requesterData?.nama || "N/A",
           "Status MR": mr.status,
+          "Tanggal Full Approve": fullApproveDate,
+          "Tanggal Approval Ditolak": rejectDate,
           Company: mr.company_code,
           "Tanggal Dibuat": formatDateFriendly(mr.created_at ?? undefined),
           "Due Date": formatDateFriendly(mr.due_date ?? undefined),
-          "Total Estimasi": Number(mr.cost_estimation),
-          Remarks: mr.remarks,
+          "Total Estimasi": Number(mr.cost_estimation) || 0,
+          Remarks: mr.remarks || "-",
         };
 
         const orders = normalizeMrOrders(mr.orders);
@@ -631,7 +704,9 @@ function MaterialRequestContent() {
         currentUser &&
         (currentUser.role === "requester" || currentUser.role === "admin") && (
           <Button asChild>
-            <Link href="/material-request/buat">Buat Material Request</Link>
+            <Link href="/material-request/buat">
+              <Plus className="mr-2 h-4 w-4" /> Buat Material Request
+            </Link>
           </Button>
         )
       }
@@ -913,38 +988,39 @@ function MaterialRequestContent() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={15} className="h-24 text-center">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                </TableCell>
-              </TableRow>
+            {loading || isPending ? (
+              Array.from({ length: limit }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={15}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
             ) : dataMR.length > 0 ? (
               dataMR.map((mr, index) => (
                 <TableRow
                   key={mr.id}
                   className="hover:bg-muted/50 transition-colors cursor-pointer group"
-                  onClick={() => handleRowClick(mr)} // Klik baris biasa buka Quick View
+                  onClick={() => handleRowClick(mr)}
                 >
                   <TableCell className="text-muted-foreground">
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
 
-                  {/* 1. KODE MR (Klik langsung ke Detail Page) */}
+                  {/* 1. KODE MR */}
                   <TableCell className="font-semibold text-foreground">
                     <Link
                       href={`/material-request/${mr.id}`}
-                      onClick={(e) => e.stopPropagation()} // Stop row click event
+                      onClick={(e) => e.stopPropagation()}
                       className="hover:underline hover:text-blue-600 decoration-blue-600 underline-offset-4"
                     >
                       {mr.kode_mr}
                     </Link>
                   </TableCell>
 
-                  {/* 2. PRIORITY (Kolom Terpisah) */}
+                  {/* 2. PRIORITY */}
                   <TableCell>{getPriorityBadge(mr.prioritas)}</TableCell>
 
-                  {/* Sisa Kolom Lainnya */}
                   <TableCell>
                     <Badge variant="outline">
                       {(mr as any).cost_centers?.code || "-"}
