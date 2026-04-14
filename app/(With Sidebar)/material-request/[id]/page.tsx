@@ -134,6 +134,8 @@ const dataLokasi: ComboboxData = [
   { label: "Site BIB", value: "Site BIB" },
   { label: "Site AMI", value: "Site AMI" },
   { label: "Site Tabang", value: "Site Tabang" },
+  { label: "GIS BPN", value: "GIS BPN" },
+  { label: "Site Manado", value: "Site Manado" },
 ];
 
 const dataUoM: ComboboxData = [

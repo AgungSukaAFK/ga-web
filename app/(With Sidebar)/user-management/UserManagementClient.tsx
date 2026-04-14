@@ -49,6 +49,8 @@ const dataLokasi: string[] = [
   "Site BIB",
   "Site AMI",
   "Site Tabang",
+  "GIS BPN",
+  "Site Manado",
 ];
 const dataDepartment: string[] = [
   "General Affair",
@@ -111,7 +113,7 @@ export function UserManagementClientContent() {
       }
       return params.toString();
     },
-    [searchParams]
+    [searchParams],
   );
 
   // Efek untuk fetch data user dan profil admin
@@ -147,7 +149,7 @@ export function UserManagementClientContent() {
       // Filter Pencarian
       if (searchTerm)
         query = query.or(
-          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`
+          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`,
         );
       if (roleFilter) query = query.eq("role", roleFilter);
       if (lokasiFilter) query = query.eq("lokasi", lokasiFilter);
@@ -192,7 +194,7 @@ export function UserManagementClientContent() {
       if (searchInput !== searchTerm) {
         startTransition(() => {
           router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
+            `${pathname}?${createQueryString({ search: searchInput })}`,
           );
         });
       }
@@ -202,7 +204,7 @@ export function UserManagementClientContent() {
 
   // Handler untuk filter
   const handleFilterChange = (
-    updates: Record<string, string | number | undefined>
+    updates: Record<string, string | number | undefined>,
   ) => {
     startTransition(() => {
       router.push(`${pathname}?${createQueryString(updates)}`);
@@ -217,13 +219,13 @@ export function UserManagementClientContent() {
       let query = s
         .from("users_with_profiles")
         .select(
-          `nama, email, role, lokasi, department, nrp, company, profile_created_at`
+          `nama, email, role, lokasi, department, nrp, company, profile_created_at`,
         );
 
       // Terapkan semua filter aktif
       if (searchTerm)
         query = query.or(
-          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`
+          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`,
         );
       if (roleFilter) query = query.eq("role", roleFilter);
       if (lokasiFilter) query = query.eq("lokasi", lokasiFilter);
@@ -258,7 +260,7 @@ export function UserManagementClientContent() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Daftar User");
       XLSX.writeFile(
         workbook,
-        `Daftar_User_${new Date().toISOString().split("T")[0]}.xlsx`
+        `Daftar_User_${new Date().toISOString().split("T")[0]}.xlsx`,
       );
 
       toast.success("Data user berhasil diunduh!");

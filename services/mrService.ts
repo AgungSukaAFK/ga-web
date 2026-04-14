@@ -49,6 +49,8 @@ const lokasiAbbreviations: { [key: string]: string } = {
   "Site BIB": "BIB",
   "Site AMI": "AMI",
   "Site Tabang": "TBG",
+  "GIS BPN": "GISBPN",
+  "Site Manado": "MND",
   "Head Office": "HO",
 };
 

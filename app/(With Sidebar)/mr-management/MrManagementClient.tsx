@@ -114,6 +114,8 @@ const dataLokasi: ComboboxData = [
   { label: "Site BIB", value: "Site BIB" },
   { label: "Site AMI", value: "Site AMI" },
   { label: "Site Tabang", value: "Site Tabang" },
+  { label: "GIS BPN", value: "GIS BPN" },
+  { label: "Site Manado", value: "Site Manado" },
 ];
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
