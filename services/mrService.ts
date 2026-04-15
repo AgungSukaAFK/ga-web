@@ -36,6 +36,7 @@ const deptAbbreviations: { [key: string]: string } = {
   "General Manager": "GM",
   "Executive Manager": "EM",
   "Boards of Director": "BOD",
+  Legal: "LGL",
 };
 
 // Peta singkatan lokasi (untuk user Non-HO)

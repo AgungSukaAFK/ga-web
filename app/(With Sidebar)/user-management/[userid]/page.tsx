@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Save, X, Edit as EditIcon, Terminal } from "lucide-react";
 import { Combobox, ComboboxData } from "@/components/combobox";
+import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label"; // Impor Label
 import { toast } from "sonner";
@@ -58,21 +59,13 @@ const dataRole: ComboboxData = [
 ];
 
 const dataDepartment: ComboboxData = [
-  { label: "General Affair", value: "General Affair" },
+  ...sharedDepartmentData,
+  // Backward compatibility for legacy value stored in older profiles.
   { label: "Human Resource", value: "Human Resource" },
-  { label: "Marketing", value: "Marketing" },
-  { label: "Produksi", value: "Produksi" },
-  { label: "K3", value: "K3" },
-  { label: "Finance", value: "Finance" },
-  { label: "IT", value: "IT" },
-  { label: "Logistik", value: "Logistik" },
-  { label: "Purchasing", value: "Purchasing" },
-  { label: "Warehouse", value: "Warehouse" },
-  { label: "Service", value: "Service" },
-  { label: "General Manager", value: "General Manager" },
-  { label: "Executive Manager", value: "Executive Manager" },
-  { label: "Boards of Director", value: "Boards of Director" },
-];
+].filter(
+  (item, index, list) =>
+    list.findIndex((x) => x.value === item.value) === index,
+);
 
 // REVISI: Data untuk Company
 const dataCompany: ComboboxData = [

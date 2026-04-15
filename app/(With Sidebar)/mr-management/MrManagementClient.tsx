@@ -63,6 +63,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { LIMIT_OPTIONS, STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
+import { dataDepartment } from "@/type/comboboxData";
 import {
   fetchActiveCostCenters,
   normalizeMrOrders,
@@ -86,23 +87,6 @@ import {
 } from "@/components/ui/dialog";
 
 // --- Konstanta Filter ---
-const dataDepartment: ComboboxData = [
-  { label: "Human Resources", value: "Human Resources" },
-  { label: "General Affair", value: "General Affair" },
-  { label: "Marketing", value: "Marketing" },
-  { label: "Produksi", value: "Produksi" },
-  { label: "K3", value: "K3" },
-  { label: "Finance", value: "Finance" },
-  { label: "IT", value: "IT" },
-  { label: "Logistik", value: "Logistik" },
-  { label: "Purchasing", value: "Purchasing" },
-  { label: "Warehouse", value: "Warehouse" },
-  { label: "Service", value: "Service" },
-  { label: "General Manager", value: "General Manager" },
-  { label: "Executive Manager", value: "Executive Manager" },
-  { label: "Boards of Director", value: "Boards of Director" },
-];
-
 const dataLokasi: ComboboxData = [
   { label: "Head Office", value: "Head Office" },
   { label: "Tanjung Enim", value: "Tanjung Enim" },

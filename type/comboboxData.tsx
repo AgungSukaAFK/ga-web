@@ -30,4 +30,5 @@ export const dataDepartment: ComboboxData = [
   { label: "General Manager", value: "General Manager" },
   { label: "Executive Manager", value: "Executive Manager" },
   { label: "Boards of Director", value: "Boards of Director" },
+  { label: "Legal", value: "Legal" },
 ];

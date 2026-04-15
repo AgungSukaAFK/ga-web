@@ -31,6 +31,7 @@ import * as XLSX from "xlsx";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type
 import { formatDateFriendly } from "@/lib/utils";
 import { LIMIT_OPTIONS } from "@/type/enum";
+import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 
 // Tipe data spesifik untuk tabel ini
 interface UserForTable extends Profile {
@@ -52,21 +53,13 @@ const dataLokasi: string[] = [
   "GIS BPN",
   "Site Manado",
 ];
-const dataDepartment: string[] = [
-  "General Affair",
-  "Marketing",
-  "Produksi",
-  "K3",
-  "Finance",
-  "IT",
-  "Logistik",
-  "Purchasing",
-  "Warehouse",
-  "Service",
-  "General Manager",
-  "Executive Manager",
-  "Boards of Director",
-];
+const dataDepartment: string[] = Array.from(
+  new Set([
+    ...sharedDepartmentData.map((item) => item.value),
+    // Backward compatibility for legacy value stored in older profiles.
+    "Human Resource",
+  ]),
+);
 
 export function UserManagementClientContent() {
   const s = createClient();
