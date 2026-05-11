@@ -190,36 +190,15 @@
     display: block !important;
   }
 
-  /* Paksa sidebar wrapper kembali ke block agar flex-nya tidak ikut cetak.
-     Ini fix utama untuk Safari yang tidak menghormati position:absolute
-     ketika parent masih display:flex. */
-  [data-slot="sidebar-wrapper"] {
-    display: block !important;
-  }
-
-  /* Sembunyikan sidebar dan gap-nya */
-  [data-slot="sidebar"],
-  [data-slot="sidebar-gap"] {
-    display: none !important;
-  }
-
-  /* Reset SidebarInset agar full-width tanpa margin kiri dari sidebar */
-  [data-slot="sidebar-inset"] {
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-    min-width: 100% !important;
-    border-radius: 0 !important;
-  }
-
-  /* Area cetak mengalir normal setelah layout sidebar direset */
   #printable-po-a4 {
-    position: static !important;
-    width: 100% !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
     padding: 15mm;
     font-size: 10pt;
-    color: black !important;
-    background-color: white !important;
+    color: black;
+    background-color: white;
   }
 
   #printable-po-a4 table {

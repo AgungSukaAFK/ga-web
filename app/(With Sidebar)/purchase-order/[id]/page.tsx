@@ -640,729 +640,746 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   return (
     <>
-      <div className="col-span-12 grid grid-cols-12 gap-6 no-print">
-        <div className="col-span-12">
-          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-            <div>
-              <h1 className="text-3xl font-bold">{po.kode_po}</h1>
-              <p className="text-muted-foreground">Detail Purchase Order</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" /> Cetak PO
-              </Button>
-              {showGAReceiveButton && (
-                <Button
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={handleGAReceiveGoods}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <PackageCheck className="mr-2 h-4 w-4" />
-                  )}
-                  Terima Barang di WH
+      <Content>
+        <div className="col-span-12 grid grid-cols-12 gap-6 no-print">
+          <div className="col-span-12">
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+              <div>
+                <h1 className="text-3xl font-bold">{po.kode_po}</h1>
+                <p className="text-muted-foreground">Detail Purchase Order</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handlePrint}>
+                  <Printer className="mr-2 h-4 w-4" /> Cetak PO
                 </Button>
-              )}
-              {showUploadBast && (
-                <Button size="sm" onClick={() => setIsBastDialogOpen(true)}>
-                  <Upload className="mr-2 h-4 w-4" /> Upload BAST
-                </Button>
-              )}
-              {canEditPO &&
-                po.status !== "Completed" &&
-                po.status !== "Rejected" && (
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/purchase-order/edit/${po.id}`}>
-                      <EditIcon className="mr-2 h-4 w-4" /> Edit PO
-                    </Link>
+                {showGAReceiveButton && (
+                  <Button
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={handleGAReceiveGoods}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <PackageCheck className="mr-2 h-4 w-4" />
+                    )}
+                    Terima Barang di WH
                   </Button>
                 )}
-              {getStatusBadge(po.status)}
+                {showUploadBast && (
+                  <Button size="sm" onClick={() => setIsBastDialogOpen(true)}>
+                    <Upload className="mr-2 h-4 w-4" /> Upload BAST
+                  </Button>
+                )}
+                {canEditPO &&
+                  po.status !== "Completed" &&
+                  po.status !== "Rejected" && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/purchase-order/edit/${po.id}`}>
+                        <EditIcon className="mr-2 h-4 w-4" /> Edit PO
+                      </Link>
+                    </Button>
+                  )}
+                {getStatusBadge(po.status)}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="col-span-12 lg:col-span-8 space-y-6">
-          <Content title="Informasi Utama">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              <InfoItem
-                icon={CircleUser}
-                label="Pembuat PO"
-                value={po.users_with_profiles?.nama || "N/A"}
-              />
-              <InfoItem
-                icon={Building}
-                label="Perusahaan"
-                value={po.company_code}
-              />
-              <InfoItem
-                icon={Calendar}
-                label="Tanggal Dibuat"
-                value={formatDateFriendly(po.created_at)}
-              />
-              <InfoItem
-                icon={DollarSign}
-                label="Grand Total"
-                value={
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">
-                      {formatCurrency(po.total_price)}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setIsBudgetDialogOpen(true)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
-                }
-              />
-              <InfoItem
-                icon={Tag}
-                label="Ref. MR"
-                value={
-                  po.material_requests ? (
-                    <Link
-                      href={`/material-request/${po.material_requests.id}`}
-                      className="text-primary hover:underline flex items-center gap-1"
-                      target="_blank"
-                    >
-                      {po.material_requests.kode_mr}
-                      <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  ) : (
-                    "Tidak ada"
-                  )
-                }
-              />
-              <InfoItem
-                icon={Wallet}
-                label="Payment Term"
-                value={po.payment_term}
-              />
-              <InfoItem
-                icon={Truck}
-                label="Alamat Pengiriman"
-                value={po.shipping_address}
-              />
-              <div className="md:col-span-2">
-                <InfoItem
-                  icon={Info}
-                  label="Catatan PO"
-                  value={po.notes || "N/A"}
-                  isBlock
-                />
-              </div>
-              <hr className="md:col-span-2" />
-              <InfoItem
-                icon={CircleUser}
-                label="Vendor"
-                value={
-                  <div>
-                    <span className="block font-medium">{vendorData.name}</span>
-                    {vendorData.code && (
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {vendorData.code}
-                      </span>
-                    )}
-                  </div>
-                }
-              />
-              <InfoItem
-                icon={Info}
-                label="Kontak Vendor"
-                value={
-                  <div>
-                    <div>{vendorData.contact}</div>
-                    <div className="text-xs text-muted-foreground font-normal">
-                      {vendorData.email}
-                    </div>
-                  </div>
-                }
-              />
-              <div className="md:col-span-2">
-                <InfoItem
-                  icon={Building2}
-                  label="Alamat Vendor"
-                  value={vendorData.address}
-                  isBlock
-                />
-              </div>
-            </div>
-          </Content>
-
-          <Content title="Order Items (PO)">
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Item</TableHead>
-                    <TableHead>Part Number</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead className="text-right">Harga Satuan</TableHead>
-                    <TableHead className="text-right">Total Harga</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {po.items.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {item.part_number}
-                      </TableCell>
-                      <TableCell>
-                        {item.qty} {item.uom}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(item.price)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCurrency(
-                          item.total_price || item.price * item.qty,
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Content>
-
-          {/* --- BAGIAN REVISI: TABEL REFERENSI MR DENGAN FITUR EDIT --- */}
-          {po.material_requests &&
-            po.material_requests.orders &&
-            po.material_requests.orders.length > 0 && (
-              <Content title="Referensi Barang dari MR (Tracking Status)">
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[30%]">
-                          Nama Item (MR)
-                        </TableHead>
-                        <TableHead>Part Number</TableHead>
-                        <TableHead>Status & PO Refs</TableHead>
-                        <TableHead>Tracking PO Ini</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {po.material_requests.orders.map(
-                        (mrItem: Order, idx: number) => {
-                          const isInPO = isMrItemInPO(mrItem);
-                          const statusColor =
-                            MR_ITEM_STATUS_COLORS[mrItem.status || "Pending"] ||
-                            "bg-gray-100";
-                          const statusLabel =
-                            MR_ITEM_STATUS_LABELS[mrItem.status || "Pending"] ||
-                            mrItem.status;
-
-                          return (
-                            <TableRow key={idx}>
-                              <TableCell>
-                                <div className="font-medium">{mrItem.name}</div>
-                                {mrItem.status_note && (
-                                  <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
-                                    <FileText className="w-3 h-3 mt-0.5" />
-                                    <span className="italic">
-                                      {mrItem.status_note}
-                                    </span>
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell className="font-mono text-xs">
-                                {mrItem.part_number || "-"}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {/* Badge Status Utama */}
-                                  <Badge
-                                    variant="outline"
-                                    className={cn("capitalize", statusColor)}
-                                  >
-                                    {statusLabel}
-                                  </Badge>
-
-                                  {/* Tombol Edit (Hanya untuk Purchasing/Admin) */}
-                                  {isPurchasing && mrItem.part_number && (
-                                    <button
-                                      onClick={() =>
-                                        handleOpenEditStatus(mrItem)
-                                      }
-                                      className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
-                                      title="Edit Status Barang"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </div>
-
-                                {/* List PO References */}
-                                {mrItem.po_refs &&
-                                  mrItem.po_refs.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-1">
-                                      {mrItem.po_refs.map((ref, i) => (
-                                        <Badge
-                                          key={i}
-                                          variant="secondary"
-                                          className="text-[10px] h-5 px-1.5 font-mono"
-                                        >
-                                          {ref}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  )}
-                              </TableCell>
-                              <TableCell>
-                                {isInPO ? (
-                                  <Badge className="bg-green-600 hover:bg-green-700">
-                                    <Check className="w-3 h-3 mr-1" /> Termuat
-                                  </Badge>
-                                ) : (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-muted-foreground"
-                                  >
-                                    -
-                                  </Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        },
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Content>
-            )}
-          {/* ---------------------------------------------------------------------- */}
-
-          {/* --- Info Referensi MR --- */}
-          {po.material_requests && (
-            <Content
-              title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
-            >
+          <div className="col-span-12 lg:col-span-8 space-y-6">
+            <Content title="Informasi Utama">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <InfoItem
                   icon={CircleUser}
-                  label="Pembuat MR"
-                  value={
-                    po.material_requests.users_with_profiles?.nama || "N/A"
-                  }
+                  label="Pembuat PO"
+                  value={po.users_with_profiles?.nama || "N/A"}
                 />
                 <InfoItem
                   icon={Building}
-                  label="Departemen MR"
-                  value={po.material_requests.department}
+                  label="Perusahaan"
+                  value={po.company_code}
                 />
                 <InfoItem
-                  icon={Tag}
-                  label="Kategori MR"
-                  value={po.material_requests.kategori}
+                  icon={Calendar}
+                  label="Tanggal Dibuat"
+                  value={formatDateFriendly(po.created_at)}
                 />
                 <InfoItem
                   icon={DollarSign}
-                  label="Estimasi Biaya MR"
-                  value={formatCurrency(po.material_requests.cost_estimation)}
+                  label="Grand Total"
+                  value={
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">
+                        {formatCurrency(po.total_price)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setIsBudgetDialogOpen(true)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  }
                 />
                 <InfoItem
-                  icon={Building2}
-                  label="Cost Center"
-                  value={getCostCenterName()}
+                  icon={Tag}
+                  label="Ref. MR"
+                  value={
+                    po.material_requests ? (
+                      <Link
+                        href={`/material-request/${po.material_requests.id}`}
+                        className="text-primary hover:underline flex items-center gap-1"
+                        target="_blank"
+                      >
+                        {po.material_requests.kode_mr}
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    ) : (
+                      "Tidak ada"
+                    )
+                  }
+                />
+                <InfoItem
+                  icon={Wallet}
+                  label="Payment Term"
+                  value={po.payment_term}
                 />
                 <InfoItem
                   icon={Truck}
-                  label="Tujuan Site (MR)"
-                  value={po.material_requests.tujuan_site || "N/A"}
+                  label="Alamat Pengiriman"
+                  value={po.shipping_address}
                 />
+                <div className="md:col-span-2">
+                  <InfoItem
+                    icon={Info}
+                    label="Catatan PO"
+                    value={po.notes || "N/A"}
+                    isBlock
+                  />
+                </div>
+                <hr className="md:col-span-2" />
                 <InfoItem
-                  icon={Zap}
-                  label="Prioritas MR"
+                  icon={CircleUser}
+                  label="Vendor"
                   value={
-                    <div className="flex items-center gap-2">
-                      <span>{po.material_requests.prioritas || "N/A"}</span>
-                      {priorityText && (
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {priorityText}
+                    <div>
+                      <span className="block font-medium">
+                        {vendorData.name}
+                      </span>
+                      {vendorData.code && (
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {vendorData.code}
                         </span>
                       )}
                     </div>
                   }
                 />
-                <div className="grid grid-cols-3 gap-x-2">
-                  <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
-                    <Layers className="h-4 w-4" />
-                    Level MR{" "}
-                    <button
-                      onClick={() => setIsLevelInfoOpen(true)}
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                      title="Lihat Definisi Level"
-                    >
-                      <HelpCircle className="h-3 w-3" />
-                    </button>
-                  </dt>
-                  <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
-                    {po.material_requests.level || "N/A"}
-                  </dd>
-                </div>
+                <InfoItem
+                  icon={Info}
+                  label="Kontak Vendor"
+                  value={
+                    <div>
+                      <div>{vendorData.contact}</div>
+                      <div className="text-xs text-muted-foreground font-normal">
+                        {vendorData.email}
+                      </div>
+                    </div>
+                  }
+                />
                 <div className="md:col-span-2">
                   <InfoItem
-                    icon={Info}
-                    label="Remarks MR"
-                    value={po.material_requests.remarks}
+                    icon={Building2}
+                    label="Alamat Vendor"
+                    value={vendorData.address}
                     isBlock
                   />
                 </div>
               </div>
             </Content>
-          )}
-        </div>
 
-        <div className="col-span-12 lg:col-span-4 space-y-6">
-          <Content title="Tindakan">
-            <ApprovalActions />
-            {po.status === "Completed" && (
-              <div className="mt-2">
-                <p className="text-sm text-green-600 font-medium mb-2 flex items-center gap-2">
-                  <Check className="h-4 w-4" /> PO Selesai (Completed)
-                </p>
-              </div>
-            )}
-          </Content>
-
-          <Content title="Jalur Approval">
-            {po.approvals && po.approvals.length > 0 ? (
-              <ul className="space-y-2">
-                {po.approvals.map((approver, index) => {
-                  const isMyTurn =
-                    currentTurnIndex === index &&
-                    (currentTurnIndex === 0 || allPreviousApproved);
-                  return (
-                    <li
-                      key={index}
-                      className={cn(
-                        "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
-                        isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
-                      )}
-                    >
-                      <div>
-                        <div className="font-semibold flex items-center">
-                          {approver.nama}{" "}
-                          <span className="ml-2">
-                            <Badge variant={"outline"}>
-                              {approver.department}
-                            </Badge>
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {approver.type}
-                        </p>
-                        {approver.status !== "pending" &&
-                          approver.processed_at && (
-                            <p className="text-xs text-muted-foreground italic mt-1">
-                              {formatDateWithTime(approver.processed_at)}
-                            </p>
+            <Content title="Order Items (PO)">
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama Item</TableHead>
+                      <TableHead>Part Number</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead className="text-right">Harga Satuan</TableHead>
+                      <TableHead className="text-right">Total Harga</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {po.items.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          {item.name}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.part_number}
+                        </TableCell>
+                        <TableCell>
+                          {item.qty} {item.uom}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(item.price)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(
+                            item.total_price || item.price * item.qty,
                           )}
-                      </div>
-                      {getApprovalStatusBadge(
-                        approver.status as "approved" | "rejected" | "pending",
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center">
-                Jalur approval belum ditentukan oleh GA.
-              </p>
-            )}
-          </Content>
-
-          <Content title="Lampiran PO">
-            <ul className="space-y-2">
-              {poAttachments.length > 0 ? (
-                poAttachments.map((file, index) => (
-                  <li key={index}>
-                    <Link
-                      href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
-                      target="_blank"
-                      className="flex items-center gap-2 text-sm text-primary hover:underline"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                      <span>{file.name}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                    </Link>
-                  </li>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Tidak ada lampiran.
-                </p>
-              )}
-            </ul>
-          </Content>
-
-          <Content title="Lampiran Finance">
-            <ul className="space-y-2">
-              {financeAttachments.length > 0 ? (
-                financeAttachments.map((file, index) => (
-                  <li key={index}>
-                    <Link
-                      href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
-                      target="_blank"
-                      className="flex items-center gap-2 text-sm text-primary hover:underline"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                      <span>{file.name}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                    </Link>
-                  </li>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Tidak ada lampiran.
-                </p>
-              )}
-            </ul>
-          </Content>
-
-          <Content title="Lampiran BAST / Bukti Terima">
-            <ul className="space-y-2">
-              {bastAttachments.length > 0 ? (
-                bastAttachments.map((file, index) => (
-                  <li key={index}>
-                    <Link
-                      href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
-                      target="_blank"
-                      className="flex items-center gap-2 text-sm text-primary hover:underline"
-                    >
-                      <Check className="h-4 w-4 text-green-600" />
-                      <span>{file.name}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                    </Link>
-                  </li>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">Belum ada BAST.</p>
-              )}
-            </ul>
-          </Content>
-        </div>
-
-        <div className="col-span-12">
-          {po.material_requests ? (
-            <DiscussionSection
-              mrId={String(po.material_requests.id)}
-              initialDiscussions={
-                po.material_requests.discussions as Discussion[]
-              }
-            />
-          ) : (
-            <Content title="Diskusi">
-              <p className="text-sm text-muted-foreground text-center">
-                Diskusi hanya tersedia untuk PO yang terhubung ke Material
-                Request.
-              </p>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </Content>
-          )}
-        </div>
-      </div>
 
-      <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rincian Biaya PO: {po.kode_po}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-medium">{formatCurrency(subtotal)}</span>
-            </div>
-            {po.discount > 0 && (
-              <div className="flex justify-between items-center text-sm text-red-600">
-                <span>Diskon</span>
-                <span>- {formatCurrency(po.discount)}</span>
-              </div>
-            )}
-            {(po.pph_amount || 0) > 0 && (
-              <div className="flex justify-between items-center text-sm text-red-600">
-                <span>PPH ({po.pph_rate || 0}%)</span>
-                <span>- {formatCurrency(po.pph_amount || 0)}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center text-sm text-blue-600">
-              <span>Pajak (PPN)</span>
-              <span>+ {formatCurrency(po.tax)}</span>
-            </div>
-            <div className="flex justify-between items-center text-sm text-blue-600">
-              <span>Ongkos Kirim</span>
-              <span>+ {formatCurrency(po.postage)}</span>
-            </div>
-            <hr className="my-2" />
-            <div className="flex justify-between items-center text-lg font-bold">
-              <span>Grand Total</span>
-              <span>{formatCurrency(po.total_price)}</span>
-            </div>
-            {(po.pph_amount || 0) > 0 && (
-              <p className="text-xs text-right text-muted-foreground italic">
-                *Net Payable
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+            {/* --- BAGIAN REVISI: TABEL REFERENSI MR DENGAN FITUR EDIT --- */}
+            {po.material_requests &&
+              po.material_requests.orders &&
+              po.material_requests.orders.length > 0 && (
+                <Content title="Referensi Barang dari MR (Tracking Status)">
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[30%]">
+                            Nama Item (MR)
+                          </TableHead>
+                          <TableHead>Part Number</TableHead>
+                          <TableHead>Status & PO Refs</TableHead>
+                          <TableHead>Tracking PO Ini</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {po.material_requests.orders.map(
+                          (mrItem: Order, idx: number) => {
+                            const isInPO = isMrItemInPO(mrItem);
+                            const statusColor =
+                              MR_ITEM_STATUS_COLORS[
+                                mrItem.status || "Pending"
+                              ] || "bg-gray-100";
+                            const statusLabel =
+                              MR_ITEM_STATUS_LABELS[
+                                mrItem.status || "Pending"
+                              ] || mrItem.status;
 
-      <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
-            <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-              barang.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="bast-file">File BAST / Bukti Foto</Label>
-            <Input
-              id="bast-file"
-              type="file"
-              multiple
-              onChange={(e) => setBastFiles(e.target.files)}
-              className="mt-2"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBastDialogOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button onClick={handleUploadBast} disabled={uploadingBast}>
-              {uploadingBast && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}{" "}
-              Upload & Selesaikan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                            return (
+                              <TableRow key={idx}>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {mrItem.name}
+                                  </div>
+                                  {mrItem.status_note && (
+                                    <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                                      <FileText className="w-3 h-3 mt-0.5" />
+                                      <span className="italic">
+                                        {mrItem.status_note}
+                                      </span>
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {mrItem.part_number || "-"}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {/* Badge Status Utama */}
+                                    <Badge
+                                      variant="outline"
+                                      className={cn("capitalize", statusColor)}
+                                    >
+                                      {statusLabel}
+                                    </Badge>
 
-      {/* --- DIALOG EDIT STATUS BARANG MR --- */}
-      <Dialog open={isEditStatusOpen} onOpenChange={setIsEditStatusOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Update Status Barang MR</DialogTitle>
-            <DialogDescription>
-              Ubah status barang <strong>{selectedItemToEdit?.name}</strong>{" "}
-              secara manual.
-            </DialogDescription>
-          </DialogHeader>
+                                    {/* Tombol Edit (Hanya untuk Purchasing/Admin) */}
+                                    {isPurchasing && mrItem.part_number && (
+                                      <button
+                                        onClick={() =>
+                                          handleOpenEditStatus(mrItem)
+                                        }
+                                        className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+                                        title="Edit Status Barang"
+                                      >
+                                        <Pencil className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
 
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="status">Status Barang</Label>
-              <Select
-                value={editForm.status}
-                onValueChange={(val) =>
-                  setEditForm({ ...editForm, status: val })
-                }
+                                  {/* List PO References */}
+                                  {mrItem.po_refs &&
+                                    mrItem.po_refs.length > 0 && (
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {mrItem.po_refs.map((ref, i) => (
+                                          <Badge
+                                            key={i}
+                                            variant="secondary"
+                                            className="text-[10px] h-5 px-1.5 font-mono"
+                                          >
+                                            {ref}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                  {isInPO ? (
+                                    <Badge className="bg-green-600 hover:bg-green-700">
+                                      <Check className="w-3 h-3 mr-1" /> Termuat
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-muted-foreground"
+                                    >
+                                      -
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          },
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </Content>
+              )}
+            {/* ---------------------------------------------------------------------- */}
+
+            {/* --- Info Referensi MR --- */}
+            {po.material_requests && (
+              <Content
+                title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(MR_ITEM_STATUS_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                  <InfoItem
+                    icon={CircleUser}
+                    label="Pembuat MR"
+                    value={
+                      po.material_requests.users_with_profiles?.nama || "N/A"
+                    }
+                  />
+                  <InfoItem
+                    icon={Building}
+                    label="Departemen MR"
+                    value={po.material_requests.department}
+                  />
+                  <InfoItem
+                    icon={Tag}
+                    label="Kategori MR"
+                    value={po.material_requests.kategori}
+                  />
+                  <InfoItem
+                    icon={DollarSign}
+                    label="Estimasi Biaya MR"
+                    value={formatCurrency(po.material_requests.cost_estimation)}
+                  />
+                  <InfoItem
+                    icon={Building2}
+                    label="Cost Center"
+                    value={getCostCenterName()}
+                  />
+                  <InfoItem
+                    icon={Truck}
+                    label="Tujuan Site (MR)"
+                    value={po.material_requests.tujuan_site || "N/A"}
+                  />
+                  <InfoItem
+                    icon={Zap}
+                    label="Prioritas MR"
+                    value={
+                      <div className="flex items-center gap-2">
+                        <span>{po.material_requests.prioritas || "N/A"}</span>
+                        {priorityText && (
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {priorityText}
+                          </span>
+                        )}
+                      </div>
+                    }
+                  />
+                  <div className="grid grid-cols-3 gap-x-2">
+                    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                      <Layers className="h-4 w-4" />
+                      Level MR{" "}
+                      <button
+                        onClick={() => setIsLevelInfoOpen(true)}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        title="Lihat Definisi Level"
+                      >
+                        <HelpCircle className="h-3 w-3" />
+                      </button>
+                    </dt>
+                    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+                      {po.material_requests.level || "N/A"}
+                    </dd>
+                  </div>
+                  <div className="md:col-span-2">
+                    <InfoItem
+                      icon={Info}
+                      label="Remarks MR"
+                      value={po.material_requests.remarks}
+                      isBlock
+                    />
+                  </div>
+                </div>
+              </Content>
+            )}
+          </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="note">Catatan / Alasan</Label>
-              <Textarea
-                id="note"
-                placeholder="Contoh: Stok habis, diganti dengan tipe X..."
-                value={editForm.note}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, note: e.target.value })
+          <div className="col-span-12 lg:col-span-4 space-y-6">
+            <Content title="Tindakan">
+              <ApprovalActions />
+              {po.status === "Completed" && (
+                <div className="mt-2">
+                  <p className="text-sm text-green-600 font-medium mb-2 flex items-center gap-2">
+                    <Check className="h-4 w-4" /> PO Selesai (Completed)
+                  </p>
+                </div>
+              )}
+            </Content>
+
+            <Content title="Jalur Approval">
+              {po.approvals && po.approvals.length > 0 ? (
+                <ul className="space-y-2">
+                  {po.approvals.map((approver, index) => {
+                    const isMyTurn =
+                      currentTurnIndex === index &&
+                      (currentTurnIndex === 0 || allPreviousApproved);
+                    return (
+                      <li
+                        key={index}
+                        className={cn(
+                          "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
+                          isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
+                        )}
+                      >
+                        <div>
+                          <div className="font-semibold flex items-center">
+                            {approver.nama}{" "}
+                            <span className="ml-2">
+                              <Badge variant={"outline"}>
+                                {approver.department}
+                              </Badge>
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {approver.type}
+                          </p>
+                          {approver.status !== "pending" &&
+                            approver.processed_at && (
+                              <p className="text-xs text-muted-foreground italic mt-1">
+                                {formatDateWithTime(approver.processed_at)}
+                              </p>
+                            )}
+                        </div>
+                        {getApprovalStatusBadge(
+                          approver.status as
+                            | "approved"
+                            | "rejected"
+                            | "pending",
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center">
+                  Jalur approval belum ditentukan oleh GA.
+                </p>
+              )}
+            </Content>
+
+            <Content title="Lampiran PO">
+              <ul className="space-y-2">
+                {poAttachments.length > 0 ? (
+                  poAttachments.map((file, index) => (
+                    <li key={index}>
+                      <Link
+                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        target="_blank"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                        <span>{file.name}</span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </Link>
+                    </li>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Tidak ada lampiran.
+                  </p>
+                )}
+              </ul>
+            </Content>
+
+            <Content title="Lampiran Finance">
+              <ul className="space-y-2">
+                {financeAttachments.length > 0 ? (
+                  financeAttachments.map((file, index) => (
+                    <li key={index}>
+                      <Link
+                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        target="_blank"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                        <span>{file.name}</span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </Link>
+                    </li>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Tidak ada lampiran.
+                  </p>
+                )}
+              </ul>
+            </Content>
+
+            <Content title="Lampiran BAST / Bukti Terima">
+              <ul className="space-y-2">
+                {bastAttachments.length > 0 ? (
+                  bastAttachments.map((file, index) => (
+                    <li key={index}>
+                      <Link
+                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        target="_blank"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <Check className="h-4 w-4 text-green-600" />
+                        <span>{file.name}</span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </Link>
+                    </li>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada BAST.
+                  </p>
+                )}
+              </ul>
+            </Content>
+          </div>
+
+          <div className="col-span-12">
+            {po.material_requests ? (
+              <DiscussionSection
+                mrId={String(po.material_requests.id)}
+                initialDiscussions={
+                  po.material_requests.discussions as Discussion[]
                 }
               />
-            </div>
+            ) : (
+              <Content title="Diskusi">
+                <p className="text-sm text-muted-foreground text-center">
+                  Diskusi hanya tersedia untuk PO yang terhubung ke Material
+                  Request.
+                </p>
+              </Content>
+            )}
           </div>
+        </div>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsEditStatusOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button onClick={handleSaveStatusUpdate} disabled={actionLoading}>
-              {actionLoading && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rincian Biaya PO: {po.kode_po}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-4">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatCurrency(subtotal)}</span>
+              </div>
+              {po.discount > 0 && (
+                <div className="flex justify-between items-center text-sm text-red-600">
+                  <span>Diskon</span>
+                  <span>- {formatCurrency(po.discount)}</span>
+                </div>
               )}
-              Simpan Perubahan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {/* -------------------------------------- */}
-
-      <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Definisi Level MR</DialogTitle>
-            <DialogDescription>
-              Penjelasan status level Material Request.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-            <div>
-              <h4 className="font-semibold mb-2">OPEN</h4>
-              <ul className="list-disc pl-5 space-y-1 text-sm">
-                {MR_LEVELS.filter((l) => l.group === "OPEN").map((l) => (
-                  <li key={l.value}>
-                    <span className="font-semibold">{l.value}:</span>{" "}
-                    {l.description}
-                  </li>
-                ))}
-              </ul>
+              {(po.pph_amount || 0) > 0 && (
+                <div className="flex justify-between items-center text-sm text-red-600">
+                  <span>PPH ({po.pph_rate || 0}%)</span>
+                  <span>- {formatCurrency(po.pph_amount || 0)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-sm text-blue-600">
+                <span>Pajak (PPN)</span>
+                <span>+ {formatCurrency(po.tax)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm text-blue-600">
+                <span>Ongkos Kirim</span>
+                <span>+ {formatCurrency(po.postage)}</span>
+              </div>
+              <hr className="my-2" />
+              <div className="flex justify-between items-center text-lg font-bold">
+                <span>Grand Total</span>
+                <span>{formatCurrency(po.total_price)}</span>
+              </div>
+              {(po.pph_amount || 0) > 0 && (
+                <p className="text-xs text-right text-muted-foreground italic">
+                  *Net Payable
+                </p>
+              )}
             </div>
-            <div>
-              <h4 className="font-semibold mb-2">CLOSE</h4>
-              <ul className="list-disc pl-5 space-y-1 text-sm">
-                {MR_LEVELS.filter((l) => l.group === "CLOSE").map((l) => (
-                  <li key={l.value}>
-                    <span className="font-semibold">{l.value}:</span>{" "}
-                    {l.description}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      <div className="print-only">
-        <PrintablePO
-          po={po}
-          companyInfo={companyInfo}
-          qrUrl={qrUrl}
-          vendorData={vendorData}
-        />
-      </div>
+        <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
+              <DialogDescription>
+                Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
+                barang.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Label htmlFor="bast-file">File BAST / Bukti Foto</Label>
+              <Input
+                id="bast-file"
+                type="file"
+                multiple
+                onChange={(e) => setBastFiles(e.target.files)}
+                className="mt-2"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsBastDialogOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button onClick={handleUploadBast} disabled={uploadingBast}>
+                {uploadingBast && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}{" "}
+                Upload & Selesaikan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* --- DIALOG EDIT STATUS BARANG MR --- */}
+        <Dialog open={isEditStatusOpen} onOpenChange={setIsEditStatusOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Update Status Barang MR</DialogTitle>
+              <DialogDescription>
+                Ubah status barang <strong>{selectedItemToEdit?.name}</strong>{" "}
+                secara manual.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="status">Status Barang</Label>
+                <Select
+                  value={editForm.status}
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, status: val })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(MR_ITEM_STATUS_LABELS).map(
+                      ([key, label]) => (
+                        <SelectItem key={key} value={key}>
+                          {label}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="note">Catatan / Alasan</Label>
+                <Textarea
+                  id="note"
+                  placeholder="Contoh: Stok habis, diganti dengan tipe X..."
+                  value={editForm.note}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, note: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsEditStatusOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button onClick={handleSaveStatusUpdate} disabled={actionLoading}>
+                {actionLoading && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Simpan Perubahan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {/* -------------------------------------- */}
+
+        <Dialog open={isLevelInfoOpen} onOpenChange={setIsLevelInfoOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Definisi Level MR</DialogTitle>
+              <DialogDescription>
+                Penjelasan status level Material Request.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+              <div>
+                <h4 className="font-semibold mb-2">OPEN</h4>
+                <ul className="list-disc pl-5 space-y-1 text-sm">
+                  {MR_LEVELS.filter((l) => l.group === "OPEN").map((l) => (
+                    <li key={l.value}>
+                      <span className="font-semibold">{l.value}:</span>{" "}
+                      {l.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">CLOSE</h4>
+                <ul className="list-disc pl-5 space-y-1 text-sm">
+                  {MR_LEVELS.filter((l) => l.group === "CLOSE").map((l) => (
+                    <li key={l.value}>
+                      <span className="font-semibold">{l.value}:</span>{" "}
+                      {l.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <div className="print-only">
+          <PrintablePO
+            po={po}
+            companyInfo={companyInfo}
+            qrUrl={qrUrl}
+            vendorData={vendorData}
+          />
+        </div>
+      </Content>
     </>
   );
 }
