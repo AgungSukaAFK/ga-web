@@ -40,7 +40,7 @@ export function NotificationProvider({
       .select(
         `
         *,
-        actor:profiles!actor_id (name, avatar_url)
+        actor:profiles!actor_id (nama)
       `
       )
       .eq("user_id", user.id)
@@ -51,8 +51,7 @@ export function NotificationProvider({
       // Mapping agar sesuai tipe Notification
       const formattedData = data.map((item: any) => ({
         ...item,
-        actor_name: item.actor?.name || "System",
-        actor_avatar: item.actor?.avatar_url,
+        actor_name: item.actor?.nama || "System",
       })) as Notification[];
 
       setNotifications(formattedData);

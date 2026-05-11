@@ -22,6 +22,7 @@ export function NavMain({
     url: string;
     icon?: LucideIcon;
     isActive?: boolean;
+    badge?: number;
     items?: {
       title: string;
       url: string;
@@ -42,8 +43,22 @@ export function NavMain({
                   item.isActive && "bg-primary/5"
                 )}
               >
-                {item.icon && <item.icon />}
+                {item.icon && (
+                  <div className="relative shrink-0 h-4 w-4">
+                    <item.icon className="h-4 w-4" />
+                    {!!item.badge && item.badge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white leading-none">
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <span className="grow text-left">{item.title}</span>
+                {!!item.badge && item.badge > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                )}
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>

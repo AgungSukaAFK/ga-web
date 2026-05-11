@@ -320,7 +320,6 @@ export default function RequestNewItemPage() {
               Rincian usulan item baru ke master data.
             </DialogDescription>
           </DialogHeader>
-
           {selectedRequest && (
             <div className="space-y-4 py-2 overflow-y-auto pr-2">
               <div className="grid grid-cols-2 gap-4 text-sm bg-muted/30 p-4 rounded-lg border">
@@ -328,6 +327,7 @@ export default function RequestNewItemPage() {
                   <span className="text-muted-foreground block text-xs font-medium">
                     Nama Barang
                   </span>
+
                   {/* FIX 3: break-words agar teks tidak melebar ke samping */}
                   <span className="font-semibold break-words">
                     {selectedRequest.proposed_name}
