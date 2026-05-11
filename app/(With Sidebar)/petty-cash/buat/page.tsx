@@ -114,13 +114,13 @@ export default function CreatePettyCashPage() {
       const filePath = `petty-cash/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("mr-attachments")
+        .from("mr")
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage
-        .from("mr-attachments")
+        .from("mr")
         .getPublicUrl(filePath);
 
       setFormData((prev) => ({

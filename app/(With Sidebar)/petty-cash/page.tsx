@@ -35,6 +35,7 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 
 const formatRupiah = (angka: number) => {
@@ -134,16 +135,17 @@ export default function MyPettyCashPage() {
                 {/* Lebar kolom dibuat statis (absolut) agar saling mengunci */}
                 <TableHead className="w-[110px]">Tanggal</TableHead>
                 <TableHead className="w-[170px]">Kode PC</TableHead>
-                <TableHead className="w-[160px]">Tipe</TableHead>
-                <TableHead className="w-[240px]">Tujuan / Keterangan</TableHead>
+                <TableHead className="w-[150px]">Tipe</TableHead>
+                <TableHead className="w-[220px]">Tujuan / Keterangan</TableHead>
                 <TableHead className="w-[130px] text-right">Nominal</TableHead>
-                <TableHead className="w-[140px] text-center">Status</TableHead>
+                <TableHead className="w-[140px]">Status</TableHead>
+                <TableHead className="w-[70px] text-center">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-32">
+                  <TableCell colSpan={7} className="text-center h-32">
                     <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                     <span className="text-sm text-muted-foreground mt-2 block">
                       Memuat data...
@@ -153,7 +155,7 @@ export default function MyPettyCashPage() {
               ) : requests.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center h-32 text-muted-foreground flex-col items-center justify-center"
                   >
                     <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
@@ -174,10 +176,16 @@ export default function MyPettyCashPage() {
                       {formatDate(pc.created_at)}
                     </TableCell>
                     <TableCell
-                      className="font-semibold text-sm text-primary truncate"
+                      className="font-semibold text-sm truncate"
                       title={pc.kode_pc}
                     >
-                      {pc.kode_pc}
+                      <Link
+                        href={`/petty-cash/${pc.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-primary hover:underline"
+                      >
+                        {pc.kode_pc}
+                      </Link>
                     </TableCell>
                     <TableCell className="truncate text-sm" title={pc.type}>
                       {pc.type}
@@ -202,21 +210,19 @@ export default function MyPettyCashPage() {
                     <TableCell className="text-right font-semibold text-sm">
                       {formatRupiah(pc.amount)}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-between gap-1">
-                        {getStatusBadge(pc.status)}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetails(pc);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
+                    <TableCell>{getStatusBadge(pc.status)}</TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetails(pc);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
