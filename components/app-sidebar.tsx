@@ -1,4 +1,4 @@
-// components/app-sidebar.tsx
+// src/components/app-sidebar.tsx
 
 "use client";
 
@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
-// Tambahkan import Bell
 import {
   GalleryVerticalEnd,
   Bot,
@@ -32,13 +31,15 @@ import {
   Briefcase,
   PackagePlus,
   ArchiveRestore,
-  Bell, // <-- Import Icon Bell
+  Bell,
+  Wallet,
+  PlusCircle,
+  FileSignature,
+  Users,
 } from "lucide-react";
 import Image from "next/image";
 
-// ... (data constant tetap sama) ...
 const data = {
-  // ... data navMain, teams, dll tetap sama
   teams: [
     {
       name: "Lourdes Autoparts",
@@ -120,7 +121,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const [user, setUser] = React.useState<any>(null);
   const [profile, setProfile] = React.useState<any>(null);
-  // State untuk jumlah notifikasi
   const [unreadCount, setUnreadCount] = React.useState(0);
 
   React.useEffect(() => {
@@ -138,7 +138,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           .single();
         if (profileRes.data) setProfile(profileRes.data);
 
-        // --- FETCH NOTIFIKASI AWAL ---
+        // Fetch Notifikasi Awal
         const { count } = await supabase
           .from("notifications")
           .select("*", { count: "exact", head: true })
@@ -146,7 +146,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           .eq("is_read", false);
         setUnreadCount(count || 0);
 
-        // --- REALTIME LISTENER ---
+        // Realtime Listener
         const channel = supabase
           .channel("sidebar-notif-count")
           .on(
@@ -158,7 +158,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               filter: `user_id=eq.${data.user.id}`,
             },
             () => {
-              // Jika ada notif baru masuk, tambah counter
               setUnreadCount((prev) => prev + 1);
             },
           )
@@ -172,32 +171,42 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     getUser();
   }, [supabase]);
 
+  // LOGIKA BARU ANTI-DOUBLE ACTIVE (Longest Match Routing)
   const markActive = React.useCallback(
-    (items: any[]) =>
-      items.map((item) => ({
-        ...item,
-        isActive:
+    (items: any[]): any[] => {
+      // 1. Cari path di grup ini yang paling spesifik / paling panjang cocok dengan currentPath
+      let bestMatchUrl = "";
+      items.forEach((item) => {
+        if (
           currentPath === item.url ||
-          (item.url !== "/dashboard" && currentPath.startsWith(item.url)),
-      })),
+          currentPath.startsWith(item.url + "/")
+        ) {
+          if (item.url.length > bestMatchUrl.length) {
+            bestMatchUrl = item.url;
+          }
+        }
+      });
+
+      // 2. Beri status isActive HANYA pada yang memenangkan bestMatch
+      return items.map((item) => ({
+        ...item,
+        isActive: item.url === bestMatchUrl && bestMatchUrl !== "",
+        // Jika punya submenu (nested), berlakukan filter yang sama
+        items: item.items ? markActive(item.items) : undefined,
+      }));
+    },
     [currentPath],
   );
 
   const mainNavItems = React.useMemo(() => {
     const baseNav = [...data.navMain];
 
-    // --- SISIPKAN MENU NOTIFIKASI ---
-    // Kita taruh di urutan kedua (setelah Dashboard) atau paling atas
     baseNav.splice(1, 0, {
       title: `Notifikasi ${unreadCount > 0 ? `(${unreadCount})` : ""}`,
       url: "/notifications",
       icon: Bell,
-      // Tambahkan highlight visual jika ada notif (opsional, tergantung komponen NavMain support badge atau tidak)
     });
 
-    // ... (Logika role existing tetap sama) ...
-
-    // 1. Fitur Request Barang Baru (Requester)
     const barangIndex = baseNav.findIndex((item) => item.title === "Barang");
     if (barangIndex !== -1) {
       baseNav.splice(barangIndex + 1, 0, {
@@ -207,7 +216,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       });
     }
 
-    // 2. Fitur Incoming Requests (Purchasing/Admin)
     if (profile?.department === "Purchasing" || profile?.role === "admin") {
       const reqIndex = baseNav.findIndex(
         (item) => item.title === "Request Barang Baru",
@@ -219,7 +227,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       });
     }
 
-    // 3. Fitur Approval (Approver)
     if (profile?.role === "approver") {
       baseNav.splice(1, 0, {
         title: "Approval & Validation",
@@ -228,7 +235,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       });
     }
 
-    // 4. Fitur Cost Center (GA / GM)
     if (
       profile?.department === "General Manager" ||
       profile?.department === "General Affair"
@@ -240,21 +246,44 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       });
     }
 
-    // 5. Fitur MR Management (Purchasing & GA) dijadikan admin only
-    // if (
-    //   profile?.role !== "admin" &&
-    //   (profile?.department === "Purchasing" ||
-    //     profile?.department === "General Affair")
-    // ) {
-    //   baseNav.push({
-    //     title: "MR Management",
-    //     url: "/mr-management",
-    //     icon: FileSearch2,
-    //   });
-    // }
-
     return markActive(baseNav);
-  }, [profile, markActive, unreadCount]); // Tambahkan unreadCount ke dependency
+  }, [profile, markActive, unreadCount]);
+
+  // MENU PETTY CASH
+  const pettyCashItems = React.useMemo(() => {
+    const pcNav = [
+      {
+        title: "Pengajuan Saya",
+        url: "/petty-cash",
+        icon: Wallet,
+      },
+      {
+        title: "Buat Pengajuan",
+        url: "/petty-cash/buat",
+        icon: PlusCircle,
+      },
+    ];
+
+    if (
+      profile?.role === "approver" ||
+      profile?.role === "admin" ||
+      profile?.department === "Finance" ||
+      profile?.department === "General Affair"
+    ) {
+      pcNav.push({
+        title: "Manajemen PC",
+        url: "/petty-cash/management",
+        icon: FileSignature,
+      });
+      pcNav.push({
+        title: "Template Approval PC",
+        url: "/petty-cash/templates",
+        icon: Users,
+      });
+    }
+
+    return markActive(pcNav);
+  }, [profile, markActive]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -277,6 +306,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         )}
 
         <NavMain items={mainNavItems} />
+
+        {/* MUNCULKAN KEMBALI MENU PETTY CASH */}
+        <NavMain label="Petty Cash" items={pettyCashItems} />
 
         <NavMain label="About" items={markActive(data.navSecondary)} />
       </SidebarContent>
