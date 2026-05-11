@@ -174,45 +174,78 @@
   }
 }
 
-/* ... (Sisa styling print & tiptap Anda) ... */
-
 /* ================================================================== */
-/* Print Styles (Metode yang Benar & Fleksibel) */
+/* Print Styles                                                       */
 /* ================================================================== */
 .print-only {
   display: none;
 }
 
 @media print {
-  /* Sembunyikan semua elemen yang memiliki kelas .no-print */
   .no-print {
     display: none !important;
   }
 
-  /* Tampilkan elemen yang memiliki kelas .print-only */
   .print-only {
     display: block !important;
   }
 
-  /* Atur layout halaman A4 untuk area cetak spesifik PO */
-  #printable-po-a4 {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 15mm;
-    font-size: 10pt;
-    color: black;
+  /* Paksa sidebar wrapper kembali ke block agar flex-nya tidak ikut cetak.
+     Ini fix utama untuk Safari yang tidak menghormati position:absolute
+     ketika parent masih display:flex. */
+  [data-slot="sidebar-wrapper"] {
+    display: block !important;
   }
 
-  /* Atur ukuran kertas ke A4 secara global untuk semua cetakan */
+  /* Sembunyikan sidebar dan gap-nya */
+  [data-slot="sidebar"],
+  [data-slot="sidebar-gap"] {
+    display: none !important;
+  }
+
+  /* Reset SidebarInset agar full-width tanpa margin kiri dari sidebar */
+  [data-slot="sidebar-inset"] {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Area cetak mengalir normal setelah layout sidebar direset */
+  #printable-po-a4 {
+    position: static !important;
+    width: 100% !important;
+    padding: 15mm;
+    font-size: 10pt;
+    color: black !important;
+    background-color: white !important;
+  }
+
+  #printable-po-a4 table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  #printable-po-a4 th,
+  #printable-po-a4 td {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  tr, td, th {
+    page-break-inside: avoid !important;
+  }
+
   @page {
     size: A4;
     margin: 0;
   }
 }
 
-/* Styling for TipTap Editor */
+/* ================================================================== */
+/* TipTap Editor                                                       */
+/* ================================================================== */
 .ProseMirror {
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius);
@@ -234,63 +267,3 @@
   pointer-events: none;
   height: 0;
 }
-
-/* ... (style Anda yang lain) ... */
-
-/* ================================================================== */
-/* Print Styles */
-/* ================================================================== */
-.print-only {
-  display: none;
-}
-
-@media print {
-  /* Sembunyikan semua elemen yang memiliki kelas .no-print */
-  .no-print {
-    display: none !important;
-  }
-
-  /* Tampilkan elemen yang memiliki kelas .print-only */
-  .print-only {
-    display: block !important;
-  }
-
-  /* Atur layout halaman A4 untuk area cetak spesifik PO */
-  #printable-po-a4 {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 15mm; /* Padding untuk margin cetak */
-    font-size: 10pt;
-    color: black;
-    background-color: white;
-  }
-
-  /* REVISI: Fix untuk tabel di PO cetak agar text wrap */
-  #printable-po-a4 table {
-    table-layout: fixed;
-    width: 100%;
-  }
-  #printable-po-a4 th,
-  #printable-po-a4 td {
-    word-wrap: break-word; /* Memaksa text turun ke bawah */
-    overflow-wrap: break-word;
-  }
-  /* --- AKHIR REVISI CETAK --- */
-
-  /* Atur ukuran kertas ke A4 secara global */
-  @page {
-    size: A4;
-    margin: 0;
-  }
-
-  /* Hindari page break di dalam tabel jika memungkinkan */
-  tr,
-  td,
-  th {
-    page-break-inside: avoid !important;
-  }
-}
-
-/* ... (sisa style Anda) ... */
