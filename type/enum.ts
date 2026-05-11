@@ -118,3 +118,34 @@ export const MR_ITEM_STATUS_COLORS: Record<string, string> = {
   Cancelled: "bg-red-50 text-red-700 border-red-200",
   Replaced: "bg-yellow-50 text-yellow-700 border-yellow-200",
 };
+
+// ==========================================
+// ENUM & KOSNTANTA PETTY CASH
+// ==========================================
+
+export const PETTY_CASH_TYPE_OPTIONS = [
+  "Reimbursement",
+  "Cash Advance",
+  "Pembayaran Langsung",
+  "Transport & Perjalanan",
+  "Entertain & Konsumsi",
+  "Lainnya",
+] as const;
+
+export const PETTY_CASH_STATUS_OPTIONS = [
+  "Pending Validation",
+  "In Approval",
+  "Cash Distributed",
+  "Pending Settlement",
+  "Settled",
+  "Rejected",
+] as const;
+
+export const PETTY_CASH_STATUS_COLORS: Record<string, string> = {
+  "Pending Validation": "bg-slate-100 text-slate-700 border-slate-300",
+  "In Approval": "bg-yellow-50 text-yellow-700 border-yellow-200",
+  "Cash Distributed": "bg-blue-50 text-blue-700 border-blue-200",
+  "Pending Settlement": "bg-purple-50 text-purple-700 border-purple-200",
+  Settled: "bg-green-50 text-green-700 border-green-200",
+  Rejected: "bg-red-50 text-red-700 border-red-200",
+};
