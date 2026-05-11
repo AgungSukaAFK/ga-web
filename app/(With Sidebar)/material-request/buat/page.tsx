@@ -23,6 +23,7 @@ import {
   Trash2,
   Edit as EditIcon,
   Calendar as CalendarIcon,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -111,6 +112,9 @@ export default function BuatMRPage() {
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
+  const [isLourdes, setIsLourdes] = useState(false);
+  const [userProfile, setUserProfile] = useState<{ department: string; lokasi: string; company: string } | null>(null);
+
   // --- LOGIC REVISI: Hitung Prioritas untuk Preview ---
   const priorityPreview = formCreateMR.due_date
     ? calculatePriority(formCreateMR.due_date)
@@ -136,37 +140,48 @@ export default function BuatMRPage() {
     const fetchUserData = async () => {
       try {
         const profile = await getActiveUserProfile();
-        if (
-          profile &&
-          profile.department &&
-          profile.lokasi &&
-          profile.company
-        ) {
-          const newKodeMR = await generateMRCode(
-            profile.department,
-            profile.lokasi,
-            profile.company,
-          );
+        if (profile && profile.department && profile.lokasi && profile.company) {
+          setUserProfile({ department: profile.department, lokasi: profile.lokasi, company: profile.company });
           setUserLokasi(profile.lokasi);
 
-          setFormCreateMR((prev) => ({
-            ...prev,
-            department: profile.department || "",
-            company_code: profile.company || "",
-            tujuan_site: profile.lokasi || "",
-            kode_mr: newKodeMR,
-          }));
+          if (profile.company === "LOURDES") {
+            setIsLourdes(true);
+            setFormCreateMR((prev) => ({
+              ...prev,
+              department: profile.department || "",
+              tujuan_site: profile.lokasi || "",
+              kode_mr: "Pilih perusahaan tujuan dulu...",
+            }));
+          } else {
+            const newKodeMR = await generateMRCode(profile.department, profile.lokasi, profile.company);
+            setFormCreateMR((prev) => ({
+              ...prev,
+              department: profile.department || "",
+              company_code: profile.company || "",
+              tujuan_site: profile.lokasi || "",
+              kode_mr: newKodeMR,
+            }));
+          }
         } else {
           toast.warning("Profil belum lengkap.");
         }
       } catch (error: any) {
-        toast.error("Gagal mengambil profil user", {
-          description: error.message,
-        });
+        toast.error("Gagal mengambil profil user", { description: error.message });
       }
     };
     fetchUserData();
   }, []);
+
+  const handleTargetCompanyChange = async (company: string) => {
+    if (!userProfile) return;
+    setFormCreateMR((prev) => ({ ...prev, company_code: company, kode_mr: "Memuat..." }));
+    try {
+      const newKodeMR = await generateMRCode(userProfile.department, userProfile.lokasi, company);
+      setFormCreateMR((prev) => ({ ...prev, kode_mr: newKodeMR }));
+    } catch (error: any) {
+      toast.error("Gagal generate kode MR", { description: error.message });
+    }
+  };
 
   useEffect(() => {
     const total = formCreateMR.orders.reduce((acc, item) => {
@@ -350,6 +365,11 @@ export default function BuatMRPage() {
   const handleAjukanMR = async () => {
     setAjukanAlert("");
 
+    if (isLourdes && !formCreateMR.company_code) {
+      setAjukanAlert("Pilih perusahaan tujuan MR (GMI atau GIS) terlebih dahulu.");
+      return;
+    }
+
     if (
       !formCreateMR.kategori ||
       !formCreateMR.remarks ||
@@ -437,6 +457,37 @@ export default function BuatMRPage() {
         description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
         <div className="grid grid-cols-12 gap-4">
+          {isLourdes && (
+            <div className="col-span-12 flex flex-col gap-2">
+              <Label className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                Buat MR untuk Perusahaan <span className="text-red-500">*</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                {(["GMI", "GIS"] as const).map((company) => (
+                  <button
+                    key={company}
+                    type="button"
+                    onClick={() => handleTargetCompanyChange(company)}
+                    className={cn(
+                      "py-4 rounded-lg border-2 font-bold text-lg transition-all",
+                      formCreateMR.company_code === company
+                        ? "border-primary bg-primary/10 text-primary shadow-sm"
+                        : "border-border hover:border-primary/40 text-muted-foreground",
+                    )}
+                  >
+                    {company}
+                  </button>
+                ))}
+              </div>
+              {formCreateMR.company_code && (
+                <p className="text-xs text-muted-foreground">
+                  MR ini akan dicatat sebagai dokumen <strong>{formCreateMR.company_code}</strong>.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Kode MR</Label>
             <Input readOnly disabled value={formCreateMR.kode_mr} />
