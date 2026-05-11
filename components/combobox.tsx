@@ -61,7 +61,7 @@ export function Combobox({
         <Command>
           <CommandInput
             id={id || ""}
-            disabled
+            disabled={disabled}
             placeholder={placeholder || "Cari data..."}
             className="w-full h-9"
           />
@@ -82,7 +82,7 @@ export function Combobox({
                   <Check
                     className={cn(
                       "ml-auto",
-                      value === item.value ? "opacity-100" : "opacity-0"
+                      value === item.value ? "opacity-100" : "opacity-0",
                     )}
                   />
                 </CommandItem>
