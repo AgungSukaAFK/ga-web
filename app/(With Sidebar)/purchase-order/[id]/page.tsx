@@ -108,10 +108,11 @@ const COMPANY_DETAILS = {
   },
   GIS: {
     name: "PT. Global Inti Sejati",
-    logo: "/lourdes-logo.webp",
-    address: "Jl. Alamat GIS No. 456, Bekasi, Indonesia",
-    phone: "(021) 765-4321",
-    email: "info@gis.co.id",
+    logo: "/gis-logo.webp",
+    address:
+      "Jl. Wibawa Mukti II No.88, RT.003/RW.001, Jatiluhur, Kec. Jatiasih, Kota Bks, Jawa Barat 17425",
+    phone: "(021) 82-741-900 ",
+    email: "info@globalinti.com",
   },
   LOURDES: {
     name: "Lourdes Auto Parts",
@@ -589,9 +590,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const [printCompany, setPrintCompany] = useState<"GMI" | "GIS" | null>(null);
+
+  const handlePrint = (company: "GMI" | "GIS") => {
+    setPrintCompany(company);
   };
+
+  useEffect(() => {
+    if (!printCompany) return;
+    window.print();
+    const reset = () => setPrintCompany(null);
+    window.addEventListener("afterprint", reset, { once: true });
+    return () => window.removeEventListener("afterprint", reset);
+  }, [printCompany]);
 
   if (loading) return <DetailPOSkeleton />;
 
@@ -649,8 +660,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <p className="text-muted-foreground">Detail Purchase Order</p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrint}>
-                  <Printer className="mr-2 h-4 w-4" /> Cetak PO
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePrint("GMI")}
+                >
+                  <Printer className="mr-2 h-4 w-4" /> Cetak GMI
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePrint("GIS")}
+                >
+                  <Printer className="mr-2 h-4 w-4" /> Cetak GIS
                 </Button>
                 {showGAReceiveButton && (
                   <Button
@@ -1374,7 +1396,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         <div className="print-only">
           <PrintablePO
             po={po}
-            companyInfo={companyInfo}
+            companyInfo={
+              printCompany ? COMPANY_DETAILS[printCompany] : companyInfo
+            }
             qrUrl={qrUrl}
             vendorData={vendorData}
           />
