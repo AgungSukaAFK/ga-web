@@ -37,6 +37,7 @@ import {
   FileSignature,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 
 const formatRupiah = (angka: number) => {
@@ -226,10 +227,15 @@ export default function PettyCashManagementPage() {
                       {formatDate(pc.created_at)}
                     </TableCell>
                     <TableCell
-                      className="font-semibold text-sm text-primary truncate"
+                      className="font-semibold text-sm truncate"
                       title={pc.kode_pc}
                     >
-                      {pc.kode_pc}
+                      <Link
+                        href={`/petty-cash/${pc.id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {pc.kode_pc}
+                      </Link>
                     </TableCell>
                     <TableCell
                       className="truncate text-sm font-medium"
