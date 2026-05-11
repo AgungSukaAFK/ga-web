@@ -19,8 +19,7 @@ export async function getUserNotifications() {
       `
       *,
       actor:profiles!actor_id (
-        name,
-        avatar_url
+        nama
       )
     `
     )
@@ -33,11 +32,9 @@ export async function getUserNotifications() {
     return [];
   }
 
-  // Formatting data agar sesuai interface Notification
   return data.map((item: any) => ({
     ...item,
-    actor_name: item.actor?.name || "System",
-    actor_avatar: item.actor?.avatar_url || null,
+    actor_name: item.actor?.nama || "System",
   })) as Notification[];
 }
 
