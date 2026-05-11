@@ -161,6 +161,23 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               setUnreadCount((prev) => prev + 1);
             },
           )
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${data.user.id}`,
+            },
+            async () => {
+              const { count } = await supabase
+                .from("notifications")
+                .select("*", { count: "exact", head: true })
+                .eq("user_id", data.user.id)
+                .eq("is_read", false);
+              setUnreadCount(count || 0);
+            },
+          )
           .subscribe();
 
         return () => {
@@ -199,12 +216,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   );
 
   const mainNavItems = React.useMemo(() => {
-    const baseNav = [...data.navMain];
+    const baseNav: { title: string; url: string; icon: any; badge?: number }[] = [...data.navMain];
 
     baseNav.splice(1, 0, {
-      title: `Notifikasi ${unreadCount > 0 ? `(${unreadCount})` : ""}`,
+      title: "Notifikasi",
       url: "/notifications",
       icon: Bell,
+      badge: unreadCount,
     });
 
     const barangIndex = baseNav.findIndex((item) => item.title === "Barang");
