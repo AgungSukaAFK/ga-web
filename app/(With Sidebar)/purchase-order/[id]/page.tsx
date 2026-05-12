@@ -98,6 +98,13 @@ import {
   MR_ITEM_STATUS_LABELS,
 } from "@/type/enum";
 
+const PPH_LABELS: Record<string, string> = {
+  pph21_npwp: "PPH 21 — Dengan NPWP",
+  pph21_non_npwp: "PPH 21 — Tanpa NPWP",
+  pph23_npwp: "PPH 23 — Dengan NPWP",
+  pph23_non_npwp: "PPH 23 — Tanpa NPWP",
+};
+
 const COMPANY_DETAILS = {
   GMI: {
     name: "PT. Garuda Mart Indonesia",
@@ -643,6 +650,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     (acc, item) => acc + item.price * item.qty,
     0,
   );
+  const dpp = subtotal - (po.discount || 0);
+  const inferredPpnRate =
+    dpp > 0 && po.tax > 0 ? Math.round((po.tax / dpp) * 100) : null;
 
   const companyKey = (po.company_code ||
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
@@ -1210,44 +1220,176 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </div>
 
         <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Rincian Biaya PO: {po.kode_po}</DialogTitle>
+              <DialogTitle>Rincian Biaya &amp; Pembayaran</DialogTitle>
+              <DialogDescription>{po.kode_po}</DialogDescription>
             </DialogHeader>
-            <div className="space-y-3 py-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatCurrency(subtotal)}</span>
+            <div className="space-y-4 py-2">
+
+              {/* Info strip */}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-md bg-muted px-3 py-2 text-xs">
+                <span>
+                  Mata Uang:{" "}
+                  <strong className="text-foreground">
+                    {po.currency || "IDR"}
+                  </strong>
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span>
+                  Payment Term:{" "}
+                  <strong className="text-foreground">
+                    {po.payment_term || "N/A"}
+                  </strong>
+                </span>
               </div>
-              {po.discount > 0 && (
-                <div className="flex justify-between items-center text-sm text-red-600">
-                  <span>Diskon</span>
-                  <span>- {formatCurrency(po.discount)}</span>
+
+              {/* Komponen Harga */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Komponen Harga
+                </p>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Subtotal ({po.items.length} item)
+                  </span>
+                  <span className="font-medium">{formatCurrency(subtotal)}</span>
                 </div>
-              )}
-              {(po.pph_amount || 0) > 0 && (
-                <div className="flex justify-between items-center text-sm text-red-600">
-                  <span>PPH ({po.pph_rate || 0}%)</span>
-                  <span>- {formatCurrency(po.pph_amount || 0)}</span>
+                {po.discount > 0 && (
+                  <div className="flex justify-between text-sm text-red-600">
+                    <span>Diskon</span>
+                    <span>- {formatCurrency(po.discount)}</span>
+                  </div>
+                )}
+                {po.discount > 0 && (
+                  <>
+                    <hr className="border-dashed" />
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span>DPP (Dasar Pengenaan Pajak)</span>
+                      <span>{formatCurrency(dpp)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Pajak */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Pajak
+                </p>
+
+                {/* PPN */}
+                <div className="flex justify-between items-start text-sm gap-2">
+                  {po.tax > 0 ? (
+                    <>
+                      <div>
+                        <span className="font-medium text-blue-600">
+                          PPN{inferredPpnRate ? ` ${inferredPpnRate}%` : ""}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          Di luar harga item (eksklusif)
+                        </p>
+                      </div>
+                      <span className="font-medium text-blue-600 whitespace-nowrap">
+                        + {formatCurrency(po.tax)}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <span className="text-muted-foreground">PPN</span>
+                        <p className="text-xs text-muted-foreground">
+                          Tidak ada / sudah termasuk dalam harga item
+                        </p>
+                      </div>
+                      <span className="text-muted-foreground text-xs">—</span>
+                    </>
+                  )}
                 </div>
-              )}
-              <div className="flex justify-between items-center text-sm text-blue-600">
-                <span>Pajak (PPN)</span>
-                <span>+ {formatCurrency(po.tax)}</span>
+
+                {/* PPH */}
+                {po.pph_type ? (
+                  <div className="rounded-md bg-orange-50 border border-orange-200 p-3 space-y-1">
+                    <div className="flex justify-between items-center text-sm gap-2">
+                      <div>
+                        <span className="font-semibold text-orange-900">
+                          {PPH_LABELS[po.pph_type] || po.pph_type}
+                        </span>
+                        <span className="ml-1.5 text-xs text-orange-700">
+                          ({po.pph_rate}%)
+                        </span>
+                      </div>
+                      <span className="font-semibold text-orange-900 whitespace-nowrap">
+                        - {formatCurrency(po.pph_amount || 0)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-orange-700 leading-relaxed">
+                      Dipotong dari pembayaran vendor &amp; disetor ke KPP oleh
+                      perusahaan.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">PPH</span>
+                    <span className="text-muted-foreground text-xs">
+                      Tidak ada
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between items-center text-sm text-blue-600">
-                <span>Ongkos Kirim</span>
-                <span>+ {formatCurrency(po.postage)}</span>
+
+              {/* Ongkos Kirim */}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Ongkos Kirim</span>
+                {po.postage > 0 ? (
+                  <span className="font-medium text-blue-600">
+                    + {formatCurrency(po.postage)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-xs">—</span>
+                )}
               </div>
-              <hr className="my-2" />
+
+              <hr />
+
+              {/* Grand Total */}
               <div className="flex justify-between items-center text-lg font-bold">
                 <span>Grand Total</span>
                 <span>{formatCurrency(po.total_price)}</span>
               </div>
+
+              {/* Ringkasan pembayaran jika ada PPH */}
               {(po.pph_amount || 0) > 0 && (
-                <p className="text-xs text-right text-muted-foreground italic">
-                  *Net Payable
-                </p>
+                <div className="rounded-md bg-muted p-3 space-y-2 text-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Ringkasan Pembayaran
+                  </p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Dibayarkan ke Vendor
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(po.total_price)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      PPH disetor ke KPP
+                    </span>
+                    <span className="font-medium text-orange-700">
+                      + {formatCurrency(po.pph_amount || 0)}
+                    </span>
+                  </div>
+                  <hr className="border-dashed" />
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Pengeluaran Perusahaan</span>
+                    <span>
+                      {formatCurrency(
+                        po.total_price + (po.pph_amount || 0),
+                      )}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
           </DialogContent>
