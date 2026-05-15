@@ -487,6 +487,106 @@ export const fetchMaterialRequests = async (
   return { data: normalizedData, count };
 };
 
+export const convertMrCompany = async (
+  mrId: number,
+  targetCompany: string,
+  adminUserId: string,
+  adminName: string,
+): Promise<{ newKodeMr: string }> => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("id, kode_mr, company_code, discussions, created_at")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) throw new Error("MR tidak ditemukan.");
+  if (mr.company_code === targetCompany)
+    throw new Error("Company tujuan sama dengan company saat ini.");
+
+  const oldKodeMr = mr.kode_mr;
+  const oldCompany = mr.company_code;
+  const baseDiscussions = Array.isArray(mr.discussions) ? mr.discussions : [];
+
+  // Format kode_mr: {COMPANY}/MR/{MONTH_ROMAN}/{YEAR_YY}/{IDENTIFIER}/{SEQ}
+  const oldParts = oldKodeMr.split("/");
+  const monthRoman = oldParts[2];
+  const yearYY = oldParts[3];
+  const identifier = oldParts[4];
+  const fullYear = 2000 + parseInt(yearYY, 10);
+
+  const getLatestSeq = async (): Promise<number> => {
+    const { data, error } = await supabase
+      .from("material_requests")
+      .select("kode_mr")
+      .eq("company_code", targetCompany)
+      .gte("created_at", `${fullYear}-01-01T00:00:00Z`)
+      .lt("created_at", `${fullYear + 1}-01-01T00:00:00Z`);
+
+    if (error) throw new Error("Gagal mengambil nomor urut: " + error.message);
+    if (!data || data.length === 0) return 1;
+
+    // Scan semua kode untuk cari MAX seq — order by id tidak cukup karena
+    // MR hasil konversi punya id lama tapi seq tinggi
+    let maxSeq = 0;
+    for (const { kode_mr } of data) {
+      const seq = parseInt(kode_mr.split("/").pop() ?? "0", 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    }
+    return maxSeq + 1;
+  };
+
+  let currentKodeMr = `${targetCompany}/MR/${monthRoman}/${yearYY}/${identifier}/${await getLatestSeq()}`;
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  while (attempts < maxAttempts) {
+    const { error: updateError } = await supabase
+      .from("material_requests")
+      .update({
+        company_code: targetCompany,
+        kode_mr: currentKodeMr,
+        discussions: [
+          ...baseDiscussions,
+          {
+            user_id: adminUserId,
+            user_name: `[SISTEM] ${adminName}`,
+            message: `MR dikonversi dari company **${oldCompany}** ke **${targetCompany}**.\nKode MR lama: ${oldKodeMr} → Kode MR baru: ${currentKodeMr}`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      })
+      .eq("id", mrId);
+
+    if (!updateError) break;
+
+    if (updateError.code === "23505" && updateError.message.includes("kode_mr")) {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        throw new Error("Sistem sedang sibuk dan terjadi bentrok nomor MR. Silakan coba lagi.");
+      }
+      const nextSeq = await getLatestSeq();
+      currentKodeMr = `${targetCompany}/MR/${monthRoman}/${yearYY}/${identifier}/${nextSeq}`;
+      continue;
+    }
+
+    throw new Error("Gagal mengupdate MR: " + updateError.message);
+  }
+
+  // Update company_code semua PO yang terhubung ke MR ini
+  const { error: poError } = await supabase
+    .from("purchase_orders")
+    .update({ company_code: targetCompany })
+    .eq("mr_id", mrId);
+
+  if (poError) {
+    console.warn("Gagal update company_code PO terkait:", poError.message);
+  }
+
+  return { newKodeMr: currentKodeMr };
+};
+
 export const calculatePriority = (
   dueDate: Date | string | undefined | null,
 ): string => {
