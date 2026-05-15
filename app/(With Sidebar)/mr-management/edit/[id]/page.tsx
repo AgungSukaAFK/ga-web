@@ -31,6 +31,7 @@ import {
   Clock,
   History,
   LinkIcon,
+  ArrowLeftRight,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,7 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fetchActiveCostCenters } from "@/services/mrService";
+import { fetchActiveCostCenters, convertMrCompany } from "@/services/mrService";
 import { format } from "date-fns";
 import { DATA_LEVEL, STATUS_OPTIONS } from "@/type/enum";
 import {
@@ -161,6 +162,9 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
 
   const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isConvertDialogOpen, setIsConvertDialogOpen] = useState(false);
+  const [targetCompany, setTargetCompany] = useState("");
+  const [isConverting, setIsConverting] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]); // State Log
@@ -333,6 +337,36 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       toast.success("Perubahan berhasil disimpan!", { id: toastId });
       setIsEditing(false);
       await fetchMrData(); // Reload data + logs
+    }
+  };
+
+  const handleConvertCompany = async () => {
+    if (!mr || !currentUser || !targetCompany) return;
+    setIsConverting(true);
+    const toastId = toast.loading("Mengkonversi company MR...");
+    try {
+      const { newKodeMr } = await convertMrCompany(
+        Number(mr.id),
+        targetCompany,
+        currentUser.id,
+        userProfile?.nama || "Admin",
+      );
+      await logActivity(
+        currentUser.id,
+        "CONVERT_MR_COMPANY",
+        "material_request",
+        String(mr.id),
+        `Admin ${userProfile?.nama || "Unknown"} mengkonversi company MR dari ${mr.company_code} ke ${targetCompany}. Kode MR baru: ${newKodeMr}`,
+        { old_company: mr.company_code, new_company: targetCompany, new_kode_mr: newKodeMr },
+      );
+      toast.success(`MR berhasil dikonversi ke ${targetCompany}. Kode baru: ${newKodeMr}`, { id: toastId });
+      setIsConvertDialogOpen(false);
+      setTargetCompany("");
+      await fetchMrData();
+    } catch (err: any) {
+      toast.error("Gagal mengkonversi company", { id: toastId, description: err.message });
+    } finally {
+      setIsConverting(false);
     }
   };
 
@@ -589,6 +623,15 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               onClick={() => setIsEditing(!isEditing)}
             >
               {isEditing ? "Batal Edit" : "Mode Edit"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsConvertDialogOpen(true)}
+              disabled={actionLoading}
+            >
+              <ArrowLeftRight className="mr-2 h-4 w-4" />
+              Konversi Company
             </Button>
 
             {/* Direct Status Changer */}
@@ -1217,6 +1260,78 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           <DialogFooter>
             <Button onClick={handleSaveOrUpdateItem}>
               {editingItemIndex !== null ? "Simpan Perubahan" : "Tambah"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Konversi Company */}
+      <Dialog
+        open={isConvertDialogOpen}
+        onOpenChange={(open) => {
+          setIsConvertDialogOpen(open);
+          if (!open) setTargetCompany("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konversi Company MR</DialogTitle>
+            <DialogDescription>
+              Pindahkan MR ini ke company lain. Kode MR akan diregenerasi otomatis dengan nomor urut terbaru company tujuan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-3 gap-x-2 items-center">
+              <dt className="text-sm text-muted-foreground">Company Saat Ini</dt>
+              <dd className="text-sm font-semibold col-span-2">{mr?.company_code}</dd>
+            </div>
+            <div className="grid grid-cols-3 gap-x-2 items-center">
+              <dt className="text-sm text-muted-foreground">Kode MR Saat Ini</dt>
+              <dd className="text-xs font-semibold col-span-2 font-mono">{mr?.kode_mr}</dd>
+            </div>
+            <div className="space-y-2">
+              <Label>Konversi ke Company</Label>
+              <Select value={targetCompany} onValueChange={setTargetCompany}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih company tujuan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {["GMI", "GIS", "LOURDES"]
+                    .filter((c) => c !== mr?.company_code)
+                    .map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Yang akan berubah:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Company code MR → <strong>{targetCompany || "..."}</strong></li>
+                <li>Kode MR diregenerasi dengan nomor urut terbaru</li>
+                <li>Catatan otomatis ditambahkan ke diskusi MR</li>
+                <li>Company code semua PO terkait ikut diperbarui</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setIsConvertDialogOpen(false); setTargetCompany(""); }}
+              disabled={isConverting}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleConvertCompany}
+              disabled={!targetCompany || isConverting}
+            >
+              {isConverting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+              )}
+              Konversi
             </Button>
           </DialogFooter>
         </DialogContent>

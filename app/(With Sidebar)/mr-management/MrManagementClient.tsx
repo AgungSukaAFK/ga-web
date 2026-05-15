@@ -1112,6 +1112,13 @@ export default function MrManagementClient() {
               Tutup
             </Button>
             {selectedMr && (
+              <Button variant="outline" asChild>
+                <Link href={`/mr-management/edit/${selectedMr.id}`}>
+                  <Edit className="mr-2 h-4 w-4" /> Edit MR
+                </Link>
+              </Button>
+            )}
+            {selectedMr && (
               <Button asChild>
                 <Link href={`/material-request/${selectedMr.id}`}>
                   <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
