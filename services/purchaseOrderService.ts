@@ -269,6 +269,7 @@ export const generatePoCode = async (
     "Site Tabang": "TBG",
     "GIS BPN": "GISBPN",
     "Site Manado": "MND",
+    "Site DIZA": "DIZ",
     "Head Office": "HO",
   };
 

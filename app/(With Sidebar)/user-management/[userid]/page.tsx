@@ -49,6 +49,7 @@ const dataLokasi: ComboboxData = [
   { label: "Site Tabang", value: "Site Tabang" },
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
+  { label: "Site DIZA", value: "Site DIZA" },
 ];
 
 const dataRole: ComboboxData = [
