@@ -52,6 +52,7 @@ const dataLokasi: string[] = [
   "Site Tabang",
   "GIS BPN",
   "Site Manado",
+  "Site DIZA",
 ];
 const dataDepartment: string[] = Array.from(
   new Set([
