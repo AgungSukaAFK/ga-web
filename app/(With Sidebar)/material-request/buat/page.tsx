@@ -424,15 +424,16 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
-      // Note: Logic createMaterialRequest di service sudah menghitung ulang priority
-      // jadi kita tidak perlu pass 'prioritas' secara manual di sini,
-      // tapi payload tetap butuh structure yang valid.
+      // Regenerate kode MR fresh tepat sebelum submit agar tidak pakai kode stale
+      // dari saat halaman pertama dibuka (menghindari race condition antar user)
+      const freshKodeMr = await generateMRCode(payload.department, userLokasi, company_code);
+
       const finalPayload = {
         ...payload,
+        kode_mr: freshKodeMr,
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
         level: "OPEN 1",
-        // Prioritas akan di-override di service, tapi kita kirim default dulu
         prioritas: priorityPreview || "P4",
       };
 
