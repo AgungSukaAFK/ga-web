@@ -116,31 +116,28 @@ export const generateMRCode = async (
   const currentYearYY = currentYear.toString().slice(-2);
   const currentMonthRoman = toRoman(now.getMonth() + 1);
 
-  // FIX 1: Filter nomor terakhir berdasarkan company_code
-  const { data: lastMr, error } = await supabase
+  // Scan semua MR tahun ini untuk cari MAX seq — order by id tidak cukup
+  // karena MR hasil konversi punya id lama tapi seq tinggi
+  const { data: allMrs, error } = await supabase
     .from("material_requests")
     .select("kode_mr")
     .eq("company_code", company_code)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
-    .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
-    .order("id", { ascending: false })
-    .limit(1)
-    .single();
+    .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`);
 
-  if (error && error.code !== "PGRST116") {
-    console.error("Error fetching last MR of the year:", error);
+  if (error) {
+    console.error("Error fetching MRs of the year:", error);
     throw new Error("Gagal men-generate Kode MR.");
   }
 
   let nextNumber = 1;
-  if (lastMr) {
-    try {
-      const parts = lastMr.kode_mr.split("/");
-      const lastNumberStr = parts[parts.length - 1];
-      if (lastNumberStr) nextNumber = parseInt(lastNumberStr, 10) + 1;
-    } catch (e) {
-      console.error("Error parsing last MR code:", e);
+  if (allMrs && allMrs.length > 0) {
+    let maxSeq = 0;
+    for (const { kode_mr } of allMrs) {
+      const seq = parseInt(kode_mr.split("/").pop() ?? "0", 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
     }
+    nextNumber = maxSeq + 1;
   }
 
   const identifier =
@@ -200,23 +197,24 @@ export const createMaterialRequest = async (
           );
         }
 
-        // Ambil nomor urut terbaru di database untuk company ini lalu increment
-        const { data: latestMr } = await supabase
+        // Scan semua MR tahun ini untuk cari MAX seq (sama seperti getLatestSeq di convertMrCompany)
+        const currentYear = new Date().getFullYear();
+        const { data: allMrs } = await supabase
           .from("material_requests")
           .select("kode_mr")
           .eq("company_code", company_code)
-          .gte("created_at", `${new Date().getFullYear()}-01-01T00:00:00Z`)
-          .order("id", { ascending: false })
-          .limit(1)
-          .single();
+          .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
+          .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`);
 
-        if (latestMr) {
-          const parts = latestMr.kode_mr.split("/");
-          const lastNum = parseInt(parts[parts.length - 1] || "0", 10);
-          const currentParts = payload.kode_mr.split("/");
-          currentParts[currentParts.length - 1] = (lastNum + 1).toString();
-          payload.kode_mr = currentParts.join("/");
+        let maxSeq = 0;
+        for (const mr of allMrs ?? []) {
+          const seq = parseInt(mr.kode_mr.split("/").pop() ?? "0", 10);
+          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
         }
+
+        const currentParts = payload.kode_mr.split("/");
+        currentParts[currentParts.length - 1] = (maxSeq + 1).toString();
+        payload.kode_mr = currentParts.join("/");
         continue; // Ulangi proses insert dengan kode baru
       }
 
