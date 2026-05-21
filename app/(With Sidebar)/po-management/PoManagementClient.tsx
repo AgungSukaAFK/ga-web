@@ -172,10 +172,19 @@ export function PoManagementClientContent() {
       );
 
       // 1. Filter Search Text
-      if (searchTerm)
-        query = query.or(
-          `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%,material_requests.kode_mr.ilike.%${searchTerm}%`,
-        );
+      if (searchTerm) {
+        const { data: matchingMRs } = await s
+          .from("material_requests")
+          .select("id")
+          .ilike("kode_mr", `%${searchTerm}%`);
+        const matchingMrIds = matchingMRs ? matchingMRs.map((mr: any) => mr.id) : [];
+
+        let orFilter = `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%`;
+        if (matchingMrIds.length > 0) {
+          orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+        }
+        query = query.or(orFilter);
+      }
 
       // 2. Filter Status PO
       if (statusFilter) query = query.eq("status", statusFilter);
@@ -291,10 +300,19 @@ export function PoManagementClientContent() {
         `);
 
       // Filter yang sama dengan View
-      if (searchTerm)
-        query = query.or(
-          `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%,material_requests.kode_mr.ilike.%${searchTerm}%`,
-        );
+      if (searchTerm) {
+        const { data: matchingMRs } = await s
+          .from("material_requests")
+          .select("id")
+          .ilike("kode_mr", `%${searchTerm}%`);
+        const matchingMrIds = matchingMRs ? matchingMRs.map((mr: any) => mr.id) : [];
+
+        let orFilter = `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%`;
+        if (matchingMrIds.length > 0) {
+          orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+        }
+        query = query.or(orFilter);
+      }
       if (statusFilter) query = query.eq("status", statusFilter);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
