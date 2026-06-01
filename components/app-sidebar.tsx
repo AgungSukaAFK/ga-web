@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+import { useNotification } from "@/components/providers/NotificationProvider";
 import {
   GalleryVerticalEnd,
   Bot,
@@ -121,7 +122,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const [user, setUser] = React.useState<any>(null);
   const [profile, setProfile] = React.useState<any>(null);
-  const [unreadCount, setUnreadCount] = React.useState(0);
+  // Unread count berasal dari NotificationProvider (satu sumber + realtime).
+  const { unreadCount } = useNotification();
 
   React.useEffect(() => {
     const getUser = async () => {
@@ -137,52 +139,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           .eq("id", data.user.id)
           .single();
         if (profileRes.data) setProfile(profileRes.data);
-
-        // Fetch Notifikasi Awal
-        const { count } = await supabase
-          .from("notifications")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", data.user.id)
-          .eq("is_read", false);
-        setUnreadCount(count || 0);
-
-        // Realtime Listener
-        const channel = supabase
-          .channel("sidebar-notif-count")
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "notifications",
-              filter: `user_id=eq.${data.user.id}`,
-            },
-            () => {
-              setUnreadCount((prev) => prev + 1);
-            },
-          )
-          .on(
-            "postgres_changes",
-            {
-              event: "UPDATE",
-              schema: "public",
-              table: "notifications",
-              filter: `user_id=eq.${data.user.id}`,
-            },
-            async () => {
-              const { count } = await supabase
-                .from("notifications")
-                .select("*", { count: "exact", head: true })
-                .eq("user_id", data.user.id)
-                .eq("is_read", false);
-              setUnreadCount(count || 0);
-            },
-          )
-          .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
       }
     };
     getUser();

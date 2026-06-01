@@ -52,6 +52,10 @@ import {
 } from "@/services/purchaseOrderService";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import {
+  notifyOnPOValidated,
+  sendNotification,
+} from "@/lib/notifications/client";
 
 // Komponen helper kecil untuk menampilkan info
 const InfoItem = ({
@@ -160,11 +164,11 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
           ...app,
           status: "pending" as const,
           type: app.type || "",
-        })
+        }),
       );
       setNewApprovals(approvalsFromTemplate);
       toast.success(
-        `Template "${template.template_name}" berhasil diterapkan.`
+        `Template "${template.template_name}" berhasil diterapkan.`,
       );
     } catch (err: any) {
       toast.error("Gagal menerapkan template", { description: err.message });
@@ -184,7 +188,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
 
   const updateApproverType = (userId: string, type: string) => {
     setNewApprovals((prev) =>
-      prev.map((app) => (app.userid === userId ? { ...app, type } : app))
+      prev.map((app) => (app.userid === userId ? { ...app, type } : app)),
     );
   };
 
@@ -208,9 +212,24 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
     }
 
     try {
+      const {
+        data: { user },
+      } = await s.auth.getUser();
       const requesterEmail = (po as any).users_with_profiles?.email;
       const firstApprover = newApprovals[0];
       const emailPromises = [];
+
+      // In-app notifications (non-blocking)
+      if (user && po) {
+        const creatorId = po.user_id;
+        notifyOnPOValidated({
+          actorId: user.id,
+          creatorId,
+          firstApproverId: firstApprover?.userid,
+          kodePO: po.kode_po,
+          poId: po.id,
+        });
+      }
 
       if (requesterEmail) {
         emailPromises.push(
@@ -222,7 +241,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
               subject: `[VALIDATED] PO Anda (${po.kode_po}) telah divalidasi`,
               html: `<h1>Purchase Order Divalidasi</h1><p>Purchase Order Anda dengan kode <strong>${po.kode_po}</strong> telah divalidasi dan sekarang dalam proses persetujuan.</p><a href="${window.location.origin}/purchase-order/${po.id}">Lihat Detail PO</a>`,
             }),
-          })
+          }),
         );
       }
 
@@ -236,7 +255,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
               subject: `[ACTION REQUIRED] Persetujuan PO Baru (${po.kode_po})`,
               html: `<h1>Tugas Persetujuan Baru</h1><p>Halo ${firstApprover.nama},</p><p>Anda memiliki Purchase Order baru dengan kode <strong>${po.kode_po}</strong> yang menunggu persetujuan Anda.</p><a href="${window.location.origin}/approval-validation">Buka Halaman Approval</a>`,
             }),
-          })
+          }),
         );
       }
 
@@ -278,6 +297,22 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
         description: error.message,
       });
     } else {
+      // Notify PO creator of rejection
+      const {
+        data: { user },
+      } = await s.auth.getUser();
+      if (user && po) {
+        sendNotification({
+          userId: po.user_id,
+          actorId: user.id,
+          type: "po_rejected",
+          title: "PO Kamu Ditolak oleh GA",
+          message: `Purchase Order ${po.kode_po} ditolak dengan alasan: ${rejectionReason}`,
+          link: `/purchase-order/${po.id}`,
+          resourceId: String(po.id),
+          resourceType: "purchase_order",
+        });
+      }
       toast.success("PO telah ditolak.");
       router.push("/approval-validation");
     }
@@ -314,7 +349,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
   }
 
   const currentTurnIndex = newApprovals.findIndex(
-    (app) => app.status === "pending"
+    (app) => app.status === "pending",
   );
   const allPreviousApproved =
     currentTurnIndex === -1

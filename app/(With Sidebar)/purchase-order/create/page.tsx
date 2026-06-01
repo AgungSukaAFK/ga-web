@@ -32,6 +32,7 @@ import {
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
 import {
   Loader2,
   Send,
@@ -631,12 +632,19 @@ function CreatePOPageContent() {
     setLoading(true);
     setIsConfirmDirectPOOpen(false);
     try {
-      await createPurchaseOrder(
+      const newPo = await createPurchaseOrder(
         poForm,
         mrIdToSubmit,
         currentUser.id,
         userProfile?.company || "GMI",
       );
+      // Notify GA team that a new PO needs validation
+      notifyGAOnPOSubmit({
+        actorId: currentUser.id,
+        companyCode: userProfile?.company || "GMI",
+        kodePO: poForm.kode_po,
+        poId: newPo.id,
+      });
       toast.success("PO berhasil diajukan!");
       router.push("/purchase-order");
     } catch (err: any) {

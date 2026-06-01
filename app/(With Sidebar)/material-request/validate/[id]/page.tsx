@@ -71,6 +71,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MR_LEVELS } from "@/type/enum"; // Import Enum Level
+import {
+  notifyOnMRValidated,
+  sendNotification,
+} from "@/lib/notifications/client";
 
 // Komponen helper InfoItem
 const InfoItem = ({
@@ -157,7 +161,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
         const { data: mrData, error: mrError } = await s
           .from("material_requests")
           .select(
-            "*, users_with_profiles!userid(nama, email), prioritas, level, due_date"
+            "*, users_with_profiles!userid(nama, email), prioritas, level, due_date",
           )
           .eq("id", mrId)
           .single();
@@ -210,11 +214,11 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           ...app,
           status: "pending" as const,
           type: app.type || "",
-        })
+        }),
       );
       setNewApprovals(approvalsFromTemplate);
       toast.success(
-        `Template "${template.template_name}" berhasil diterapkan.`
+        `Template "${template.template_name}" berhasil diterapkan.`,
       );
     } catch (err: any) {
       toast.error("Gagal menerapkan template", { description: err.message });
@@ -238,7 +242,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
   const updateApproverType = (userId: string, type: string) => {
     setNewApprovals((prev) =>
-      prev.map((app) => (app.userid === userId ? { ...app, type } : app))
+      prev.map((app) => (app.userid === userId ? { ...app, type } : app)),
     );
   };
 
@@ -260,7 +264,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
     // Validasi Budget (Peringatan)
     const selectedCC = costCenterList.find(
-      (c) => c.value === selectedCostCenterId.toString()
+      (c) => c.value === selectedCostCenterId.toString(),
     );
     let budget = 0;
     if (selectedCC) {
@@ -278,10 +282,10 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       if (
         !window.confirm(
           `Peringatan: Estimasi biaya MR (${formatCurrency(
-            mr.cost_estimation
+            mr.cost_estimation,
           )}) melebihi sisa budget Cost Center (${formatCurrency(
-            budget
-          )}).\n\nApakah Anda yakin ingin tetap validasi?`
+            budget,
+          )}).\n\nApakah Anda yakin ingin tetap validasi?`,
         )
       ) {
         return;
@@ -316,8 +320,15 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
       if (updateError) throw updateError;
 
-      // Notifikasi Email (Opsional, jika endpoint tersedia)
-      // ... (Logika email bisa ditambahkan di sini)
+      // Notify creator and first approver
+      const firstApprover = newApprovals.find((a) => a.status === "pending");
+      notifyOnMRValidated({
+        actorId: profile.id,
+        creatorId: mr.userid,
+        firstApproverId: firstApprover?.userid,
+        kodeMR: mr.kode_mr,
+        mrId: mrId,
+      });
 
       toast.success("MR berhasil divalidasi!", {
         id: toastId,
@@ -357,6 +368,19 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     if (error) {
       toast.error("Gagal menolak MR", { description: error.message });
     } else {
+      // Notify creator of rejection by GA
+      if (profile?.id && mr?.userid) {
+        sendNotification({
+          userId: mr.userid,
+          actorId: profile.id,
+          type: "mr_rejected",
+          title: "MR Kamu Ditolak oleh GA",
+          message: `Material Request ${mr.kode_mr} ditolak dengan alasan: ${rejectionReason}`,
+          link: `/material-request/${mrId}`,
+          resourceId: String(mrId),
+          resourceType: "material_request",
+        });
+      }
       toast.success("MR telah ditolak.");
       router.push("/approval-validation");
     }
@@ -384,7 +408,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     : "Menghitung...";
 
   const currentTurnIndex = newApprovals.findIndex(
-    (app) => app.status === "pending"
+    (app) => app.status === "pending",
   );
   const allPreviousApproved =
     currentTurnIndex === -1
@@ -582,16 +606,17 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               {selectedCostCenterId &&
                 Number(mr.cost_estimation) >
                   (costCenterList.find(
-                    (c) => c.value === selectedCostCenterId.toString()
+                    (c) => c.value === selectedCostCenterId.toString(),
                   )
                     ? parseFloat(
                         (
                           costCenterList
                             .find(
-                              (c) => c.value === selectedCostCenterId.toString()
+                              (c) =>
+                                c.value === selectedCostCenterId.toString(),
                             )!
                             .label.match(/\(Rp\s(.+)\)/)?.[1] || "0"
-                        ).replace(/\./g, "")
+                        ).replace(/\./g, ""),
                       )
                     : 0) && (
                   <p className="text-xs text-destructive font-medium mt-1">

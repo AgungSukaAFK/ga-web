@@ -58,6 +58,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 
@@ -118,7 +119,11 @@ export default function BuatMRPage() {
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
   const [isLourdes, setIsLourdes] = useState(false);
-  const [userProfile, setUserProfile] = useState<{ department: string; lokasi: string; company: string } | null>(null);
+  const [userProfile, setUserProfile] = useState<{
+    department: string;
+    lokasi: string;
+    company: string;
+  } | null>(null);
 
   // --- LOGIC REVISI: Hitung Prioritas untuk Preview ---
   const priorityPreview = formCreateMR.due_date
@@ -145,8 +150,17 @@ export default function BuatMRPage() {
     const fetchUserData = async () => {
       try {
         const profile = await getActiveUserProfile();
-        if (profile && profile.department && profile.lokasi && profile.company) {
-          setUserProfile({ department: profile.department, lokasi: profile.lokasi, company: profile.company });
+        if (
+          profile &&
+          profile.department &&
+          profile.lokasi &&
+          profile.company
+        ) {
+          setUserProfile({
+            department: profile.department,
+            lokasi: profile.lokasi,
+            company: profile.company,
+          });
           setUserLokasi(profile.lokasi);
 
           if (profile.company === "LOURDES") {
@@ -158,7 +172,11 @@ export default function BuatMRPage() {
               kode_mr: "Pilih perusahaan tujuan dulu...",
             }));
           } else {
-            const newKodeMR = await generateMRCode(profile.department, profile.lokasi, profile.company);
+            const newKodeMR = await generateMRCode(
+              profile.department,
+              profile.lokasi,
+              profile.company,
+            );
             setFormCreateMR((prev) => ({
               ...prev,
               department: profile.department || "",
@@ -171,7 +189,9 @@ export default function BuatMRPage() {
           toast.warning("Profil belum lengkap.");
         }
       } catch (error: any) {
-        toast.error("Gagal mengambil profil user", { description: error.message });
+        toast.error("Gagal mengambil profil user", {
+          description: error.message,
+        });
       }
     };
     fetchUserData();
@@ -179,9 +199,17 @@ export default function BuatMRPage() {
 
   const handleTargetCompanyChange = async (company: string) => {
     if (!userProfile) return;
-    setFormCreateMR((prev) => ({ ...prev, company_code: company, kode_mr: "Memuat..." }));
+    setFormCreateMR((prev) => ({
+      ...prev,
+      company_code: company,
+      kode_mr: "Memuat...",
+    }));
     try {
-      const newKodeMR = await generateMRCode(userProfile.department, userProfile.lokasi, company);
+      const newKodeMR = await generateMRCode(
+        userProfile.department,
+        userProfile.lokasi,
+        company,
+      );
       setFormCreateMR((prev) => ({ ...prev, kode_mr: newKodeMR }));
     } catch (error: any) {
       toast.error("Gagal generate kode MR", { description: error.message });
@@ -402,7 +430,19 @@ export default function BuatMRPage() {
         prioritas: priorityPreview || "P4",
       };
 
-      await createMaterialRequest(finalPayload as any, user.id, company_code);
+      const { id: mrId } = await createMaterialRequest(
+        finalPayload as any,
+        user.id,
+        company_code,
+      );
+
+      // Notify all GA members that a new MR needs validation
+      notifyGAOnMRSubmit({
+        actorId: user.id,
+        companyCode: company_code,
+        kodeMR: freshKodeMr,
+        mrId,
+      });
 
       toast.success("Material Request berhasil dibuat dan menunggu validasi!", {
         id: toastId,
@@ -462,7 +502,9 @@ export default function BuatMRPage() {
     setAjukanAlert("");
 
     if (isLourdes && !formCreateMR.company_code) {
-      setAjukanAlert("Pilih perusahaan tujuan MR (GMI atau GIS) terlebih dahulu.");
+      setAjukanAlert(
+        "Pilih perusahaan tujuan MR (GMI atau GIS) terlebih dahulu.",
+      );
       return;
     }
 
@@ -562,7 +604,8 @@ export default function BuatMRPage() {
               </div>
               {formCreateMR.company_code && (
                 <p className="text-xs text-muted-foreground">
-                  MR ini akan dicatat sebagai dokumen <strong>{formCreateMR.company_code}</strong>.
+                  MR ini akan dicatat sebagai dokumen{" "}
+                  <strong>{formCreateMR.company_code}</strong>.
                 </p>
               )}
             </div>
@@ -907,9 +950,8 @@ export default function BuatMRPage() {
           </DialogHeader>
 
           <p className="text-sm text-muted-foreground">
-            Ditemukan{" "}
-            <strong>{duplicateMrs.length} MR aktif</strong> dari departemen{" "}
-            <strong>{formCreateMR.department}</strong> (
+            Ditemukan <strong>{duplicateMrs.length} MR aktif</strong> dari
+            departemen <strong>{formCreateMR.department}</strong> (
             {formCreateMR.company_code}) yang masih berjalan dan meminta barang
             yang sama. Periksa dulu untuk menghindari pengajuan ganda.
           </p>
@@ -989,7 +1031,8 @@ export default function BuatMRPage() {
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengajukan...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                  Mengajukan...
                 </>
               ) : (
                 "Tetap Tambahkan Item & Ajukan"

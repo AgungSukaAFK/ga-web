@@ -228,6 +228,7 @@ export interface PurchaseOrderDetail extends Omit<
   id: number;
   created_at: string;
   updated_at: string;
+  user_id: string; // UUID pembuat PO (di-select via "*", dipakai utk notifikasi)
   mr_id: number | null;
   vendor_details: StoredVendorDetails | null;
   users_with_profiles: {
@@ -344,7 +345,22 @@ export type NotificationType =
   | "mention"
   | "approval_mr"
   | "approval_po"
-  | "info";
+  | "info"
+  | "mr_submitted"
+  | "mr_validated"
+  | "mr_approved_step"
+  | "mr_fully_approved"
+  | "mr_rejected"
+  | "po_submitted"
+  | "po_validated"
+  | "po_approved_step"
+  | "po_fully_approved"
+  | "po_rejected"
+  | "pc_submitted"
+  | "pc_routed"
+  | "pc_approved_step"
+  | "pc_fully_approved"
+  | "pc_rejected";
 export interface Notification {
   id: string;
   created_at: string;
