@@ -24,6 +24,8 @@ import {
   Edit as EditIcon,
   Calendar as CalendarIcon,
   Building2,
+  AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -49,6 +51,8 @@ import {
   removeAttachment,
   createMaterialRequest,
   calculatePriority, // <--- UPDATE: Import logic hitung prioritas
+  findActiveDuplicateMrs,
+  type DuplicateMrInfo,
 } from "@/services/mrService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -363,6 +367,97 @@ export default function BuatMRPage() {
 
   const [ajukanAlert, setAjukanAlert] = useState<string>("");
 
+  // --- Deteksi MR Duplikat ---
+  const [duplicateMrs, setDuplicateMrs] = useState<DuplicateMrInfo[]>([]);
+  const [openDuplicateDialog, setOpenDuplicateDialog] = useState(false);
+
+  // Eksekusi pembuatan MR yang sebenarnya (dipanggil setelah lolos cek duplikat)
+  const proceedCreateMR = async () => {
+    setLoading(true);
+    const toastId = toast.loading("Mengajukan MR...");
+
+    try {
+      const s = createClient();
+      const {
+        data: { user },
+      } = await s.auth.getUser();
+      if (!user) throw new Error("User tidak ditemukan.");
+
+      const { company_code, ...payload } = formCreateMR;
+
+      // Regenerate kode MR fresh tepat sebelum submit agar tidak pakai kode stale
+      // dari saat halaman pertama dibuka (menghindari race condition antar user)
+      const freshKodeMr = await generateMRCode(
+        payload.department,
+        userLokasi,
+        company_code,
+      );
+
+      const finalPayload = {
+        ...payload,
+        kode_mr: freshKodeMr,
+        cost_estimation: Number(payload.cost_estimation),
+        cost_center_id: null,
+        level: "OPEN 1",
+        prioritas: priorityPreview || "P4",
+      };
+
+      await createMaterialRequest(finalPayload as any, user.id, company_code);
+
+      toast.success("Material Request berhasil dibuat dan menunggu validasi!", {
+        id: toastId,
+      });
+      router.push("/material-request");
+    } catch (err: any) {
+      toast.error(`Gagal mengajukan MR: ${err.message}`, { id: toastId });
+      setAjukanAlert(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Tombol "Tetap tambahkan item": lanjut buat MR walau ada duplikat
+  const handleProceedAnyway = async () => {
+    setOpenDuplicateDialog(false);
+    await proceedCreateMR();
+  };
+
+  // Tombol "Hapus item terdeteksi duplikat": buang item duplikat lalu kembali ke form
+  const handleRemoveDuplicateItems = () => {
+    const dupBarangIds = new Set<number>();
+    const dupPartNumbers = new Set<string>();
+    duplicateMrs.forEach((mr) =>
+      mr.matched_items.forEach((it) => {
+        if (it.barang_id != null) dupBarangIds.add(it.barang_id);
+        if (it.part_number)
+          dupPartNumbers.add(it.part_number.trim().toLowerCase());
+      }),
+    );
+
+    setFormCreateMR((prev) => ({
+      ...prev,
+      orders: prev.orders.filter((o) => {
+        const idDup = o.barang_id != null && dupBarangIds.has(o.barang_id);
+        const pnDup =
+          o.part_number &&
+          dupPartNumbers.has(o.part_number.trim().toLowerCase());
+        return !(idDup || pnDup);
+      }),
+    }));
+
+    setOpenDuplicateDialog(false);
+    setDuplicateMrs([]);
+    toast.info(
+      "Item duplikat telah dihapus dari daftar. Silakan tinjau kembali sebelum mengajukan.",
+    );
+  };
+
+  // Tombol "Batalkan Pembuatan MR": kembali ke halaman list MR
+  const handleCancelMrCreation = () => {
+    setOpenDuplicateDialog(false);
+    router.push("/material-request");
+  };
+
   const handleAjukanMR = async () => {
     setAjukanAlert("");
 
@@ -413,43 +508,26 @@ export default function BuatMRPage() {
       return;
     }
 
+    // --- CEK DUPLIKAT: MR aktif dengan barang sama (company & departemen sama) ---
     setLoading(true);
-    const toastId = toast.loading("Mengajukan MR...");
-
     try {
-      const s = createClient();
-      const {
-        data: { user },
-      } = await s.auth.getUser();
-      if (!user) throw new Error("User tidak ditemukan.");
-
-      const { company_code, ...payload } = formCreateMR;
-
-      // Regenerate kode MR fresh tepat sebelum submit agar tidak pakai kode stale
-      // dari saat halaman pertama dibuka (menghindari race condition antar user)
-      const freshKodeMr = await generateMRCode(payload.department, userLokasi, company_code);
-
-      const finalPayload = {
-        ...payload,
-        kode_mr: freshKodeMr,
-        cost_estimation: Number(payload.cost_estimation),
-        cost_center_id: null,
-        level: "OPEN 1",
-        prioritas: priorityPreview || "P4",
-      };
-
-      await createMaterialRequest(finalPayload as any, user.id, company_code);
-
-      toast.success("Material Request berhasil dibuat dan menunggu validasi!", {
-        id: toastId,
-      });
-      router.push("/material-request");
-    } catch (err: any) {
-      toast.error(`Gagal mengajukan MR: ${err.message}`, { id: toastId });
-      setAjukanAlert(`Terjadi kesalahan: ${err.message}`);
-    } finally {
-      setLoading(false);
+      const duplicates = await findActiveDuplicateMrs(
+        formCreateMR.company_code,
+        formCreateMR.department,
+        formCreateMR.orders,
+      );
+      if (duplicates.length > 0) {
+        setDuplicateMrs(duplicates);
+        setOpenDuplicateDialog(true);
+        setLoading(false);
+        return;
+      }
+    } catch (err) {
+      // Jika pengecekan gagal, jangan blok user — lanjutkan pembuatan MR
+      console.error("Gagal memeriksa MR duplikat:", err);
     }
+
+    await proceedCreateMR();
   };
 
   return (
@@ -817,6 +895,117 @@ export default function BuatMRPage() {
           </Button>
         </div>
       </Content>
+
+      {/* MODAL: Notifikasi MR Duplikat */}
+      <Dialog open={openDuplicateDialog} onOpenChange={setOpenDuplicateDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              Terdeteksi Material Request Serupa
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Ditemukan{" "}
+            <strong>{duplicateMrs.length} MR aktif</strong> dari departemen{" "}
+            <strong>{formCreateMR.department}</strong> (
+            {formCreateMR.company_code}) yang masih berjalan dan meminta barang
+            yang sama. Periksa dulu untuk menghindari pengajuan ganda.
+          </p>
+
+          <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1">
+            {duplicateMrs.map((mr) => (
+              <div key={mr.id} className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <a
+                      href={`/material-request/${mr.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 font-mono text-sm font-semibold text-primary hover:underline"
+                    >
+                      {mr.kode_mr}
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                    <p className="text-xs text-muted-foreground">
+                      {mr.requester_name || "-"} ·{" "}
+                      {format(new Date(mr.created_at), "dd MMM yyyy")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge variant="outline">{mr.status}</Badge>
+                    {mr.level && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {mr.level}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-muted p-2">
+                  <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+                    Item yang sama:
+                  </p>
+                  <ul className="space-y-1">
+                    {mr.matched_items.map((it, i) => (
+                      <li
+                        key={i}
+                        className="flex justify-between gap-2 text-xs"
+                      >
+                        <span className="truncate">
+                          {it.name}{" "}
+                          {it.part_number && (
+                            <span className="font-mono text-muted-foreground">
+                              ({it.part_number})
+                            </span>
+                          )}
+                        </span>
+                        <span className="whitespace-nowrap text-muted-foreground">
+                          {it.qty} {it.uom}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={handleRemoveDuplicateItems}
+              disabled={loading}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Hapus Item Terdeteksi Duplikat
+            </Button>
+            <Button
+              className="w-full"
+              onClick={handleProceedAnyway}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengajukan...
+                </>
+              ) : (
+                "Tetap Tambahkan Item & Ajukan"
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleCancelMrCreation}
+              disabled={loading}
+            >
+              Batalkan Pembuatan MR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

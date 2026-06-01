@@ -586,6 +586,102 @@ export const convertMrCompany = async (
   return { newKodeMr: currentKodeMr };
 };
 
+// --- DETEKSI MR DUPLIKAT (barang sama, company & departemen sama, masih aktif) ---
+export interface DuplicateMrItem {
+  name: string;
+  part_number: string | null;
+  barang_id: number | null;
+  qty: string;
+  uom: string;
+}
+
+export interface DuplicateMrInfo {
+  id: number;
+  kode_mr: string;
+  status: string;
+  level: string;
+  created_at: string;
+  requester_name: string | null;
+  matched_items: DuplicateMrItem[];
+}
+
+/**
+ * Mencari MR yang masih aktif (status BUKAN 'Completed' / 'Rejected') dari
+ * company & departemen yang sama, yang memiliki barang sama dengan order MR baru.
+ * Pencocokan barang: utamakan barang_id, fallback ke part_number.
+ * Bisa mengembalikan lebih dari satu MR.
+ */
+export const findActiveDuplicateMrs = async (
+  companyCode: string,
+  department: string,
+  newOrders: Order[],
+): Promise<DuplicateMrInfo[]> => {
+  const supabase = createClient();
+
+  const newBarangIds = new Set(
+    newOrders
+      .map((o) => o.barang_id)
+      .filter((v): v is number => v != null),
+  );
+  const newPartNumbers = new Set(
+    newOrders
+      .map((o) => (o.part_number || "").trim().toLowerCase())
+      .filter((v) => v !== ""),
+  );
+
+  if (newBarangIds.size === 0 && newPartNumbers.size === 0) return [];
+  if (!companyCode || !department) return [];
+
+  const { data, error } = await supabase
+    .from("material_requests")
+    .select(
+      `id, kode_mr, status, level, created_at, orders, users_with_profiles:profiles!fk_material_requests_profiles (nama)`,
+    )
+    .eq("company_code", companyCode)
+    .eq("department", department)
+    .not("status", "in", "(Completed,Rejected)")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error checking duplicate MRs:", error);
+    return [];
+  }
+
+  const results: DuplicateMrInfo[] = [];
+
+  for (const mr of data ?? []) {
+    const orders = Array.isArray(mr.orders) ? (mr.orders as any[]) : [];
+    const matched = orders.filter((item) => {
+      const idMatch =
+        item.barang_id != null && newBarangIds.has(item.barang_id);
+      const pnMatch =
+        item.part_number &&
+        newPartNumbers.has(String(item.part_number).trim().toLowerCase());
+      return idMatch || pnMatch;
+    });
+
+    if (matched.length > 0) {
+      results.push({
+        id: mr.id,
+        kode_mr: mr.kode_mr,
+        status: mr.status,
+        level: mr.level,
+        created_at: mr.created_at,
+        requester_name: (mr as any).users_with_profiles?.nama ?? null,
+        matched_items: matched.map((m) => ({
+          name: m.name,
+          part_number: m.part_number ?? null,
+          barang_id: m.barang_id ?? null,
+          qty: String(m.qty ?? ""),
+          uom: m.uom ?? "",
+        })),
+      });
+    }
+  }
+
+  return results;
+};
+
 export const calculatePriority = (
   dueDate: Date | string | undefined | null,
 ): string => {
