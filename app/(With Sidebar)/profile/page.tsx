@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
+import { NotificationSettings } from "@/components/notification-settings";
 
 // REVISI: Tambahkan nrp dan company ke tipe Profile
 type Profile = {
@@ -347,6 +348,9 @@ export default function Dashboard() {
           </div>
         </div>
         {/* --- AKHIR REVISI --- */}
+      </Content>
+      <Content size="xs">
+        <NotificationSettings />
       </Content>
     </>
   );

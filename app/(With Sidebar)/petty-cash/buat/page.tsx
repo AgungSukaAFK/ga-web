@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { createPettyCash } from "@/services/pettyCashService";
 import { PettyCashType } from "@/type";
 import { PETTY_CASH_TYPE_OPTIONS } from "@/type/enum";
+import { notifyGAOnPCSubmit } from "@/lib/notifications/client";
 import {
   Loader2,
   Save,
@@ -171,7 +172,7 @@ export default function CreatePettyCashPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Sesi login berakhir.");
 
-      await createPettyCash(
+      const newPc = await createPettyCash(
         {
           company_code: profile.company,
           department: profile.department,
@@ -184,6 +185,14 @@ export default function CreatePettyCashPage() {
         },
         user.id,
       );
+
+      // Notify GA/Finance that a new PC needs routing
+      notifyGAOnPCSubmit({
+        actorId: user.id,
+        companyCode: profile.company,
+        kodePC: newPc.kode_pc,
+        pcId: newPc.id,
+      });
 
       toast.success("Pengajuan Petty Cash berhasil dikirim!");
       router.push("/petty-cash");

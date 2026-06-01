@@ -71,6 +71,7 @@ import {
   updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
 } from "@/services/mrService";
+import { notifyOnPOApproval } from "@/lib/notifications/client";
 import {
   Dialog,
   DialogContent,
@@ -431,6 +432,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         });
       }
     }
+
+    // Notify next approver (if any) or PO creator
+    const nextApprover =
+      decision === "approved"
+        ? updatedApprovals.find(
+            (app: Approval, i: number) =>
+              i > myApprovalIndex && app.status === "pending",
+          )
+        : undefined;
+    notifyOnPOApproval({
+      actorId: currentUser.id,
+      creatorId: (po as any).user_id,
+      nextApproverId: nextApprover?.userid,
+      decision,
+      kodePO: po.kode_po,
+      poId: po.id,
+    });
 
     toast.success(
       `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
@@ -1226,7 +1244,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <DialogDescription>{po.kode_po}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
-
               {/* Info strip */}
               <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-md bg-muted px-3 py-2 text-xs">
                 <span>
@@ -1253,7 +1270,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <span className="text-muted-foreground">
                     Subtotal ({po.items.length} item)
                   </span>
-                  <span className="font-medium">{formatCurrency(subtotal)}</span>
+                  <span className="font-medium">
+                    {formatCurrency(subtotal)}
+                  </span>
                 </div>
                 {po.discount > 0 && (
                   <div className="flex justify-between text-sm text-red-600">
@@ -1384,9 +1403,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <div className="flex justify-between font-semibold">
                     <span>Total Pengeluaran Perusahaan</span>
                     <span>
-                      {formatCurrency(
-                        po.total_price + (po.pph_amount || 0),
-                      )}
+                      {formatCurrency(po.total_price + (po.pph_amount || 0))}
                     </span>
                   </div>
                 </div>

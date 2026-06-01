@@ -48,6 +48,11 @@ import {
 } from "@/services/pcApprovalTemplateService";
 import { PettyCashRequest } from "@/type";
 import { PETTY_CASH_STATUS_COLORS } from "@/type/enum";
+import {
+  notifyOnPCRouted,
+  notifyOnPCApproval,
+  sendNotification,
+} from "@/lib/notifications/client";
 import { PcDiscussionSection } from "./pc-discussion";
 import {
   Loader2,
@@ -178,6 +183,20 @@ export default function PettyCashDetailPage() {
         .eq("id", pc?.id);
 
       if (error) throw error;
+
+      // Notify PC creator and first approver
+      const approvalPath = templateData.approval_path as any[];
+      const firstApprover = approvalPath?.[0];
+      if (pc && profile) {
+        notifyOnPCRouted({
+          actorId: profile.id,
+          creatorId: pc.user_id,
+          firstApproverId: firstApprover?.userid,
+          kodePC: pc.kode_pc,
+          pcId: pc.id,
+        });
+      }
+
       toast.success(
         "Petty Cash berhasil divalidasi dan masuk jalur persetujuan.",
       );
@@ -224,6 +243,22 @@ export default function PettyCashDetailPage() {
         .eq("id", pc.id);
 
       if (error) throw error;
+
+      // Notify next approver (if any) or creator
+      const nextApprover = isLastApprover
+        ? undefined
+        : updatedApprovals[myIndex + 1];
+      if (pc && profile) {
+        notifyOnPCApproval({
+          actorId: profile.id,
+          creatorId: pc.user_id,
+          nextApproverId: nextApprover?.userid,
+          decision: "approved",
+          kodePC: pc.kode_pc,
+          pcId: pc.id,
+        });
+      }
+
       toast.success("Dokumen berhasil disetujui.");
       loadData();
     } catch (error: any) {
@@ -277,6 +312,16 @@ export default function PettyCashDetailPage() {
         .eq("id", pc.id);
 
       if (error) throw error;
+
+      // Notify PC creator of rejection
+      notifyOnPCApproval({
+        actorId: profile.id,
+        creatorId: pc.user_id,
+        decision: "rejected",
+        kodePC: pc.kode_pc,
+        pcId: pc.id,
+      });
+
       toast.success("Dokumen telah ditolak.");
       setIsRejectDialogOpen(false);
       loadData();

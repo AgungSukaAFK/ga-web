@@ -115,6 +115,7 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
 import { fetchMaterialRequestById } from "@/services/mrService";
+import { notifyOnMRApproval } from "@/lib/notifications/client";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -319,6 +320,26 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         decision,
         mr.approvals,
       );
+
+      // Notify next approver (if any) or creator
+      const currentApprovals = mr.approvals || [];
+      const myIndex = currentApprovals.findIndex(
+        (a) => a.userid === currentUser.id && a.status === "pending",
+      );
+      const nextApprover =
+        decision === "approved"
+          ? currentApprovals.find(
+              (a, i) => i > myIndex && a.status === "pending",
+            )
+          : undefined;
+      notifyOnMRApproval({
+        actorId: currentUser.id,
+        creatorId: mr.userid,
+        nextApproverId: nextApprover?.userid,
+        decision,
+        kodeMR: mr.kode_mr,
+        mrId: mr.id,
+      });
 
       toast.success(
         `MR berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
@@ -1319,14 +1340,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     )}
                   >
                     <div>
-                      <p className="font-semibold">
-                        {approver.nama}{" "}
-                        <span className="ml-2">
-                          <Badge variant={"outline"}>
-                            {approver.department}
-                          </Badge>
-                        </span>
-                      </p>
+                      <div className="font-semibold flex items-center gap-2">
+                        {approver.nama}
+                        <Badge variant={"outline"}>{approver.department}</Badge>
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {approver.type}
                       </p>

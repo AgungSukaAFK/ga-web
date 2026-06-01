@@ -73,6 +73,9 @@ export async function markAllNotificationsAsRead() {
 }
 
 // 4. Create Notification (Bisa dipanggil dari Server Action lain)
+//    Memakai RPC create_notifications (SECURITY DEFINER) karena RLS memblokir
+//    insert langsung untuk user_id milik orang lain. actor_id dipaksa = caller
+//    di sisi DB, jadi `actorId` di sini diabaikan server-side.
 export async function createNotification(params: {
   userId: string; // Penerima
   title: string;
@@ -81,20 +84,22 @@ export async function createNotification(params: {
   link: string;
   resourceId?: string;
   resourceType?: "material_request" | "purchase_order";
-  actorId?: string; // Pengirim
+  actorId?: string; // Pengirim (diabaikan; DB pakai user yang login)
 }) {
   const supabase = await createClient();
 
-  const { error } = await supabase.from("notifications").insert({
-    user_id: params.userId,
-    actor_id: params.actorId,
-    type: params.type,
-    title: params.title,
-    message: params.message,
-    link: params.link,
-    resource_id: params.resourceId,
-    resource_type: params.resourceType,
-    is_read: false,
+  const { error } = await supabase.rpc("create_notifications", {
+    p_notifications: [
+      {
+        user_id: params.userId,
+        type: params.type,
+        title: params.title,
+        message: params.message,
+        link: params.link,
+        resource_id: params.resourceId ?? null,
+        resource_type: params.resourceType ?? null,
+      },
+    ],
   });
 
   if (error) {
