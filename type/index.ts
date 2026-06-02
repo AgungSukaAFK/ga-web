@@ -54,6 +54,7 @@ export interface Profile {
   nrp?: string | null;
   company?: string | null;
   email?: string | null;
+  is_active?: boolean | null;
 }
 
 export type User = Profile;

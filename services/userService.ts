@@ -64,6 +64,24 @@ export const signInWithEmailOrNrp = async (
     throw new Error("Gagal melakukan login."); // Pesan fallback
   }
 
+  // Tolak login jika akun telah dinonaktifkan (soft delete).
+  const userId = data.user?.id;
+  if (userId) {
+    const { data: profileStatus } = await supabase
+      .from("profiles")
+      .select("is_active")
+      .eq("id", userId)
+      .single();
+
+    if (profileStatus && profileStatus.is_active === false) {
+      // Pastikan sesi yang sudah terbuat langsung dibatalkan.
+      await supabase.auth.signOut();
+      throw new Error(
+        "Akun Anda telah dinonaktifkan. Silakan hubungi administrator.",
+      );
+    }
+  }
+
   console.log("Sign in successful for:", emailToUse);
   return data;
 };

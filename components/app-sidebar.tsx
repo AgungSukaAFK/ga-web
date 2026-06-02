@@ -5,6 +5,7 @@
 import * as React from "react";
 import { redirect, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import {
   Sidebar,
   SidebarContent,
@@ -211,7 +212,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
     if (
       profile?.department === "General Manager" ||
-      profile?.department === "General Affair"
+      isGADepartment(profile?.department)
     ) {
       baseNav.splice(1, 0, {
         title: "Cost Center Management",
@@ -242,7 +243,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       profile?.role === "approver" ||
       profile?.role === "admin" ||
       profile?.department === "Finance" ||
-      profile?.department === "General Affair"
+      isGADepartment(profile?.department)
     ) {
       pcNav.push({
         title: "Manajemen PC",

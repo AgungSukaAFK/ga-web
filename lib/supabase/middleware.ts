@@ -47,16 +47,38 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
+  const isPublicPath =
+    request.nextUrl.pathname === "/" ||
+    request.nextUrl.pathname.startsWith("/login") ||
+    request.nextUrl.pathname.startsWith("/auth");
+
+  if (!user && !isPublicPath) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     return NextResponse.redirect(url);
+  }
+
+  // Blokir user yang akunnya telah dinonaktifkan (soft delete), termasuk
+  // sesi yang masih aktif saat dinonaktifkan. Cukup dicek di luar halaman
+  // publik agar tidak menambah beban di halaman login.
+  if (user && !isPublicPath) {
+    const userId = (user as { sub?: string }).sub;
+    if (userId) {
+      const { data: profileStatus } = await supabase
+        .from("profiles")
+        .select("is_active")
+        .eq("id", userId)
+        .single();
+
+      if (profileStatus && profileStatus.is_active === false) {
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = "/auth/login";
+        url.searchParams.set("reason", "deactivated");
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

@@ -22,6 +22,7 @@ export const normalizeMrOrders = (orders: any[]): Order[] => {
 // Peta untuk singkatan departemen (untuk user HO)
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
+  "HRGA-HSE": "HRGA-HSE",
   "Human Resource": "HR",
   "Human Resources": "HR",
   Marketing: "MKT",
