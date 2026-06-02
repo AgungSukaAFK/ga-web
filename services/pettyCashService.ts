@@ -28,6 +28,7 @@ const toRoman = (num: number): string => {
 // Peta untuk singkatan departemen (Disamakan dengan MR & PO)
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
+  "HRGA-HSE": "HRGA-HSE",
   "Human Resource": "HR",
   "Human Resources": "HR",
   Marketing: "MKT",

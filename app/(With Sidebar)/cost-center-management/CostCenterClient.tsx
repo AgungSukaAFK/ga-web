@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import { Loader2, Search, Edit, Plus, History, Eye } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
@@ -415,12 +416,11 @@ export function CostCenterClientContent() {
         .select("*")
         .eq("id", user.id)
         .single();
-      const allowedDepartments = ["General Affair", "General Manager"];
       const allowedRoles = ["admin"];
-      if (
-        !profileData ||
-        !allowedDepartments.includes(profileData.department)
-      ) {
+      const isAllowedDepartment =
+        isGADepartment(profileData?.department) ||
+        profileData?.department === "General Manager";
+      if (!profileData || !isAllowedDepartment) {
         if (!allowedRoles.includes(profileData.role)) {
           toast.error("Akses ditolak.");
           router.push("/dashboard");

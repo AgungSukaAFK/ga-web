@@ -101,7 +101,8 @@ export default function PcTemplateManagementPage() {
       // Load user
       const { data: users } = await supabase
         .from("profiles")
-        .select("id, nama, department, role");
+        .select("id, nama, department, role")
+        .eq("is_active", true); // Sembunyikan user yang sudah dinonaktifkan
       if (users) setUsersList(users);
     } catch (err: any) {
       toast.error("Gagal memuat", { description: err.message });

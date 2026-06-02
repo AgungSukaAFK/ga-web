@@ -5,6 +5,7 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -345,8 +346,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // -------------------------------------------------------------
 
   const isGA =
-    userProfile?.department === "General Affair" ||
-    userProfile?.role === "admin";
+    isGADepartment(userProfile?.department) || userProfile?.role === "admin";
 
   const showGAReceiveButton =
     isGA &&

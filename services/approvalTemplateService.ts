@@ -34,10 +34,11 @@ export const fetchTemplates = async (): Promise<ApprovalTemplate[]> => {
 export const searchUsers = async (query: string): Promise<User[]> => {
   if (!query) return [];
   const { data, error } = await supabase
-    .from("users_with_profiles")
+    .from("profiles")
     .select("id, nama, email, role, department")
     .ilike("nama", `%${query}%`)
     .ilike("role", `approver`)
+    .eq("is_active", true) // Sembunyikan user yang sudah dinonaktifkan
     .limit(5);
 
   if (error) {

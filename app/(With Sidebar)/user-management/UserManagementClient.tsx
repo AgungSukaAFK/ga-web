@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
+import { Badge } from "@/components/ui/badge";
 import { Loader2, Newspaper, Search, Edit } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
@@ -82,6 +83,7 @@ export function UserManagementClientContent() {
   const roleFilter = searchParams.get("role") || "";
   const lokasiFilter = searchParams.get("lokasi") || "";
   const departmentFilter = searchParams.get("department") || "";
+  const statusFilter = searchParams.get("status") || ""; // "active" | "inactive"
   const limit = Number(searchParams.get("limit") || 25);
 
   // State untuk input form
@@ -108,6 +110,22 @@ export function UserManagementClientContent() {
       return params.toString();
     },
     [searchParams],
+  );
+
+  // Ambil daftar id user yang cocok dengan filter status dari tabel profiles
+  // (sumber kebenaran is_active). Mengembalikan null jika filter status tidak aktif.
+  const fetchIdsByStatus = useCallback(
+    async (company: string | null | undefined): Promise<string[] | null> => {
+      if (!statusFilter) return null;
+      let q = s
+        .from("profiles")
+        .select("id")
+        .eq("is_active", statusFilter === "active");
+      if (company && company !== "LOURDES") q = q.eq("company", company);
+      const { data } = await q;
+      return (data || []).map((r: { id: string }) => r.id);
+    },
+    [s, statusFilter],
   );
 
   // Efek untuk fetch data user dan profil admin
@@ -158,6 +176,10 @@ export function UserManagementClientContent() {
       }
       // Jika LOURDES, tidak perlu filter company
 
+      // Filter Status (Aktif/Nonaktif) berbasis is_active di tabel profiles
+      const statusIds = await fetchIdsByStatus(currentAdminProfile?.company);
+      if (statusIds !== null) query = query.in("id", statusIds);
+
       query = query.range(from, to).order("nama", { ascending: true });
 
       const { data, error, count } = await query;
@@ -166,7 +188,26 @@ export function UserManagementClientContent() {
         toast.error("Gagal mengambil data user: " + error.message);
         setUserList([]);
       } else {
-        setUserList((data as UserForTable[]) || []);
+        // Gabungkan status aktif (sumber kebenaran di tabel profiles).
+        const rows = (data as UserForTable[]) || [];
+        const ids = rows.map((u) => u.id);
+        const activeMap = new Map<string, boolean>();
+        if (ids.length > 0) {
+          const { data: statusRows } = await s
+            .from("profiles")
+            .select("id, is_active")
+            .in("id", ids);
+          (statusRows || []).forEach((row: any) =>
+            activeMap.set(row.id, row.is_active),
+          );
+        }
+        setUserList(
+          rows.map((u) => ({
+            ...u,
+            // default aktif bila kolom belum diisi (kompatibilitas)
+            is_active: activeMap.get(u.id) ?? true,
+          })),
+        );
         setTotalItems(count || 0);
       }
       setLoading(false);
@@ -179,6 +220,8 @@ export function UserManagementClientContent() {
     roleFilter,
     lokasiFilter,
     departmentFilter,
+    statusFilter,
+    fetchIdsByStatus,
     limit,
   ]); // Tambahkan adminProfile sebagai dependency jika perlu
 
@@ -213,7 +256,7 @@ export function UserManagementClientContent() {
       let query = s
         .from("users_with_profiles")
         .select(
-          `nama, email, role, lokasi, department, nrp, company, profile_created_at`,
+          `id, nama, email, role, lokasi, department, nrp, company, profile_created_at`,
         );
 
       // Terapkan semua filter aktif
@@ -230,12 +273,29 @@ export function UserManagementClientContent() {
         query = query.eq("company", adminProfile.company);
       }
 
+      // Filter Status (Aktif/Nonaktif)
+      const statusIds = await fetchIdsByStatus(adminProfile?.company);
+      if (statusIds !== null) query = query.in("id", statusIds);
+
       const { data, error } = await query.order("nama", { ascending: true });
 
       if (error) throw error;
       if (!data || data.length === 0) {
         toast.warning("Tidak ada data user untuk diekspor sesuai filter.");
         return;
+      }
+
+      // Ambil status aktif (sumber kebenaran di tabel profiles) untuk kolom Status.
+      const exportIds = data.map((u: any) => u.id);
+      const exportActiveMap = new Map<string, boolean>();
+      if (exportIds.length > 0) {
+        const { data: statusRows } = await s
+          .from("profiles")
+          .select("id, is_active")
+          .in("id", exportIds);
+        (statusRows || []).forEach((row: any) =>
+          exportActiveMap.set(row.id, row.is_active),
+        );
       }
 
       const formattedData = data.map((user) => ({
@@ -246,6 +306,8 @@ export function UserManagementClientContent() {
         Departemen: user.department,
         NRP: user.nrp,
         Perusahaan: user.company,
+        Status:
+          (exportActiveMap.get(user.id) ?? true) ? "Aktif" : "Nonaktif",
         "Tanggal Dibuat": formatDateFriendly(user.profile_created_at),
       }));
 
@@ -294,7 +356,7 @@ export function UserManagementClientContent() {
         </div>
 
         <div className="p-4 border rounded-lg bg-muted/50">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Role</label>
               <Select
@@ -364,6 +426,26 @@ export function UserManagementClientContent() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Status</label>
+              <Select
+                onValueChange={(value) =>
+                  handleFilterChange({
+                    status: value === "all" ? undefined : value,
+                  })
+                }
+                defaultValue={statusFilter || "all"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="inactive">Nonaktif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
@@ -381,13 +463,14 @@ export function UserManagementClientContent() {
               <TableHead>Role</TableHead>
               <TableHead>Lokasi</TableHead>
               <TableHead>Departemen</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading || isPending ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                <TableCell colSpan={10} className="text-center h-24">
                   <div className="flex justify-center items-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
                     Memuat data...
@@ -396,7 +479,11 @@ export function UserManagementClientContent() {
               </TableRow>
             ) : userList.length > 0 ? (
               userList.map((user, index) => (
-                <TableRow key={user.id}>
+                <TableRow
+                  key={user.id}
+                  onClick={() => router.push(`/user-management/${user.id}`)}
+                  className="cursor-pointer"
+                >
                   <TableCell className="font-medium">
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
@@ -409,7 +496,19 @@ export function UserManagementClientContent() {
                   <TableCell>{user.role || "-"}</TableCell>
                   <TableCell>{user.lokasi || "-"}</TableCell>
                   <TableCell>{user.department || "-"}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell>
+                    {user.is_active === false ? (
+                      <Badge variant="destructive">Nonaktif</Badge>
+                    ) : (
+                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                        Aktif
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/user-management/${user.id}`}>
                         <Edit className="mr-2 h-3 w-3" />
@@ -421,7 +520,7 @@ export function UserManagementClientContent() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={9} className="text-center h-24">
+                <TableCell colSpan={10} className="text-center h-24">
                   Tidak ada user yang ditemukan.
                 </TableCell>
               </TableRow>

@@ -11,6 +11,7 @@
  */
 
 import { createClient } from "@/lib/supabase/client";
+import { GA_DEPARTMENTS } from "@/lib/constants/departments";
 
 // ─────────────────────────────────────────────
 // Types
@@ -155,7 +156,7 @@ export async function getGAUserIds(companyCode: string): Promise<string[]> {
     const { data } = await supabase
       .from("profiles")
       .select("id")
-      .eq("department", "General Affair")
+      .in("department", GA_DEPARTMENTS as readonly string[])
       .in("company", companyCodes);
     return (data ?? []).map((p: { id: string }) => p.id);
   } catch {
@@ -176,7 +177,7 @@ export async function getGAAndFinanceUserIds(
     const { data } = await supabase
       .from("profiles")
       .select("id")
-      .in("department", ["General Affair", "Finance"])
+      .in("department", [...GA_DEPARTMENTS, "Finance"])
       .in("company", companyCodes);
     return (data ?? []).map((p: { id: string }) => p.id);
   } catch {

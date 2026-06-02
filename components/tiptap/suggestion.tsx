@@ -13,6 +13,7 @@ const fetchUsers = async (query: string) => {
     .from("profiles")
     .select("id, name, avatar_url")
     .ilike("name", `%${query}%`)
+    .eq("is_active", true) // Sembunyikan user yang sudah dinonaktifkan
     .limit(5);
 
   if (error) {

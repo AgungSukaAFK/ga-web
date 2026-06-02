@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import { fetchManagementPettyCash } from "@/services/pettyCashService";
 import { PettyCashRequest } from "@/type";
 import {
@@ -86,9 +87,9 @@ export default function PettyCashManagementPage() {
 
       // 1. Proteksi Halaman (Hanya role tertentu yang boleh masuk)
       const isAuthorized =
-        ["Finance", "General Affair", "General Manager"].includes(
-          profile.department,
-        ) || ["admin", "approver"].includes(profile.role);
+        ["Finance", "General Manager"].includes(profile.department) ||
+        isGADepartment(profile.department) ||
+        ["admin", "approver"].includes(profile.role);
 
       if (!isAuthorized) {
         toast.error("Akses Ditolak", {

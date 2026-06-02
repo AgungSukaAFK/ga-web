@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
@@ -137,7 +138,8 @@ export default function PettyCashDetailPage() {
       // Jika GA & status masih pending validation, tarik daftar template dari master
       if (
         data.status === "Pending Validation" &&
-        ["General Affair", "Finance"].includes(userProfile.data?.department)
+        (isGADepartment(userProfile.data?.department) ||
+          userProfile.data?.department === "Finance")
       ) {
         const tpl = await fetchPcTemplateList();
         setTemplates(tpl);
@@ -455,9 +457,8 @@ export default function PettyCashDetailPage() {
 
   // Cek Hak Akses
   const isCreator = profile?.id === pc.user_id;
-  const isGAorFinance = ["General Affair", "Finance"].includes(
-    profile?.department,
-  );
+  const isGAorFinance =
+    isGADepartment(profile?.department) || profile?.department === "Finance";
   const myApprovalIndex = pc.approvals?.findIndex(
     (a: any) => a.userid === profile?.id && a.status === "pending",
   );

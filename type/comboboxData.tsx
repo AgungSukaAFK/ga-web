@@ -19,6 +19,7 @@ export const dataLokasi: ComboboxData = [
 export const dataDepartment: ComboboxData = [
   { label: "Human Resources", value: "Human Resources" },
   { label: "General Affair", value: "General Affair" },
+  { label: "HRGA-HSE", value: "HRGA-HSE" },
   { label: "Marketing", value: "Marketing" },
   { label: "Produksi", value: "Produksi" },
   { label: "K3", value: "K3" },
