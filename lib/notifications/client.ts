@@ -24,6 +24,7 @@ export type NotificationEventType =
   | "mr_approved_step"
   | "mr_fully_approved"
   | "mr_rejected"
+  | "mr_held"
   | "po_submitted"
   | "po_validated"
   | "po_approved_step"
@@ -258,6 +259,35 @@ export async function notifyOnMRValidated({
       resourceType: "material_request",
     });
   }
+}
+
+/**
+ * After GA holds an MR → notify creator with the correction instruction.
+ */
+export async function notifyOnMRHold({
+  actorId,
+  creatorId,
+  kodeMR,
+  mrId,
+  instruction,
+}: {
+  actorId: string;
+  creatorId: string;
+  kodeMR: string;
+  mrId: string | number;
+  instruction: string;
+}): Promise<void> {
+  if (!creatorId || creatorId === actorId) return;
+  await sendNotification({
+    userId: creatorId,
+    actorId,
+    type: "mr_held",
+    title: "MR Kamu Perlu Diperbaiki",
+    message: `Material Request ${kodeMR} ditahan oleh GA. Arahan perbaikan: ${instruction}`,
+    link: `/material-request/${mrId}`,
+    resourceId: String(mrId),
+    resourceType: "material_request",
+  });
 }
 
 /**

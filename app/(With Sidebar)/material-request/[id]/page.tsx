@@ -115,7 +115,11 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
 import { fetchMaterialRequestById } from "@/services/mrService";
-import { notifyOnMRApproval } from "@/lib/notifications/client";
+import {
+  notifyOnMRApproval,
+  notifyGAOnMRSubmit,
+} from "@/lib/notifications/client";
+import { logActivity } from "@/services/logService";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -299,6 +303,78 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       await fetchMrData();
       return true;
     }
+  };
+
+  // Requester memperbaiki MR yang di-Hold lalu mengajukannya ulang ke validasi GA.
+  const handleResubmit = async () => {
+    if (!mr || !currentUser) return;
+    if (
+      !confirm(
+        "Ajukan ulang MR ini untuk divalidasi GA? Pastikan perbaikan sudah sesuai arahan yang diberikan.",
+      )
+    )
+      return;
+    setActionLoading(true);
+    const toastId = toast.loading("Mengajukan ulang MR...");
+
+    const totalCost = mr.orders.reduce((acc, item) => {
+      return acc + (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0);
+    }, 0);
+
+    const { users_with_profiles, cost_centers, ...restOfData } = mr as any;
+
+    const newDiscussion: Discussion = {
+      user_id: currentUser.id,
+      user_name: userProfile?.nama || "Requester",
+      message:
+        "MR diperbaiki dan diajukan ulang oleh requester untuk validasi.",
+      timestamp: new Date().toISOString(),
+    };
+    const updatedDiscussions = Array.isArray(mr.discussions)
+      ? [...(mr.discussions as Discussion[]), newDiscussion]
+      : [newDiscussion];
+
+    const updateData = {
+      ...restOfData,
+      cost_estimation: String(totalCost),
+      prioritas: mr.prioritas,
+      due_date: mr.due_date,
+      status: "Pending Validation",
+      discussions: updatedDiscussions,
+    };
+
+    const { error: updateError } = await supabase
+      .from("material_requests")
+      .update(updateData)
+      .eq("id", mr.id);
+
+    setActionLoading(false);
+    if (updateError) {
+      toast.error("Gagal mengajukan ulang MR", {
+        id: toastId,
+        description: updateError.message,
+      });
+      return;
+    }
+
+    await logActivity(
+      currentUser.id,
+      "RESUBMIT_MR",
+      "material_request",
+      String(mr.id),
+      `Requester ${userProfile?.nama || "Unknown"} memperbaiki & mengajukan ulang MR ${mr.kode_mr} untuk validasi.`,
+    );
+
+    notifyGAOnMRSubmit({
+      actorId: currentUser.id,
+      companyCode: mr.company_code,
+      kodeMR: mr.kode_mr,
+      mrId: mr.id,
+    });
+
+    toast.success("MR berhasil diajukan ulang!", { id: toastId });
+    setIsEditing(false);
+    await fetchMrData();
   };
 
   const handleApprovalAction = async (decision: "approved" | "rejected") => {
@@ -671,6 +747,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="secondary">Pending Approval</Badge>;
       case "pending validation":
         return <Badge variant="secondary">Pending Validation</Badge>;
+      case "on hold":
+        return <Badge className="bg-orange-500 text-white">On Hold</Badge>;
       case "waiting po":
         return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
       case "pending bast":
@@ -793,6 +871,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 <Edit className="mr-2 h-4 w-4" /> Edit Rincian
               </Button>
             )}
+            {isOwner && !isEditing && mr.status === "On Hold" && (
+              <Button size="sm" onClick={() => setIsEditing(true)}>
+                <Edit className="mr-2 h-4 w-4" /> Perbaiki & Submit Ulang
+              </Button>
+            )}
             {isEditing && (
               <>
                 <Button
@@ -806,18 +889,33 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 >
                   Batal
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSaveChanges}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}{" "}
-                  Simpan
-                </Button>
+                {mr.status === "On Hold" ? (
+                  <Button
+                    size="sm"
+                    onClick={handleResubmit}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}{" "}
+                    Submit Ulang
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleSaveChanges}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}{" "}
+                    Simpan
+                  </Button>
+                )}
               </>
             )}
             <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
