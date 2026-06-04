@@ -73,11 +73,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LIMIT_OPTIONS } from "@/type/enum";
+import {
+  LIMIT_OPTIONS,
+  PAYMENT_VALIDATOR_USER_ID,
+  isPoPaid,
+} from "@/type/enum";
 
 const STATUS_OPTIONS = [
   "Pending Validation",
   "Pending Approval",
+  "Pending Payment",
   "Pending BAST",
   "Completed",
   "Rejected",
@@ -90,8 +95,6 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
 ];
-
-const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
 
 // --- Komponen Modal Detail Vendor ---
 function VendorDetailModal({
@@ -526,12 +529,7 @@ function PurchaseOrderPageContent() {
       }
 
       const formattedData = data.flatMap((po: any) => {
-        const isPaid =
-          (po.approvals as Approval[])?.some(
-            (app) =>
-              app.userid === PAYMENT_VALIDATOR_USER_ID &&
-              app.status === "approved",
-          ) ?? false;
+        const isPaid = isPoPaid(po.approvals as Approval[]);
 
         // Ekstrak data MR dengan aman (menghindari issue jika Supabase mereturn array)
         const mrData = Array.isArray(po.material_requests)
@@ -904,11 +902,7 @@ function PurchaseOrderPageContent() {
                         <Badge variant="secondary">{po.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        {po.approvals?.some(
-                          (app: Approval) =>
-                            app.userid === PAYMENT_VALIDATOR_USER_ID &&
-                            app.status === "approved",
-                        ) ? (
+                        {isPoPaid(po.approvals) ? (
                           <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
                             <CreditCard className="h-3 w-3" />
                             Paid

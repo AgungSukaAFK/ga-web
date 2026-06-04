@@ -1,15 +1,62 @@
 // type/enum.ts
 
+import { Approval } from "@/type";
+
 export const LIMIT_OPTIONS = [10, 25, 50, 100, 1000, 10000];
 
 export const STATUS_OPTIONS = [
   "Pending Validation",
   "Pending Approval",
+  "Pending Payment",
   "Pending BAST",
   "Waiting PO",
   "Completed",
   "Rejected",
 ];
+
+// ==========================================
+// APPROVAL TYPE (jenis approver di template)
+// ==========================================
+
+export const APPROVAL_TYPE_MENGETAHUI = "Mengetahui";
+export const APPROVAL_TYPE_MENYETUJUI = "Menyetujui";
+export const APPROVAL_TYPE_PAYMENT_APPROVAL = "Payment Approval";
+export const APPROVAL_TYPE_PAYMENT_VALIDATOR = "Payment Validator";
+
+export const APPROVAL_TYPE_OPTIONS = [
+  { label: APPROVAL_TYPE_MENGETAHUI, value: APPROVAL_TYPE_MENGETAHUI },
+  { label: APPROVAL_TYPE_MENYETUJUI, value: APPROVAL_TYPE_MENYETUJUI },
+  {
+    label: APPROVAL_TYPE_PAYMENT_APPROVAL,
+    value: APPROVAL_TYPE_PAYMENT_APPROVAL,
+  },
+  {
+    label: APPROVAL_TYPE_PAYMENT_VALIDATOR,
+    value: APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  },
+];
+
+// User id "Payment Validator" lama yang di-hardcode. Dipertahankan agar PO lama
+// (yang dibayar lewat akun ini, tanpa type Payment Validator) tetap terdeteksi.
+export const PAYMENT_VALIDATOR_USER_ID =
+  "06122d13-9918-40ac-9034-41e849c5c3e2";
+
+/**
+ * Menentukan apakah sebuah PO sudah "Paid" (deteksi dual):
+ *  - PO lama: ada approval `approved` dari user validator hardcoded, ATAU
+ *  - PO baru: ada approval `approved` ber-type "Payment Validator".
+ */
+export const isPoPaid = (
+  approvals: Approval[] | null | undefined,
+): boolean => {
+  if (!Array.isArray(approvals)) return false;
+  return approvals.some(
+    (app) =>
+      app.status === "approved" &&
+      (app.userid === PAYMENT_VALIDATOR_USER_ID ||
+        app.type === APPROVAL_TYPE_PAYMENT_VALIDATOR),
+  );
+};
 
 export interface LevelDefinition {
   value: string;

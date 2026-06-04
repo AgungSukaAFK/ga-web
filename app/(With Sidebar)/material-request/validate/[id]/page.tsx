@@ -70,7 +70,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MR_LEVELS } from "@/type/enum"; // Import Enum Level
+import { MR_LEVELS, APPROVAL_TYPE_OPTIONS } from "@/type/enum"; // Import Enum Level
 import {
   notifyOnMRValidated,
   sendNotification,
@@ -678,10 +678,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                         </TableCell>
                         <TableCell className="w-40">
                           <Combobox
-                            data={[
-                              { label: "Mengetahui", value: "Mengetahui" },
-                              { label: "Menyetujui", value: "Menyetujui" },
-                            ]}
+                            data={APPROVAL_TYPE_OPTIONS}
                             onChange={(value) =>
                               updateApproverType(app.userid, value)
                             }

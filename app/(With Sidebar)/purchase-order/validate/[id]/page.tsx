@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { PurchaseOrderDetail, Approval } from "@/type";
+import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -555,10 +556,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
                         </TableCell>
                         <TableCell className="w-40">
                           <Combobox
-                            data={[
-                              { label: "Mengetahui", value: "Mengetahui" },
-                              { label: "Menyetujui", value: "Menyetujui" },
-                            ]}
+                            data={APPROVAL_TYPE_OPTIONS}
                             onChange={(value) =>
                               updateApproverType(app.userid, value)
                             }

@@ -12,10 +12,9 @@ import {
   Attachment,
 } from "@/type";
 import { normalizeMrOrders, updateMrItemStatus } from "./mrService";
+import { PAYMENT_VALIDATOR_USER_ID } from "@/type/enum";
 
 const supabase = createClient();
-
-const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
 
 const toRoman = (num: number): string => {
   const romanMap: { [key: string]: string } = {

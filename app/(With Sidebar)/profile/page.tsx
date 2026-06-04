@@ -338,9 +338,9 @@ export default function Dashboard() {
           )}
         </div>
       </Content>
-      <Content size="xs">
+      <Content size="md">
         {/* --- REVISI: Tambahkan AccentThemeSwitcher --- */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Label className="text-base font-bold">Pengaturan Tema</Label>
           <div className="flex items-center gap-1">
             <AccentThemeSwitcher />
@@ -349,7 +349,7 @@ export default function Dashboard() {
         </div>
         {/* --- AKHIR REVISI --- */}
       </Content>
-      <Content size="xs">
+      <Content size="md">
         <NotificationSettings />
       </Content>
     </>

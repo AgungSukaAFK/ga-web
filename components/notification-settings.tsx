@@ -57,14 +57,14 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="space-y-0.5">
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
         <p className="text-sm font-medium">{title}</p>
         {description && (
           <p className="text-xs text-muted-foreground">{description}</p>
         )}
       </div>
-      {children}
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }
@@ -119,12 +119,12 @@ export function NotificationSettings() {
 
         {/* Volume */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Volume2 className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" />
               <p className="text-sm font-medium">Volume</p>
             </div>
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               {Math.round(settings.volume * 100)}%
             </span>
           </div>
@@ -153,7 +153,7 @@ export function NotificationSettings() {
               }
               disabled={soundDisabled}
             >
-              <SelectTrigger className="flex-1">
+              <SelectTrigger className="min-w-0 flex-1">
                 <SelectValue placeholder="Pilih suara" />
               </SelectTrigger>
               <SelectContent>
@@ -170,6 +170,7 @@ export function NotificationSettings() {
               size="sm"
               onClick={handlePreview}
               disabled={soundDisabled}
+              className="shrink-0"
             >
               <Play className="mr-1 h-4 w-4" />
               Coba

@@ -116,7 +116,8 @@ export const fetchMyPendingPoApprovals = async (
     .select(
       "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr)",
     )
-    .eq("status", "Pending Approval");
+    // "Pending Payment" disertakan agar step Payment Validator tetap muncul di antrian.
+    .in("status", ["Pending Approval", "Pending Payment"]);
 
   if (error) {
     console.error("Error fetching all pending POs:", error);

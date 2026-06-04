@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { Approval, User } from "@/type"; // Pastikan path ini benar
+import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { searchUsers } from "@/services/approvalTemplateService";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -237,10 +238,7 @@ export function TemplateForm({
                 </TableCell>
                 <TableCell>
                   <Combobox
-                    data={[
-                      { label: "Mengetahui", value: "Mengetahui" },
-                      { label: "Menyetujui", value: "Menyetujui" },
-                    ]}
+                    data={APPROVAL_TYPE_OPTIONS}
                     onChange={(value) => updateApproverType(app.userid, value)}
                     defaultValue={app.type}
                   />
