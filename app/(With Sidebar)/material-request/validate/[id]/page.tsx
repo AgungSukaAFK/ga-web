@@ -61,7 +61,12 @@ import {
 } from "@/services/approvalTemplateService";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { fetchActiveCostCenters } from "@/services/mrService";
+import {
+  fetchActiveCostCenters,
+  rebuildKodeMrForDepartment,
+} from "@/services/mrService";
+import { logActivity } from "@/services/logService";
+import { dataDepartment } from "@/type/comboboxData";
 import {
   Dialog,
   DialogContent,
@@ -123,9 +128,17 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const [rejectionReason, setRejectionReason] = useState("");
 
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
+  // Sisa budget mentah per cost center (id -> current_budget), agar perbandingan
+  // tidak bergantung pada parsing string label yang rapuh.
+  const [costCenterBudgets, setCostCenterBudgets] = useState<
+    Record<string, number>
+  >({});
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<
     number | null
   >(null);
+
+  // Departemen MR (bisa diubah GA saat validasi awal)
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("");
 
   // State untuk dialog info level
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
@@ -172,6 +185,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
         }
         setMr(mrData as any);
         setSelectedCostCenterId(mrData.cost_center_id || null);
+        setSelectedDepartment(mrData.department || "");
 
         // 3. Ambil Template dan Cost Center
         const [templatesResult, costCentersResult] = await Promise.all([
@@ -190,6 +204,12 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           value: cc.id.toString(),
         }));
         setCostCenterList(costCenterOptions);
+
+        const budgetMap: Record<string, number> = {};
+        costCentersResult.forEach((cc) => {
+          budgetMap[cc.id.toString()] = Number(cc.current_budget) || 0;
+        });
+        setCostCenterBudgets(budgetMap);
       } catch (err: any) {
         setError("Gagal memuat data.");
         toast.error("Gagal memuat data", { description: err.message });
@@ -262,21 +282,8 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    // Validasi Budget (Peringatan)
-    const selectedCC = costCenterList.find(
-      (c) => c.value === selectedCostCenterId.toString(),
-    );
-    let budget = 0;
-    if (selectedCC) {
-      try {
-        const budgetMatch = selectedCC.label.match(/\(Rp\s(.+)\)/);
-        if (budgetMatch && budgetMatch[1]) {
-          budget = parseFloat(budgetMatch[1].replace(/\./g, ""));
-        }
-      } catch (e) {
-        console.error("Gagal parse budget dari label");
-      }
-    }
+    // Validasi Budget (Peringatan) — pakai angka mentah, bukan parse label.
+    const budget = costCenterBudgets[selectedCostCenterId.toString()] ?? 0;
 
     if (Number(mr.cost_estimation) > budget) {
       if (
@@ -308,17 +315,49 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
     const finalApprovals = [validationApproval, ...newApprovals];
 
+    // Departemen: cek perubahan & hitung ulang kode_mr (hanya jika berbasis departemen/HO)
+    const departmentChanged =
+      !!selectedDepartment && selectedDepartment !== mr.department;
+    const newKodeMr = departmentChanged
+      ? rebuildKodeMrForDepartment(mr.kode_mr, mr.department, selectedDepartment)
+      : null;
+    const effectiveKodeMr = newKodeMr ?? mr.kode_mr;
+
+    const updatePayload: Record<string, any> = {
+      approvals: finalApprovals,
+      status: "Pending Approval",
+      cost_center_id: selectedCostCenterId,
+    };
+    if (departmentChanged) updatePayload.department = selectedDepartment;
+    if (newKodeMr) updatePayload.kode_mr = newKodeMr;
+
     try {
       const { error: updateError } = await s
         .from("material_requests")
-        .update({
-          approvals: finalApprovals,
-          status: "Pending Approval",
-          cost_center_id: selectedCostCenterId,
-        })
+        .update(updatePayload)
         .eq("id", mrId);
 
       if (updateError) throw updateError;
+
+      // Catat perubahan departemen ke activity log (terlihat di tab Logs mr-management/edit)
+      if (departmentChanged) {
+        const kodeNote = newKodeMr
+          ? ` Kode MR diperbarui: ${mr.kode_mr} → ${newKodeMr}.`
+          : " Kode MR tidak berubah (berbasis lokasi).";
+        await logActivity(
+          profile.id,
+          "UPDATE_MR_DEPARTMENT",
+          "material_request",
+          String(mrId),
+          `GA ${profile.nama || "Unknown"} mengubah departemen MR dari "${mr.department}" menjadi "${selectedDepartment}" saat validasi.${kodeNote}`,
+          {
+            old_department: mr.department,
+            new_department: selectedDepartment,
+            old_kode_mr: mr.kode_mr,
+            new_kode_mr: newKodeMr,
+          },
+        );
+      }
 
       // Notify creator and first approver
       const firstApprover = newApprovals.find((a) => a.status === "pending");
@@ -326,7 +365,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
         actorId: profile.id,
         creatorId: mr.userid,
         firstApproverId: firstApprover?.userid,
-        kodeMR: mr.kode_mr,
+        kodeMR: effectiveKodeMr,
         mrId: mrId,
       });
 
@@ -590,7 +629,42 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           <div className="space-y-4">
             <div>
               <Label className="font-medium text-base">
-                1. Tentukan Cost Center (Wajib)
+                1. Departemen MR (bisa diubah)
+              </Label>
+              <Combobox
+                data={dataDepartment}
+                onChange={(value) => setSelectedDepartment(value)}
+                defaultValue={selectedDepartment}
+                placeholder="Pilih departemen..."
+              />
+              {selectedDepartment && selectedDepartment !== mr.department && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Departemen diubah:{" "}
+                  <span className="font-medium text-foreground">
+                    {mr.department}
+                  </span>{" "}
+                  →{" "}
+                  <span className="font-medium text-foreground">
+                    {selectedDepartment}
+                  </span>
+                  .{" "}
+                  {(() => {
+                    const preview = rebuildKodeMrForDepartment(
+                      mr.kode_mr,
+                      mr.department,
+                      selectedDepartment,
+                    );
+                    return preview
+                      ? `Kode MR akan menjadi: ${preview}`
+                      : "Kode MR tidak berubah (berbasis lokasi).";
+                  })()}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label className="font-medium text-base">
+                2. Tentukan Cost Center (Wajib)
               </Label>
               <Combobox
                 data={costCenterList}
@@ -605,20 +679,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               />
               {selectedCostCenterId &&
                 Number(mr.cost_estimation) >
-                  (costCenterList.find(
-                    (c) => c.value === selectedCostCenterId.toString(),
-                  )
-                    ? parseFloat(
-                        (
-                          costCenterList
-                            .find(
-                              (c) =>
-                                c.value === selectedCostCenterId.toString(),
-                            )!
-                            .label.match(/\(Rp\s(.+)\)/)?.[1] || "0"
-                        ).replace(/\./g, ""),
-                      )
-                    : 0) && (
+                  (costCenterBudgets[selectedCostCenterId.toString()] ?? 0) && (
                   <p className="text-xs text-destructive font-medium mt-1">
                     Peringatan: Estimasi biaya MR melebihi sisa budget Cost
                     Center ini.
@@ -628,7 +689,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
             <div>
               <Label className="font-medium text-base">
-                2. Terapkan Jalur Approval (Wajib)
+                3. Terapkan Jalur Approval (Wajib)
               </Label>
               <Combobox
                 data={templateList}

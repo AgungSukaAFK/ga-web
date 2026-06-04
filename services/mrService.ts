@@ -75,6 +75,42 @@ const toRoman = (num: number): string => {
   return romanMap[String(num)] || "";
 };
 
+// Singkatan departemen (dipakai sebagai IDENTIFIER kode_mr untuk user Head Office)
+export const getDeptAbbreviation = (department: string): string =>
+  deptAbbreviations[department] || department;
+
+/**
+ * Menghitung ulang kode_mr ketika departemen diubah.
+ *
+ * IDENTIFIER (bagian ke-5 kode_mr) hanya berbasis departemen untuk MR Head Office.
+ * Fungsi ini HANYA menulis ulang identifier bila kode saat ini memang berbasis
+ * departemen (identifier == singkatan departemen lama). Untuk MR berbasis lokasi
+ * (site/non-HO) kode dibiarkan apa adanya.
+ *
+ * SEQ tidak diubah: nomor urut unik per company per tahun (lihat generateMRCode),
+ * jadi mengganti identifier saja tetap menjaga keunikan kode_mr.
+ *
+ * @returns kode_mr baru, atau `null` bila kode tidak perlu diubah.
+ */
+export const rebuildKodeMrForDepartment = (
+  kodeMr: string,
+  oldDepartment: string,
+  newDepartment: string,
+): string | null => {
+  const parts = kodeMr.split("/");
+  if (parts.length < 6) return null; // format tak dikenali
+
+  const oldAbbr = getDeptAbbreviation(oldDepartment);
+  const newAbbr = getDeptAbbreviation(newDepartment);
+  if (newAbbr === oldAbbr) return null; // singkatan sama, tak ada perubahan
+
+  // Hanya tulis ulang bila kode memang berbasis departemen (MR Head Office).
+  if (parts[4] !== oldAbbr) return null;
+
+  parts[4] = newAbbr;
+  return parts.join("/");
+};
+
 export const getActiveUserProfile = async (): Promise<Profile | null> => {
   const {
     data: { user },
@@ -340,7 +376,7 @@ export const fetchMaterialRequestById = async (mrId: number) => {
 };
 
 export const fetchActiveCostCenters = async (company_code: string) => {
-  let query = supabase
+  const query = supabase
     .from("cost_centers")
     .select("id, name, code, current_budget");
   const { data, error } = await query.order("name", { ascending: true });
