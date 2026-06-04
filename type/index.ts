@@ -111,6 +111,7 @@ export interface PurchaseOrderPayload {
   status:
     | "Pending Validation"
     | "Pending Approval"
+    | "Pending Payment"
     | "Pending BAST"
     | "Completed"
     | "Rejected"

@@ -31,7 +31,12 @@ import * as XLSX from "xlsx";
 import { PurchaseOrderListItem, Profile, Approval } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { LIMIT_OPTIONS, STATUS_OPTIONS } from "@/type/enum";
+import {
+  LIMIT_OPTIONS,
+  STATUS_OPTIONS,
+  PAYMENT_VALIDATOR_USER_ID,
+  isPoPaid,
+} from "@/type/enum";
 
 // --- CONSTANTS ---
 const PAYMENT_TERM_OPTIONS = [
@@ -39,8 +44,6 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
 ];
-
-const PAYMENT_VALIDATOR_USER_ID = "06122d13-9918-40ac-9034-41e849c5c3e2";
 
 export function PoManagementClientContent() {
   const s = createClient();
@@ -360,12 +363,7 @@ export function PoManagementClientContent() {
       }
 
       const formattedData = data.map((po: any) => {
-        const isPaid =
-          (po.approvals as Approval[])?.some(
-            (app) =>
-              app.userid === PAYMENT_VALIDATOR_USER_ID &&
-              app.status === "approved",
-          ) ?? false;
+        const isPaid = isPoPaid(po.approvals as Approval[]);
 
         return {
           "Kode PO": po.kode_po,
@@ -652,11 +650,7 @@ export function PoManagementClientContent() {
                     <Badge variant="secondary">{po.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    {po.approvals?.some(
-                      (app: Approval) =>
-                        app.userid === PAYMENT_VALIDATOR_USER_ID &&
-                        app.status === "approved",
-                    ) ? (
+                    {isPoPaid(po.approvals) ? (
                       <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300">
                         <CreditCard className="h-3 w-3" /> Paid
                       </Badge>

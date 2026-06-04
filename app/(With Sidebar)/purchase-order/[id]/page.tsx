@@ -98,6 +98,8 @@ import {
   MR_LEVELS,
   MR_ITEM_STATUS_COLORS,
   MR_ITEM_STATUS_LABELS,
+  APPROVAL_TYPE_PAYMENT_APPROVAL,
+  APPROVAL_TYPE_PAYMENT_VALIDATOR,
 } from "@/type/enum";
 
 const PPH_LABELS: Record<string, string> = {
@@ -400,10 +402,20 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     if (decision === "rejected") {
       newPoStatus = "Rejected";
     } else if (decision === "approved") {
+      const justApprovedType = updatedApprovals[myApprovalIndex].type;
       const isLastApproval = updatedApprovals.every(
         (app: Approval) => app.status === "approved",
       );
-      if (isLastApproval) {
+
+      if (justApprovedType === APPROVAL_TYPE_PAYMENT_VALIDATOR) {
+        // Payment Validator approve => lanjut BAST + PO otomatis terdeteksi Paid.
+        newPoStatus = "Pending BAST";
+        newMrStatus = "Pending BAST";
+      } else if (justApprovedType === APPROVAL_TYPE_PAYMENT_APPROVAL) {
+        // Payment Approval approve => menunggu validasi pembayaran.
+        newPoStatus = "Pending Payment";
+      } else if (isLastApproval) {
+        // Template tanpa step payment: semua approve => langsung BAST (perilaku lama).
         newPoStatus = "Pending BAST";
         newMrStatus = "Pending BAST";
       }
@@ -533,7 +545,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // ---------------------------------
 
   const ApprovalActions = () => {
-    if (!po || !currentUser || po.status !== "Pending Approval") return null;
+    if (
+      !po ||
+      !currentUser ||
+      (po.status !== "Pending Approval" && po.status !== "Pending Payment")
+    )
+      return null;
     if (myApprovalIndex === -1) return null;
     if (!isMyTurnForApproval)
       return (
@@ -579,6 +596,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="secondary">Pending Approval</Badge>;
       case "pending validation":
         return <Badge variant="secondary">Pending Validation</Badge>;
+      case "pending payment":
+        return <Badge className="bg-orange-500 text-white">Pending Payment</Badge>;
       case "pending bast":
         return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
       case "completed":
