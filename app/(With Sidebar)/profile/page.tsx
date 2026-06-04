@@ -338,20 +338,23 @@ export default function Dashboard() {
           )}
         </div>
       </Content>
-      <Content size="md">
-        {/* --- REVISI: Tambahkan AccentThemeSwitcher --- */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Label className="text-base font-bold">Pengaturan Tema</Label>
-          <div className="flex items-center gap-1">
-            <AccentThemeSwitcher />
-            <ThemeSwitcher />
+      {/* Kolom kanan: Pengaturan Tema + Notifikasi ditumpuk agar mengisi ruang kosong */}
+      <div className="col-span-12 flex flex-col gap-4 md:gap-6 lg:col-span-6">
+        <Content size="lg">
+          {/* --- REVISI: Tambahkan AccentThemeSwitcher --- */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Label className="text-base font-bold">Pengaturan Tema</Label>
+            <div className="flex items-center gap-1">
+              <AccentThemeSwitcher />
+              <ThemeSwitcher />
+            </div>
           </div>
-        </div>
-        {/* --- AKHIR REVISI --- */}
-      </Content>
-      <Content size="md">
-        <NotificationSettings />
-      </Content>
+          {/* --- AKHIR REVISI --- */}
+        </Content>
+        <Content size="lg">
+          <NotificationSettings />
+        </Content>
+      </div>
     </>
   );
 }
