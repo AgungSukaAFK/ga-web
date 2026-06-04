@@ -33,6 +33,7 @@ import {
   Clock,
   Loader2,
   XCircle,
+  PauseCircle,
   Building2,
   Truck,
   CircleUser,
@@ -78,6 +79,7 @@ import {
 import { MR_LEVELS, APPROVAL_TYPE_OPTIONS } from "@/type/enum"; // Import Enum Level
 import {
   notifyOnMRValidated,
+  notifyOnMRHold,
   sendNotification,
 } from "@/lib/notifications/client";
 
@@ -126,6 +128,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const [templateList, setTemplateList] = useState<ComboboxData>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [holdInstruction, setHoldInstruction] = useState("");
 
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
   // Sisa budget mentah per cost center (id -> current_budget), agar perbandingan
@@ -422,6 +425,68 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
       }
       toast.success("MR telah ditolak.");
       router.push("/approval-validation");
+    }
+  };
+
+  const handleHold = async () => {
+    if (!mr || !profile) {
+      toast.error("Data MR atau profil GA tidak ditemukan.");
+      return;
+    }
+    if (!holdInstruction.trim()) {
+      toast.error("Arahan perbaikan wajib diisi.");
+      return;
+    }
+
+    setActionLoading(true);
+    const toastId = toast.loading("Menahan MR...");
+
+    const newDiscussion: Discussion = {
+      user_id: profile.id,
+      user_name: `[HOLD] ${profile.nama || "GA"}`,
+      message: `MR ditahan oleh GA untuk perbaikan. Arahan: ${holdInstruction}`,
+      timestamp: new Date().toISOString(),
+    };
+    const updatedDiscussions = mr.discussions
+      ? [...(mr.discussions as Discussion[]), newDiscussion]
+      : [newDiscussion];
+
+    try {
+      const { error } = await s
+        .from("material_requests")
+        .update({ status: "On Hold", discussions: updatedDiscussions })
+        .eq("id", mrId);
+
+      if (error) throw error;
+
+      await logActivity(
+        profile.id,
+        "HOLD_MR",
+        "material_request",
+        String(mrId),
+        `GA ${profile.nama || "Unknown"} menahan MR ${mr.kode_mr} untuk perbaikan. Arahan: ${holdInstruction}`,
+        { instruction: holdInstruction },
+      );
+
+      notifyOnMRHold({
+        actorId: profile.id,
+        creatorId: mr.userid,
+        kodeMR: mr.kode_mr,
+        mrId: mrId,
+        instruction: holdInstruction,
+      });
+
+      toast.success("MR ditahan. Requester diminta memperbaiki.", {
+        id: toastId,
+      });
+      router.push("/approval-validation");
+    } catch (err: any) {
+      toast.error("Gagal menahan MR", {
+        id: toastId,
+        description: err.message,
+      });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -794,6 +859,33 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                 <CheckCircle className="mr-2 h-4 w-4" />
               )}
               Validasi & Mulai Proses Approval
+            </Button>
+          </div>
+        </Content>
+
+        <Content title="Tahan untuk Perbaikan (Hold)" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Kembalikan MR ke requester untuk diperbaiki tanpa menolaknya.
+              Requester dapat memperbaiki & mengajukan ulang sesuai arahan.
+            </p>
+            <Textarea
+              placeholder="Tuliskan arahan perbaikan untuk requester..."
+              value={holdInstruction}
+              onChange={(e) => setHoldInstruction(e.target.value)}
+            />
+            <Button
+              variant="outline"
+              onClick={handleHold}
+              disabled={actionLoading || !holdInstruction.trim()}
+              className="w-full"
+            >
+              {actionLoading ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <PauseCircle className="mr-2 h-4 w-4" />
+              )}
+              Tahan & Minta Perbaikan
             </Button>
           </div>
         </Content>
