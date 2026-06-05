@@ -31,7 +31,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
-import { Loader2, Search, Edit, Plus, History, Eye } from "lucide-react";
+import {
+  Loader2,
+  Search,
+  Edit,
+  Plus,
+  History,
+  Eye,
+  Power,
+  PowerOff,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
@@ -45,6 +54,7 @@ import {
   fetchCostCenterHistory,
   fetchCostCenters,
   updateCostCenterBudget,
+  setCostCenterActiveStatus,
 } from "@/services/costCenterService";
 import { User } from "@supabase/supabase-js";
 import { CurrencyInput } from "@/components/ui/currency-input"; // <-- IMPORT KOMPONEN BARU
@@ -307,14 +317,14 @@ function HistoryDialog({
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center">
+                  <TableCell colSpan={7} className="text-center">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
               )}
               {!loading && history.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     Tidak ada riwayat.
                   </TableCell>
                 </TableRow>
@@ -488,6 +498,37 @@ export function CostCenterClientContent() {
     setIsHistoryOpen(true);
   };
 
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const handleToggleActive = async (cc: CostCenter) => {
+    if (!authUser) {
+      toast.error("Sesi admin tidak ditemukan.");
+      return;
+    }
+    const willDeactivate = cc.is_active !== false;
+    const confirmMsg = willDeactivate
+      ? `Nonaktifkan Cost Center "${cc.name}"? CC ini tidak akan muncul lagi di pilihan/filter cost center pada halaman lain. Data & MR yang sudah memakainya tetap utuh.`
+      : `Aktifkan kembali Cost Center "${cc.name}"? CC ini akan muncul kembali di pilihan cost center.`;
+    if (!confirm(confirmMsg)) return;
+
+    setTogglingId(cc.id);
+    try {
+      await setCostCenterActiveStatus(cc.id, !willDeactivate, authUser.id);
+      toast.success(
+        willDeactivate
+          ? `Cost Center "${cc.name}" dinonaktifkan.`
+          : `Cost Center "${cc.name}" diaktifkan.`
+      );
+      loadData();
+    } catch (err: any) {
+      toast.error("Gagal mengubah status cost center", {
+        description: err.message,
+      });
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   return (
     <>
       <Content
@@ -546,6 +587,7 @@ export function CostCenterClientContent() {
                 <TableHead>Nama</TableHead>
                 <TableHead>Kode</TableHead>
                 <TableHead>Perusahaan</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Initial Budget</TableHead>
                 <TableHead className="text-right">Current Budget</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
@@ -554,47 +596,80 @@ export function CostCenterClientContent() {
             <TableBody>
               {loading || isPending ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : data.length > 0 ? (
-                data.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.code || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{item.company_code}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(item.initial_budget)}
-                    </TableCell>
-                    <TableCell className="text-right font-bold">
-                      {formatCurrency(item.current_budget)}
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenHistory(item)}
-                      >
-                        <History className="mr-2 h-3 w-3" /> Riwayat
-                      </Button>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleOpenEdit(item)}
-                      >
-                        <Edit className="mr-2 h-3 w-3" /> Edit/Top-up
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                data.map((item) => {
+                  const isInactive = item.is_active === false;
+                  const dimClass = isInactive ? "opacity-50" : "";
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell className={cn("font-medium", dimClass)}>
+                        {item.name}
+                      </TableCell>
+                      <TableCell className={cn("font-mono text-xs", dimClass)}>
+                        {item.code || "-"}
+                      </TableCell>
+                      <TableCell className={dimClass}>
+                        <Badge variant="outline">{item.company_code}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {isInactive ? (
+                          <Badge variant="secondary">Nonaktif</Badge>
+                        ) : (
+                          <Badge className="bg-green-500 text-white">
+                            Aktif
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className={cn("text-right", dimClass)}>
+                        {formatCurrency(item.initial_budget)}
+                      </TableCell>
+                      <TableCell className={cn("text-right font-bold", dimClass)}>
+                        {formatCurrency(item.current_budget)}
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenHistory(item)}
+                        >
+                          <History className="mr-2 h-3 w-3" /> Riwayat
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleOpenEdit(item)}
+                        >
+                          <Edit className="mr-2 h-3 w-3" /> Edit/Top-up
+                        </Button>
+                        <Button
+                          variant={isInactive ? "outline" : "destructive"}
+                          size="sm"
+                          onClick={() => handleToggleActive(item)}
+                          disabled={togglingId === item.id}
+                        >
+                          {togglingId === item.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : isInactive ? (
+                            <>
+                              <Power className="mr-2 h-3 w-3" /> Aktifkan
+                            </>
+                          ) : (
+                            <>
+                              <PowerOff className="mr-2 h-3 w-3" /> Nonaktifkan
+                            </>
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     Tidak ada data cost center ditemukan.
                   </TableCell>
                 </TableRow>

@@ -302,6 +302,7 @@ export interface CostCenter {
   company_code: string;
   initial_budget: number;
   current_budget: number;
+  is_active?: boolean;
   created_at?: string | Date;
   updated_at?: string | Date;
 }

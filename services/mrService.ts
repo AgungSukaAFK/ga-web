@@ -376,9 +376,11 @@ export const fetchMaterialRequestById = async (mrId: number) => {
 };
 
 export const fetchActiveCostCenters = async (company_code: string) => {
+  // Hanya CC aktif yang boleh dipilih/difilter di halaman lain.
   const query = supabase
     .from("cost_centers")
-    .select("id, name, code, current_budget");
+    .select("id, name, code, current_budget")
+    .eq("is_active", true);
   const { data, error } = await query.order("name", { ascending: true });
   if (error) {
     console.error("Error fetching cost centers:", error);

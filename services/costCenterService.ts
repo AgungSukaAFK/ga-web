@@ -165,6 +165,52 @@ export const updateCostCenterBudget = async (
 };
 
 /**
+ * Mengaktifkan / menonaktifkan Cost Center.
+ * CC nonaktif tidak muncul di combobox pemilihan/filter (fetchActiveCostCenters),
+ * tetapi data & referensinya tetap utuh. Perubahan dicatat ke history sebagai audit.
+ */
+export const setCostCenterActiveStatus = async (
+  costCenterId: number,
+  isActive: boolean,
+  adminUserId: string
+) => {
+  const { data: oldData, error: fetchError } = await supabase
+    .from("cost_centers")
+    .select("current_budget")
+    .eq("id", costCenterId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { error: updateError } = await supabase
+    .from("cost_centers")
+    .update({ is_active: isActive, updated_at: new Date().toISOString() })
+    .eq("id", costCenterId);
+
+  if (updateError) throw updateError;
+
+  // Catat jejak audit (bukan perubahan budget => change_amount 0)
+  const { error: historyError } = await supabase
+    .from("cost_center_history")
+    .insert({
+      cost_center_id: costCenterId,
+      user_id: adminUserId,
+      change_amount: 0,
+      previous_budget: oldData.current_budget,
+      new_budget: oldData.current_budget,
+      description: isActive
+        ? "Cost Center diaktifkan oleh Admin"
+        : "Cost Center dinonaktifkan oleh Admin",
+    });
+
+  if (historyError) {
+    console.error("History (activation) update failed:", historyError);
+  }
+
+  return;
+};
+
+/**
  * (Opsional) Jika Anda membuat RPC 'admin_update_budget' seperti saran saya,
  * panggil RPC-nya seperti ini agar lebih aman dari race condition.
  */
