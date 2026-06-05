@@ -194,6 +194,25 @@ export interface Barang {
   link?: string | null;
 }
 
+export interface GaStock {
+  id: number;
+  barang_id: number;
+  company_code: string;
+  quantity: number;
+  location: string | null;
+  note: string | null;
+  created_at?: string | Date;
+  updated_at?: string | Date;
+  updated_by?: string | null;
+  // Hasil join ke master barang
+  barang?: {
+    part_number: string;
+    part_name: string | null;
+    uom: string | null;
+    category: string | null;
+  } | null;
+}
+
 export interface Vendor {
   id: number;
   created_at: string;

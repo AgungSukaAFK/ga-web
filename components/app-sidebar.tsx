@@ -38,6 +38,7 @@ import {
   PlusCircle,
   FileSignature,
   Users,
+  Warehouse,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -218,6 +219,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         title: "Cost Center Management",
         url: "/cost-center-management",
         icon: BadgeDollarSign,
+      });
+    }
+
+    // Stok GA: hanya GA & Admin
+    if (isGADepartment(profile?.department) || profile?.role === "admin") {
+      const barangIdx = baseNav.findIndex((item) => item.title === "Barang");
+      const insertAt = barangIdx !== -1 ? barangIdx + 1 : baseNav.length;
+      baseNav.splice(insertAt, 0, {
+        title: "Stok GA",
+        url: "/stok-ga",
+        icon: Warehouse,
       });
     }
 
