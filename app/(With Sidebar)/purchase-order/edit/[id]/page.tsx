@@ -52,6 +52,11 @@ import {
   FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  uploadAttachmentVps,
+  removeAttachmentVps,
+} from "@/services/storageService";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { BarangSearchCombobox } from "../../BarangSearchCombobox";
 import {
   PurchaseOrderDetail,
@@ -586,17 +591,16 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const toastId = toast.loading(
       `Mengunggah lampiran ${type.toUpperCase()}...`,
     );
-    const supabase = createClient();
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("mr")
-      .upload(filePath, file);
+    const formData = new FormData();
+    formData.append("file", file);
+    const uploadResult = await uploadAttachmentVps(formData, filePath);
 
-    if (uploadError) {
+    if (!uploadResult.success) {
       toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
         id: toastId,
-        description: uploadError.message,
+        description: uploadResult.message,
       });
       setIsLoading(false);
       return;
@@ -604,7 +608,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
     const newAttachment: Attachment = {
       name: file.name,
-      url: uploadData.path,
+      url: uploadResult.url,
       type: type,
     };
 
@@ -635,8 +639,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       prev ? { ...prev, attachments: updatedAttachments } : null,
     );
 
-    const supabase = createClient();
-    supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    if (attachmentToRemove.url.startsWith("http")) {
+      removeAttachmentVps(attachmentToRemove.url);
+    } else {
+      const supabase = createClient();
+      supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    }
 
     toast.info(
       `Lampiran "${attachmentToRemove.name}" dihapus. Perubahan akan tersimpan saat Anda menekan 'Simpan Perubahan'.`,
@@ -1079,7 +1087,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                       className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                     >
                       <a
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
+                        href={resolveAttachmentUrl(att.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 truncate hover:underline text-primary"
@@ -1140,7 +1148,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                       className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                     >
                       <a
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${att.url}`}
+                        href={resolveAttachmentUrl(att.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 truncate hover:underline text-primary"

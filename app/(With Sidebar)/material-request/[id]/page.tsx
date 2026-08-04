@@ -5,6 +5,11 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  uploadAttachmentVps,
+  removeAttachmentVps,
+} from "@/services/storageService";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -548,16 +553,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
         file.name
       }`;
-      const { data, error } = await supabase.storage
-        .from("mr")
-        .upload(filePath, file);
-      if (error) return { error };
-      return { data: { ...data, name: file.name }, error: null };
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadAttachmentVps(formData, filePath);
+      if (!result.success) return { error: result.message };
+      return { data: { url: result.url, name: file.name }, error: null };
     });
     const results = await Promise.all(uploadPromises);
     const successfulUploads = results
       .filter((r) => !r.error)
-      .map((r) => ({ url: r.data!.path, name: r.data!.name }) as Attachment);
+      .map((r) => r.data as Attachment);
     if (successfulUploads.length === 0) {
       toast.error("Semua file gagal diunggah.", { id: toastId });
       setIsUploading(false);
@@ -595,7 +600,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       (_, i) => i !== indexToRemove,
     );
     setMr({ ...mr, attachments: updatedAttachments });
-    supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    if (attachmentToRemove.url.startsWith("http")) {
+      removeAttachmentVps(attachmentToRemove.url);
+    } else {
+      supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    }
     supabase
       .from("material_requests")
       .update({ attachments: updatedAttachments })
@@ -1511,7 +1520,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               {(mr.attachments as Attachment[]).map((file, index) => (
                 <li key={index}>
                   <Link
-                    href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                    href={resolveAttachmentUrl(file.url)}
                     target="_blank"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >

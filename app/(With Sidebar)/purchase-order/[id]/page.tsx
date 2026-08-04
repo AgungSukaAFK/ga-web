@@ -5,6 +5,8 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { uploadAttachmentVps } from "@/services/storageService";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -482,14 +484,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       for (let i = 0; i < bastFiles.length; i++) {
         const file = bastFiles[i];
         const filePath = `po/${po?.kode_po}/bast/${Date.now()}_${file.name}`;
-        const { data, error } = await supabase.storage
-          .from("mr")
-          .upload(filePath, file);
+        const formData = new FormData();
+        formData.append("file", file);
+        const result = await uploadAttachmentVps(formData, filePath);
 
-        if (error) throw error;
+        if (!result.success) throw new Error(result.message);
         uploadedAttachments.push({
           name: file.name,
-          url: data.path,
+          url: result.url,
           type: "bast",
         });
       }
@@ -1170,7 +1172,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   poAttachments.map((file, index) => (
                     <li key={index}>
                       <Link
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        href={resolveAttachmentUrl(file.url)}
                         target="_blank"
                         className="flex items-center gap-2 text-sm text-primary hover:underline"
                       >
@@ -1194,7 +1196,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   financeAttachments.map((file, index) => (
                     <li key={index}>
                       <Link
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        href={resolveAttachmentUrl(file.url)}
                         target="_blank"
                         className="flex items-center gap-2 text-sm text-primary hover:underline"
                       >
@@ -1218,7 +1220,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   bastAttachments.map((file, index) => (
                     <li key={index}>
                       <Link
-                        href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                        href={resolveAttachmentUrl(file.url)}
                         target="_blank"
                         className="flex items-center gap-2 text-sm text-primary hover:underline"
                       >
