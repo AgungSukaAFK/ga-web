@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { MaterialRequest, Order, Attachment, Profile } from "@/type";
+import { uploadAttachmentVps, removeAttachmentVps } from "./storageService";
 
 const supabase = createClient();
 
@@ -132,15 +133,21 @@ export const uploadAttachment = async (
   kode_mr: string,
 ): Promise<Attachment> => {
   const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
-  const { data, error } = await supabase.storage
-    .from("mr")
-    .upload(filePath, file);
-  if (error) throw error;
-  return { url: data.path, name: file.name };
+  const formData = new FormData();
+  formData.append("file", file);
+  const result = await uploadAttachmentVps(formData, filePath);
+  if (!result.success) throw new Error(result.message);
+  return { url: result.url, name: file.name };
 };
 
-export const removeAttachment = async (path: string): Promise<void> => {
-  const { error } = await supabase.storage.from("mr").remove([path]);
+// url = full public URL hasil uploadAttachment (VPS) ATAU path relatif lama (Cloud).
+export const removeAttachment = async (url: string): Promise<void> => {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    const result = await removeAttachmentVps(url);
+    if (!result.success) throw new Error(result.message);
+    return;
+  }
+  const { error } = await supabase.storage.from("mr").remove([url]);
   if (error) throw error;
 };
 

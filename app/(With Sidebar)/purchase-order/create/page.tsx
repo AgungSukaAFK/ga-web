@@ -31,6 +31,10 @@ import {
   generatePoCode,
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
+import {
+  uploadAttachmentVps,
+  removeAttachmentVps,
+} from "@/services/storageService";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
 import {
@@ -665,17 +669,17 @@ function CreatePOPageContent() {
       type === "po" ? setIsUploadingPO : setIsUploadingFinance;
     setIsLoading(true);
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
-    const { data, error } = await supabase.storage
-      .from("mr")
-      .upload(filePath, file);
-    if (error) {
-      toast.error("Gagal upload", { description: error.message });
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await uploadAttachmentVps(formData, filePath);
+    if (!result.success) {
+      toast.error("Gagal upload", { description: result.message });
     } else {
       setPoForm((prev) => ({
         ...prev,
         attachments: [
           ...(prev.attachments || []),
-          { name: file.name, url: data.path, type },
+          { name: file.name, url: result.url, type },
         ],
       }));
       toast.success("Berhasil diunggah");
@@ -691,7 +695,11 @@ function CreatePOPageContent() {
       ...p,
       attachments: p.attachments?.filter((_, i) => i !== index),
     }));
-    supabase.storage.from("mr").remove([att.url]);
+    if (att.url.startsWith("http")) {
+      removeAttachmentVps(att.url);
+    } else {
+      supabase.storage.from("mr").remove([att.url]);
+    }
   };
 
   const toggleSelection = (index: number) => {

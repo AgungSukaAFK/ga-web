@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { uploadAttachmentVps } from "@/services/storageService";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -114,22 +115,14 @@ export default function CreatePettyCashPage() {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `petty-cash/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("mr")
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("mr")
-        .getPublicUrl(filePath);
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      const result = await uploadAttachmentVps(uploadFormData, filePath);
+      if (!result.success) throw new Error(result.message);
 
       setFormData((prev) => ({
         ...prev,
-        attachments: [
-          ...prev.attachments,
-          { url: publicUrlData.publicUrl, name: file.name },
-        ],
+        attachments: [...prev.attachments, { url: result.url, name: file.name }],
       }));
       toast.success("Lampiran berhasil diunggah");
     } catch (error: any) {

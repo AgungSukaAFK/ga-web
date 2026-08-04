@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { uploadAttachmentVps } from "@/services/storageService";
 import { isGADepartment } from "@/lib/constants/departments";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -350,18 +351,14 @@ export default function PettyCashDetailPage() {
       const fileName = `settlement-${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `petty-cash/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("mr")
-        .upload(filePath, file);
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("mr")
-        .getPublicUrl(filePath);
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      const result = await uploadAttachmentVps(uploadFormData, filePath);
+      if (!result.success) throw new Error(result.message);
 
       setSettlementAttachments((prev) => [
         ...prev,
-        { url: publicUrlData.publicUrl, name: file.name },
+        { url: result.url, name: file.name },
       ]);
       toast.success("Bukti nota berhasil diunggah.");
     } catch (error: any) {

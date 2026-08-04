@@ -5,6 +5,11 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  uploadAttachmentVps,
+  removeAttachmentVps,
+} from "@/services/storageService";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -518,17 +523,17 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
         file.name
       }`;
-      const { data, error } = await supabase.storage
-        .from("mr")
-        .upload(filePath, file);
-      if (error) return { error };
-      return { data: { ...data, name: file.name }, error: null };
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadAttachmentVps(formData, filePath);
+      if (!result.success) return { error: result.message };
+      return { data: { url: result.url, name: file.name }, error: null };
     });
 
     const results = await Promise.all(uploadPromises);
     const successfulUploads = results
       .filter((r) => !r.error)
-      .map((r) => ({ url: r.data!.path, name: r.data!.name }) as Attachment);
+      .map((r) => r.data as Attachment);
 
     if (successfulUploads.length > 0) {
       setMr((prevMr) =>
@@ -577,7 +582,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           }
         : null,
     );
-    supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    if (attachmentToRemove.url.startsWith("http")) {
+      removeAttachmentVps(attachmentToRemove.url);
+    } else {
+      supabase.storage.from("mr").remove([attachmentToRemove.url]);
+    }
     toast.info(`Lampiran "${attachmentToRemove.name}" dihapus (sementara).`);
   };
 
@@ -1060,7 +1069,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                         className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                       >
                         <a
-                          href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                          href={resolveAttachmentUrl(file.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-2 truncate hover:underline text-primary"

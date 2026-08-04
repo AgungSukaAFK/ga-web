@@ -5,6 +5,7 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -662,7 +663,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               {(mr.attachments as Attachment[]).map((file, index) => (
                 <li key={index}>
                   <Link
-                    href={`https://xdkjqwpvmyqcggpwghyi.supabase.co/storage/v1/object/public/mr/${file.url}`}
+                    href={resolveAttachmentUrl(file.url)}
                     target="_blank"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
