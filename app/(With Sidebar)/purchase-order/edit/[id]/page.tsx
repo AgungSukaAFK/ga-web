@@ -220,6 +220,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
+  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -579,13 +580,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance",
+    type: "po" | "finance" | "invoice",
   ) => {
     const file = e.target.files?.[0];
     if (!file || !poForm) return;
 
     const setIsLoading =
-      type === "po" ? setIsUploadingPO : setIsUploadingFinance;
+      type === "po"
+        ? setIsUploadingPO
+        : type === "finance"
+          ? setIsUploadingFinance
+          : setIsUploadingInvoice;
     setIsLoading(true);
 
     const toastId = toast.loading(
@@ -655,6 +660,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     poForm?.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
     poForm?.attachments?.filter((att) => att.type === "finance") || [];
+  const invoiceAttachments =
+    poForm?.attachments?.filter((att) => att.type === "invoice") || [];
 
   if (loading)
     return (
@@ -690,7 +697,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         <div className="flex gap-2">
           <Button
             onClick={handleSubmit}
-            disabled={actionLoading || isUploadingPO || isUploadingFinance}
+            disabled={
+              actionLoading ||
+              isUploadingPO ||
+              isUploadingFinance ||
+              isUploadingInvoice
+            }
           >
             {actionLoading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1067,7 +1079,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               id="po-attachment-upload"
               type="file"
               onChange={(e) => handleAttachmentUpload(e, "po")}
-              disabled={isUploadingPO || isUploadingFinance || actionLoading}
+              disabled={
+                isUploadingPO ||
+                isUploadingFinance ||
+                isUploadingInvoice ||
+                actionLoading
+              }
             />
             {isUploadingPO && (
               <div className="flex items-center text-sm text-muted-foreground">
@@ -1101,7 +1118,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         className="h-6 w-6 flex-shrink-0"
                         onClick={() => removeAttachment(originalIndex)}
                         disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
+                          actionLoading ||
+                          isUploadingPO ||
+                          isUploadingFinance ||
+                          isUploadingInvoice
                         }
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1128,7 +1148,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               id="finance-attachment-upload"
               type="file"
               onChange={(e) => handleAttachmentUpload(e, "finance")}
-              disabled={isUploadingPO || isUploadingFinance || actionLoading}
+              disabled={
+                isUploadingPO ||
+                isUploadingFinance ||
+                isUploadingInvoice ||
+                actionLoading
+              }
             />
             {isUploadingFinance && (
               <div className="flex items-center text-sm text-muted-foreground">
@@ -1162,7 +1187,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         className="h-6 w-6 flex-shrink-0"
                         onClick={() => removeAttachment(originalIndex)}
                         disabled={
-                          actionLoading || isUploadingPO || isUploadingFinance
+                          actionLoading ||
+                          isUploadingPO ||
+                          isUploadingFinance ||
+                          isUploadingInvoice
                         }
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1174,6 +1202,75 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             ) : (
               <p className="text-sm text-muted-foreground text-center pt-2">
                 Belum ada lampiran finance.
+              </p>
+            )}
+          </div>
+        </Content>
+
+        {/* --- Konten Lampiran Invoice --- */}
+        <Content title="Lampiran Invoice">
+          <div className="space-y-4">
+            <Label htmlFor="invoice-attachment-upload">
+              Tambah Lampiran Invoice
+            </Label>
+            <Input
+              id="invoice-attachment-upload"
+              type="file"
+              onChange={(e) => handleAttachmentUpload(e, "invoice")}
+              disabled={
+                isUploadingPO ||
+                isUploadingFinance ||
+                isUploadingInvoice ||
+                actionLoading
+              }
+            />
+            {isUploadingInvoice && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
+              </div>
+            )}
+            {invoiceAttachments.length > 0 ? (
+              <ul className="space-y-2">
+                {invoiceAttachments.map((att, index) => {
+                  const originalIndex =
+                    poForm.attachments?.findIndex((a) => a.url === att.url) ??
+                    -1;
+                  if (originalIndex === -1) return null;
+                  return (
+                    <li
+                      key={originalIndex}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <a
+                        href={resolveAttachmentUrl(att.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 truncate hover:underline text-primary"
+                      >
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => removeAttachment(originalIndex)}
+                        disabled={
+                          actionLoading ||
+                          isUploadingPO ||
+                          isUploadingFinance ||
+                          isUploadingInvoice
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                Belum ada lampiran invoice.
               </p>
             )}
           </div>

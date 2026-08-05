@@ -282,6 +282,7 @@ function CreatePOPageContent() {
   // Upload States
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
+  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
 
   // Payment Term Logic
   const [paymentTermType, setPaymentTermType] = useState("Termin");
@@ -660,13 +661,17 @@ function CreatePOPageContent() {
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance",
+    type: "po" | "finance" | "invoice",
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (poForm.kode_po === "Generating...") return;
     const setIsLoading =
-      type === "po" ? setIsUploadingPO : setIsUploadingFinance;
+      type === "po"
+        ? setIsUploadingPO
+        : type === "finance"
+          ? setIsUploadingFinance
+          : setIsUploadingInvoice;
     setIsLoading(true);
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
     const formData = new FormData();
@@ -735,6 +740,8 @@ function CreatePOPageContent() {
     poForm.attachments?.filter((a) => !a.type || a.type === "po") || [];
   const financeAttachments =
     poForm.attachments?.filter((a) => a.type === "finance") || [];
+  const invoiceAttachments =
+    poForm.attachments?.filter((a) => a.type === "invoice") || [];
 
   return (
     <>
@@ -1301,6 +1308,36 @@ function CreatePOPageContent() {
               />
               <ul className="space-y-1 mt-2">
                 {financeAttachments.map((att, i) => (
+                  <li
+                    key={i}
+                    className="flex justify-between text-xs bg-muted p-1 rounded items-center"
+                  >
+                    <span className="truncate max-w-[150px]">{att.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() =>
+                        removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
+                      }
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <hr />
+            <div>
+              <Label>Lampiran Invoice</Label>
+              <Input
+                type="file"
+                onChange={(e) => handleAttachmentUpload(e, "invoice")}
+                disabled={isUploadingInvoice}
+                className="mt-1"
+              />
+              <ul className="space-y-1 mt-2">
+                {invoiceAttachments.map((att, i) => (
                   <li
                     key={i}
                     className="flex justify-between text-xs bg-muted p-1 rounded items-center"

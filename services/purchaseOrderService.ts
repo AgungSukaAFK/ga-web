@@ -10,9 +10,14 @@ import {
   PurchaseOrderPayload,
   PurchaseOrderListItem,
   Attachment,
+  POItem,
 } from "@/type";
-import { normalizeMrOrders, updateMrItemStatus } from "./mrService";
-import { PAYMENT_VALIDATOR_USER_ID } from "@/type/enum";
+import {
+  normalizeMrOrders,
+  updateMrItemStatus,
+  recalculateMrStatus,
+} from "./mrService";
+import { PAYMENT_VALIDATOR_USER_ID, MR_ITEM_STATUSES } from "@/type/enum";
 
 const supabase = createClient();
 
@@ -367,44 +372,43 @@ export const createPurchaseOrder = async (
   }
 
   // 3. UPDATE STATUS ITEM DI MR TERKAIT
+  // Sequential (bukan Promise.all): updateMrItemStatus baca-ubah-tulis seluruh
+  // array `orders` per panggilan, jadi kalau dijalankan paralel untuk item-item
+  // dari PO yang sama, update bisa saling menimpa (lost update).
   if (mr_id && newPo && poData.items && poData.items.length > 0) {
-    const updateMrItemPromises = poData.items.map(async (poItem) => {
-      if (poItem.part_number) {
-        try {
-          await updateMrItemStatus(
-            mr_id,
-            poItem.part_number,
-            {
-              status: "PO Created",
-              poRef: newPo.kode_po,
-            },
-            user_id,
-          );
-        } catch (err) {
-          console.error(
-            `Gagal update status item MR untuk Part ${poItem.part_number}:`,
-            err,
-          );
-        }
+    for (const poItem of poData.items) {
+      if (!poItem.part_number) continue;
+      try {
+        await updateMrItemStatus(
+          mr_id,
+          poItem.part_number,
+          {
+            status: "PO Created",
+            poRef: newPo.kode_po,
+          },
+          user_id,
+        );
+      } catch (err) {
+        console.error(
+          `Gagal update status item MR untuk Part ${poItem.part_number}:`,
+          err,
+        );
       }
-    });
-
-    await Promise.all(updateMrItemPromises);
+    }
   }
 
-  // 4. UPDATE STATUS & LEVEL MR
+  // 4. UPDATE LEVEL MR + HITUNG ULANG STATUS MR DARI AGREGAT ITEM
   if (mr_id) {
     const { error: mrError } = await supabase
       .from("material_requests")
-      .update({
-        status: "On Process",
-        level: "OPEN 3A",
-      })
+      .update({ level: "OPEN 3A" })
       .eq("id", mr_id);
 
     if (mrError) {
-      console.error("Gagal update status MR saat buat PO:", mrError);
+      console.error("Gagal update level MR saat buat PO:", mrError);
     }
+
+    await recalculateMrStatus(mr_id);
   }
 
   return newPo;
@@ -511,7 +515,11 @@ export const validatePurchaseOrder = async (
   return data;
 };
 
-export const closePoWithBast = async (id: number, attachments: any[]) => {
+export const closePoWithBast = async (
+  id: number,
+  attachments: any[],
+  userId: string,
+) => {
   const { data, error } = await supabase
     .from("purchase_orders")
     .update({ attachments, status: "Completed" })
@@ -520,6 +528,29 @@ export const closePoWithBast = async (id: number, attachments: any[]) => {
     .single();
 
   if (error) throw error;
+
+  // Tandai item-item MR yang di-cover PO ini sebagai "Completed" (BAST selesai),
+  // lalu hitung ulang status agregat MR-nya.
+  if (data?.mr_id && Array.isArray(data.items)) {
+    for (const item of data.items as POItem[]) {
+      if (!item.part_number) continue;
+      try {
+        await updateMrItemStatus(
+          data.mr_id,
+          item.part_number,
+          { status: MR_ITEM_STATUSES.COMPLETED },
+          userId,
+        );
+      } catch (err) {
+        console.error(
+          `Gagal update status item MR (Completed) untuk Part ${item.part_number}:`,
+          err,
+        );
+      }
+    }
+    await recalculateMrStatus(data.mr_id);
+  }
+
   return data;
 };
 

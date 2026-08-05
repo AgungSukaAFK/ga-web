@@ -134,6 +134,9 @@ export interface PurchaseOrderPayload {
   pph_type?: string | null;
   pph_rate?: number | null;
   pph_amount?: number | null;
+  // Progress pembayaran khusus payment_term "DP & Pelunasan" (DP_BP)
+  dp_paid?: boolean | null;
+  bp_paid?: boolean | null;
 }
 
 export interface MaterialRequestListItem {
@@ -170,6 +173,9 @@ export interface PurchaseOrderListItem {
     users_with_profiles: { nama: string } | null;
   } | null;
   vendor_details?: StoredVendorDetails | any;
+  payment_term?: string | null;
+  dp_paid?: boolean | null;
+  bp_paid?: boolean | null;
 }
 
 export interface ApprovedMaterialRequest {
@@ -298,6 +304,10 @@ export interface PurchaseOrder {
   created_at: string;
   updated_at: string;
 
+  // Progress pembayaran khusus payment_term "DP & Pelunasan" (DP_BP)
+  dp_paid?: boolean | null;
+  bp_paid?: boolean | null;
+
   pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
   pph_rate?: number | null; // Persentase (misal: 1.5)
   pph_amount?: number | null; // Nominal Rupiah
@@ -403,6 +413,7 @@ export type MrItemStatus =
   | "Pending"
   | "Processing" // Sedang diproses (misal masuk Draft PO)
   | "PO Created" // Sudah resmi ada di PO
+  | "Completed" // PO yang meng-cover item ini sudah BAST
   | "Cancelled" // Dibatalkan oleh Purchasing
   | "Replaced"; // Diganti dengan barang lain
 

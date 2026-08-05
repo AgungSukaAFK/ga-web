@@ -9,8 +9,9 @@ export const STATUS_OPTIONS = [
   "On Hold",
   "Pending Approval",
   "Pending Payment",
-  "Pending BAST",
   "Waiting PO",
+  "On Process",
+  "Pending BAST",
   "Completed",
   "Rejected",
 ];
@@ -57,6 +58,20 @@ export const isPoPaid = (
       (app.userid === PAYMENT_VALIDATOR_USER_ID ||
         app.type === APPROVAL_TYPE_PAYMENT_VALIDATOR),
   );
+};
+
+/**
+ * Deteksi apakah payment_term sebuah PO adalah jenis "DP & Pelunasan (BP)",
+ * mis. "DP 30% - Pelunasan 70%" (lihat purchase-order/create/page.tsx,
+ * paymentTermType "DP_BP"). Dipakai untuk munculkan checkbox progress
+ * pembayaran DP/BP saat Payment Validator approve, dan untuk filter list PO.
+ */
+export const isDpBpPaymentTerm = (
+  paymentTerm: string | null | undefined,
+): boolean => {
+  if (!paymentTerm) return false;
+  const normalized = paymentTerm.toLowerCase();
+  return normalized.includes("dp") && normalized.includes("pelunasan");
 };
 
 export interface LevelDefinition {
@@ -147,6 +162,7 @@ export const MR_ITEM_STATUSES = {
   PENDING: "Pending",
   PROCESSING: "Processing",
   PO_CREATED: "PO Created",
+  COMPLETED: "Completed",
   CANCELLED: "Cancelled",
   REPLACED: "Replaced",
 } as const;
@@ -155,6 +171,7 @@ export const MR_ITEM_STATUS_LABELS: Record<string, string> = {
   Pending: "Menunggu",
   Processing: "Proses PO",
   "PO Created": "Sudah PO",
+  Completed: "BAST Selesai",
   Cancelled: "Dibatalkan",
   Replaced: "Diganti",
 };
@@ -163,6 +180,7 @@ export const MR_ITEM_STATUS_COLORS: Record<string, string> = {
   Pending: "bg-gray-100 text-gray-800 border-gray-200",
   Processing: "bg-blue-50 text-blue-700 border-blue-200",
   "PO Created": "bg-green-50 text-green-700 border-green-200",
+  Completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
   Cancelled: "bg-red-50 text-red-700 border-red-200",
   Replaced: "bg-yellow-50 text-yellow-700 border-yellow-200",
 };

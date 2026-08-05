@@ -351,6 +351,60 @@ export const updateMrItemStatus = async (
   return { success: true };
 };
 
+// Menghitung ulang status MR dari agregat status item-itemnya (best-effort,
+// tidak throw). Hanya berjalan setelah MR sudah masuk fase PO (mengabaikan
+// status pra-PO seperti Waiting PO / Rejected agar tidak "menghidupkan
+// kembali" MR yang belum/sudah tidak diproses).
+export const recalculateMrStatus = async (mrId: number): Promise<void> => {
+  const supabase = createClient();
+  try {
+    const { data: mr, error } = await supabase
+      .from("material_requests")
+      .select("orders, status")
+      .eq("id", mrId)
+      .single();
+
+    if (error || !mr) {
+      console.error("recalculateMrStatus: gagal fetch MR", error);
+      return;
+    }
+
+    const PRE_PO_STATUSES = [
+      "Pending Validation",
+      "On Hold",
+      "Pending Approval",
+      "Waiting PO",
+      "Rejected",
+    ];
+    if (PRE_PO_STATUSES.includes(mr.status)) return;
+
+    const orders = normalizeMrOrders(mr.orders as any[]);
+    const relevantItems = orders.filter((i) => i.status !== "Cancelled");
+    if (relevantItems.length === 0) return;
+
+    const allCompleted = relevantItems.every((i) => i.status === "Completed");
+    const allLinked = relevantItems.every(
+      (i) => i.status === "PO Created" || i.status === "Completed",
+    );
+    const newStatus = allCompleted
+      ? "Completed"
+      : allLinked
+        ? "Pending BAST"
+        : "On Process";
+
+    if (newStatus !== mr.status) {
+      const { error: updateError } = await supabase
+        .from("material_requests")
+        .update({ status: newStatus })
+        .eq("id", mrId);
+      if (updateError)
+        console.error("recalculateMrStatus: gagal update", updateError);
+    }
+  } catch (err) {
+    console.error("recalculateMrStatus: unexpected error", err);
+  }
+};
+
 // --- FUNGSI FETCH MR BY ID (NORMALIZED) ---
 export const fetchMaterialRequestById = async (mrId: number) => {
   const supabase = createClient();

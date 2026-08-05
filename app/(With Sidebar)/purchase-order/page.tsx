@@ -77,6 +77,7 @@ import {
   LIMIT_OPTIONS,
   PAYMENT_VALIDATOR_USER_ID,
   isPoPaid,
+  isDpBpPaymentTerm,
 } from "@/type/enum";
 
 const STATUS_OPTIONS = [
@@ -94,6 +95,7 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "Semua Jenis", value: "all" },
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
+  { label: "BP & DP", value: "DP" },
 ];
 
 // --- Komponen Modal Detail Vendor ---
@@ -273,8 +275,8 @@ function PurchaseOrderPageContent() {
         // Query Utama
         let query = s.from("purchase_orders").select(
           `
-            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term,
-            users_with_profiles!user_id (nama), 
+            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term, dp_paid, bp_paid,
+            users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
               users_with_profiles!userid (nama)
@@ -906,6 +908,12 @@ function PurchaseOrderPageContent() {
                           <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
                             <CreditCard className="h-3 w-3" />
                             Paid
+                          </Badge>
+                        ) : isDpBpPaymentTerm(po.payment_term) &&
+                          (po.dp_paid || po.bp_paid) ? (
+                          <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
+                            <CreditCard className="h-3 w-3" />
+                            {po.dp_paid ? "DP Lunas" : "BP Lunas"}
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="w-fit">

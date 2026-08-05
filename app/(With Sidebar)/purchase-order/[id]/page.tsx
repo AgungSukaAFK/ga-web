@@ -73,6 +73,7 @@ import {
 import {
   updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
+  recalculateMrStatus,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
 import {
@@ -91,6 +92,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 import { QRCodeCanvas } from "qrcode.react";
 import { Input } from "@/components/ui/input";
@@ -102,6 +104,8 @@ import {
   MR_ITEM_STATUS_LABELS,
   APPROVAL_TYPE_PAYMENT_APPROVAL,
   APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  PAYMENT_VALIDATOR_USER_ID,
+  isDpBpPaymentTerm,
 } from "@/type/enum";
 
 const PPH_LABELS: Record<string, string> = {
@@ -212,6 +216,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [qrUrl, setQrUrl] = useState("");
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
+
+  // State Dialog Progress Pembayaran DP & BP (khusus Payment Validator)
+  const [isDpBpDialogOpen, setIsDpBpDialogOpen] = useState(false);
+  const [dpChecked, setDpChecked] = useState(false);
+  const [bpChecked, setBpChecked] = useState(false);
 
   const fetchPoData = async () => {
     if (isNaN(poId)) {
@@ -337,6 +346,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           .every((a) => a.status === "approved")
       : false;
 
+  // PO dengan payment_term "DP & Pelunasan" perlu konfirmasi progress DP/BP
+  // saat approver bertipe "Payment Validator" akan menyetujui.
+  const myApproval =
+    myApprovalIndex !== -1 && po?.approvals
+      ? po.approvals[myApprovalIndex]
+      : null;
+  const isPaymentValidatorTurn =
+    !!myApproval &&
+    (myApproval.type === APPROVAL_TYPE_PAYMENT_VALIDATOR ||
+      myApproval.userid === PAYMENT_VALIDATOR_USER_ID);
+  const isDpBpPO = isDpBpPaymentTerm(po?.payment_term);
+
   const canEditPO =
     userProfile?.role === "approver" || userProfile?.role === "admin";
   const isRequester = currentUser?.id === po?.material_requests?.userid;
@@ -389,43 +410,66 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  const handleApprovalAction = async (decision: "approved" | "rejected") => {
+  const handleApprovalAction = async (
+    decision: "approved" | "rejected",
+    paymentProgress?: { dp_paid: boolean; bp_paid: boolean },
+  ) => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
     setActionLoading(true);
 
     const updatedApprovals = JSON.parse(JSON.stringify(po.approvals));
-    updatedApprovals[myApprovalIndex].status = decision;
-    updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
+    const updatePayload: Record<string, any> = {};
 
-    let newPoStatus = po.status;
-    let newMrStatus: string | null = null;
-
-    if (decision === "rejected") {
-      newPoStatus = "Rejected";
-    } else if (decision === "approved") {
-      const justApprovedType = updatedApprovals[myApprovalIndex].type;
-      const isLastApproval = updatedApprovals.every(
-        (app: Approval) => app.status === "approved",
-      );
-
-      if (justApprovedType === APPROVAL_TYPE_PAYMENT_VALIDATOR) {
-        // Payment Validator approve => lanjut BAST + PO otomatis terdeteksi Paid.
-        newPoStatus = "Pending BAST";
-        newMrStatus = "Pending BAST";
-      } else if (justApprovedType === APPROVAL_TYPE_PAYMENT_APPROVAL) {
-        // Payment Approval approve => menunggu validasi pembayaran.
-        newPoStatus = "Pending Payment";
-      } else if (isLastApproval) {
-        // Template tanpa step payment: semua approve => langsung BAST (perilaku lama).
-        newPoStatus = "Pending BAST";
-        newMrStatus = "Pending BAST";
-      }
+    if (paymentProgress) {
+      updatePayload.dp_paid = paymentProgress.dp_paid;
+      updatePayload.bp_paid = paymentProgress.bp_paid;
     }
 
+    // Kalau ini step Payment Validator utk PO DP & Pelunasan, dan belum lunas
+    // (DP dan BP belum sama-sama dibayar): simpan progress-nya saja, JANGAN
+    // tandai approval ini "approved" dulu — PO tetap tertahan menunggu lunas.
+    const isPartialPayment =
+      decision === "approved" &&
+      paymentProgress !== undefined &&
+      !(paymentProgress.dp_paid && paymentProgress.bp_paid);
+
+    let newPoStatus = po.status;
+
+    if (!isPartialPayment) {
+      updatedApprovals[myApprovalIndex].status = decision;
+      updatedApprovals[myApprovalIndex].processed_at = new Date().toISOString();
+      updatePayload.approvals = updatedApprovals;
+
+      if (decision === "rejected") {
+        newPoStatus = "Rejected";
+      } else if (decision === "approved") {
+        const justApprovedType = updatedApprovals[myApprovalIndex].type;
+        const isLastApproval = updatedApprovals.every(
+          (app: Approval) => app.status === "approved",
+        );
+
+        if (justApprovedType === APPROVAL_TYPE_PAYMENT_VALIDATOR) {
+          // Payment Validator approve => lanjut BAST + PO otomatis terdeteksi Paid.
+          newPoStatus = "Pending BAST";
+        } else if (justApprovedType === APPROVAL_TYPE_PAYMENT_APPROVAL) {
+          // Payment Approval approve => menunggu validasi pembayaran.
+          newPoStatus = "Pending Payment";
+        } else if (isLastApproval) {
+          // Template tanpa step payment: semua approve => langsung BAST (perilaku lama).
+          newPoStatus = "Pending BAST";
+        }
+      }
+      updatePayload.status = newPoStatus;
+    }
+
+    // Catatan: progress approval hanya mengubah status PO ini sendiri.
+    // Status MR bersifat turunan dari agregat status semua item (lihat
+    // recalculateMrStatus), jadi tidak ditimpa di sini lagi — MR bisa saja
+    // masih punya item lain yang belum dibuatkan PO.
     const { error: poError } = await supabase
       .from("purchase_orders")
-      .update({ approvals: updatedApprovals, status: newPoStatus })
+      .update(updatePayload)
       .eq("id", po.id);
 
     if (poError) {
@@ -434,17 +478,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    if (newMrStatus && po.mr_id) {
-      const { error: mrError } = await supabase
-        .from("material_requests")
-        .update({ status: newMrStatus })
-        .eq("id", po.mr_id);
-
-      if (mrError) {
-        toast.warning("PO Disetujui, tapi gagal update status MR", {
-          description: mrError.message,
-        });
-      }
+    if (isPartialPayment) {
+      toast.success(
+        "Progress pembayaran disimpan. PO lanjut ke BAST setelah DP & BP lunas.",
+      );
+      setIsDpBpDialogOpen(false);
+      await fetchPoData();
+      setActionLoading(false);
+      return;
     }
 
     // Notify next approver (if any) or PO creator
@@ -467,6 +508,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     toast.success(
       `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
     );
+    setIsDpBpDialogOpen(false);
     await fetchPoData();
     setActionLoading(false);
   };
@@ -474,6 +516,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const handleUploadBast = async () => {
     if (!bastFiles || bastFiles.length === 0) {
       toast.error("Pilih file BAST terlebih dahulu");
+      return;
+    }
+    if (!currentUser) {
+      toast.error("Sesi tidak valid, silakan muat ulang halaman");
       return;
     }
 
@@ -499,7 +545,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       const existingAttachments = po?.attachments || [];
       const finalAttachments = [...existingAttachments, ...uploadedAttachments];
 
-      await closePoWithBast(poId, finalAttachments);
+      await closePoWithBast(poId, finalAttachments, currentUser.id);
 
       toast.success("BAST berhasil diunggah, PO Selesai (Completed)");
       setIsBastDialogOpen(false);
@@ -535,6 +581,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         },
         currentUser.id,
       );
+      await recalculateMrStatus(po.mr_id);
       toast.success("Status barang berhasil diperbarui");
       setIsEditStatusOpen(false);
       fetchPoData(); // Refresh data
@@ -545,6 +592,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
   // ---------------------------------
+
+  const handleClickApprove = () => {
+    if (isPaymentValidatorTurn && isDpBpPO) {
+      setDpChecked(!!po?.dp_paid);
+      setBpChecked(!!po?.bp_paid);
+      setIsDpBpDialogOpen(true);
+      return;
+    }
+    handleApprovalAction("approved");
+  };
 
   const ApprovalActions = () => {
     if (
@@ -565,7 +622,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       <div className="flex gap-2">
         <Button
           className="w-full"
-          onClick={() => handleApprovalAction("approved")}
+          onClick={handleClickApprove}
           disabled={actionLoading}
         >
           {actionLoading ? (
@@ -670,6 +727,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     po.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
     po.attachments?.filter((att) => att.type === "finance") || [];
+  const invoiceAttachments =
+    po.attachments?.filter((att) => att.type === "invoice") || [];
   const bastAttachments =
     po.attachments?.filter((att) => att.type === "bast") || [];
   const currentTurnIndex = po.approvals?.findIndex(
@@ -817,6 +876,36 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   label="Payment Term"
                   value={po.payment_term}
                 />
+                {isDpBpPO && (
+                  <InfoItem
+                    icon={Wallet}
+                    label="Progress DP & BP"
+                    value={
+                      <div className="flex gap-2">
+                        <Badge
+                          className={cn(
+                            "w-fit",
+                            po.dp_paid
+                              ? "bg-green-500 text-white"
+                              : "bg-secondary text-secondary-foreground",
+                          )}
+                        >
+                          DP {po.dp_paid ? "Lunas" : "Belum"}
+                        </Badge>
+                        <Badge
+                          className={cn(
+                            "w-fit",
+                            po.bp_paid
+                              ? "bg-green-500 text-white"
+                              : "bg-secondary text-secondary-foreground",
+                          )}
+                        >
+                          BP {po.bp_paid ? "Lunas" : "Belum"}
+                        </Badge>
+                      </div>
+                    }
+                  />
+                )}
                 <InfoItem
                   icon={Truck}
                   label="Alamat Pengiriman"
@@ -1214,6 +1303,30 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </ul>
             </Content>
 
+            <Content title="Lampiran Invoice">
+              <ul className="space-y-2">
+                {invoiceAttachments.length > 0 ? (
+                  invoiceAttachments.map((file, index) => (
+                    <li key={index}>
+                      <Link
+                        href={resolveAttachmentUrl(file.url)}
+                        target="_blank"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                        <span>{file.name}</span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </Link>
+                    </li>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Tidak ada lampiran.
+                  </p>
+                )}
+              </ul>
+            </Content>
+
             <Content title="Lampiran BAST / Bukti Terima">
               <ul className="space-y-2">
                 {bastAttachments.length > 0 ? (
@@ -1464,6 +1577,75 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}{" "}
                 Upload & Selesaikan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* --- DIALOG PROGRESS PEMBAYARAN DP & BP --- */}
+        <Dialog open={isDpBpDialogOpen} onOpenChange={setIsDpBpDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Konfirmasi Pembayaran DP & Pelunasan</DialogTitle>
+              <DialogDescription>
+                PO ini memakai metode pembayaran &quot;{po?.payment_term}
+                &quot;. Tandai bagian yang sudah dibayar. PO baru lanjut ke
+                tahap BAST setelah DP dan Pelunasan (BP) sama-sama lunas.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="dp-paid"
+                  checked={dpChecked}
+                  onCheckedChange={(v) => setDpChecked(!!v)}
+                />
+                <Label htmlFor="dp-paid" className="cursor-pointer">
+                  DP (Down Payment) sudah dibayar
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="bp-paid"
+                  checked={bpChecked}
+                  onCheckedChange={(v) => setBpChecked(!!v)}
+                />
+                <Label htmlFor="bp-paid" className="cursor-pointer">
+                  BP / Pelunasan sudah dibayar
+                </Label>
+              </div>
+              {!(dpChecked && bpChecked) && (
+                <p className="text-xs text-muted-foreground">
+                  Belum lunas — PO akan tetap di status &quot;Pending
+                  Payment&quot; sampai DP & BP sama-sama dicentang.
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsDpBpDialogOpen(false)}
+                disabled={actionLoading}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={() =>
+                  handleApprovalAction("approved", {
+                    dp_paid: dpChecked,
+                    bp_paid: bpChecked,
+                  })
+                }
+                disabled={actionLoading || (!dpChecked && !bpChecked)}
+              >
+                {actionLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="mr-2 h-4 w-4" />
+                )}
+                {dpChecked && bpChecked
+                  ? "Setujui & Tandai Lunas"
+                  : "Simpan Progress"}
               </Button>
             </DialogFooter>
           </DialogContent>

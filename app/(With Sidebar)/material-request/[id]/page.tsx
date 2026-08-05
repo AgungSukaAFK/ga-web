@@ -43,7 +43,6 @@ import {
   Zap,
   Layers,
   HelpCircle,
-  CheckCheck,
   Calendar as CalendarIcon,
   FileText,
   MapPin,
@@ -178,7 +177,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
 
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
-  const [isCloseMrAlertOpen, setIsCloseMrAlertOpen] = useState(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
   // --- FETCH DATA ---
@@ -621,81 +619,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       });
   };
 
-  const handleConfirmCloseMR = async () => {
-    if (!mr) return;
-    setActionLoading(true);
-    const toastId = toast.loading("Menutup MR dan PO terkait...");
-    try {
-      const { error: mrError } = await supabase
-        .from("material_requests")
-        .update({ status: "Completed" })
-        .eq("id", mr.id);
-      if (mrError) throw mrError;
-      const { data: relatedPOs, error: poFetchError } = await supabase
-        .from("purchase_orders")
-        .select("id")
-        .eq("mr_id", mr.id);
-      if (poFetchError) throw poFetchError;
-      if (relatedPOs && relatedPOs.length > 0) {
-        const poIds = relatedPOs.map((po) => po.id);
-        const { error: poUpdateError } = await supabase
-          .from("purchase_orders")
-          .update({ status: "Completed" })
-          .in("id", poIds);
-        if (poUpdateError) throw poUpdateError;
-      }
-      toast.success("MR dan PO terkait berhasil ditutup!", { id: toastId });
-      await fetchMrData();
-    } catch (error: any) {
-      toast.error("Gagal menutup MR", {
-        id: toastId,
-        description: error.message,
-      });
-    } finally {
-      setActionLoading(false);
-      setIsCloseMrAlertOpen(false);
-    }
-  };
-
-  const RequesterActions = () => {
-    if (
-      !mr ||
-      !currentUser ||
-      mr.userid !== currentUser.id ||
-      mr.status !== "Pending BAST"
-    ) {
-      return null;
-    }
-    return (
-      <div className="flex flex-col gap-4">
-        <div>
-          <Label htmlFor="bast-upload">Unggah BAST / Bukti Terima Barang</Label>
-          <Input
-            id="bast-upload"
-            type="file"
-            multiple
-            disabled={actionLoading || isUploading}
-            onChange={handleAttachmentUpload}
-            className="mt-1"
-          />
-          {isUploading && (
-            <div className="flex items-center text-sm text-muted-foreground mt-2">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
-            </div>
-          )}
-        </div>
-        <hr />
-        <Button
-          className="w-full"
-          onClick={() => setIsCloseMrAlertOpen(true)}
-          disabled={actionLoading || isUploading}
-        >
-          <CheckCheck className="mr-2 h-4 w-4" />
-          Tutup MR (Konfirmasi Barang Lengkap)
-        </Button>
-      </div>
-    );
-  };
 
   const ApprovalActions = () => {
     const activeStatuses = [
@@ -1418,7 +1341,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         <Content title="Tindakan">
           <div className="flex flex-col gap-2">
             {!isEditing && <ApprovalActions />}
-            {!isEditing && <RequesterActions />}
             {isEditing && (
               <p className="text-sm text-center text-muted-foreground">
                 Simpan perubahan atau setujui untuk melanjutkan.
@@ -1694,42 +1616,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Dialog Konfirmasi Close MR */}
-      <AlertDialog
-        open={isCloseMrAlertOpen}
-        onOpenChange={setIsCloseMrAlertOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Anda Yakin Ingin Menutup MR Ini?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Tindakan ini akan mengubah status MR dan semua PO terkait menjadi
-              &quot;Completed&quot;. Pastikan semua barang sudah Anda terima
-              dengan lengkap. Tindakan ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>
-              Batal
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmCloseMR}
-              disabled={actionLoading}
-              className={cn("bg-green-600 hover:bg-green-700 text-white")}
-            >
-              {actionLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCheck className="mr-2 h-4 w-4" />
-              )}
-              Ya, Tutup MR
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
