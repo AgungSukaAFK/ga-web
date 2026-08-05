@@ -104,8 +104,8 @@ import {
   MR_ITEM_STATUS_LABELS,
   APPROVAL_TYPE_PAYMENT_APPROVAL,
   APPROVAL_TYPE_PAYMENT_VALIDATOR,
-  PAYMENT_VALIDATOR_USER_ID,
   isDpBpPaymentTerm,
+  isPaymentValidatorApproval,
 } from "@/type/enum";
 
 const PPH_LABELS: Record<string, string> = {
@@ -352,10 +352,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     myApprovalIndex !== -1 && po?.approvals
       ? po.approvals[myApprovalIndex]
       : null;
-  const isPaymentValidatorTurn =
-    !!myApproval &&
-    (myApproval.type === APPROVAL_TYPE_PAYMENT_VALIDATOR ||
-      myApproval.userid === PAYMENT_VALIDATOR_USER_ID);
+  const isPaymentValidatorTurn = isPaymentValidatorApproval(myApproval);
   const isDpBpPO = isDpBpPaymentTerm(po?.payment_term);
 
   const canEditPO =
