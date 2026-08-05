@@ -643,6 +643,18 @@ function MaterialRequestContent() {
             Waiting PO
           </Badge>
         );
+      case "on process":
+        return (
+          <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900 dark:text-cyan-200 dark:border-cyan-800">
+            On Process
+          </Badge>
+        );
+      case "pending bast":
+        return (
+          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800">
+            Pending BAST
+          </Badge>
+        );
       case "completed":
         return (
           <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-800">

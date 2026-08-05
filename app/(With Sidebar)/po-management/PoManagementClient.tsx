@@ -36,6 +36,7 @@ import {
   STATUS_OPTIONS,
   PAYMENT_VALIDATOR_USER_ID,
   isPoPaid,
+  isDpBpPaymentTerm,
 } from "@/type/enum";
 
 // --- CONSTANTS ---
@@ -43,6 +44,7 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "Semua Jenis", value: "all" },
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
+  { label: "BP & DP", value: "DP" },
 ];
 
 export function PoManagementClientContent() {
@@ -167,7 +169,7 @@ export function PoManagementClientContent() {
       // Query Builder
       let query = s.from("purchase_orders").select(
         `
-            id, kode_po, status, total_price, created_at, company_code, approvals, payment_term,
+            id, kode_po, status, total_price, created_at, company_code, approvals, payment_term, dp_paid, bp_paid,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (kode_mr)
           `,
@@ -653,6 +655,12 @@ export function PoManagementClientContent() {
                     {isPoPaid(po.approvals) ? (
                       <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300">
                         <CreditCard className="h-3 w-3" /> Paid
+                      </Badge>
+                    ) : isDpBpPaymentTerm(po.payment_term) &&
+                      (po.dp_paid || po.bp_paid) ? (
+                      <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300">
+                        <CreditCard className="h-3 w-3" />{" "}
+                        {po.dp_paid ? "DP Lunas" : "BP Lunas"}
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="w-fit">
