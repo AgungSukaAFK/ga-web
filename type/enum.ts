@@ -44,6 +44,20 @@ export const PAYMENT_VALIDATOR_USER_ID =
   "06122d13-9918-40ac-9034-41e849c5c3e2";
 
 /**
+ * Predikat dual dipakai di semua tempat yang perlu tahu apakah sebuah
+ * approval adalah step "Payment Validator" (baik PO lama yang di-hardcode
+ * lewat user id, maupun PO baru yang pakai type "Payment Validator").
+ * Satu-satunya sumber kebenaran untuk kondisi ini — jangan duplikasi
+ * pengecekan userid/type di tempat lain, panggil fungsi ini.
+ */
+export const isPaymentValidatorApproval = (
+  app: Pick<Approval, "userid" | "type"> | null | undefined,
+): boolean =>
+  !!app &&
+  (app.userid === PAYMENT_VALIDATOR_USER_ID ||
+    app.type === APPROVAL_TYPE_PAYMENT_VALIDATOR);
+
+/**
  * Menentukan apakah sebuah PO sudah "Paid" (deteksi dual):
  *  - PO lama: ada approval `approved` dari user validator hardcoded, ATAU
  *  - PO baru: ada approval `approved` ber-type "Payment Validator".
@@ -53,10 +67,7 @@ export const isPoPaid = (
 ): boolean => {
   if (!Array.isArray(approvals)) return false;
   return approvals.some(
-    (app) =>
-      app.status === "approved" &&
-      (app.userid === PAYMENT_VALIDATOR_USER_ID ||
-        app.type === APPROVAL_TYPE_PAYMENT_VALIDATOR),
+    (app) => app.status === "approved" && isPaymentValidatorApproval(app),
   );
 };
 
