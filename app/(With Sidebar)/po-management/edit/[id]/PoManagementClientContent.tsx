@@ -133,8 +133,10 @@ const dataUoM: ComboboxData = [
 const PO_STATUS_OPTIONS: PurchaseOrderPayload["status"][] = [
   "Pending Validation",
   "Pending Approval",
-  "Pending BAST",
-  "Completed",
+  "Pending Payment",
+  "Pending Receive",
+  "Partial Receive",
+  "Full Received",
   "Rejected",
   "Draft",
   "Ordered",

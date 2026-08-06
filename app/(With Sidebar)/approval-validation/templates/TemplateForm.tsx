@@ -30,6 +30,7 @@ import {
 import { Combobox } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface TemplateFormProps {
   initialData?: {
@@ -46,6 +47,19 @@ interface TemplateFormProps {
   onCancel: () => void;
 }
 
+// Baris approval di form ini butuh identitas yang stabil & unik per baris
+// (dipakai buat React key + target update/remove/move), terlepas dari
+// userid - karena sekarang user yang sama boleh muncul lebih dari sekali
+// di satu template (mis. "Menyetujui" lalu "Receiver" oleh orang yang sama).
+// _rowKey murni lokal ke form ini, di-strip lagi sebelum disimpan (lihat
+// handleSave) supaya tidak ikut tersimpan ke approval_path di DB.
+type ApprovalRow = Approval & { _rowKey: string };
+
+const makeRowKey = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`;
+
 export function TemplateForm({
   initialData,
   onSave,
@@ -53,7 +67,7 @@ export function TemplateForm({
 }: TemplateFormProps) {
   const [templateName, setTemplateName] = useState("");
   const [description, setDescription] = useState("");
-  const [approvalPath, setApprovalPath] = useState<Approval[]>([]);
+  const [approvalPath, setApprovalPath] = useState<ApprovalRow[]>([]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -63,9 +77,20 @@ export function TemplateForm({
     if (initialData) {
       setTemplateName(initialData.template_name);
       setDescription(initialData.description || "");
-      setApprovalPath(initialData.approval_path);
+      setApprovalPath(
+        initialData.approval_path.map((a) => ({ ...a, _rowKey: makeRowKey() }))
+      );
     }
   }, [initialData]);
+
+  // userid yang muncul lebih dari sekali di jalur approval ini - dipakai
+  // buat kasih penanda visual (bukan buat memblokir, user memang boleh
+  // duplikat sekarang).
+  const duplicateUserIds = new Set(
+    approvalPath
+      .map((a) => a.userid)
+      .filter((id, idx, arr) => arr.indexOf(id) !== idx)
+  );
 
   const handleSearch = async () => {
     try {
@@ -77,10 +102,10 @@ export function TemplateForm({
   };
 
   const addApprover = (user: User) => {
-    console.log(user);
     if (approvalPath.some((a) => a.userid === user.id)) {
-      toast.warning(`${user.nama} sudah ada di daftar.`);
-      return;
+      toast.warning(`${user.nama} sudah ada di daftar approval ini.`, {
+        description: "Tetap ditambahkan - cek urutan & jenis approval-nya.",
+      });
     }
     setApprovalPath((prev) => [
       ...prev,
@@ -93,14 +118,15 @@ export function TemplateForm({
         department: user.department || "",
         role: user.role || "",
         email: user.email || "",
+        _rowKey: makeRowKey(),
       },
     ]);
     setSearchResults([]);
     setSearchQuery("");
   };
 
-  const removeApprover = (userId: string) =>
-    setApprovalPath((prev) => prev.filter((a) => a.userid !== userId));
+  const removeApprover = (rowKey: string) =>
+    setApprovalPath((prev) => prev.filter((a) => a._rowKey !== rowKey));
 
   const moveApprover = (index: number, direction: "up" | "down") => {
     const newArr = [...approvalPath];
@@ -110,9 +136,9 @@ export function TemplateForm({
     setApprovalPath(newArr);
   };
 
-  const updateApproverType = (userId: string, type: string) => {
+  const updateApproverType = (rowKey: string, type: string) => {
     setApprovalPath((prev) =>
-      prev.map((app) => (app.userid === userId ? { ...app, type } : app))
+      prev.map((app) => (app._rowKey === rowKey ? { ...app, type } : app))
     );
   };
 
@@ -134,7 +160,7 @@ export function TemplateForm({
     await onSave({
       template_name: templateName,
       description,
-      approval_path: approvalPath,
+      approval_path: approvalPath.map(({ _rowKey, ...rest }) => rest),
     });
     setIsSaving(false);
   };
@@ -227,51 +253,72 @@ export function TemplateForm({
                 </TableCell>
               </TableRow>
             )}
-            {approvalPath.map((app, i) => (
-              <TableRow key={app.userid}>
-                <TableCell>{i + 1}</TableCell>
-                <TableCell
-                  className="font-medium max-w-[200px] truncate"
-                  title={app.nama}
+            {approvalPath.map((app, i) => {
+              const isDuplicate = duplicateUserIds.has(app.userid);
+              return (
+                <TableRow
+                  key={app._rowKey}
+                  className={cn(
+                    isDuplicate &&
+                      "bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+                  )}
                 >
-                  {app.nama}
-                </TableCell>
-                <TableCell>
-                  <Combobox
-                    data={APPROVAL_TYPE_OPTIONS}
-                    onChange={(value) => updateApproverType(app.userid, value)}
-                    defaultValue={app.type}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => moveApprover(i, "up")}
-                      disabled={i === 0}
-                    >
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => moveApprover(i, "down")}
-                      disabled={i === approvalPath.length - 1}
-                    >
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => removeApprover(app.userid)}
-                    >
-                      <XCircle className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                  <TableCell>{i + 1}</TableCell>
+                  <TableCell
+                    className="font-medium max-w-[200px] truncate"
+                    title={app.nama}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{app.nama}</span>
+                      {isDuplicate && (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500 text-amber-600 dark:text-amber-400 shrink-0"
+                        >
+                          Duplikat
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Combobox
+                      data={APPROVAL_TYPE_OPTIONS}
+                      onChange={(value) =>
+                        updateApproverType(app._rowKey, value)
+                      }
+                      defaultValue={app.type}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => moveApprover(i, "up")}
+                        disabled={i === 0}
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => moveApprover(i, "down")}
+                        disabled={i === approvalPath.length - 1}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => removeApprover(app._rowKey)}
+                      >
+                        <XCircle className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

@@ -303,14 +303,14 @@ export default function Dashboard() {
           title="PO Open"
           value={stats?.po_pending}
           icon={Package}
-          description="Pending Validation/Approval/BAST"
+          description="Pending Validation/Approval/Receive"
           colorClass="text-cyan-500"
         />
         <StatCard
           title="PO Selesai"
           value={stats?.po_completed}
           icon={CheckCheck}
-          description="Status Completed"
+          description="Status Full Received"
           colorClass="text-green-500"
         />
         <StatCard

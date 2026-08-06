@@ -356,10 +356,10 @@ export const updateMrItemStatus = async (
 };
 
 // Upload bukti BAST utk SATU item MR (bukan seluruh PO). Item harus sudah
-// "Pending BAST" (barang diterima GA) sebelum requester bisa upload di sini.
-// Menandai item itu "Completed"; PO yang jadi tempat item ini menyusul
-// ditandai "Completed" secara terpisah lewat recalculatePendingBastPos
-// (purchaseOrderService.ts) begitu SEMUA item PO tsb sudah Completed.
+// "Pending BAST" (barang diterima receiver) sebelum requester bisa upload di
+// sini. Menandai item itu "Completed" - dipakai untuk laporan BAST, TIDAK
+// mengubah status PO (status akhir PO cukup "Full Received", ditentukan oleh
+// checklist receiver lewat submitReceiveRecord di purchaseOrderService.ts).
 export const uploadBastForMrItem = async (
   mrId: number,
   partNumber: string,

@@ -11,10 +11,20 @@ export const STATUS_OPTIONS = [
   "Pending Payment",
   "Waiting PO",
   "On Process",
-  "Pending BAST",
-  "Completed",
+  "Pending Receive",
+  "Partial Receive",
+  "Full Received",
   "Rejected",
 ];
+
+// Status PO seputar penerimaan barang - "Pending BAST"/"Completed"/"Pending
+// Payment BP" (status PO lama) sudah tidak dipakai lagi, diganti 3 status di
+// bawah. Dipakai sebagai konstanta (bukan literal string) di banyak tempat
+// (purchase-order/[id]/page.tsx, purchaseOrderService.ts, dashboardService.ts,
+// approvalService.ts) supaya tidak typo pas migrasi.
+export const PO_STATUS_PENDING_RECEIVE = "Pending Receive";
+export const PO_STATUS_PARTIAL_RECEIVE = "Partial Receive";
+export const PO_STATUS_FULL_RECEIVED = "Full Received";
 
 // ==========================================
 // APPROVAL TYPE (jenis approver di template)
@@ -24,6 +34,12 @@ export const APPROVAL_TYPE_MENGETAHUI = "Mengetahui";
 export const APPROVAL_TYPE_MENYETUJUI = "Menyetujui";
 export const APPROVAL_TYPE_PAYMENT_APPROVAL = "Payment Approval";
 export const APPROVAL_TYPE_PAYMENT_VALIDATOR = "Payment Validator";
+// Step approval yang menandakan barang sudah diterima (mis. GA/Warehouse).
+// Saat step ber-type ini di-approve, PO diperlakukan sama seperti tombol
+// "GA Receive" manual (lihat handleGAReceiveGoods & markGoodsAsReceivedByGA
+// di purchase-order/[id]/page.tsx) - tombol manual itu SENGAJA belum dihapus
+// dulu supaya bisa dibandingkan/di-trial berdampingan dengan step ini.
+export const APPROVAL_TYPE_RECEIVER = "Receiver";
 
 export const APPROVAL_TYPE_OPTIONS = [
   { label: APPROVAL_TYPE_MENGETAHUI, value: APPROVAL_TYPE_MENGETAHUI },
@@ -36,6 +52,7 @@ export const APPROVAL_TYPE_OPTIONS = [
     label: APPROVAL_TYPE_PAYMENT_VALIDATOR,
     value: APPROVAL_TYPE_PAYMENT_VALIDATOR,
   },
+  { label: APPROVAL_TYPE_RECEIVER, value: APPROVAL_TYPE_RECEIVER },
 ];
 
 // User id "Payment Validator" lama yang di-hardcode. Dipertahankan agar PO lama
@@ -68,6 +85,24 @@ export const isPoPaid = (
   if (!Array.isArray(approvals)) return false;
   return approvals.some(
     (app) => app.status === "approved" && isPaymentValidatorApproval(app),
+  );
+};
+
+/**
+ * Approval ber-type "Receiver" (lihat APPROVAL_TYPE_RECEIVER) yang sudah
+ * approved di jalur approval sebuah PO - dipakai status engine buat tahu
+ * apakah barang sudah pernah di-checklist receiver, terlepas dari urutan
+ * step Receiver vs Payment Validator di template (lihat
+ * deriveReceiveDrivenStatus di purchaseOrderService.ts).
+ */
+export const getApprovedReceiverStep = (
+  approvals: Approval[] | null | undefined,
+): Approval | null => {
+  if (!Array.isArray(approvals)) return null;
+  return (
+    approvals.find(
+      (app) => app.type === APPROVAL_TYPE_RECEIVER && app.status === "approved",
+    ) ?? null
   );
 };
 

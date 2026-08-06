@@ -292,35 +292,50 @@ export default function DokumentasiPage() {
                 icon={CheckCheck}
                 title="3. Persetujuan PO (Oleh Approvers PO)"
               >
-                Approver (biasanya Finance, Dept. Head terkait, atau Direksi)
-                menyetujui PO.
+                Approver (biasanya Finance/Payment Validator, Dept. Head
+                terkait, atau Receiver/GA) menyetujui PO sesuai urutan step di
+                template approval-nya - urutan step &quot;Receiver&quot; vs
+                &quot;Payment Validator&quot; beda-beda tergantung jalur
+                pembayaran (Cash/DP&amp;BP-setelah-lunas: Payment Validator
+                lebih dulu; Termin/DP&amp;BP-setelah-DP: Receiver lebih dulu).
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
-                    Setelah semua approver setuju, status PO berubah menjadi{" "}
-                    <Badge variant="secondary">Pending BAST</Badge>.
+                    Setelah step pembayaran selesai (dan belum ada barang
+                    diterima), status PO jadi{" "}
+                    <Badge variant="secondary">Pending Receive</Badge>.
+                  </ListItem>
+                  <ListItem>
+                    Kalau barang diterima duluan (sebelum pembayaran, jalur
+                    Termin/DP&amp;BP-setelah-DP), status PO jadi{" "}
+                    <Badge variant="secondary">Pending Payment</Badge> sampai
+                    Payment Validator menyelesaikan step-nya.
                   </ListItem>
                 </ul>
               </Step>
 
-              <Step icon={Truck} title="4. Konfirmasi BAST (Oleh Requester)">
-                Setelah barang diterima di site, siklus ditutup oleh Requester
-                awal.
+              <Step icon={Truck} title="4. Penerimaan Barang (Oleh Receiver/GA)">
+                Begitu barang sampai, Receiver (step approval &quot;Receiver&quot;
+                atau tombol &quot;Terima Barang&quot; manual oleh GA) mengisi
+                checklist qty barang yang aktual diterima vs qty di PO.
                 <ul className="mt-2 space-y-2 list-disc ml-6">
                   <ListItem>
-                    Requester (pembuat MR) membuka halaman detail PO yang
-                    statusnya <Badge variant="secondary">Pending BAST</Badge>.
+                    Kalau semua item qty-nya sesuai PO, status PO otomatis
+                    jadi{" "}
+                    <Badge variant="outline">Full Received</Badge> - siklus PO
+                    selesai.
                   </ListItem>
                   <ListItem>
-                    Requester mengunggah file BAST (Berita Acara Serah Terima)
-                    atau bukti penerimaan barang.
+                    Kalau ada item yang qty-nya kurang atau tidak datang sama
+                    sekali, status PO jadi{" "}
+                    <Badge variant="secondary">Partial Receive</Badge>.
+                    Receiver bisa edit checklist ini lagi nanti (dan cetak
+                    riwayatnya) sampai qty-nya sesuai, baru PO jadi Full
+                    Received.
                   </ListItem>
                   <ListItem>
-                    Secara otomatis, status PO akan berubah menjadi{" "}
-                    <Badge variant="outline">Completed</Badge>.
-                  </ListItem>
-                  <ListItem>
-                    Status MR yang terkait juga akan berubah menjadi{" "}
-                    <Badge variant="outline">Completed</Badge>.
+                    Terpisah dari status PO, Requester (pembuat MR) tetap bisa
+                    mengunggah bukti BAST per item untuk kebutuhan laporan -
+                    ini tidak lagi mengubah status PO.
                   </ListItem>
                 </ul>
               </Step>
@@ -472,11 +487,13 @@ export default function DokumentasiPage() {
                 BAST.
               </h5>
               <p className="text-sm text-muted-foreground -mt-2">
-                J: Pastikan status PO sudah{" "}
-                <Badge variant="secondary">Pending BAST</Badge>. Jika statusnya
-                masih &quot;Pending Approval&quot;, artinya PO tersebut belum
-                disetujui oleh Finance/Direksi. Hanya Requester asli yang
-                membuat MR yang dapat mengunggah BAST.
+                J: Pastikan barang untuk item tersebut sudah di-checklist
+                diterima oleh Receiver/GA (status item MR sudah{" "}
+                <Badge variant="secondary">Pending BAST</Badge>). Jika status
+                PO masih &quot;Pending Approval&quot;/&quot;Pending
+                Payment&quot;/&quot;Pending Receive&quot;, artinya barangnya
+                belum diterima. Hanya Requester asli yang membuat MR yang
+                dapat mengunggah BAST.
               </p>
             </AccordionContent>
           </AccordionItem>
@@ -519,10 +536,30 @@ export default function DokumentasiPage() {
           <div className="flex items-start gap-3">
             <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             <div>
-              <Badge variant="secondary">Pending BAST</Badge>
+              <Badge variant="secondary">Pending Receive</Badge>
               <p className="text-xs text-muted-foreground">
-                Hanya untuk PO. PO sudah disetujui penuh dan barang sedang dalam
-                proses kirim. Menunggu konfirmasi penerimaan dari Requester.
+                Hanya untuk PO. PO sudah disetujui penuh, menunggu barang
+                diterima &amp; di-checklist oleh Receiver/GA.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            <div>
+              <Badge className="bg-amber-600 text-white">Partial Receive</Badge>
+              <p className="text-xs text-muted-foreground">
+                Hanya untuk PO. Barang sudah diterima tapi qty/jenisnya belum
+                sesuai PO - menunggu Receiver mengedit checklist-nya.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <CheckCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            <div>
+              <Badge variant="outline">Full Received</Badge>
+              <p className="text-xs text-muted-foreground">
+                Hanya untuk PO. Siklus PO selesai - semua barang sudah
+                diterima sesuai qty PO.
               </p>
             </div>
           </div>
@@ -531,7 +568,8 @@ export default function DokumentasiPage() {
             <div>
               <Badge variant="outline">Completed</Badge>
               <p className="text-xs text-muted-foreground">
-                Siklus selesai. Barang sudah diterima dan BAST telah diunggah.
+                Hanya untuk MR/item. Item sudah di-BAST oleh Requester
+                (laporan) - tidak lagi mempengaruhi status PO.
               </p>
             </div>
           </div>

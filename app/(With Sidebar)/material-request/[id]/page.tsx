@@ -134,7 +134,6 @@ import {
   fetchPoQtyBreakdownForMr,
   fetchPosForMr,
   fetchBarangAssetFlags,
-  recalculatePendingBastPos,
   PoQtyBreakdownEntry,
 } from "@/services/purchaseOrderService";
 import {
@@ -763,7 +762,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         uploadedAttachments,
         currentUser.id,
       );
-      await recalculatePendingBastPos(mrId);
 
       toast.success("BAST berhasil diunggah, item ditandai selesai");
       setIsBastUploadOpen(false);
