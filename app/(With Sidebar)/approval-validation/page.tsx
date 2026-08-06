@@ -279,8 +279,8 @@ function ApprovalValidationContent() {
                         <Badge
                           className={cn(
                             "w-fit",
-                            po.status === "Pending Payment BP"
-                              ? "bg-orange-600 text-white"
+                            po.status === "Partial Receive"
+                              ? "bg-amber-600 text-white"
                               : "bg-blue-600 text-white",
                           )}
                         >

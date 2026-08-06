@@ -117,15 +117,16 @@ export const fetchDashboardStats = async (
     // 3. MR Total
     createQuery("material_requests", null), // null = tanpa filter status
 
-    // 4. PO Pending (Pending Validation + Approval + BAST)
+    // 4. PO Pending (Pending Validation + Approval + Receive)
     createQuery("purchase_orders", [
       "Pending Validation",
       "Pending Approval",
-      "Pending BAST",
+      "Pending Receive",
+      "Partial Receive",
     ]),
 
-    // 5. PO Completed
-    createQuery("purchase_orders", "Completed"),
+    // 5. PO Completed (Full Received)
+    createQuery("purchase_orders", "Full Received"),
 
     // 6. PO Total
     createQuery("purchase_orders", null), // null = tanpa filter status

@@ -11,6 +11,8 @@ import {
   PurchaseOrderListItem,
   Attachment,
   POItem,
+  ReceiveRecord,
+  ReceiveRecordItem,
 } from "@/type";
 import {
   normalizeMrOrders,
@@ -18,7 +20,16 @@ import {
   recalculateMrStatus,
   recalculateMrLevel,
 } from "./mrService";
-import { PAYMENT_VALIDATOR_USER_ID, MR_ITEM_STATUSES } from "@/type/enum";
+import {
+  PAYMENT_VALIDATOR_USER_ID,
+  MR_ITEM_STATUSES,
+  APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  getApprovedReceiverStep,
+  isPoPaid,
+  PO_STATUS_PENDING_RECEIVE,
+  PO_STATUS_PARTIAL_RECEIVE,
+  PO_STATUS_FULL_RECEIVED,
+} from "@/type/enum";
 
 const supabase = createClient();
 
@@ -671,116 +682,146 @@ export const validatePurchaseOrder = async (
   return data;
 };
 
-export const markGoodsAsReceivedByGA = async (
-  mrId: number,
-  poId: number,
-  userId: string,
-) => {
-  const { data, error } = await supabase
-    .from("material_requests")
-    .update({
-      level: "OPEN 5", // Sesuai Enum: Tiba di WH (Belum Kirim ke Site)
-    })
-    .eq("id", mrId)
-    .select()
-    .single();
+/**
+ * Menentukan status PO berikutnya seputar penerimaan barang, secara
+ * simetris terhadap urutan step "Receiver" vs "Payment Validator" di
+ * template approval-nya (urutannya beda-beda tergantung jalur pembayaran -
+ * Cash/DP&BP-setelah-lunas taruh Payment Validator duluan, Termin/DP&BP-
+ * setelah-DP taruh Receiver duluan - lihat po-receive-record-setup.sql).
+ * Dipanggil dari 2 sisi: begitu step Payment Validator selesai disetujui,
+ * dan begitu checklist Receiver disubmit (baik lewat step approval Receiver
+ * maupun tombol GA Receive manual).
+ *
+ * - `paymentJustSettled`: true kalau baru saja menyelesaikan sisi
+ *   pembayaran (dp_paid && bp_paid sesuai payment_term, atau approve biasa
+ *   utk non-DP&BP).
+ * - `receiveJustSubmitted`: true kalau baru saja submit checklist receiver.
+ * Salah satu harus true (dipanggil dari salah satu sisi), tidak keduanya.
+ */
+export const deriveReceiveDrivenStatus = (
+  approvals: Approval[] | null | undefined,
+  hasPaymentValidatorStep: boolean,
+  isFullMatch: boolean | undefined,
+  opts: { paymentJustSettled?: boolean; receiveJustSubmitted?: boolean },
+):
+  | typeof PO_STATUS_PENDING_RECEIVE
+  | "Pending Payment"
+  | typeof PO_STATUS_FULL_RECEIVED
+  | typeof PO_STATUS_PARTIAL_RECEIVE => {
+  const receiverApproved = !!getApprovedReceiverStep(approvals);
 
-  if (error) {
-    console.error("Error updating MR level:", error);
-    throw error;
+  if (opts.paymentJustSettled) {
+    if (receiverApproved && isFullMatch !== undefined) {
+      return isFullMatch ? PO_STATUS_FULL_RECEIVED : PO_STATUS_PARTIAL_RECEIVE;
+    }
+    return PO_STATUS_PENDING_RECEIVE;
   }
 
-  // Tandai item-item yang di-cover PO ini (yang masih "PO Created") jadi
-  // "Pending BAST" - barang sudah fisik diterima GA, tinggal nunggu
-  // requester upload bukti BAST per item. Item yang statusnya bukan
-  // "PO Created" (misal sudah Cancelled/Completed dari PO lain) dilewati
-  // supaya tidak ketimpa.
-  const { data: poRow } = await supabase
-    .from("purchase_orders")
-    .select("items")
-    .eq("id", poId)
-    .single();
-  const poItems: POItem[] = Array.isArray(poRow?.items) ? poRow.items : [];
+  // receiveJustSubmitted
+  const paymentSettled = !hasPaymentValidatorStep || isPoPaid(approvals);
+  if (paymentSettled) {
+    return isFullMatch ? PO_STATUS_FULL_RECEIVED : PO_STATUS_PARTIAL_RECEIVE;
+  }
+  return "Pending Payment";
+};
+
+/**
+ * Submit/edit checklist penerimaan barang (Receiver) - dipakai baik dari
+ * step approval "Receiver" maupun tombol GA Receive manual (disatukan,
+ * lihat po-receive-record-setup.sql). Menimpa `receive_record` PO ini
+ * (bukan log bertumpuk - "sampai terpenuhi" berarti diedit di tempat),
+ * menandai item MR yang qty-nya cocok "Pending BAST" dan yang tidak cocok
+ * "Processing", lalu set status PO lewat deriveReceiveDrivenStatus.
+ */
+export const submitReceiveRecord = async (
+  po: Pick<PurchaseOrderDetail, "id" | "mr_id" | "items" | "approvals">,
+  userId: string,
+  userName: string,
+  receivedQtyByPartNumber: Record<string, number>,
+): Promise<ReceiveRecord> => {
+  if (!po.mr_id) throw new Error("PO ini tidak terhubung ke MR.");
+
+  const items: ReceiveRecordItem[] = (po.items || [])
+    .filter((item) => !!item.part_number)
+    .map((item) => ({
+      part_number: item.part_number,
+      part_name: item.name,
+      ordered_qty: item.qty,
+      received_qty: receivedQtyByPartNumber[item.part_number] ?? 0,
+    }));
+  const isFullMatch = items.every((i) => i.received_qty === i.ordered_qty);
+
+  const receiveRecord: ReceiveRecord = {
+    items,
+    is_full_match: isFullMatch,
+    received_by: userId,
+    received_by_name: userName,
+    received_at: new Date().toISOString(),
+  };
 
   const { data: mrRow } = await supabase
     .from("material_requests")
     .select("orders")
-    .eq("id", mrId)
+    .eq("id", po.mr_id)
     .single();
   const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
 
-  for (const item of poItems) {
-    if (!item.part_number) continue;
+  for (const item of items) {
     const order = orders.find((o) => o.part_number === item.part_number);
-    if (order?.status !== "PO Created") continue;
+    // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
+    // PO lain) dilewati supaya tidak ketimpa - sama seperti guard lama.
+    if (
+      order?.status !== "PO Created" &&
+      order?.status !== MR_ITEM_STATUSES.PROCESSING &&
+      order?.status !== MR_ITEM_STATUSES.PENDING_BAST
+    ) {
+      continue;
+    }
     try {
       await updateMrItemStatus(
-        mrId,
+        po.mr_id,
         item.part_number,
-        { status: MR_ITEM_STATUSES.PENDING_BAST, level: "Open 5" },
+        {
+          status:
+            item.received_qty === item.ordered_qty
+              ? MR_ITEM_STATUSES.PENDING_BAST
+              : MR_ITEM_STATUSES.PROCESSING,
+          level: "Open 5",
+        },
         userId,
       );
     } catch (err) {
       console.error(
-        `Gagal update status item MR (Pending BAST) untuk Part ${item.part_number}:`,
+        `Gagal update status item MR (receive) untuk Part ${item.part_number}:`,
         err,
       );
     }
   }
-  await recalculateMrStatus(mrId);
-  await recalculateMrLevel(mrId);
 
-  return data;
-};
+  await supabase
+    .from("material_requests")
+    .update({ level: "OPEN 5" })
+    .eq("id", po.mr_id);
+  await recalculateMrStatus(po.mr_id);
+  await recalculateMrLevel(po.mr_id);
 
-// Setelah sebuah item MR di-BAST (Completed), cek PO-PO yang statusnya masih
-// "Pending BAST" milik MR ini - kalau SEMUA item di PO tsb sudah Completed,
-// PO-nya ikut ditandai "Completed".
-export const recalculatePendingBastPos = async (
-  mrId: number,
-): Promise<void> => {
-  try {
-    const { data: pos, error } = await supabase
-      .from("purchase_orders")
-      .select("id, items")
-      .eq("mr_id", mrId)
-      .eq("status", "Pending BAST");
+  const hasPaymentValidatorStep = (po.approvals || []).some(
+    (a) => a.type === APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  );
+  const newStatus = deriveReceiveDrivenStatus(
+    po.approvals,
+    hasPaymentValidatorStep,
+    isFullMatch,
+    { receiveJustSubmitted: true },
+  );
 
-    if (error || !pos || pos.length === 0) return;
+  const { error: poError } = await supabase
+    .from("purchase_orders")
+    .update({ receive_record: receiveRecord, status: newStatus })
+    .eq("id", po.id);
+  if (poError) throw poError;
 
-    const { data: mrRow } = await supabase
-      .from("material_requests")
-      .select("orders")
-      .eq("id", mrId)
-      .single();
-    const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
-
-    for (const po of pos) {
-      const items: POItem[] = Array.isArray(po.items) ? po.items : [];
-      const allCompleted =
-        items.length > 0 &&
-        items.every((item) => {
-          const order = orders.find(
-            (o) => o.part_number === item.part_number,
-          );
-          return order?.status === "Completed";
-        });
-
-      if (allCompleted) {
-        const { error: updateError } = await supabase
-          .from("purchase_orders")
-          .update({ status: "Completed" })
-          .eq("id", po.id);
-        if (updateError)
-          console.error(
-            `Gagal update status PO ${po.id} ke Completed:`,
-            updateError,
-          );
-      }
-    }
-  } catch (err) {
-    console.error("recalculatePendingBastPos: unexpected error", err);
-  }
+  return receiveRecord;
 };
 
 /**

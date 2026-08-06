@@ -156,11 +156,12 @@ export const fetchMyPendingPoApprovals = async (
 };
 
 /**
- * Mengambil semua PO yang statusnya sudah siap utk GA "Terima Barang di WH"
- * ("Pending BAST" atau "Pending Payment BP" - lihat showGAReceiveButton di
- * halaman detail PO), lalu skip PO yang semua itemnya udah kepencet terima
- * (level "Open 5"/"Close") sehingga tombolnya sebenarnya sudah nggak relevan
- * lagi buat PO itu.
+ * Mengambil semua PO yang statusnya sudah siap utk "Terima Barang"
+ * ("Pending Receive" - belum pernah diterima sama sekali, atau "Partial
+ * Receive" - checklist sebelumnya belum cocok semua, lihat showGAReceiveButton
+ * di halaman detail PO). Status itu sendiri sudah cukup jadi penentu (tidak
+ * perlu cek level item lagi) karena begitu semua item cocok, status PO
+ * langsung berubah jadi "Full Received" dan otomatis hilang dari daftar ini.
  */
 export const fetchPosReadyForGaReceive = async (): Promise<PurchaseOrder[]> => {
   const { data, error } = await supabase
@@ -168,25 +169,14 @@ export const fetchPosReadyForGaReceive = async (): Promise<PurchaseOrder[]> => {
     .select(
       "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr, orders)",
     )
-    .in("status", ["Pending BAST", "Pending Payment BP"])
+    .in("status", ["Pending Receive", "Partial Receive"])
     .order("created_at", { ascending: false });
 
   if (error) {
     console.error("Error fetching POs ready for GA receive:", error);
     throw error;
   }
-  if (!data) return [];
-
-  return (data as any[]).filter((po) => {
-    const items = po.items || [];
-    if (items.length === 0) return true;
-    const orders = normalizeMrOrders(po.material_requests?.orders || []);
-    const allReceived = items.every((item: any) => {
-      const mrItem = orders.find((o) => o.part_number === item.part_number);
-      return mrItem?.level === "Open 5" || mrItem?.level === "Close";
-    });
-    return !allReceived;
-  }) as PurchaseOrder[];
+  return (data || []) as PurchaseOrder[];
 };
 
 export const processMrApproval = async (

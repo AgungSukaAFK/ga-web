@@ -132,9 +132,9 @@ export interface PurchaseOrderPayload {
     | "Pending Validation"
     | "Pending Approval"
     | "Pending Payment"
-    | "Pending Payment BP"
-    | "Pending BAST"
-    | "Completed"
+    | "Pending Receive"
+    | "Partial Receive"
+    | "Full Received"
     | "Rejected"
     | "Draft"
     | "Ordered";
@@ -159,6 +159,26 @@ export interface PurchaseOrderPayload {
   // Progress pembayaran khusus payment_term "DP & Pelunasan" (DP_BP)
   dp_paid?: boolean | null;
   bp_paid?: boolean | null;
+  // Riwayat penerimaan barang - satu record yang ditimpa/diedit ulang oleh
+  // Receiver (lihat submitReceiveRecord di purchaseOrderService.ts), bukan log
+  // bertumpuk. Null selama status masih "Pending Payment"/"Pending Receive"
+  // sebelum ada checklist yang disubmit sama sekali.
+  receive_record?: ReceiveRecord | null;
+}
+
+export interface ReceiveRecordItem {
+  part_number: string;
+  part_name: string;
+  ordered_qty: number;
+  received_qty: number;
+}
+
+export interface ReceiveRecord {
+  items: ReceiveRecordItem[];
+  is_full_match: boolean;
+  received_by: string;
+  received_by_name: string;
+  received_at: string;
 }
 
 export interface MaterialRequestListItem {
@@ -303,8 +323,10 @@ export interface PurchaseOrder {
   status:
     | "Pending Validation"
     | "Pending Approval"
-    | "Pending BAST"
-    | "Completed"
+    | "Pending Payment"
+    | "Pending Receive"
+    | "Partial Receive"
+    | "Full Received"
     | "Rejected"
     | "Draft"
     | "Ordered"
@@ -332,6 +354,7 @@ export interface PurchaseOrder {
   // Progress pembayaran khusus payment_term "DP & Pelunasan" (DP_BP)
   dp_paid?: boolean | null;
   bp_paid?: boolean | null;
+  receive_record?: ReceiveRecord | null;
 
   pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
   pph_rate?: number | null; // Persentase (misal: 1.5)
