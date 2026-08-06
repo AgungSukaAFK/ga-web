@@ -55,6 +55,8 @@ const lokasiAbbreviations: { [key: string]: string } = {
   "GIS BPN": "GISBPN",
   "Site Manado": "MND",
   "Site DIZA": "DIZ",
+  "Site PIK": "PIK",
+  "Site BGE": "BGE",
   "Head Office": "HO",
 };
 
@@ -296,6 +298,7 @@ export const updateMrItemStatus = async (
   partNumber: string,
   updates: {
     status?: string;
+    level?: string;
     poRef?: string;
     note?: string;
   },
@@ -325,6 +328,7 @@ export const updateMrItemStatus = async (
   const itemToUpdate = { ...currentOrders[itemIndex] };
 
   if (updates.status) itemToUpdate.status = updates.status;
+  if (updates.level) itemToUpdate.level = updates.level;
   if (updates.poRef) {
     const currentRefs = Array.isArray(itemToUpdate.po_refs)
       ? itemToUpdate.po_refs
@@ -351,10 +355,171 @@ export const updateMrItemStatus = async (
   return { success: true };
 };
 
+// Upload bukti BAST utk SATU item MR (bukan seluruh PO). Item harus sudah
+// "Pending BAST" (barang diterima GA) sebelum requester bisa upload di sini.
+// Menandai item itu "Completed"; PO yang jadi tempat item ini menyusul
+// ditandai "Completed" secara terpisah lewat recalculatePendingBastPos
+// (purchaseOrderService.ts) begitu SEMUA item PO tsb sudah Completed.
+export const uploadBastForMrItem = async (
+  mrId: number,
+  partNumber: string,
+  attachments: Attachment[],
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk upload BAST.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  const existingAttachments = Array.isArray(itemToUpdate.bast_attachments)
+    ? itemToUpdate.bast_attachments
+    : [];
+  itemToUpdate.bast_attachments = [...existingAttachments, ...attachments];
+  itemToUpdate.status = "Completed";
+  itemToUpdate.level = "Close";
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal simpan BAST item: " + updateError.message);
+
+  await recalculateMrStatus(mrId);
+  await recalculateMrLevel(mrId);
+
+  return { success: true };
+};
+
+// Link manual satu item MR ke sebuah PO (dengan qty) - dipakai kalau barang
+// yang dibeli disubstitusi pas belanja sehingga part_number-nya beda dari
+// permintaan MR asli, jadi matching otomatis by part_number gagal detect.
+// Cuma nyimpen link-nya di sini; pemanggil bertanggung jawab menghitung
+// ulang status item (pending/processing/PO Created) dari qty kumulatif
+// terbaru (lihat fetchPoQtyBreakdownForMr) lalu panggil updateMrItemStatus.
+export const addManualPoLink = async (
+  mrId: number,
+  partNumber: string,
+  kodePo: string,
+  qty: number,
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk link PO.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  const existingLinks = Array.isArray(itemToUpdate.manual_po_links)
+    ? itemToUpdate.manual_po_links
+    : [];
+  itemToUpdate.manual_po_links = [
+    ...existingLinks.filter((l: any) => l.kode_po !== kodePo),
+    { kode_po: kodePo, qty },
+  ];
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal simpan link PO manual: " + updateError.message);
+
+  return { success: true };
+};
+
+export const removeManualPoLink = async (
+  mrId: number,
+  partNumber: string,
+  kodePo: string,
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk hapus link PO.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  itemToUpdate.manual_po_links = (itemToUpdate.manual_po_links || []).filter(
+    (l: any) => l.kode_po !== kodePo,
+  );
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal hapus link PO manual: " + updateError.message);
+
+  return { success: true };
+};
+
 // Menghitung ulang status MR dari agregat status item-itemnya (best-effort,
-// tidak throw). Hanya berjalan setelah MR sudah masuk fase PO (mengabaikan
-// status pra-PO seperti Waiting PO / Rejected agar tidak "menghidupkan
-// kembali" MR yang belum/sudah tidak diproses).
+// tidak throw). Mengabaikan status pra-persetujuan (Pending Validation, On
+// Hold, Pending Approval, Rejected) agar tidak "menghidupkan kembali" MR
+// yang belum/sudah tidak diproses.
 export const recalculateMrStatus = async (mrId: number): Promise<void> => {
   const supabase = createClient();
   try {
@@ -373,7 +538,6 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
       "Pending Validation",
       "On Hold",
       "Pending Approval",
-      "Waiting PO",
       "Rejected",
     ];
     if (PRE_PO_STATUSES.includes(mr.status)) return;
@@ -382,10 +546,30 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
     const relevantItems = orders.filter((i) => i.status !== "Cancelled");
     if (relevantItems.length === 0) return;
 
-    const allCompleted = relevantItems.every((i) => i.status === "Completed");
     const allLinked = relevantItems.every(
-      (i) => i.status === "PO Created" || i.status === "Completed",
+      (i) =>
+        i.status === "PO Created" ||
+        i.status === "Pending BAST" ||
+        i.status === "Completed",
     );
+
+    // Selama masih "Waiting PO", baru pindah ke "On Process" begitu SEMUA
+    // item sudah ke-cover PO (qty terpenuhi). Kalau masih ada item yang
+    // belum di-PO-kan / qty-nya kurang, tetap "Waiting PO" - jangan ikut
+    // dihitung ke status lain (Pending BAST/On Process/Completed) dulu.
+    if (mr.status === "Waiting PO") {
+      if (allLinked) {
+        const { error: updateError } = await supabase
+          .from("material_requests")
+          .update({ status: "On Process" })
+          .eq("id", mrId);
+        if (updateError)
+          console.error("recalculateMrStatus: gagal update", updateError);
+      }
+      return;
+    }
+
+    const allCompleted = relevantItems.every((i) => i.status === "Completed");
     const newStatus = allCompleted
       ? "Completed"
       : allLinked
@@ -403,6 +587,96 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
   } catch (err) {
     console.error("recalculateMrStatus: unexpected error", err);
   }
+};
+
+// Level MR (OPEN/CLOSE) dihitung murni dari agregat level item-itemnya -
+// beda dari `status` (approval/dokumen). Selama ada item non-cancelled yang
+// levelnya belum "Close", MR dianggap "OPEN". Baru "CLOSE" kalau semua item
+// sudah "Close" (BAST-nya sudah diupload semua).
+export const recalculateMrLevel = async (mrId: number): Promise<void> => {
+  const supabase = createClient();
+  try {
+    const { data: mr, error } = await supabase
+      .from("material_requests")
+      .select("orders, level")
+      .eq("id", mrId)
+      .single();
+
+    if (error || !mr) {
+      console.error("recalculateMrLevel: gagal fetch MR", error);
+      return;
+    }
+
+    const orders = normalizeMrOrders(mr.orders as any[]);
+    const relevantItems = orders.filter(
+      (i) => i.status !== "Cancelled" && i.status !== "Replaced",
+    );
+    if (relevantItems.length === 0) return;
+
+    const allClosed = relevantItems.every((i) => i.level === "Close");
+    const newLevel = allClosed ? "CLOSE" : "OPEN";
+
+    if (newLevel !== mr.level) {
+      const { error: updateError } = await supabase
+        .from("material_requests")
+        .update({ level: newLevel })
+        .eq("id", mrId);
+      if (updateError)
+        console.error("recalculateMrLevel: gagal update", updateError);
+    }
+  } catch (err) {
+    console.error("recalculateMrLevel: unexpected error", err);
+  }
+};
+
+// Toggle manual "Payment Issue" (Open 3A <-> Open 3B) utk satu item MR.
+// Cuma bermakna selama item ada di level Open 3A/3B (sudah ada PO, belum
+// diapprove Payment Validator) - dipanggil oleh approver dari halaman detail
+// MR.
+export const setItemPaymentIssue = async (
+  mrId: number,
+  partNumber: string,
+  hasIssue: boolean,
+  userId: string,
+  note?: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk tandai payment issue.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  itemToUpdate.level = hasIssue ? "Open 3B" : "Open 3A";
+  itemToUpdate.payment_issue_note = hasIssue ? note || "" : "";
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal simpan payment issue: " + updateError.message);
+
+  return { success: true };
 };
 
 // --- FUNGSI FETCH MR BY ID (NORMALIZED) ---

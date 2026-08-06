@@ -27,7 +27,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { PurchaseOrderListItem, Profile, Approval } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,7 @@ import {
   PAYMENT_VALIDATOR_USER_ID,
   isPoPaid,
   isDpBpPaymentTerm,
+  getLastApprovedApprover,
 } from "@/type/enum";
 
 // --- CONSTANTS ---
@@ -301,7 +302,7 @@ export function PoManagementClientContent() {
             kode_po, status, total_price, company_code, created_at,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (kode_mr),
-            approvals, payment_term
+            approvals, payment_term, dp_paid, bp_paid, attachments
         `);
 
       // Filter yang sama dengan View
@@ -366,12 +367,20 @@ export function PoManagementClientContent() {
 
       const formattedData = data.map((po: any) => {
         const isPaid = isPoPaid(po.approvals as Approval[]);
+        const lastApprover = getLastApprovedApprover(po.approvals as Approval[]);
+        const hasInvoice =
+          Array.isArray(po.attachments) &&
+          po.attachments.some((att: any) => att.type === "invoice");
 
         return {
           "Kode PO": po.kode_po,
           "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
           Status: po.status,
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
+          "Last Approve": lastApprover?.nama || "",
+          DP: po.dp_paid ? "Dibayar" : "",
+          BP: po.bp_paid ? "Dibayar" : "",
+          Invoice: hasInvoice ? "Ada" : "Tidak Ada",
           "Jenis Pembayaran": po.payment_term || "N/A",
           "Total Harga": po.total_price,
           Pembuat: po.users_with_profiles?.nama || "N/A",
@@ -380,12 +389,10 @@ export function PoManagementClientContent() {
         };
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase Orders");
-      XLSX.writeFile(
-        workbook,
+      await exportStyledExcel(
+        formattedData,
         `Admin_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`,
+        "Purchase Orders",
       );
       toast.success("Data PO berhasil diunduh!");
     } catch (error: any) {

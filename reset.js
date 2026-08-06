@@ -6,11 +6,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-const userId = "b3e47f75-a582-40f5-85e8-3cee05dfcd20";
-const email = "purchasing3@garudamart.com";
+const userId = "e0de47b2-19e9-4caa-b7e5-ed605fe6b534";
+const email = "k3.garudamart@gmail.com";
 
 async function hardReset() {
-  const { data: before, error: beforeError } = await supabase.auth.admin.getUserById(userId);
+  const { data: before, error: beforeError } =
+    await supabase.auth.admin.getUserById(userId);
   if (beforeError) console.log("BEFORE ERROR:", beforeError);
   console.log("BEFORE:", before?.user?.last_sign_in_at);
 

@@ -28,7 +28,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type
 import { formatDateFriendly } from "@/lib/utils";
 import { LIMIT_OPTIONS } from "@/type/enum";
@@ -54,6 +54,8 @@ const dataLokasi: string[] = [
   "GIS BPN",
   "Site Manado",
   "Site DIZA",
+  "Site PIK",
+  "Site BGE",
 ];
 const dataDepartment: string[] = Array.from(
   new Set([
@@ -311,12 +313,10 @@ export function UserManagementClientContent() {
         "Tanggal Dibuat": formatDateFriendly(user.profile_created_at),
       }));
 
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Daftar User");
-      XLSX.writeFile(
-        workbook,
+      await exportStyledExcel(
+        formattedData,
         `Daftar_User_${new Date().toISOString().split("T")[0]}.xlsx`,
+        "Daftar User",
       );
 
       toast.success("Data user berhasil diunduh!");

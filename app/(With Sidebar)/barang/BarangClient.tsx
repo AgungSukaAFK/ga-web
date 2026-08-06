@@ -59,7 +59,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Barang } from "@/type";
 import { formatCurrency, cn } from "@/lib/utils"; // Pastikan cn ada di utils atau hapus jika tidak pakai
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
@@ -179,7 +179,7 @@ export default function BarangClient() {
   );
 
   // --- HANDLERS ---
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredData.length === 0) {
       toast.warning("Tidak ada data untuk diexport");
       return;
@@ -196,12 +196,10 @@ export default function BarangClient() {
       Aset: item.is_asset ? "Ya" : "Tidak",
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Data Barang");
-    XLSX.writeFile(
-      workbook,
+    await exportStyledExcel(
+      dataToExport,
       `Master_Barang_${new Date().toISOString().split("T")[0]}.xlsx`,
+      "Data Barang",
     );
     toast.success("File Excel berhasil didownload!");
   };

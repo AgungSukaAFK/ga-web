@@ -28,6 +28,9 @@ import { toast } from "sonner";
 import {
   createPurchaseOrder,
   fetchMaterialRequestById,
+  fetchBarangAssetFlags,
+  fetchPoQtyBreakdownForMr,
+  PoQtyBreakdownEntry,
   generatePoCode,
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
@@ -35,7 +38,7 @@ import {
   uploadAttachmentVps,
   removeAttachmentVps,
 } from "@/services/storageService";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
 import {
   Loader2,
@@ -116,6 +119,7 @@ import { searchVendors } from "@/services/vendorService";
 import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 // --- INTERFACE EXTENSION ---
@@ -125,6 +129,24 @@ interface ExtendedPOItem extends POItem {
   description?: string;
   link?: string;
 }
+
+// Sisipkan/lepas segmen "AST" tepat setelah segmen "PO" pada kode_po, sebagai
+// penanda visual PO Asset. Nomor urutnya TETAP satu rangkaian dengan PO
+// biasa (bukan counter terpisah) - segmen ini murni penanda, dilakukan
+// client-side (string manipulation) supaya tidak perlu fetch ulang nomor
+// urut ke server tiap kali komposisi item berubah.
+const withAssetMarker = (kodePo: string, isAsset: boolean): string => {
+  const parts = kodePo.split("/");
+  const poIdx = parts.indexOf("PO");
+  if (poIdx === -1) return kodePo;
+  const hasMarker = parts[poIdx + 1] === "AST";
+  if (isAsset && !hasMarker) {
+    parts.splice(poIdx + 1, 0, "AST");
+  } else if (!isAsset && hasMarker) {
+    parts.splice(poIdx + 1, 1);
+  }
+  return parts.join("/");
+};
 
 // --- KONFIGURASI PPH ---
 const PPH_OPTIONS = [
@@ -279,6 +301,19 @@ function CreatePOPageContent() {
   const [isViewItemOpen, setIsViewItemOpen] = useState(false);
   const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
 
+  // Peta barang_id -> is_asset, dipakai utk nandain item yg dimapping dari MR
+  // (Order MR cuma nyimpen barang_id, bukan is_asset-nya langsung).
+  const [barangAssetMap, setBarangAssetMap] = useState<
+    Record<number, boolean>
+  >({});
+
+  // Qty yang sudah ke-cover PO lain (termasuk PO ini sendiri kalau sedang
+  // edit) per part_number - dipakai utk nampilin sisa qty & nge-default qty
+  // item baru ke sisa yg belum di-PO-kan, bukan qty penuh MR.
+  const [poBreakdown, setPoBreakdown] = useState<
+    Record<string, PoQtyBreakdownEntry[]>
+  >({});
+
   // Upload States
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
@@ -288,6 +323,11 @@ function CreatePOPageContent() {
   const [paymentTermType, setPaymentTermType] = useState("Termin");
   const [paymentTermDays, setPaymentTermDays] = useState("30");
   const [dpPercentage, setDpPercentage] = useState<number>(30);
+  // Varian pengiriman khusus payment term DP & Pelunasan - lihat
+  // isPartialPayment di purchase-order/[id]/page.tsx utk gimana ini dipakai.
+  const [dpBpShippingType, setDpBpShippingType] = useState<
+    "ship_after_dp" | "ship_after_full_payment"
+  >("ship_after_full_payment");
 
   // Form State
   const [poForm, setPoForm] = useState<
@@ -392,9 +432,17 @@ function CreatePOPageContent() {
       shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
     }));
 
-    if (fetchedMr.orders && fetchedMr.orders.length > 0) {
-      setSelectedOrderIndices(fetchedMr.orders.map((_: any, i: number) => i));
-    }
+    const barangIds = (fetchedMr.orders || [])
+      .map((o: any) => o.barang_id)
+      .filter((id: any): id is number => !!id);
+    fetchBarangAssetFlags(barangIds).then(setBarangAssetMap);
+    fetchPoQtyBreakdownForMr(id).then(setPoBreakdown);
+
+    // Jangan default-select semua item - beberapa item mungkin nggak boleh
+    // dipilih (qty sudah kecover PO lain, atau beda tipe aset/barang dari
+    // item lain yang sudah dipilih). Biarkan user pilih manual / pakai
+    // "Pilih Semua" yang otomatis skip item yang nggak selectable.
+    setSelectedOrderIndices([]);
   };
 
   const handleOpenLinkMR = async () => {
@@ -453,38 +501,53 @@ function CreatePOPageContent() {
     if (!mrData) return;
     const newItems: ExtendedPOItem[] = selectedOrderIndices.map((index) => {
       const order = mrData.orders[index];
-      // Cek apakah item ini sudah ada di form (untuk menjaga state qty/harga yg sudah diedit user)
+      // Cek apakah item ini sudah ada di form (untuk menjaga state qty/harga
+      // yg sudah diedit user) - dicocokkan by part_number, bukan qty, karena
+      // qty defaultnya sekarang = sisa yg belum di-PO-kan (bisa beda dari
+      // qty MR), jadi ga bisa dipakai sebagai kunci pencocokan lagi.
       const existingItem = poForm.items.find(
-        (i) => i.name === order.name && i.qty === Number(order.qty),
+        (i) => i.part_number === (order.part_number || "N/A"),
       );
 
       // Mapping Logic:
       // Order.note -> POItem.description
       // Order.url -> POItem.link
 
+      const is_asset = order.barang_id
+        ? barangAssetMap[order.barang_id]
+        : undefined;
+
       if (existingItem) {
         return {
           ...existingItem,
           link: existingItem.link || order.url || "",
           description: existingItem.description || order.note || "",
+          is_asset: existingItem.is_asset ?? is_asset,
         };
       }
+
+      // Default qty = sisa yg belum ke-cover PO lain (bukan qty MR penuh),
+      // supaya PO susulan buat item yg sebagian sudah di-PO-kan ga
+      // over-order.
+      const remainingQty = getRemainingQty(order);
+      const qty = remainingQty > 0 ? remainingQty : Number(order.qty);
 
       return {
         barang_id: order.barang_id || 0,
         part_number: order.part_number || "N/A",
         name: order.name,
-        qty: Number(order.qty),
+        qty,
         uom: order.uom,
         price: order.estimasi_harga || 0,
-        total_price: Number(order.qty) * (order.estimasi_harga || 0),
+        total_price: qty * (order.estimasi_harga || 0),
         vendor_name: "",
         link: order.url || "",
         description: order.note || "",
+        is_asset,
       };
     });
     setPoForm((prev) => ({ ...prev, items: newItems }));
-  }, [selectedOrderIndices, mrData]);
+  }, [selectedOrderIndices, mrData, barangAssetMap, poBreakdown]);
 
   useEffect(() => {
     const subtotal = poForm.items.reduce(
@@ -522,6 +585,19 @@ function CreatePOPageContent() {
     pphType,
   ]);
 
+  // --- PENANDA KODE PO ASSET ---
+  // Begitu komposisi item diketahui (semua item bertipe sama, sesuai aturan
+  // no-mixing), tandai kode_po dengan segmen "AST" kalau PO ini PO Asset.
+  useEffect(() => {
+    if (!poForm.kode_po || poForm.kode_po === "Generating...") return;
+    const isAssetPO =
+      poForm.items.length > 0 && poForm.items.every((i) => i.is_asset);
+    const updated = withAssetMarker(poForm.kode_po, isAssetPO);
+    if (updated !== poForm.kode_po) {
+      setPoForm((prev) => ({ ...prev, kode_po: updated }));
+    }
+  }, [poForm.items, poForm.kode_po]);
+
   useEffect(() => {
     let termString = "";
     if (paymentTermType === "Cash") {
@@ -533,8 +609,13 @@ function CreatePOPageContent() {
       const bp = 100 - validDp;
       termString = `DP ${validDp}% - Pelunasan ${bp}%`;
     }
-    setPoForm((p) => ({ ...p, payment_term: termString }));
-  }, [paymentTermType, paymentTermDays, dpPercentage]);
+    setPoForm((p) => ({
+      ...p,
+      payment_term: termString,
+      dp_bp_shipping_type:
+        paymentTermType === "DP_BP" ? dpBpShippingType : null,
+    }));
+  }, [paymentTermType, paymentTermDays, dpPercentage, dpBpShippingType]);
 
   const handleItemChange = (
     index: number,
@@ -554,6 +635,18 @@ function CreatePOPageContent() {
   };
 
   const handleAddItemFromDB = (barang: Barang) => {
+    if (
+      poForm.items.length > 0 &&
+      !!barang.is_asset !== !!poForm.items[0].is_asset
+    ) {
+      toast.error(
+        `Tidak bisa ditambahkan - PO ini sudah berisi item ${
+          poForm.items[0].is_asset ? "Asset" : "Barang"
+        }, tidak boleh dicampur dengan ${barang.is_asset ? "Asset" : "Barang"}.`,
+      );
+      return;
+    }
+
     const newItem: ExtendedPOItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
@@ -565,6 +658,7 @@ function CreatePOPageContent() {
       vendor_name: "",
       link: barang.link || "",
       description: "", // Barang master biasanya tidak punya deskripsi spesifik per PO
+      is_asset: barang.is_asset,
     };
 
     setPoForm((prev) => ({
@@ -594,6 +688,22 @@ function CreatePOPageContent() {
 
   const handleReplaceItem = (barang: Barang) => {
     if (replacingIndex === null) return;
+
+    const otherItemsAssetType = poForm.items.find(
+      (_, i) => i !== replacingIndex,
+    )?.is_asset;
+    if (
+      otherItemsAssetType !== undefined &&
+      !!barang.is_asset !== !!otherItemsAssetType
+    ) {
+      toast.error(
+        `Tidak bisa diganti - item lain di PO ini bertipe ${
+          otherItemsAssetType ? "Asset" : "Barang"
+        }, tidak boleh dicampur dengan ${barang.is_asset ? "Asset" : "Barang"}.`,
+      );
+      return;
+    }
+
     const newItems = [...poForm.items];
     const item = newItems[replacingIndex];
     item.barang_id = barang.id;
@@ -602,6 +712,7 @@ function CreatePOPageContent() {
     item.uom = barang.uom || item.uom;
     // Update link dari master barang jika ada
     item.link = barang.link || item.link;
+    item.is_asset = barang.is_asset;
 
     if (barang.last_purchase_price && barang.last_purchase_price > 0) {
       item.price = barang.last_purchase_price;
@@ -707,20 +818,57 @@ function CreatePOPageContent() {
     }
   };
 
+  // Tipe (asset/goods) yang sudah "dikunci" oleh item-item yang ada di PO
+  // saat ini - null berarti belum ada item sama sekali (bebas pilih tipe apa
+  // dulu). 1 PO tidak boleh campur asset & goods.
+  const lockedAssetType: boolean | null =
+    poForm.items.length > 0 ? !!poForm.items[0].is_asset : null;
+
+  const getOrderIsAsset = (order: any): boolean =>
+    order.barang_id ? !!barangAssetMap[order.barang_id] : false;
+
+  // Qty yang masih tersisa & belum ke-cover PO manapun utk item MR ini
+  // (qty MR dikurangi qty kumulatif dari semua PO yang sudah nyantol,
+  // termasuk link manual).
+  const getRemainingQty = (order: any): number => {
+    const covered = order.part_number
+      ? (poBreakdown[order.part_number] || []).reduce(
+          (sum, e) => sum + (e.qty || 0),
+          0,
+        )
+      : 0;
+    return Math.max(0, Number(order.qty) - covered);
+  };
+
+  const isOrderSelectable = (order: any): boolean => {
+    if (getRemainingQty(order) <= 0) return false;
+    if (lockedAssetType === null) return true;
+    return getOrderIsAsset(order) === lockedAssetType;
+  };
+
   const toggleSelection = (index: number) => {
+    const order = mrData?.orders[index];
+    if (
+      order &&
+      !selectedOrderIndices.includes(index) &&
+      !isOrderSelectable(order)
+    ) {
+      return; // Guard - checkbox seharusnya sudah disabled di UI
+    }
     setSelectedOrderIndices((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
     );
   };
 
   const selectAll = () => {
-    if (mrData) {
-      if (selectedOrderIndices.length === mrData.orders.length) {
-        setSelectedOrderIndices([]);
-      } else {
-        setSelectedOrderIndices(mrData.orders.map((_, i) => i));
-      }
-    }
+    if (!mrData) return;
+    const selectableIndices = mrData.orders
+      .map((o, i) => (isOrderSelectable(o) ? i : -1))
+      .filter((i) => i !== -1);
+    const allSelected =
+      selectedOrderIndices.length === selectableIndices.length &&
+      selectableIndices.every((i) => selectedOrderIndices.includes(i));
+    setSelectedOrderIndices(allSelected ? [] : selectableIndices);
   };
 
   if (loading && !mrData && !poForm.kode_po)
@@ -754,6 +902,12 @@ function CreatePOPageContent() {
               <span className="font-semibold text-primary">
                 {poForm.kode_po}
               </span>
+              {poForm.items.length > 0 &&
+                poForm.items.every((i) => i.is_asset) && (
+                  <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
+                    PO Asset
+                  </Badge>
+                )}
               {mrData ? (
                 <Tooltip>
                   <TooltipTrigger>
@@ -912,17 +1066,28 @@ function CreatePOPageContent() {
             title="Pilih Item dari Material Request"
             description="Centang item yang akan diproses ke PO."
           >
+            {lockedAssetType !== null && (
+              <div className="mb-3 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+                PO ini sudah terkunci sebagai PO{" "}
+                <strong>{lockedAssetType ? "Asset" : "Barang"}</strong> -
+                item dengan tipe berbeda tidak bisa ikut dipilih. Buat PO
+                terpisah untuk tipe lainnya.
+              </div>
+            )}
             <div className="mb-2 flex items-center space-x-2">
               <Checkbox
                 id="select-all"
-                checked={mrData?.orders.length === selectedOrderIndices.length}
+                checked={
+                  mrData?.orders.filter(isOrderSelectable).length ===
+                    selectedOrderIndices.length && selectedOrderIndices.length > 0
+                }
                 onCheckedChange={selectAll}
               />
               <label
                 htmlFor="select-all"
                 className="text-sm font-medium cursor-pointer"
               >
-                Pilih Semua
+                Pilih Semua (yang bisa dipilih)
               </label>
             </div>
             <div className="border rounded-md overflow-x-auto">
@@ -931,33 +1096,69 @@ function CreatePOPageContent() {
                   <TableRow>
                     <TableHead className="w-[50px]">Pilih</TableHead>
                     <TableHead>Nama Barang</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Info MR</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Est. Harga</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mrData?.orders.map((order, index) => (
-                    <TableRow
-                      key={index}
-                      className={
-                        selectedOrderIndices.includes(index)
-                          ? "bg-muted/50"
-                          : ""
-                      }
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedOrderIndices.includes(index)}
-                          onCheckedChange={() => toggleSelection(index)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{order.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {order.part_number || "-"}
-                        </div>
-                      </TableCell>
+                  {mrData?.orders.map((order, index) => {
+                    const selectable = isOrderSelectable(order);
+                    const remaining = getRemainingQty(order);
+                    const isAsset = getOrderIsAsset(order);
+                    const typeMismatch =
+                      lockedAssetType !== null && isAsset !== lockedAssetType;
+                    const disabledReason =
+                      remaining <= 0
+                        ? "Qty sudah terpenuhi sepenuhnya oleh PO lain"
+                        : typeMismatch
+                          ? `Tidak bisa digabung - PO ini sudah terkunci sebagai PO ${lockedAssetType ? "Asset" : "Barang"}`
+                          : undefined;
+
+                    return (
+                      <TableRow
+                        key={index}
+                        className={
+                          selectedOrderIndices.includes(index)
+                            ? "bg-muted/50"
+                            : !selectable
+                              ? "opacity-50"
+                              : ""
+                        }
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedOrderIndices.includes(index)}
+                            disabled={
+                              !selectedOrderIndices.includes(index) &&
+                              !selectable
+                            }
+                            title={disabledReason}
+                            onCheckedChange={() => toggleSelection(index)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{order.name}</div>
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {order.part_number || "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <AssetGoodsBadge isAsset={isAsset} className="w-fit" />
+                            <span
+                              className={cn(
+                                "text-[10px]",
+                                remaining > 0
+                                  ? "text-amber-600"
+                                  : "text-emerald-600",
+                              )}
+                            >
+                              Sisa: {remaining} {order.uom}
+                            </span>
+                          </div>
+                        </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {order.note && (
@@ -1004,14 +1205,15 @@ function CreatePOPageContent() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        {order.qty} {order.uom}
-                      </TableCell>
-                      <TableCell>
-                        {formatCurrency(order.estimasi_harga)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        <TableCell>
+                          {order.qty} {order.uom}
+                        </TableCell>
+                        <TableCell>
+                          {formatCurrency(order.estimasi_harga)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -1067,8 +1269,11 @@ function CreatePOPageContent() {
                           )}
                         </div>
                       </div>
-                      <div className="text-xs text-muted-foreground font-mono mt-1">
-                        {item.part_number}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {item.part_number}
+                        </span>
+                        <AssetGoodsBadge isAsset={item.is_asset} />
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1205,6 +1410,35 @@ function CreatePOPageContent() {
 
                 {paymentTermType === "DP_BP" && (
                   <div className="space-y-3 p-3 bg-muted/30 rounded-md border">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">
+                        Kapan Barang Dikirim?
+                      </Label>
+                      <Select
+                        value={dpBpShippingType}
+                        onValueChange={(v) =>
+                          setDpBpShippingType(v as typeof dpBpShippingType)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ship_after_dp">
+                            Kirim Setelah DP
+                          </SelectItem>
+                          <SelectItem value="ship_after_full_payment">
+                            Kirim Setelah Pelunasan
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {dpBpShippingType === "ship_after_dp"
+                          ? "Vendor kirim barang begitu DP dibayar. Pelunasan (BP) menyusul belakangan, dilacak terpisah setelah PO berjalan."
+                          : "Vendor baru kirim barang setelah DP dan Pelunasan (BP) lunas semua."}
+                      </p>
+                    </div>
+
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1 block">
                         Persentase Down Payment (DP)

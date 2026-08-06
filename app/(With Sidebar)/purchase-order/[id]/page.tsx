@@ -41,7 +41,6 @@ import {
   Layers,
   HelpCircle,
   PackageCheck,
-  Upload,
   ArrowRightLeft,
   Pencil,
   FileText,
@@ -55,9 +54,9 @@ import {
   PurchaseOrderDetail,
   Approval,
   Profile,
-  Attachment,
   Discussion,
   Order,
+  Attachment,
 } from "@/type";
 import {
   formatCurrency,
@@ -67,13 +66,14 @@ import {
 } from "@/lib/utils";
 import {
   fetchPurchaseOrderById,
-  closePoWithBast,
   markGoodsAsReceivedByGA,
+  fetchBarangAssetFlags,
 } from "@/services/purchaseOrderService";
 import {
   updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
   recalculateMrStatus,
+  recalculateMrLevel,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
 import {
@@ -107,6 +107,8 @@ import {
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
 } from "@/type/enum";
+import { ItemLevelBadge } from "@/components/item-level-badge";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 
 const PPH_LABELS: Record<string, string> = {
   pph21_npwp: "PPH 21 — Dengan NPWP",
@@ -197,9 +199,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // State upload lampiran (PO/Finance/Invoice) langsung dari halaman detail
+  const [isUploadingPO, setIsUploadingPO] = useState(false);
+  const [isUploadingFinance, setIsUploadingFinance] = useState(false);
+  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
+
   // State Dialogs
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
-  const [isBastDialogOpen, setIsBastDialogOpen] = useState(false);
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
 
   // --- STATE UNTUK EDIT STATUS MR ITEM (BARU) ---
@@ -214,13 +220,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // ----------------------------------------------
 
   const [qrUrl, setQrUrl] = useState("");
-  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
-  const [uploadingBast, setUploadingBast] = useState(false);
 
   // State Dialog Progress Pembayaran DP & BP (khusus Payment Validator)
   const [isDpBpDialogOpen, setIsDpBpDialogOpen] = useState(false);
   const [dpChecked, setDpChecked] = useState(false);
   const [bpChecked, setBpChecked] = useState(false);
+
+  // Peta barang_id -> is_asset utk badge Aset/Barang di tabel "Referensi
+  // Barang dari MR" (item PO sendiri sudah punya is_asset langsung).
+  const [barangAssetMap, setBarangAssetMap] = useState<Record<number, boolean>>(
+    {},
+  );
 
   const fetchPoData = async () => {
     if (isNaN(poId)) {
@@ -285,6 +295,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     };
     initializePage();
   }, [poId]);
+
+  useEffect(() => {
+    const barangIds = (po?.material_requests?.orders || [])
+      .map((o: any) => o.barang_id)
+      .filter((id: any): id is number => !!id);
+    if (barangIds.length === 0) return;
+    fetchBarangAssetFlags(barangIds).then(setBarangAssetMap);
+  }, [po?.material_requests?.orders]);
 
   const getCostCenterName = () => {
     const cc = po?.material_requests?.cost_centers;
@@ -354,11 +372,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       : null;
   const isPaymentValidatorTurn = isPaymentValidatorApproval(myApproval);
   const isDpBpPO = isDpBpPaymentTerm(po?.payment_term);
+  // Skema pengiriman DP&BP PO ini - "ship_after_dp" berarti vendor boleh
+  // kirim & GA boleh terima barang begitu DP lunas (BP nyusul belakangan).
+  // Selain itu (termasuk null/default) berarti barang baru dikirim & diterima
+  // setelah DP dan BP sama-sama lunas. Dipakai buat bikin dialog approval
+  // Payment Validator & info di halaman ini konsisten dengan logic di
+  // handleApprovalAction.
+  const dpBpRequiresFullPayment = po?.dp_bp_shipping_type !== "ship_after_dp";
 
   const canEditPO =
     userProfile?.role === "approver" || userProfile?.role === "admin";
-  const isRequester = currentUser?.id === po?.material_requests?.userid;
-  const showUploadBast = po?.status === "Pending BAST" && isRequester;
+
+  // Siapa saja yang boleh upload lampiran PO/Finance/Invoice kapan pun
+  // (ga dibatasi status PO): approver dari company yang sama dengan PO ini,
+  // atau requester dari MR yang direferensikan PO ini. Admin tetap boleh
+  // juga, konsisten dengan hak akses admin di tempat lain di halaman ini.
+  const canUploadAttachment =
+    userProfile?.role === "admin" ||
+    (userProfile?.role === "approver" &&
+      userProfile?.company === po?.company_code) ||
+    currentUser?.id === po?.material_requests?.userid;
 
   // --- CEK ROLE PURCHASING (Untuk fitur edit status MR Item) ---
   const isPurchasing =
@@ -370,19 +403,68 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const isGA =
     isGADepartment(userProfile?.department) || userProfile?.role === "admin";
 
+  // Item-level guard (bukan lagi dari material_requests.level, karena satu
+  // MR bisa punya item di banyak PO - lihat isMrItemInPO): sembunyikan
+  // tombol begitu SEMUA item yang di-cover PO ini sudah "Open 5"/"Close".
+  const allPoItemsAlreadyReceived =
+    !!po?.items &&
+    po.items.length > 0 &&
+    po.items.every((item) => {
+      const mrItem = po.material_requests?.orders?.find(
+        (o) => o.part_number === item.part_number,
+      );
+      return mrItem?.level === "Open 5" || mrItem?.level === "Close";
+    });
+
   const showGAReceiveButton =
     isGA &&
-    po?.status === "Pending BAST" &&
-    po?.material_requests?.level !== "OPEN 5" &&
-    po?.material_requests?.level !== "CLOSE 1" &&
-    !po?.material_requests?.level?.startsWith("CLOSE");
+    (po?.status === "Pending BAST" || po?.status === "Pending Payment BP") &&
+    !allPoItemsAlreadyReceived;
+
+  // PO "ship_after_dp" yang DP-nya udah lunas tapi BP belum (status
+  // "Pending Payment BP") - orang yang megang step Payment Validator di PO
+  // ini (atau admin) bisa tandai BP-nya lunas belakangan, terlepas dari
+  // approval turn (approval-nya sendiri udah selesai duluan).
+  const isPaymentValidatorForThisPO = po?.approvals?.some(
+    (a) =>
+      a.type === APPROVAL_TYPE_PAYMENT_VALIDATOR &&
+      a.userid === currentUser?.id,
+  );
+  const showMarkBpPaidButton =
+    po?.status === "Pending Payment BP" &&
+    (isPaymentValidatorForThisPO || userProfile?.role === "admin");
+
+  const handleMarkBpPaid = async () => {
+    if (!po) return;
+    if (
+      !confirm(
+        "Konfirmasi BP (Pelunasan) untuk PO ini sudah dibayar? PO akan lanjut ke status Pending BAST.",
+      )
+    ) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ bp_paid: true, status: "Pending BAST" })
+        .eq("id", po.id);
+      if (error) throw error;
+      toast.success("BP ditandai lunas. PO lanjut ke Pending BAST.");
+      await fetchPoData();
+    } catch (err: any) {
+      toast.error("Gagal update pembayaran BP", { description: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleGAReceiveGoods = async () => {
-    if (!po?.mr_id) return;
+    if (!po?.mr_id || !currentUser) return;
 
     if (
       !confirm(
-        "Apakah Anda yakin barang sudah diterima di Warehouse? Status MR akan berubah menjadi OPEN 5.",
+        'Apakah Anda yakin barang sudah diterima di Warehouse? Item di PO ini akan ditandai "Pending BAST" dan requester bisa mulai upload bukti BAST per item.',
       )
     ) {
       return;
@@ -392,7 +474,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     const toastId = toast.loading("Memperbarui status MR...");
 
     try {
-      await markGoodsAsReceivedByGA(po.mr_id);
+      await markGoodsAsReceivedByGA(po.mr_id, po.id, currentUser.id);
       toast.success("Berhasil! Barang ditandai telah tiba di Warehouse.", {
         id: toastId,
       });
@@ -404,6 +486,70 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       });
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Upload lampiran (PO/Finance/Invoice) - langsung tersimpan ke DB, bisa
+  // dilakukan kapan pun (ga dibatasi status PO) oleh approver company yang
+  // sama atau requester MR terkait (lihat canUploadAttachment).
+  const handleAttachmentUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "po" | "finance" | "invoice",
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file || !po) return;
+
+    const setIsLoading =
+      type === "po"
+        ? setIsUploadingPO
+        : type === "finance"
+          ? setIsUploadingFinance
+          : setIsUploadingInvoice;
+    setIsLoading(true);
+
+    const toastId = toast.loading(
+      `Mengunggah lampiran ${type.toUpperCase()}...`,
+    );
+    try {
+      const filePath = `po/${po.kode_po}/${type}/${Date.now()}_${file.name}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadResult = await uploadAttachmentVps(formData, filePath);
+
+      if (!uploadResult.success) {
+        toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
+          id: toastId,
+          description: uploadResult.message,
+        });
+        return;
+      }
+
+      const newAttachment: Attachment = {
+        name: file.name,
+        url: uploadResult.url,
+        type,
+      };
+      const updatedAttachments = [...(po.attachments || []), newAttachment];
+
+      const { error: updateError } = await supabase
+        .from("purchase_orders")
+        .update({ attachments: updatedAttachments })
+        .eq("id", po.id);
+
+      if (updateError) throw updateError;
+
+      toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
+        id: toastId,
+      });
+      await fetchPoData();
+    } catch (err: any) {
+      toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
+        id: toastId,
+        description: err.message,
+      });
+    } finally {
+      setIsLoading(false);
+      e.target.value = "";
     }
   };
 
@@ -423,15 +569,20 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       updatePayload.bp_paid = paymentProgress.bp_paid;
     }
 
-    // Kalau ini step Payment Validator utk PO DP & Pelunasan, dan belum lunas
-    // (DP dan BP belum sama-sama dibayar): simpan progress-nya saja, JANGAN
-    // tandai approval ini "approved" dulu — PO tetap tertahan menunggu lunas.
+    // Kalau PO ini DP & Pelunasan varian "ship_after_dp", approval Payment
+    // Validator boleh selesai begitu DP aja udah lunas (BP nyusul belakangan).
+    // Varian lain (termasuk "ship_after_full_payment"/default) tetap butuh
+    // DP dan BP sama-sama lunas dulu baru approval-nya bisa selesai.
+    const requiresFullPayment = po.dp_bp_shipping_type !== "ship_after_dp";
     const isPartialPayment =
       decision === "approved" &&
       paymentProgress !== undefined &&
-      !(paymentProgress.dp_paid && paymentProgress.bp_paid);
+      (requiresFullPayment
+        ? !(paymentProgress.dp_paid && paymentProgress.bp_paid)
+        : !paymentProgress.dp_paid);
 
     let newPoStatus = po.status;
+    let paymentValidatorJustApproved = false;
 
     if (!isPartialPayment) {
       updatedApprovals[myApprovalIndex].status = decision;
@@ -447,8 +598,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         );
 
         if (justApprovedType === APPROVAL_TYPE_PAYMENT_VALIDATOR) {
-          // Payment Validator approve => lanjut BAST + PO otomatis terdeteksi Paid.
-          newPoStatus = "Pending BAST";
+          paymentValidatorJustApproved = true;
+          const bpAlreadyPaid = paymentProgress
+            ? paymentProgress.bp_paid
+            : !!po.bp_paid;
+          if (!requiresFullPayment && !bpAlreadyPaid) {
+            // ship_after_dp, DP lunas tapi BP belum: PO nunggu BP, tapi GA
+            // tetap boleh terima barang (lihat showGAReceiveButton).
+            newPoStatus = "Pending Payment BP";
+          } else {
+            // Non DP&BP, atau DP&BP yang udah lunas semua => lanjut BAST
+            // seperti biasa.
+            newPoStatus = "Pending BAST";
+          }
         } else if (justApprovedType === APPROVAL_TYPE_PAYMENT_APPROVAL) {
           // Payment Approval approve => menunggu validasi pembayaran.
           newPoStatus = "Pending Payment";
@@ -473,6 +635,39 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       toast.error("Aksi PO gagal", { description: poError.message });
       setActionLoading(false);
       return;
+    }
+
+    // Payment Validator baru approve => naikkan level item-item yang
+    // di-cover PO ini ke "Open 4" (kecuali yang udah lanjut - Open 5/Close -
+    // dari PO lain yang juga meng-cover part_number yang sama).
+    if (paymentValidatorJustApproved && po.mr_id) {
+      const { data: mrRow } = await supabase
+        .from("material_requests")
+        .select("orders")
+        .eq("id", po.mr_id)
+        .single();
+      const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
+      for (const item of po.items) {
+        if (!item.part_number) continue;
+        const order = orders.find((o) => o.part_number === item.part_number);
+        if (!order || order.level === "Open 5" || order.level === "Close") {
+          continue;
+        }
+        try {
+          await updateMrItemStatus(
+            po.mr_id,
+            item.part_number,
+            { level: "Open 4" },
+            currentUser.id,
+          );
+        } catch (err) {
+          console.error(
+            `Gagal update level item MR (Open 4) untuk Part ${item.part_number}:`,
+            err,
+          );
+        }
+      }
+      await recalculateMrLevel(po.mr_id);
     }
 
     if (isPartialPayment) {
@@ -508,50 +703,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setIsDpBpDialogOpen(false);
     await fetchPoData();
     setActionLoading(false);
-  };
-
-  const handleUploadBast = async () => {
-    if (!bastFiles || bastFiles.length === 0) {
-      toast.error("Pilih file BAST terlebih dahulu");
-      return;
-    }
-    if (!currentUser) {
-      toast.error("Sesi tidak valid, silakan muat ulang halaman");
-      return;
-    }
-
-    setUploadingBast(true);
-    try {
-      const uploadedAttachments: Attachment[] = [];
-
-      for (let i = 0; i < bastFiles.length; i++) {
-        const file = bastFiles[i];
-        const filePath = `po/${po?.kode_po}/bast/${Date.now()}_${file.name}`;
-        const formData = new FormData();
-        formData.append("file", file);
-        const result = await uploadAttachmentVps(formData, filePath);
-
-        if (!result.success) throw new Error(result.message);
-        uploadedAttachments.push({
-          name: file.name,
-          url: result.url,
-          type: "bast",
-        });
-      }
-
-      const existingAttachments = po?.attachments || [];
-      const finalAttachments = [...existingAttachments, ...uploadedAttachments];
-
-      await closePoWithBast(poId, finalAttachments, currentUser.id);
-
-      toast.success("BAST berhasil diunggah, PO Selesai (Completed)");
-      setIsBastDialogOpen(false);
-      fetchPoData();
-    } catch (error: any) {
-      toast.error("Gagal upload BAST", { description: error.message });
-    } finally {
-      setUploadingBast(false);
-    }
   };
 
   // --- LOGIC EDIT STATUS MR ITEM ---
@@ -653,7 +804,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       case "pending validation":
         return <Badge variant="secondary">Pending Validation</Badge>;
       case "pending payment":
-        return <Badge className="bg-orange-500 text-white">Pending Payment</Badge>;
+        return (
+          <Badge className="bg-orange-500 text-white">Pending Payment</Badge>
+        );
+      case "pending payment bp":
+        return (
+          <Badge className="bg-orange-600 text-white">Pending Payment BP</Badge>
+        );
       case "pending bast":
         return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
       case "completed":
@@ -761,7 +918,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           <div className="col-span-12">
             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
               <div>
-                <h1 className="text-3xl font-bold">{po.kode_po}</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-3xl font-bold">{po.kode_po}</h1>
+                  {po.is_asset && (
+                    <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
+                      PO Asset
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-muted-foreground">Detail Purchase Order</p>
               </div>
               <div className="flex items-center gap-2">
@@ -794,9 +958,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     Terima Barang di WH
                   </Button>
                 )}
-                {showUploadBast && (
-                  <Button size="sm" onClick={() => setIsBastDialogOpen(true)}>
-                    <Upload className="mr-2 h-4 w-4" /> Upload BAST
+                {showMarkBpPaidButton && (
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    onClick={handleMarkBpPaid}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Check className="mr-2 h-4 w-4" />
+                    )}
+                    Tandai BP Lunas
                   </Button>
                 )}
                 {canEditPO &&
@@ -878,27 +1052,34 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     icon={Wallet}
                     label="Progress DP & BP"
                     value={
-                      <div className="flex gap-2">
-                        <Badge
-                          className={cn(
-                            "w-fit",
-                            po.dp_paid
-                              ? "bg-green-500 text-white"
-                              : "bg-secondary text-secondary-foreground",
-                          )}
-                        >
-                          DP {po.dp_paid ? "Lunas" : "Belum"}
-                        </Badge>
-                        <Badge
-                          className={cn(
-                            "w-fit",
-                            po.bp_paid
-                              ? "bg-green-500 text-white"
-                              : "bg-secondary text-secondary-foreground",
-                          )}
-                        >
-                          BP {po.bp_paid ? "Lunas" : "Belum"}
-                        </Badge>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            className={cn(
+                              "w-fit",
+                              po.dp_paid
+                                ? "bg-green-500 text-white"
+                                : "bg-secondary text-secondary-foreground",
+                            )}
+                          >
+                            DP {po.dp_paid ? "Lunas" : "Belum"}
+                          </Badge>
+                          <Badge
+                            className={cn(
+                              "w-fit",
+                              po.bp_paid
+                                ? "bg-green-500 text-white"
+                                : "bg-secondary text-secondary-foreground",
+                            )}
+                          >
+                            BP {po.bp_paid ? "Lunas" : "Belum"}
+                          </Badge>
+                          <Badge variant="outline" className="w-fit">
+                            {dpBpRequiresFullPayment
+                              ? "Kirim Setelah Pelunasan"
+                              : "Kirim Setelah DP"}
+                          </Badge>
+                        </div>
                       </div>
                     }
                   />
@@ -972,7 +1153,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     {po.items.map((item, index) => (
                       <TableRow key={index}>
                         <TableCell className="font-medium">
-                          {item.name}
+                          <div className="flex items-center gap-2">
+                            {item.name}
+                            <AssetGoodsBadge isAsset={item.is_asset} />
+                          </div>
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {item.part_number}
@@ -1025,11 +1209,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                 mrItem.status || "Pending"
                               ] || mrItem.status;
 
+                            const mrItemIsAsset = mrItem.barang_id
+                              ? !!barangAssetMap[mrItem.barang_id]
+                              : false;
+
                             return (
                               <TableRow key={idx}>
                                 <TableCell>
-                                  <div className="font-medium">
+                                  <div className="font-medium flex items-center gap-2">
                                     {mrItem.name}
+                                    <AssetGoodsBadge isAsset={mrItemIsAsset} />
+                                    <ItemLevelBadge level={mrItem.level} />
                                   </div>
                                   {mrItem.status_note && (
                                     <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
@@ -1253,75 +1443,138 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </Content>
 
             <Content title="Lampiran PO">
-              <ul className="space-y-2">
-                {poAttachments.length > 0 ? (
-                  poAttachments.map((file, index) => (
-                    <li key={index}>
-                      <Link
-                        href={resolveAttachmentUrl(file.url)}
-                        target="_blank"
-                        className="flex items-center gap-2 text-sm text-primary hover:underline"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                        <span>{file.name}</span>
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                      </Link>
-                    </li>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Tidak ada lampiran.
-                  </p>
+              <div className="space-y-3">
+                {canUploadAttachment && (
+                  <div>
+                    <Label htmlFor="po-attachment-upload" className="text-xs">
+                      Tambah Lampiran PO
+                    </Label>
+                    <Input
+                      id="po-attachment-upload"
+                      type="file"
+                      className="mt-1"
+                      onChange={(e) => handleAttachmentUpload(e, "po")}
+                      disabled={isUploadingPO}
+                    />
+                    {isUploadingPO && (
+                      <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
                 )}
-              </ul>
+                <ul className="space-y-2">
+                  {poAttachments.length > 0 ? (
+                    poAttachments.map((file, index) => (
+                      <li key={index}>
+                        <Link
+                          href={resolveAttachmentUrl(file.url)}
+                          target="_blank"
+                          className="flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                          <span>{file.name}</span>
+                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Tidak ada lampiran.
+                    </p>
+                  )}
+                </ul>
+              </div>
             </Content>
 
             <Content title="Lampiran Finance">
-              <ul className="space-y-2">
-                {financeAttachments.length > 0 ? (
-                  financeAttachments.map((file, index) => (
-                    <li key={index}>
-                      <Link
-                        href={resolveAttachmentUrl(file.url)}
-                        target="_blank"
-                        className="flex items-center gap-2 text-sm text-primary hover:underline"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                        <span>{file.name}</span>
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                      </Link>
-                    </li>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Tidak ada lampiran.
-                  </p>
+              <div className="space-y-3">
+                {canUploadAttachment && (
+                  <div>
+                    <Label
+                      htmlFor="finance-attachment-upload"
+                      className="text-xs"
+                    >
+                      Tambah Lampiran Finance
+                    </Label>
+                    <Input
+                      id="finance-attachment-upload"
+                      type="file"
+                      className="mt-1"
+                      onChange={(e) => handleAttachmentUpload(e, "finance")}
+                      disabled={isUploadingFinance}
+                    />
+                    {isUploadingFinance && (
+                      <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
                 )}
-              </ul>
+                <ul className="space-y-2">
+                  {financeAttachments.length > 0 ? (
+                    financeAttachments.map((file, index) => (
+                      <li key={index}>
+                        <Link
+                          href={resolveAttachmentUrl(file.url)}
+                          target="_blank"
+                          className="flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                          <span>{file.name}</span>
+                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Tidak ada lampiran.
+                    </p>
+                  )}
+                </ul>
+              </div>
             </Content>
 
             <Content title="Lampiran Invoice">
-              <ul className="space-y-2">
-                {invoiceAttachments.length > 0 ? (
-                  invoiceAttachments.map((file, index) => (
-                    <li key={index}>
-                      <Link
-                        href={resolveAttachmentUrl(file.url)}
-                        target="_blank"
-                        className="flex items-center gap-2 text-sm text-primary hover:underline"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                        <span>{file.name}</span>
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                      </Link>
-                    </li>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Tidak ada lampiran.
-                  </p>
+              <div className="space-y-3">
+                {canUploadAttachment && (
+                  <div>
+                    <Label
+                      htmlFor="invoice-attachment-upload"
+                      className="text-xs"
+                    >
+                      Tambah Lampiran Invoice
+                    </Label>
+                    <Input
+                      id="invoice-attachment-upload"
+                      type="file"
+                      className="mt-1"
+                      onChange={(e) => handleAttachmentUpload(e, "invoice")}
+                      disabled={isUploadingInvoice}
+                    />
+                    {isUploadingInvoice && (
+                      <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
                 )}
-              </ul>
+                <ul className="space-y-2">
+                  {invoiceAttachments.length > 0 ? (
+                    invoiceAttachments.map((file, index) => (
+                      <li key={index}>
+                        <Link
+                          href={resolveAttachmentUrl(file.url)}
+                          target="_blank"
+                          className="flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                          <span>{file.name}</span>
+                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Tidak ada lampiran.
+                    </p>
+                  )}
+                </ul>
+              </div>
             </Content>
 
             <Content title="Lampiran BAST / Bukti Terima">
@@ -1543,42 +1796,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isBastDialogOpen} onOpenChange={setIsBastDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload BAST & Selesaikan PO</DialogTitle>
-              <DialogDescription>
-                Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-                barang.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <Label htmlFor="bast-file">File BAST / Bukti Foto</Label>
-              <Input
-                id="bast-file"
-                type="file"
-                multiple
-                onChange={(e) => setBastFiles(e.target.files)}
-                className="mt-2"
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsBastDialogOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button onClick={handleUploadBast} disabled={uploadingBast}>
-                {uploadingBast && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}{" "}
-                Upload & Selesaikan
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         {/* --- DIALOG PROGRESS PEMBAYARAN DP & BP --- */}
         <Dialog open={isDpBpDialogOpen} onOpenChange={setIsDpBpDialogOpen}>
           <DialogContent>
@@ -1586,8 +1803,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <DialogTitle>Konfirmasi Pembayaran DP & Pelunasan</DialogTitle>
               <DialogDescription>
                 PO ini memakai metode pembayaran &quot;{po?.payment_term}
-                &quot;. Tandai bagian yang sudah dibayar. PO baru lanjut ke
-                tahap BAST setelah DP dan Pelunasan (BP) sama-sama lunas.
+                &quot; dengan skema{" "}
+                <strong>
+                  {dpBpRequiresFullPayment
+                    ? "Kirim Setelah Pelunasan"
+                    : "Kirim Setelah DP"}
+                </strong>
+                .{" "}
+                {dpBpRequiresFullPayment
+                  ? "Vendor baru kirim barang & GA baru bisa terima setelah DP dan BP (pelunasan) sama-sama lunas — centang keduanya untuk menyelesaikan approval ini."
+                  : 'Vendor sudah boleh kirim barang & GA sudah bisa terima begitu DP lunas — approval ini bisa selesai cukup dengan DP dicentang. BP boleh menyusul belakangan lewat tombol "Tandai BP Lunas" di halaman ini.'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">
@@ -1611,12 +1836,27 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   BP / Pelunasan sudah dibayar
                 </Label>
               </div>
-              {!(dpChecked && bpChecked) && (
-                <p className="text-xs text-muted-foreground">
-                  Belum lunas — PO akan tetap di status &quot;Pending
-                  Payment&quot; sampai DP & BP sama-sama dicentang.
-                </p>
-              )}
+              {(() => {
+                const approvalWillComplete = dpBpRequiresFullPayment
+                  ? dpChecked && bpChecked
+                  : dpChecked;
+                if (approvalWillComplete) {
+                  return (
+                    <p className="text-xs text-green-600">
+                      {dpChecked && bpChecked
+                        ? "DP & BP sudah lunas — approval selesai dan PO langsung lanjut ke tahap BAST (siap diterima GA)."
+                        : 'DP sudah dicentang — approval selesai, PO lanjut ke status "Pending Payment BP" dan GA sudah bisa terima barang. BP menyusul belakangan.'}
+                    </p>
+                  );
+                }
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    {dpBpRequiresFullPayment
+                      ? 'Belum lunas — PO akan tetap "Pending Approval" sampai DP & BP sama-sama dicentang.'
+                      : 'DP belum dicentang — PO akan tetap "Pending Approval" sampai DP dicentang.'}
+                  </p>
+                );
+              })()}
             </div>
             <DialogFooter>
               <Button
@@ -1640,9 +1880,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 ) : (
                   <Check className="mr-2 h-4 w-4" />
                 )}
-                {dpChecked && bpChecked
-                  ? "Setujui & Tandai Lunas"
-                  : "Simpan Progress"}
+                {(() => {
+                  const approvalWillComplete = dpBpRequiresFullPayment
+                    ? dpChecked && bpChecked
+                    : dpChecked;
+                  if (!approvalWillComplete) return "Simpan Progress";
+                  return dpChecked && bpChecked
+                    ? "Setujui & Tandai Lunas"
+                    : "Setujui (BP Menyusul)";
+                })()}
               </Button>
             </DialogFooter>
           </DialogContent>

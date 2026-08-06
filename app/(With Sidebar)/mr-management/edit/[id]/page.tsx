@@ -122,6 +122,8 @@ const dataLokasi: ComboboxData = [
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
   { label: "Site DIZA", value: "Site DIZA" },
+  { label: "Site PIK", value: "Site PIK" },
+  { label: "Site BGE", value: "Site BGE" },
 ];
 
 const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [

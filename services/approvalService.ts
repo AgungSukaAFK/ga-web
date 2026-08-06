@@ -2,6 +2,11 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { Approval, MaterialRequest, PurchaseOrder } from "@/type";
+import {
+  normalizeMrOrders,
+  updateMrItemStatus,
+  recalculateMrLevel,
+} from "./mrService";
 
 const supabase = createClient();
 
@@ -150,6 +155,40 @@ export const fetchMyPendingPoApprovals = async (
   return myTurnPOs as PurchaseOrder[];
 };
 
+/**
+ * Mengambil semua PO yang statusnya sudah siap utk GA "Terima Barang di WH"
+ * ("Pending BAST" atau "Pending Payment BP" - lihat showGAReceiveButton di
+ * halaman detail PO), lalu skip PO yang semua itemnya udah kepencet terima
+ * (level "Open 5"/"Close") sehingga tombolnya sebenarnya sudah nggak relevan
+ * lagi buat PO itu.
+ */
+export const fetchPosReadyForGaReceive = async (): Promise<PurchaseOrder[]> => {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select(
+      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr, orders)",
+    )
+    .in("status", ["Pending BAST", "Pending Payment BP"])
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching POs ready for GA receive:", error);
+    throw error;
+  }
+  if (!data) return [];
+
+  return (data as any[]).filter((po) => {
+    const items = po.items || [];
+    if (items.length === 0) return true;
+    const orders = normalizeMrOrders(po.material_requests?.orders || []);
+    const allReceived = items.every((item: any) => {
+      const mrItem = orders.find((o) => o.part_number === item.part_number);
+      return mrItem?.level === "Open 5" || mrItem?.level === "Close";
+    });
+    return !allReceived;
+  }) as PurchaseOrder[];
+};
+
 export const processMrApproval = async (
   mrId: number,
   userId: string,
@@ -158,7 +197,7 @@ export const processMrApproval = async (
 ) => {
   const { data: mr, error: fetchError } = await supabase
     .from("material_requests")
-    .select("approvals, status, level")
+    .select("approvals, status, level, orders")
     .eq("id", mrId)
     .single();
 
@@ -191,7 +230,7 @@ export const processMrApproval = async (
   };
 
   let newStatus = mr.status;
-  let newLevel = mr.level;
+  let isAllApproved = false;
 
   if (decision === "rejected") {
     newStatus = "Rejected";
@@ -199,14 +238,11 @@ export const processMrApproval = async (
     // KUNCI PERBAIKAN:
     // Kita cek array 'updatedApprovals' yang LENGKAP dari DB.
     // Cek apakah SEMUA orang statusnya sudah 'approved'
-    const isAllApproved = updatedApprovals.every(
-      (a) => a.status === "approved",
-    );
+    isAllApproved = updatedApprovals.every((a) => a.status === "approved");
 
     // Jika TRUE (semua sudah approve), baru ubah jadi Waiting PO
     if (isAllApproved) {
       newStatus = "Waiting PO";
-      newLevel = "OPEN 2"; // Naik ke level SCM
     } else {
       // Jika belum semua, status tetap Pending Approval
       newStatus = "Pending Approval";
@@ -221,10 +257,6 @@ export const processMrApproval = async (
     status: newStatus,
   };
 
-  if (newLevel) {
-    payload.level = newLevel;
-  }
-
   const { error } = await supabase
     .from("material_requests")
     .update(payload)
@@ -232,5 +264,32 @@ export const processMrApproval = async (
 
   if (error) throw error;
 
-  return { success: true, newStatus, newLevel };
+  // MR full approved => naikkan level tiap item non-cancelled dari
+  // "Open 1" ke "Open 2" (level MR sendiri sekarang murni agregat dari
+  // item, lihat recalculateMrLevel di mrService.ts - bukan ditulis
+  // langsung di sini lagi).
+  if (isAllApproved) {
+    const orders = normalizeMrOrders((mr.orders as any[]) || []);
+    for (const item of orders) {
+      if (!item.part_number) continue;
+      if (item.status === "Cancelled" || item.status === "Replaced") continue;
+      if (item.level && item.level !== "Open 1") continue;
+      try {
+        await updateMrItemStatus(
+          mrId,
+          item.part_number,
+          { level: "Open 2" },
+          userId,
+        );
+      } catch (err) {
+        console.error(
+          `Gagal update level item MR (Open 2) untuk Part ${item.part_number}:`,
+          err,
+        );
+      }
+    }
+    await recalculateMrLevel(mrId);
+  }
+
+  return { success: true, newStatus };
 };

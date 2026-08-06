@@ -85,6 +85,20 @@ export const isDpBpPaymentTerm = (
   return normalized.includes("dp") && normalized.includes("pelunasan");
 };
 
+/**
+ * Approval terakhir yang sudah di-approve (bukan yang masih pending).
+ * `approvals` berurutan sesuai step approval (lihat pemakaian nextApprover
+ * di purchase-order/[id]/page.tsx), jadi approval approved dengan index
+ * tertinggi adalah approver terakhir yang sudah menyetujui.
+ */
+export const getLastApprovedApprover = (
+  approvals: Approval[] | null | undefined,
+): Approval | null => {
+  if (!Array.isArray(approvals)) return null;
+  const approved = approvals.filter((app) => app.status === "approved");
+  return approved.length > 0 ? approved[approved.length - 1] : null;
+};
+
 export interface LevelDefinition {
   value: string;
   label: string;
@@ -173,6 +187,7 @@ export const MR_ITEM_STATUSES = {
   PENDING: "Pending",
   PROCESSING: "Processing",
   PO_CREATED: "PO Created",
+  PENDING_BAST: "Pending BAST",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
   REPLACED: "Replaced",
@@ -182,6 +197,7 @@ export const MR_ITEM_STATUS_LABELS: Record<string, string> = {
   Pending: "Menunggu",
   Processing: "Proses PO",
   "PO Created": "Sudah PO",
+  "Pending BAST": "Menunggu BAST",
   Completed: "BAST Selesai",
   Cancelled: "Dibatalkan",
   Replaced: "Diganti",
@@ -191,9 +207,32 @@ export const MR_ITEM_STATUS_COLORS: Record<string, string> = {
   Pending: "bg-gray-100 text-gray-800 border-gray-200",
   Processing: "bg-blue-50 text-blue-700 border-blue-200",
   "PO Created": "bg-green-50 text-green-700 border-green-200",
+  "Pending BAST": "bg-orange-50 text-orange-700 border-orange-200",
   Completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
   Cancelled: "bg-red-50 text-red-700 border-red-200",
   Replaced: "bg-yellow-50 text-yellow-700 border-yellow-200",
+};
+
+// Level fisik/approval/payment per item MR - terpisah dari MR_ITEM_STATUSES
+// (yang track progress dokumen PO/BAST). Lihat MrItemLevel di type/index.ts.
+export const MR_ITEM_LEVELS: Record<string, string> = {
+  "Open 1": "Open 1: Menunggu Approval",
+  "Open 2": "Open 2: Menunggu PO",
+  "Open 3A": "Open 3A: Menunggu Kirim Vendor",
+  "Open 3B": "Open 3B: Payment Issue",
+  "Open 4": "Open 4: Payment Validator Approved",
+  "Open 5": "Open 5: Diterima GA",
+  Close: "Close: Selesai",
+};
+
+export const MR_ITEM_LEVEL_COLORS: Record<string, string> = {
+  "Open 1": "bg-gray-100 text-gray-800 border-gray-200",
+  "Open 2": "bg-sky-50 text-sky-700 border-sky-200",
+  "Open 3A": "bg-blue-50 text-blue-700 border-blue-200",
+  "Open 3B": "bg-red-50 text-red-700 border-red-200",
+  "Open 4": "bg-indigo-50 text-indigo-700 border-indigo-200",
+  "Open 5": "bg-orange-50 text-orange-700 border-orange-200",
+  Close: "bg-emerald-100 text-emerald-800 border-emerald-200",
 };
 
 // ==========================================

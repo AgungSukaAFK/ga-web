@@ -37,6 +37,7 @@ import {
   Plus,
   Trash2,
   Paperclip,
+  Upload,
   Truck,
   Building2,
   ExternalLink,
@@ -110,6 +111,8 @@ import {
   MR_ITEM_STATUS_COLORS,
   MR_ITEM_STATUS_LABELS,
 } from "@/type/enum";
+import { ItemLevelBadge } from "@/components/item-level-badge";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
   Popover,
   PopoverContent,
@@ -118,7 +121,22 @@ import {
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
-import { fetchMaterialRequestById } from "@/services/mrService";
+import {
+  fetchMaterialRequestById,
+  updateMrItemStatus,
+  recalculateMrStatus,
+  uploadBastForMrItem,
+  addManualPoLink,
+  removeManualPoLink,
+  setItemPaymentIssue,
+} from "@/services/mrService";
+import {
+  fetchPoQtyBreakdownForMr,
+  fetchPosForMr,
+  fetchBarangAssetFlags,
+  recalculatePendingBastPos,
+  PoQtyBreakdownEntry,
+} from "@/services/purchaseOrderService";
 import {
   notifyOnMRApproval,
   notifyGAOnMRSubmit,
@@ -146,6 +164,8 @@ const dataLokasi: ComboboxData = [
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
   { label: "Site DIZA", value: "Site DIZA" },
+  { label: "Site PIK", value: "Site PIK" },
+  { label: "Site BGE", value: "Site BGE" },
 ];
 
 const dataUoM: ComboboxData = [
@@ -178,6 +198,38 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+
+  // --- STATE: KELOLA STATUS & PO PER ITEM ---
+  const [poBreakdown, setPoBreakdown] = useState<
+    Record<string, PoQtyBreakdownEntry[]>
+  >({});
+  // Peta barang_id -> is_asset, dipakai utk badge Aset/Barang di tabel item.
+  const [barangAssetMap, setBarangAssetMap] = useState<
+    Record<number, boolean>
+  >({});
+  const [isItemStatusOpen, setIsItemStatusOpen] = useState(false);
+  const [selectedItemForStatus, setSelectedItemForStatus] =
+    useState<Order | null>(null);
+  const [itemStatusForm, setItemStatusForm] = useState({
+    status: "Pending" as string,
+    note: "",
+  });
+  const [savingItemStatus, setSavingItemStatus] = useState(false);
+
+  // --- STATE: LINK MANUAL KE PO (barang disubstitusi pas beli) ---
+  const [posForMr, setPosForMr] = useState<
+    { id: number; kode_po: string; status: string; is_asset: boolean }[]
+  >([]);
+  const [manualLinkPoCode, setManualLinkPoCode] = useState("");
+  const [manualLinkQty, setManualLinkQty] = useState("");
+  const [savingManualLink, setSavingManualLink] = useState(false);
+
+  // --- STATE: UPLOAD BAST PER ITEM (REQUESTER) ---
+  const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
+  const [selectedItemForBast, setSelectedItemForBast] =
+    useState<Order | null>(null);
+  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
+  const [uploadingBast, setUploadingBast] = useState(false);
 
   // --- FETCH DATA ---
   const fetchMrData = async () => {
@@ -249,6 +301,22 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   }, [mr?.orders]);
 
+  // --- EFFECT: Ambil breakdown qty PO per item (utk validasi qty terpenuhi) ---
+  useEffect(() => {
+    if (!mr?.id || isNaN(mrId)) return;
+    fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+    fetchPosForMr(mrId).then(setPosForMr);
+  }, [mr?.id]);
+
+  // --- EFFECT: Peta is_asset per barang_id (utk badge Aset/Barang) ---
+  useEffect(() => {
+    const barangIds = (mr?.orders || [])
+      .map((o) => o.barang_id)
+      .filter((id): id is number => !!id);
+    if (barangIds.length === 0) return;
+    fetchBarangAssetFlags(barangIds).then(setBarangAssetMap);
+  }, [mr?.orders]);
+
   const myApprovalIndex =
     mr && currentUser && mr.approvals
       ? mr.approvals.findIndex(
@@ -267,6 +335,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     userProfile?.role === "admin" ||
     userProfile?.role === "approver" ||
     (userProfile?.role === "requester" && mr?.status === "Pending Validation");
+
+  const isPurchasing =
+    userProfile?.department === "Purchasing" ||
+    userProfile?.department === "Procurement" ||
+    userProfile?.role === "admin";
+
+  // Toggle-nya nempel di dialog "Kelola Status & PO Barang", yang tombol
+  // pembukanya sendiri sudah dibatasi ke isPurchasing (lihat pencil icon di
+  // bawah) - jadi ikutin gate yang sama biar ga jadi kondisi yang ga
+  // ke-reach (approver non-purchasing ga pernah bisa buka dialognya sama
+  // sekali).
+  const canTogglePaymentIssue = isPurchasing;
 
   // --- ACTIONS ---
 
@@ -446,6 +526,253 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       router.push("/material-request");
     } catch (error: any) {
       toast.error("Gagal menghapus MR", { description: error.message });
+    }
+  };
+
+  // --- KELOLA STATUS & PO PER ITEM ---
+  const handleOpenItemStatusDialog = (item: Order) => {
+    setSelectedItemForStatus(item);
+    setItemStatusForm({
+      status: item.status || "Pending",
+      note: item.status_note || "",
+    });
+    setManualLinkPoCode("");
+    setManualLinkQty("");
+    setIsItemStatusOpen(true);
+  };
+
+  const handleSaveItemStatus = async () => {
+    if (!mr?.id || !selectedItemForStatus?.part_number) return;
+
+    const cumulativeQty = (
+      poBreakdown[selectedItemForStatus.part_number] || []
+    ).reduce((sum, entry) => sum + (entry.qty || 0), 0);
+    const requestedQty = Number(selectedItemForStatus.qty) || 0;
+    const isFulfillingStatus = ["PO Created", "Completed"].includes(
+      itemStatusForm.status,
+    );
+
+    setSavingItemStatus(true);
+    try {
+      await updateMrItemStatus(
+        mrId,
+        selectedItemForStatus.part_number,
+        { status: itemStatusForm.status, note: itemStatusForm.note },
+        currentUser?.id || "",
+      );
+      await recalculateMrStatus(mrId);
+
+      if (isFulfillingStatus && cumulativeQty < requestedQty) {
+        toast.warning("Status disimpan, tapi qty PO belum penuh", {
+          description: `Baru ${cumulativeQty} dari ${requestedQty} ${selectedItemForStatus.uom} yang ke-cover PO.`,
+        });
+      } else {
+        toast.success("Status barang berhasil diperbarui");
+      }
+
+      setIsItemStatusOpen(false);
+      await fetchMrData();
+      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+    } catch (err: any) {
+      toast.error("Gagal update status", { description: err.message });
+    } finally {
+      setSavingItemStatus(false);
+    }
+  };
+
+  // Toggle "Payment Issue" (Open 3A <-> Open 3B) - independen dari form
+  // status di atas, langsung tersimpan begitu diklik.
+  const handleTogglePaymentIssue = async () => {
+    if (!selectedItemForStatus?.part_number || !currentUser) return;
+    const hasIssue = selectedItemForStatus.level !== "Open 3B";
+
+    setSavingItemStatus(true);
+    try {
+      await setItemPaymentIssue(
+        mrId,
+        selectedItemForStatus.part_number,
+        hasIssue,
+        currentUser.id,
+      );
+      toast.success(
+        hasIssue
+          ? "Item ditandai Payment Issue (Open 3B)"
+          : "Payment Issue dilepas, kembali ke Open 3A",
+      );
+
+      const freshMr = await fetchMrData();
+      const freshItem = freshMr?.orders.find(
+        (o: Order) => o.part_number === selectedItemForStatus.part_number,
+      );
+      if (freshItem) setSelectedItemForStatus(freshItem);
+    } catch (err: any) {
+      toast.error("Gagal update payment issue", { description: err.message });
+    } finally {
+      setSavingItemStatus(false);
+    }
+  };
+
+  // Status "lanjutan" yang ga boleh dimundurkan cuma gara-gara utak-atik
+  // link PO manual (barang sudah diterima GA / requester sudah upload BAST /
+  // sudah dibatalkan/diganti secara sengaja).
+  const ADVANCED_ITEM_STATUSES = ["Completed", "Pending BAST", "Cancelled", "Replaced"];
+
+  const syncItemStatusFromBreakdown = async (
+    item: Order,
+    freshBreakdown: Record<string, PoQtyBreakdownEntry[]>,
+  ) => {
+    if (!item.part_number || !currentUser) return;
+    if (ADVANCED_ITEM_STATUSES.includes(item.status || "")) return;
+
+    const cumulative = (freshBreakdown[item.part_number] || []).reduce(
+      (sum, e) => sum + (e.qty || 0),
+      0,
+    );
+    const requested = Number(item.qty) || 0;
+    const newStatus =
+      cumulative >= requested && requested > 0
+        ? "PO Created"
+        : cumulative > 0
+          ? "Processing"
+          : "Pending";
+
+    if (newStatus !== item.status) {
+      await updateMrItemStatus(
+        mrId,
+        item.part_number,
+        { status: newStatus },
+        currentUser.id,
+      );
+    }
+  };
+
+  const handleAddManualLink = async () => {
+    if (!selectedItemForStatus?.part_number || !currentUser) return;
+    const qty = Number(manualLinkQty);
+    if (!manualLinkPoCode) {
+      toast.error("Pilih PO terlebih dahulu");
+      return;
+    }
+    if (!qty || qty <= 0) {
+      toast.error("Qty harus lebih dari 0");
+      return;
+    }
+
+    setSavingManualLink(true);
+    try {
+      await addManualPoLink(
+        mrId,
+        selectedItemForStatus.part_number,
+        manualLinkPoCode,
+        qty,
+        currentUser.id,
+      );
+
+      const freshBreakdown = await fetchPoQtyBreakdownForMr(mrId);
+      setPoBreakdown(freshBreakdown);
+      await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
+      await recalculateMrStatus(mrId);
+
+      toast.success("Link PO manual berhasil ditambahkan");
+      setManualLinkPoCode("");
+      setManualLinkQty("");
+
+      const freshMr = await fetchMrData();
+      const freshItem = freshMr?.orders.find(
+        (o: Order) => o.part_number === selectedItemForStatus.part_number,
+      );
+      if (freshItem) setSelectedItemForStatus(freshItem);
+    } catch (err: any) {
+      toast.error("Gagal menambahkan link PO", { description: err.message });
+    } finally {
+      setSavingManualLink(false);
+    }
+  };
+
+  const handleRemoveManualLink = async (kodePo: string) => {
+    if (!selectedItemForStatus?.part_number || !currentUser) return;
+
+    setSavingManualLink(true);
+    try {
+      await removeManualPoLink(
+        mrId,
+        selectedItemForStatus.part_number,
+        kodePo,
+        currentUser.id,
+      );
+
+      const freshBreakdown = await fetchPoQtyBreakdownForMr(mrId);
+      setPoBreakdown(freshBreakdown);
+      await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
+      await recalculateMrStatus(mrId);
+
+      toast.success("Link PO manual dihapus");
+
+      const freshMr = await fetchMrData();
+      const freshItem = freshMr?.orders.find(
+        (o: Order) => o.part_number === selectedItemForStatus.part_number,
+      );
+      if (freshItem) setSelectedItemForStatus(freshItem);
+    } catch (err: any) {
+      toast.error("Gagal menghapus link PO", { description: err.message });
+    } finally {
+      setSavingManualLink(false);
+    }
+  };
+
+  // --- UPLOAD BAST PER ITEM (REQUESTER) ---
+  const handleOpenBastUpload = (item: Order) => {
+    setSelectedItemForBast(item);
+    setBastFiles(null);
+    setIsBastUploadOpen(true);
+  };
+
+  const handleUploadItemBast = async () => {
+    if (!mr || !selectedItemForBast?.part_number) return;
+    if (!bastFiles || bastFiles.length === 0) {
+      toast.error("Pilih file BAST terlebih dahulu");
+      return;
+    }
+    if (!currentUser) {
+      toast.error("Sesi tidak valid, silakan muat ulang halaman");
+      return;
+    }
+
+    setUploadingBast(true);
+    try {
+      const uploadedAttachments: Attachment[] = [];
+      for (let i = 0; i < bastFiles.length; i++) {
+        const file = bastFiles[i];
+        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/bast/${
+          selectedItemForBast.part_number
+        }/${Date.now()}_${file.name}`;
+        const formData = new FormData();
+        formData.append("file", file);
+        const result = await uploadAttachmentVps(formData, filePath);
+        if (!result.success) throw new Error(result.message);
+        uploadedAttachments.push({
+          name: file.name,
+          url: result.url,
+          type: "bast",
+        });
+      }
+
+      await uploadBastForMrItem(
+        mrId,
+        selectedItemForBast.part_number,
+        uploadedAttachments,
+        currentUser.id,
+      );
+      await recalculatePendingBastPos(mrId);
+
+      toast.success("BAST berhasil diunggah, item ditandai selesai");
+      setIsBastUploadOpen(false);
+      await fetchMrData();
+      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+    } catch (err: any) {
+      toast.error("Gagal upload BAST", { description: err.message });
+    } finally {
+      setUploadingBast(false);
     }
   };
 
@@ -1170,7 +1497,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                             </div>
                           ) : (
                             <div>
-                              <div className="font-medium">{item.name}</div>
+                              <div className="font-medium flex items-center gap-2">
+                                {item.name}
+                                <AssetGoodsBadge
+                                  isAsset={
+                                    !!(
+                                      item.barang_id &&
+                                      barangAssetMap[item.barang_id]
+                                    )
+                                  }
+                                />
+                                <ItemLevelBadge level={item.level} />
+                              </div>
                               {item.part_number && (
                                 <div className="text-xs text-muted-foreground font-mono mt-0.5">
                                   PN: {item.part_number}
@@ -1266,33 +1604,103 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
                         <TableCell>
                           <div className="flex flex-col items-start gap-2">
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "capitalize font-normal",
-                                statusColor,
+                            <div className="flex items-center gap-1">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "capitalize font-normal",
+                                  statusColor,
+                                )}
+                              >
+                                {statusLabel}
+                              </Badge>
+                              {isPurchasing && item.part_number && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() =>
+                                    handleOpenItemStatusDialog(item)
+                                  }
+                                  title="Kelola status & PO"
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
                               )}
-                            >
-                              {statusLabel}
-                            </Badge>
+                            </div>
 
-                            {item.po_refs && item.po_refs.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {item.po_refs.map((ref, idx) => (
-                                  <Link
-                                    key={idx}
-                                    href={`/purchase-order?search=${encodeURIComponent(
-                                      ref,
-                                    )}`}
-                                    className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
-                                    target="_blank"
+                            {(() => {
+                              const linkedPos = item.part_number
+                                ? poBreakdown[item.part_number] || []
+                                : [];
+                              if (linkedPos.length === 0) return null;
+                              const cumulativeQty = linkedPos.reduce(
+                                (sum, entry) => sum + (entry.qty || 0),
+                                0,
+                              );
+                              const requestedQty = Number(item.qty) || 0;
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex flex-wrap gap-1">
+                                    {linkedPos.map((entry, idx) => (
+                                      <Link
+                                        key={idx}
+                                        href={`/purchase-order?search=${encodeURIComponent(
+                                          entry.kode_po,
+                                        )}`}
+                                        className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
+                                        target="_blank"
+                                      >
+                                        <LinkIcon className="w-3 h-3" />
+                                        {entry.kode_po} ({entry.qty})
+                                      </Link>
+                                    ))}
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "text-[10px]",
+                                      cumulativeQty >= requestedQty
+                                        ? "text-emerald-600"
+                                        : "text-amber-600",
+                                    )}
                                   >
-                                    <LinkIcon className="w-3 h-3" />
-                                    {ref}
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
+                                    Qty ter-PO: {cumulativeQty} /{" "}
+                                    {requestedQty} {item.uom}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+
+                            {isOwner &&
+                              item.status === "Pending BAST" &&
+                              item.part_number && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => handleOpenBastUpload(item)}
+                                >
+                                  <Upload className="mr-1 h-3 w-3" /> Upload
+                                  BAST
+                                </Button>
+                              )}
+
+                            {item.bast_attachments &&
+                              item.bast_attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {item.bast_attachments.map((att, idx) => (
+                                    <Link
+                                      key={idx}
+                                      href={resolveAttachmentUrl(att.url)}
+                                      target="_blank"
+                                      className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
+                                    >
+                                      <FileText className="w-3 h-3" />
+                                      {att.name}
+                                    </Link>
+                                  ))}
+                                </div>
+                              )}
                           </div>
                         </TableCell>
 
@@ -1613,6 +2021,274 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </div>
           <DialogFooter>
             <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Kelola Status & PO per Item */}
+      <Dialog open={isItemStatusOpen} onOpenChange={setIsItemStatusOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kelola Status & PO Barang</DialogTitle>
+            <DialogDescription>
+              Ubah status barang{" "}
+              <strong>{selectedItemForStatus?.name}</strong> secara manual,
+              atau cek PO mana saja yang sudah meng-cover item ini.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            {selectedItemForStatus?.level && (
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Level
+                  </p>
+                  <ItemLevelBadge
+                    level={selectedItemForStatus.level}
+                    className="mt-1 text-xs px-2 py-0.5"
+                  />
+                </div>
+                {canTogglePaymentIssue &&
+                  (selectedItemForStatus.level === "Open 3A" ||
+                    selectedItemForStatus.level === "Open 3B") && (
+                    <Button
+                      size="sm"
+                      variant={
+                        selectedItemForStatus.level === "Open 3B"
+                          ? "destructive"
+                          : "outline"
+                      }
+                      disabled={savingItemStatus}
+                      onClick={handleTogglePaymentIssue}
+                    >
+                      {selectedItemForStatus.level === "Open 3B"
+                        ? "Lepas Payment Issue"
+                        : "Tandai Payment Issue"}
+                    </Button>
+                  )}
+              </div>
+            )}
+
+            {selectedItemForStatus?.part_number && (
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  PO Terhubung
+                </p>
+                {(poBreakdown[selectedItemForStatus.part_number] || [])
+                  .length > 0 ? (
+                  <>
+                    <ul className="space-y-1 text-sm">
+                      {poBreakdown[selectedItemForStatus.part_number].map(
+                        (entry, idx) => (
+                          <li
+                            key={idx}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <Link
+                              href={`/purchase-order?search=${encodeURIComponent(
+                                entry.kode_po,
+                              )}`}
+                              className="hover:underline flex items-center gap-1"
+                              target="_blank"
+                            >
+                              <LinkIcon className="w-3 h-3" />
+                              {entry.kode_po}
+                              {entry.is_manual && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] px-1 py-0 font-normal"
+                                >
+                                  manual
+                                </Badge>
+                              )}
+                            </Link>
+                            <span className="flex items-center gap-1 text-muted-foreground">
+                              {entry.qty} {selectedItemForStatus.uom} •{" "}
+                              {entry.po_status}
+                              {entry.is_manual && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5"
+                                  disabled={savingManualLink}
+                                  onClick={() =>
+                                    handleRemoveManualLink(entry.kode_po)
+                                  }
+                                  title="Hapus link manual ini"
+                                >
+                                  <X className="h-3 w-3 text-destructive" />
+                                </Button>
+                              )}
+                            </span>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                    <p className="text-xs text-muted-foreground pt-1 border-t">
+                      Total ter-PO:{" "}
+                      {poBreakdown[selectedItemForStatus.part_number].reduce(
+                        (sum, entry) => sum + (entry.qty || 0),
+                        0,
+                      )}{" "}
+                      / {Number(selectedItemForStatus.qty) || 0}{" "}
+                      {selectedItemForStatus.uom}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada PO yang meng-cover item ini.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {selectedItemForStatus?.part_number && (
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Link Manual ke PO
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Dipakai kalau barang yang dibeli disubstitusi/diganti pas
+                  belanja (part_number PO beda dari part_number MR ini),
+                  sehingga tidak ke-detect otomatis.
+                </p>
+                <div className="flex gap-2">
+                  <Select
+                    value={manualLinkPoCode}
+                    onValueChange={setManualLinkPoCode}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Pilih PO..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {posForMr.length === 0 && (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          Belum ada PO di MR ini.
+                        </div>
+                      )}
+                      {posForMr.map((po) => (
+                        <SelectItem key={po.id} value={po.kode_po}>
+                          {po.kode_po} ({po.status})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    className="w-24"
+                    value={manualLinkQty}
+                    onChange={(e) => setManualLinkQty(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleAddManualLink}
+                    disabled={savingManualLink}
+                  >
+                    {savingManualLink ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Tambah"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="item-status">Status Barang</Label>
+              <Select
+                value={itemStatusForm.status}
+                onValueChange={(val) =>
+                  setItemStatusForm({ ...itemStatusForm, status: val })
+                }
+              >
+                <SelectTrigger id="item-status">
+                  <SelectValue placeholder="Pilih Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(MR_ITEM_STATUS_LABELS).map(
+                    ([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="item-status-note">Catatan / Alasan</Label>
+              <Textarea
+                id="item-status-note"
+                placeholder="Contoh: Stok habis, diganti dengan tipe X..."
+                value={itemStatusForm.note}
+                onChange={(e) =>
+                  setItemStatusForm({
+                    ...itemStatusForm,
+                    note: e.target.value,
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsItemStatusOpen(false)}
+              disabled={savingItemStatus}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleSaveItemStatus} disabled={savingItemStatus}>
+              {savingItemStatus && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Simpan Perubahan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Upload BAST per Item */}
+      <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload BAST Barang</DialogTitle>
+            <DialogDescription>
+              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
+              untuk <strong>{selectedItemForBast?.name}</strong>. Item ini
+              akan ditandai selesai setelah bukti diunggah.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="item-bast-file">File BAST / Bukti Foto</Label>
+            <Input
+              id="item-bast-file"
+              type="file"
+              multiple
+              onChange={(e) => setBastFiles(e.target.files)}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBastUploadOpen(false)}
+              disabled={uploadingBast}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleUploadItemBast} disabled={uploadingBast}>
+              {uploadingBast && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Upload & Selesaikan
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

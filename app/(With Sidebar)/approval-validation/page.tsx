@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -23,9 +24,10 @@ import {
   fetchPendingValidationMRs,
   fetchPendingValidationPOs,
   fetchMyPendingPoApprovals,
+  fetchPosReadyForGaReceive,
 } from "@/services/approvalService";
 import { MaterialRequest, User as Profile, PurchaseOrder } from "@/type";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 
 // Tipe baru untuk daftar PO yang butuh validasi
 interface ValidationPO {
@@ -52,6 +54,7 @@ function ApprovalValidationContent() {
   const [pendingApprovalPOs, setPendingApprovalPOs] = useState<PurchaseOrder[]>(
     []
   ); // <-- State baru
+  const [gaReceivePOs, setGaReceivePOs] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   const s = createClient();
@@ -91,6 +94,13 @@ function ApprovalValidationContent() {
             setPendingValidationMRs(validationMRs);
             setPendingValidationPOs((validationPOs as ValidationPO[]) || []);
           }
+
+          // 3. Daftar PO yang siap "Terima Barang di WH" - GA departemen ATAU
+          // admin (samain dengan gate isGA di halaman detail PO, biar nggak
+          // ada GA/admin yang berhak terima tapi nggak keliatan di sini).
+          if (isGADepartment(profile?.department) || profile?.role === "admin") {
+            setGaReceivePOs(await fetchPosReadyForGaReceive());
+          }
         } catch (error: any) {
           toast.error("Gagal memuat data", { description: error.message });
         }
@@ -112,6 +122,10 @@ function ApprovalValidationContent() {
       </>
     );
   }
+
+  // Sama dengan gate `isGA` di halaman detail PO - GA departemen atau admin.
+  const isGA =
+    isGADepartment(userProfile?.department) || userProfile?.role === "admin";
 
   return (
     <>
@@ -226,6 +240,75 @@ function ApprovalValidationContent() {
             </div>
           </Content>
         </>
+      )}
+
+      {isGA && (
+        <Content
+          title="Siap Terima Barang di WH (Purchase Order)"
+          description="Daftar PO yang barangnya sudah boleh diterima GA - baik yang sudah lunas penuh maupun DP&BP skema Kirim Setelah DP yang BP-nya masih menyusul."
+          className="col-span-12"
+        >
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Kode PO</TableHead>
+                  <TableHead>Ref. MR</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Total Harga</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {gaReceivePOs.length > 0 ? (
+                  gaReceivePOs.map((po) => (
+                    <TableRow key={`po-ga-receive-${po.id}`}>
+                      <TableCell className="font-medium">
+                        {po.kode_po}
+                      </TableCell>
+                      <TableCell>
+                        {po.material_requests?.kode_mr || "N/A"}
+                      </TableCell>
+                      <TableCell>
+                        {(po.vendor_details as any)?.nama_vendor ||
+                          po.vendor_details?.name ||
+                          "N/A"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            "w-fit",
+                            po.status === "Pending Payment BP"
+                              ? "bg-orange-600 text-white"
+                              : "bg-blue-600 text-white",
+                          )}
+                        >
+                          {po.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatCurrency(po.total_price)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="default" size="sm">
+                          <Link href={`/purchase-order/${po.id}`}>
+                            Terima Barang
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center h-24">
+                      Tidak ada Purchase Order yang siap diterima di WH saat
+                      ini.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
       )}
 
       <Content
