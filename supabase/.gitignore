@@ -1,0 +1,11 @@
+# Supabase
+.branches
+.temp
+
+# Dumps dari production (jangan pernah commit - berisi data real)
+prod-dump/
+
+# dotenvx
+.env.keys
+.env.local
+.env.*.local

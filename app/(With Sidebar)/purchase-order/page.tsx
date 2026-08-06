@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { CustomPagination } from "@/components/custom-pagination";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { CreatePOModal } from "./CreatePOModal";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
   Newspaper,
   Search,
@@ -41,6 +42,10 @@ import {
   MoreHorizontal,
   Eye,
   Edit,
+  Calendar,
+  Tag,
+  DollarSign,
+  Layers,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -50,7 +55,7 @@ import {
   PurchaseOrderListItem,
   StoredVendorDetails,
 } from "@/type";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import {
   Select,
   SelectContent,
@@ -78,12 +83,14 @@ import {
   PAYMENT_VALIDATOR_USER_ID,
   isPoPaid,
   isDpBpPaymentTerm,
+  getLastApprovedApprover,
 } from "@/type/enum";
 
 const STATUS_OPTIONS = [
   "Pending Validation",
   "Pending Approval",
   "Pending Payment",
+  "Pending Payment BP",
   "Pending BAST",
   "Completed",
   "Rejected",
@@ -95,7 +102,11 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "Semua Jenis", value: "all" },
   { label: "Cash", value: "Cash" },
   { label: "Termin", value: "Termin" },
-  { label: "BP & DP", value: "DP" },
+  { label: "DP & BP - Kirim Setelah DP", value: "ship_after_dp" },
+  {
+    label: "DP & BP - Kirim Setelah Pelunasan",
+    value: "ship_after_full_payment",
+  },
 ];
 
 // --- Komponen Modal Detail Vendor ---
@@ -193,6 +204,12 @@ function PurchaseOrderPageContent() {
     useState<StoredVendorDetails | null>(null);
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
 
+  // State untuk Modal Quick View PO
+  const [selectedPo, setSelectedPo] = useState<PurchaseOrderListItem | null>(
+    null,
+  );
+  const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
+
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -275,7 +292,7 @@ function PurchaseOrderPageContent() {
         // Query Utama
         let query = s.from("purchase_orders").select(
           `
-            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term, dp_paid, bp_paid,
+            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term, dp_paid, bp_paid, items, is_asset,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
@@ -358,7 +375,12 @@ function PurchaseOrderPageContent() {
         } else if (paymentFilter === "unpaid") {
           query = query.not("approvals", "cs", paymentApprovalObject);
         }
-        if (paymentTermFilter) {
+        if (
+          paymentTermFilter === "ship_after_dp" ||
+          paymentTermFilter === "ship_after_full_payment"
+        ) {
+          query = query.eq("dp_bp_shipping_type", paymentTermFilter);
+        } else if (paymentTermFilter) {
           query = query.ilike("payment_term", `%${paymentTermFilter}%`);
         }
 
@@ -450,6 +472,11 @@ function PurchaseOrderPageContent() {
     setIsVendorModalOpen(true);
   };
 
+  const handleRowClick = (po: PurchaseOrderListItem) => {
+    setSelectedPo(po);
+    setIsQuickViewOpen(true);
+  };
+
   const handleCreatePO = () => {
     router.push("/purchase-order/create");
   };
@@ -465,6 +492,7 @@ function PurchaseOrderPageContent() {
         `
             kode_po, status, total_price, company_code, created_at,
             items, approvals, payment_term, vendor_details,
+            dp_paid, bp_paid, attachments,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
@@ -532,6 +560,10 @@ function PurchaseOrderPageContent() {
 
       const formattedData = data.flatMap((po: any) => {
         const isPaid = isPoPaid(po.approvals as Approval[]);
+        const lastApprover = getLastApprovedApprover(po.approvals as Approval[]);
+        const hasInvoice =
+          Array.isArray(po.attachments) &&
+          po.attachments.some((att: any) => att.type === "invoice");
 
         // Ekstrak data MR dengan aman (menghindari issue jika Supabase mereturn array)
         const mrData = Array.isArray(po.material_requests)
@@ -555,6 +587,10 @@ function PurchaseOrderPageContent() {
           "Requester MR": requesterName || "N/A",
           Status: po.status,
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
+          "Last Approve": lastApprover?.nama || "",
+          DP: po.dp_paid ? "Dibayar" : "",
+          BP: po.bp_paid ? "Dibayar" : "",
+          Invoice: hasInvoice ? "Ada" : "Tidak Ada",
           "Jenis Pembayaran": po.payment_term || "N/A",
           "Total Harga PO": po.total_price,
           "Pembuat PO": po.users_with_profiles?.nama || "N/A",
@@ -589,12 +625,10 @@ function PurchaseOrderPageContent() {
         }
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase Orders");
-      XLSX.writeFile(
-        workbook,
+      await exportStyledExcel(
+        formattedData,
         `Detail_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`,
+        "Purchase Orders",
       );
 
       toast.success("Data PO detail berhasil diunduh!");
@@ -867,9 +901,17 @@ function PurchaseOrderPageContent() {
                   ))
                 ) : dataPO.length > 0 ? (
                   dataPO.map((po) => (
-                    <TableRow key={po.id}>
+                    <TableRow
+                      key={po.id}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => handleRowClick(po)}
+                    >
                       <TableCell className="font-medium">
-                        <Button asChild variant="ghost">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Link href={`/purchase-order/${po.id}`}>
                             {po.kode_po}
                           </Link>
@@ -882,7 +924,10 @@ function PurchaseOrderPageContent() {
                       <TableCell>
                         {po.vendor_details ? (
                           <button
-                            onClick={() => handleVendorClick(po.vendor_details)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleVendorClick(po.vendor_details);
+                            }}
                             className="text-primary hover:underline font-medium text-left"
                           >
                             {po.vendor_details.nama_vendor}
@@ -925,7 +970,10 @@ function PurchaseOrderPageContent() {
                         {formatCurrency(po.total_price)}
                       </TableCell>
                       <TableCell>{formatDateFriendly(po.created_at)}</TableCell>
-                      <TableCell className="text-right no-print">
+                      <TableCell
+                        className="text-right no-print"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
@@ -1016,6 +1064,144 @@ function PurchaseOrderPageContent() {
         onClose={() => setIsVendorModalOpen(false)}
         vendor={selectedVendor}
       />
+
+      {/* --- QUICK VIEW DIALOG --- */}
+      <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2 flex-wrap pr-6">
+              <Newspaper className="h-5 w-5 shrink-0" />
+              <span>Ringkasan PO: {selectedPo?.kode_po}</span>
+              {selectedPo?.is_asset && (
+                <Badge className="bg-purple-600 hover:bg-purple-600 text-white shrink-0">
+                  PO Asset
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Informasi singkat dan daftar barang.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPo && (
+            <div className="space-y-6">
+              {/* Header Info */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
+                <div>
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    <Building2 className="h-3 w-3" /> Vendor
+                  </p>
+                  <p className="font-medium">
+                    {selectedPo.vendor_details?.nama_vendor || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    <User className="h-3 w-3" /> Pembuat PO
+                  </p>
+                  <p className="font-medium">
+                    {selectedPo.users_with_profiles?.nama || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    <Tag className="h-3 w-3" /> Status
+                  </p>
+                  <Badge variant="secondary">{selectedPo.status}</Badge>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    <Calendar className="h-3 w-3" /> Dibuat
+                  </p>
+                  <p className="font-medium">
+                    {formatDateFriendly(selectedPo.created_at)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    Ref. MR
+                  </p>
+                  <p className="font-medium">
+                    {selectedPo.material_requests?.kode_mr || "N/A"}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-muted-foreground text-xs flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" /> Total Harga
+                  </p>
+                  <p className="font-bold text-lg">
+                    {formatCurrency(selectedPo.total_price)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Table Items */}
+              <div>
+                <h4 className="font-semibold mb-2 flex items-center gap-2">
+                  <Layers className="h-4 w-4" /> Daftar Barang
+                </h4>
+                <div className="border rounded-md overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead>Nama Barang</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Harga Satuan</TableHead>
+                        <TableHead>Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedPo.items && selectedPo.items.length > 0 ? (
+                        selectedPo.items.map((item, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {item.name}
+                                <AssetGoodsBadge isAsset={item.is_asset} />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {item.qty} {item.uom}
+                            </TableCell>
+                            <TableCell>{formatCurrency(item.price)}</TableCell>
+                            <TableCell>
+                              {formatCurrency(
+                                item.total_price || item.price * item.qty,
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="text-center text-muted-foreground h-16"
+                          >
+                            Tidak ada barang.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQuickViewOpen(false)}>
+              Tutup
+            </Button>
+            {selectedPo && (
+              <Button asChild>
+                <Link href={`/purchase-order/${selectedPo.id}`}>
+                  <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
+                </Link>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

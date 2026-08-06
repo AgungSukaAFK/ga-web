@@ -52,13 +52,16 @@ import {
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
+import { ItemLevelBadge } from "@/components/item-level-badge";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
+import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import {
   fetchActiveCostCenters,
   normalizeMrOrders,
@@ -95,6 +98,8 @@ const dataLokasi: ComboboxData = [
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
   { label: "Site DIZA", value: "Site DIZA" },
+  { label: "Site PIK", value: "Site PIK" },
+  { label: "Site BGE", value: "Site BGE" },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -137,6 +142,10 @@ function MaterialRequestContent() {
   const [selectedMr, setSelectedMr] = useState<MaterialRequestListItem | null>(
     null,
   );
+  // Peta barang_id -> is_asset utk badge Aset/Barang di daftar barang Quick View.
+  const [quickViewAssetMap, setQuickViewAssetMap] = useState<
+    Record<number, boolean>
+  >({});
 
   // --- URL Params ---
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
@@ -594,12 +603,10 @@ function MaterialRequestContent() {
         }
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data MR & Tracking");
-      XLSX.writeFile(
-        workbook,
+      await exportStyledExcel(
+        formattedData,
         `Rekap_MR_Tracking_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        "Data MR & Tracking",
       );
       toast.success("Download berhasil!");
     } catch (error: any) {
@@ -614,6 +621,14 @@ function MaterialRequestContent() {
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
     setIsQuickViewOpen(true);
+    const barangIds = (mr.orders || [])
+      .map((o) => o.barang_id)
+      .filter((id): id is number => !!id);
+    if (barangIds.length > 0) {
+      fetchBarangAssetFlags(barangIds).then(setQuickViewAssetMap);
+    } else {
+      setQuickViewAssetMap({});
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -1200,7 +1215,17 @@ function MaterialRequestContent() {
                         selectedMr.orders.map((item, i) => (
                           <TableRow key={i}>
                             <TableCell className="font-medium">
-                              {item.name}
+                              <div className="flex items-center gap-2">
+                                {item.name}
+                                <AssetGoodsBadge
+                                  isAsset={
+                                    !!(
+                                      item.barang_id &&
+                                      quickViewAssetMap[item.barang_id]
+                                    )
+                                  }
+                                />
+                              </div>
                             </TableCell>
                             <TableCell>{item.qty}</TableCell>
                             <TableCell>{item.uom}</TableCell>
@@ -1214,9 +1239,12 @@ function MaterialRequestContent() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">
-                                {item.status || "Pending"}
-                              </Badge>
+                              <div className="flex flex-col items-start gap-1">
+                                <Badge variant="outline">
+                                  {item.status || "Pending"}
+                                </Badge>
+                                <ItemLevelBadge level={item.level} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))

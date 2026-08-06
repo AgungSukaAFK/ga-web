@@ -52,7 +52,7 @@ import {
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -101,6 +101,8 @@ const dataLokasi: ComboboxData = [
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
   { label: "Site DIZA", value: "Site DIZA" },
+  { label: "Site PIK", value: "Site PIK" },
+  { label: "Site BGE", value: "Site BGE" },
 ];
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
@@ -504,12 +506,10 @@ export default function MrManagementClient() {
         }
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data MR & Tracking");
-      XLSX.writeFile(
-        workbook,
+      await exportStyledExcel(
+        formattedData,
         `Rekap_MR_Admin_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        "Data MR & Tracking",
       );
       toast.success("Download berhasil!");
     } catch (error: any) {

@@ -54,6 +54,7 @@ import {
   findActiveDuplicateMrs,
   type DuplicateMrInfo,
 } from "@/services/mrService";
+import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ import { format } from "date-fns";
 import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -83,6 +85,8 @@ const dataLokasi: ComboboxData = [
   { label: "GIS BPN", value: "GIS BPN" },
   { label: "Site Manado", value: "Site Manado" },
   { label: "Site DIZA", value: "Site DIZA" },
+  { label: "Site PIK", value: "Site PIK" },
+  { label: "Site BGE", value: "Site BGE" },
 ];
 
 export default function BuatMRPage() {
@@ -251,6 +255,10 @@ export default function BuatMRPage() {
   // --- Item Management ---
   const [openItemDialog, setOpenItemDialog] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // Peta barang_id -> is_asset, dipakai utk badge Aset/Barang di tabel item.
+  const [barangAssetMap, setBarangAssetMap] = useState<
+    Record<number, boolean>
+  >({});
 
   const [orderItem, setOrderItem] = useState<Order>({
     name: "",
@@ -278,6 +286,17 @@ export default function BuatMRPage() {
     setOpenItemDialog(true);
   };
 
+  // --- EFFECT: Peta is_asset per barang_id (utk badge Aset/Barang) ---
+  useEffect(() => {
+    const barangIds = formCreateMR.orders
+      .map((o) => o.barang_id)
+      .filter((id): id is number => !!id);
+    if (barangIds.length === 0) return;
+    fetchBarangAssetFlags(barangIds).then((map) =>
+      setBarangAssetMap((prev) => ({ ...prev, ...map })),
+    );
+  }, [formCreateMR.orders]);
+
   const handleOpenEditItemDialog = (index: number) => {
     setEditingIndex(index);
     setOrderItem(formCreateMR.orders[index]);
@@ -301,9 +320,24 @@ export default function BuatMRPage() {
     }
   };
 
+  // Barang yang sama (barang_id sama) sudah ada di daftar item lain (selain
+  // item yang sedang diedit) - cegah duplikat, arahkan user edit qty item
+  // yang sudah ada saja.
+  const isDuplicateItem =
+    !!orderItem.barang_id &&
+    formCreateMR.orders.some(
+      (o, i) => o.barang_id === orderItem.barang_id && i !== editingIndex,
+    );
+
   const handleSaveOrUpdateItem = () => {
     if (!orderItem.barang_id || !orderItem.name) {
       toast.error("Wajib memilih barang dari database.");
+      return;
+    }
+    if (isDuplicateItem) {
+      toast.error(
+        "Barang ini sudah ada di daftar. Edit item yang sudah ada, jangan tambah duplikat.",
+      );
       return;
     }
     if (!orderItem.qty || Number(orderItem.qty) <= 0) {
@@ -314,6 +348,7 @@ export default function BuatMRPage() {
     const itemToSave: Order = {
       ...orderItem,
       estimasi_harga: Number(orderItem.estimasi_harga) || 0,
+      level: "Open 1",
     };
 
     setFormCreateMR((prevForm) => {
@@ -778,7 +813,18 @@ export default function BuatMRPage() {
               {formCreateMR.orders.map((order, index) => (
                 <TableRow key={index}>
                   <TableCell>{index + 1}</TableCell>
-                  <TableCell>{order.name}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {order.name}
+                      <AssetGoodsBadge
+                        isAsset={
+                          !!(
+                            order.barang_id && barangAssetMap[order.barang_id]
+                          )
+                        }
+                      />
+                    </div>
+                  </TableCell>
                   <TableCell className="text-xs font-mono">
                     {order.part_number || "-"}
                   </TableCell>
@@ -831,6 +877,12 @@ export default function BuatMRPage() {
                   {orderItem.part_number})
                 </div>
               )}
+              {isDuplicateItem && (
+                <p className="text-xs text-destructive mt-1">
+                  Barang ini sudah ada di daftar item. Edit item yang sudah
+                  ada kalau mau ubah quantity-nya, jangan ditambah lagi.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -878,7 +930,7 @@ export default function BuatMRPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleSaveOrUpdateItem}>
+            <Button onClick={handleSaveOrUpdateItem} disabled={isDuplicateItem}>
               {editingIndex !== null ? "Simpan Perubahan" : "Tambah"}
             </Button>
           </DialogFooter>

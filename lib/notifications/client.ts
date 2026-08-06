@@ -246,8 +246,12 @@ export async function notifyOnMRValidated({
       resourceType: "material_request",
     });
   }
-  // Notify first approver
-  if (firstApproverId && firstApproverId !== actorId) {
+  // Notify first approver - termasuk kalau approver pertamanya adalah GA yang
+  // baru saja memvalidasi sendiri (self-notify sengaja TIDAK di-skip di sini):
+  // setelah validasi, halaman redirect ke /approval-validation, jadi tanpa
+  // notifikasi ini GA tidak dapat pengingat kalau MR-nya sekarang menunggu
+  // approval-nya sendiri.
+  if (firstApproverId) {
     await sendNotification({
       userId: firstApproverId,
       actorId,

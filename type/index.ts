@@ -29,7 +29,25 @@ export interface Order {
   status_note?: string; // Alasan pembatalan/penggantian
   updated_by?: string; // User ID purchasing yang ubah
   updated_at?: string; // Waktu perubahan
+  bast_attachments?: Attachment[]; // Bukti BAST per item, diunggah requester
+  // Link manual ke PO - dipakai kalau barang yang dibeli disubstitusi/diganti
+  // pas belanja (part_number PO beda dari part_number MR asli), jadi matching
+  // otomatis by part_number di fetchPoQtyBreakdownForMr gagal detect.
+  manual_po_links?: { kode_po: string; qty: number }[];
+  // Level fisik/approval/payment per item (terpisah dari `status`) - lihat
+  // MrItemLevel. Default 'Open 1' saat item dibuat.
+  level?: MrItemLevel;
+  payment_issue_note?: string; // Alasan Open 3B (payment issue), opsional
 }
+
+export type MrItemLevel =
+  | "Open 1" // MR dibuat, menunggu approval
+  | "Open 2" // MR sudah full approved, menunggu PO
+  | "Open 3A" // PO sudah dibuat utk item ini, menunggu vendor kirim
+  | "Open 3B" // Sama seperti 3A tapi ada payment issue (ditandai manual)
+  | "Open 4" // PO item ini sudah diapprove step Payment Validator
+  | "Open 5" // Barang sudah diterima GA
+  | "Close"; // Item selesai (BAST sudah diupload)
 
 export interface Attachment {
   url: string;
@@ -102,21 +120,25 @@ export interface POItem {
   // --- TAMBAHAN BARU ---
   description?: string; // Untuk menampung 'note' dari Order MR
   link?: string; // Untuk menampung 'url' dari Order MR
+  is_asset?: boolean; // Dari barang.is_asset - 1 PO tidak boleh campur asset & goods
 }
 
 export interface PurchaseOrderPayload {
   kode_po: string;
   mr_id: number | null;
   user_id: string;
+  is_asset?: boolean;
   status:
     | "Pending Validation"
     | "Pending Approval"
     | "Pending Payment"
+    | "Pending Payment BP"
     | "Pending BAST"
     | "Completed"
     | "Rejected"
     | "Draft"
     | "Ordered";
+  dp_bp_shipping_type?: "ship_after_dp" | "ship_after_full_payment" | null;
   vendor_details?: StoredVendorDetails;
   items: POItem[];
   currency: string;
@@ -176,6 +198,9 @@ export interface PurchaseOrderListItem {
   payment_term?: string | null;
   dp_paid?: boolean | null;
   bp_paid?: boolean | null;
+  dp_bp_shipping_type?: "ship_after_dp" | "ship_after_full_payment" | null;
+  items?: POItem[];
+  is_asset?: boolean | null;
 }
 
 export interface ApprovedMaterialRequest {
@@ -413,7 +438,8 @@ export type MrItemStatus =
   | "Pending"
   | "Processing" // Sedang diproses (misal masuk Draft PO)
   | "PO Created" // Sudah resmi ada di PO
-  | "Completed" // PO yang meng-cover item ini sudah BAST
+  | "Pending BAST" // Barang sudah diterima GA, tinggal nunggu requester upload BAST
+  | "Completed" // Requester sudah upload BAST utk item ini
   | "Cancelled" // Dibatalkan oleh Purchasing
   | "Replaced"; // Diganti dengan barang lain
 

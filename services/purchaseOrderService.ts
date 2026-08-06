@@ -16,6 +16,7 @@ import {
   normalizeMrOrders,
   updateMrItemStatus,
   recalculateMrStatus,
+  recalculateMrLevel,
 } from "./mrService";
 import { PAYMENT_VALIDATOR_USER_ID, MR_ITEM_STATUSES } from "@/type/enum";
 
@@ -58,8 +59,8 @@ export const fetchPurchaseOrders = async (
   // REVISI: Tambahkan vendor_details ke select
   let query = supabase.from("purchase_orders").select(
     `
-      id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details,
-      users_with_profiles!user_id (nama), 
+      id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, items, is_asset,
+      users_with_profiles!user_id (nama),
       material_requests!mr_id (
         kode_mr,
         users_with_profiles!userid (nama)
@@ -274,12 +275,107 @@ export const generatePoCode = async (
     "GIS BPN": "GISBPN",
     "Site Manado": "MND",
     "Site DIZA": "DIZ",
+    "Site PIK": "PIK",
+    "Site BGE": "BGE",
     "Head Office": "HO",
   };
 
   const identifier = lokasiAbbreviations[lokasi] || lokasi;
 
   return `${prefix}/PO/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
+};
+
+export interface PoQtyBreakdownEntry {
+  kode_po: string;
+  po_status: string;
+  qty: number;
+  is_manual?: boolean;
+}
+
+// Ringkasan qty per part_number dari semua PO (selain yang Rejected) yang
+// terhubung ke satu MR (1 PO cuma bisa merujuk 1 mr_id, jadi cukup query by
+// mr_id). Dipakai utk mengecek qty MR item yang terpenuhi kumulatif dari
+// >1 PO (pembelian parsial), baik oleh createPurchaseOrder maupun oleh UI
+// pengelolaan status item di halaman detail MR.
+//
+// Selain matching otomatis by part_number, ikut merge `manual_po_links` yang
+// tersimpan di tiap item Order MR (utk kasus barang disubstitusi pas beli,
+// jadi part_number PO-nya beda dari part_number MR asli - lihat
+// addManualPoLink di mrService.ts).
+export const fetchPoQtyBreakdownForMr = async (
+  mrId: number,
+): Promise<Record<string, PoQtyBreakdownEntry[]>> => {
+  const [posResult, mrResult] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select("kode_po, status, items")
+      .eq("mr_id", mrId)
+      .neq("status", "Rejected"),
+    supabase
+      .from("material_requests")
+      .select("orders")
+      .eq("id", mrId)
+      .single(),
+  ]);
+
+  const { data, error } = posResult;
+  if (error || !data) return {};
+
+  const poStatusByCode = new Map(data.map((po) => [po.kode_po, po.status]));
+
+  const breakdown: Record<string, PoQtyBreakdownEntry[]> = {};
+  for (const po of data) {
+    const items: POItem[] = Array.isArray(po.items) ? po.items : [];
+    for (const item of items) {
+      if (!item.part_number) continue;
+      if (!breakdown[item.part_number]) breakdown[item.part_number] = [];
+      breakdown[item.part_number].push({
+        kode_po: po.kode_po,
+        po_status: po.status,
+        qty: item.qty,
+      });
+    }
+  }
+
+  const orders = (mrResult.data?.orders as any[]) || [];
+  for (const order of orders) {
+    if (!order.part_number || !Array.isArray(order.manual_po_links)) continue;
+    for (const link of order.manual_po_links) {
+      if (!breakdown[order.part_number]) breakdown[order.part_number] = [];
+      // Hindari dobel-hitung kalau kode_po yang sama kebetulan juga
+      // ke-detect otomatis (part_number sebenarnya cocok).
+      if (
+        breakdown[order.part_number].some(
+          (e) => e.kode_po === link.kode_po && !e.is_manual,
+        )
+      ) {
+        continue;
+      }
+      breakdown[order.part_number].push({
+        kode_po: link.kode_po,
+        po_status: poStatusByCode.get(link.kode_po) || "—",
+        qty: link.qty,
+        is_manual: true,
+      });
+    }
+  }
+
+  return breakdown;
+};
+
+// Daftar PO milik satu MR (dipakai utk picker "link manual ke PO").
+export const fetchPosForMr = async (
+  mrId: number,
+): Promise<{ id: number; kode_po: string; status: string; is_asset: boolean }[]> => {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("id, kode_po, status, is_asset")
+    .eq("mr_id", mrId)
+    .neq("status", "Rejected")
+    .order("id", { ascending: false });
+
+  if (error || !data) return [];
+  return data;
 };
 
 export const createPurchaseOrder = async (
@@ -296,6 +392,17 @@ export const createPurchaseOrder = async (
   user_id: string,
   company_code: string,
 ) => {
+  // Aturan keras: 1 PO tidak boleh mencampur item Asset dan Barang biasa.
+  // UI sudah mencegah ini saat user menambah item, tapi divalidasi lagi di
+  // sini sebagai lapisan pertahanan terakhir sebelum data masuk DB.
+  const assetFlags = new Set((poData.items || []).map((i) => !!i.is_asset));
+  if (assetFlags.size > 1) {
+    throw new Error(
+      "PO tidak boleh mencampur item Asset dan Barang biasa. Pisahkan menjadi PO terpisah.",
+    );
+  }
+  const isAssetPO = assetFlags.has(true);
+
   const payload = {
     ...poData,
     mr_id,
@@ -303,6 +410,7 @@ export const createPurchaseOrder = async (
     company_code,
     status: "Pending Validation" as const,
     approvals: [],
+    is_asset: isAssetPO,
   };
 
   let newPo;
@@ -376,14 +484,48 @@ export const createPurchaseOrder = async (
   // array `orders` per panggilan, jadi kalau dijalankan paralel untuk item-item
   // dari PO yang sama, update bisa saling menimpa (lost update).
   if (mr_id && newPo && poData.items && poData.items.length > 0) {
+    const { data: mrBeforeUpdate } = await supabase
+      .from("material_requests")
+      .select("orders")
+      .eq("id", mr_id)
+      .single();
+    const originalOrders = normalizeMrOrders(
+      (mrBeforeUpdate?.orders as any[]) || [],
+    );
+
+    // Sudah termasuk newPo (baru saja di-insert di atas), jadi kalau item
+    // ini sebelumnya juga sempat di-order parsial lewat PO lain, qty-nya
+    // di sini sudah kumulatif dari semua PO terkait.
+    const poBreakdown = await fetchPoQtyBreakdownForMr(mr_id);
+
     for (const poItem of poData.items) {
       if (!poItem.part_number) continue;
+      const originalOrder = originalOrders.find(
+        (o) => o.part_number === poItem.part_number,
+      );
+      const cumulativeQty = (poBreakdown[poItem.part_number] || []).reduce(
+        (sum, entry) => sum + (entry.qty || 0),
+        0,
+      );
+      // Qty kumulatif dari semua PO terkait < qty yang diminta MR => item
+      // baru terpenuhi sebagian, jangan tandai "PO Created" dulu supaya
+      // sisa qty tetap kelihatan masih perlu di-PO-kan.
+      const isQtyFulfilled =
+        !!originalOrder && cumulativeQty >= Number(originalOrder.qty);
+      // Level Open 3A cuma dipasang begitu qty terpenuhi penuh (selaras
+      // dengan status "PO Created") - dan jangan timpa kalau item ini
+      // sudah ditandai "Open 3B" (payment issue) secara manual.
+      const nextLevel =
+        isQtyFulfilled && originalOrder?.level !== "Open 3B"
+          ? "Open 3A"
+          : undefined;
       try {
         await updateMrItemStatus(
           mr_id,
           poItem.part_number,
           {
-            status: "PO Created",
+            status: isQtyFulfilled ? "PO Created" : "Processing",
+            level: nextLevel,
             poRef: newPo.kode_po,
           },
           user_id,
@@ -397,18 +539,10 @@ export const createPurchaseOrder = async (
     }
   }
 
-  // 4. UPDATE LEVEL MR + HITUNG ULANG STATUS MR DARI AGREGAT ITEM
+  // 4. HITUNG ULANG STATUS & LEVEL MR DARI AGREGAT ITEM
   if (mr_id) {
-    const { error: mrError } = await supabase
-      .from("material_requests")
-      .update({ level: "OPEN 3A" })
-      .eq("id", mr_id);
-
-    if (mrError) {
-      console.error("Gagal update level MR saat buat PO:", mrError);
-    }
-
     await recalculateMrStatus(mr_id);
+    await recalculateMrLevel(mr_id);
   }
 
   return newPo;
@@ -500,6 +634,28 @@ export const searchBarang = async (query: string): Promise<Barang[]> => {
   return data;
 };
 
+// Ambil flag is_asset utk sekumpulan barang_id sekaligus (dipakai saat
+// mapping item MR -> item PO, karena Order MR tidak menyimpan is_asset-nya
+// sendiri, cuma barang_id).
+export const fetchBarangAssetFlags = async (
+  barangIds: number[],
+): Promise<Record<number, boolean>> => {
+  const uniqueIds = [...new Set(barangIds)].filter((id) => !!id);
+  if (uniqueIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from("barang")
+    .select("id, is_asset")
+    .in("id", uniqueIds);
+
+  if (error) {
+    console.error("Error fetching barang asset flags:", error);
+    return {};
+  }
+
+  return Object.fromEntries(data.map((b) => [b.id, !!b.is_asset]));
+};
+
 export const validatePurchaseOrder = async (
   id: number,
   approvals: Approval[],
@@ -515,46 +671,11 @@ export const validatePurchaseOrder = async (
   return data;
 };
 
-export const closePoWithBast = async (
-  id: number,
-  attachments: any[],
+export const markGoodsAsReceivedByGA = async (
+  mrId: number,
+  poId: number,
   userId: string,
 ) => {
-  const { data, error } = await supabase
-    .from("purchase_orders")
-    .update({ attachments, status: "Completed" })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  // Tandai item-item MR yang di-cover PO ini sebagai "Completed" (BAST selesai),
-  // lalu hitung ulang status agregat MR-nya.
-  if (data?.mr_id && Array.isArray(data.items)) {
-    for (const item of data.items as POItem[]) {
-      if (!item.part_number) continue;
-      try {
-        await updateMrItemStatus(
-          data.mr_id,
-          item.part_number,
-          { status: MR_ITEM_STATUSES.COMPLETED },
-          userId,
-        );
-      } catch (err) {
-        console.error(
-          `Gagal update status item MR (Completed) untuk Part ${item.part_number}:`,
-          err,
-        );
-      }
-    }
-    await recalculateMrStatus(data.mr_id);
-  }
-
-  return data;
-};
-
-export const markGoodsAsReceivedByGA = async (mrId: number) => {
   const { data, error } = await supabase
     .from("material_requests")
     .update({
@@ -569,7 +690,97 @@ export const markGoodsAsReceivedByGA = async (mrId: number) => {
     throw error;
   }
 
+  // Tandai item-item yang di-cover PO ini (yang masih "PO Created") jadi
+  // "Pending BAST" - barang sudah fisik diterima GA, tinggal nunggu
+  // requester upload bukti BAST per item. Item yang statusnya bukan
+  // "PO Created" (misal sudah Cancelled/Completed dari PO lain) dilewati
+  // supaya tidak ketimpa.
+  const { data: poRow } = await supabase
+    .from("purchase_orders")
+    .select("items")
+    .eq("id", poId)
+    .single();
+  const poItems: POItem[] = Array.isArray(poRow?.items) ? poRow.items : [];
+
+  const { data: mrRow } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+  const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
+
+  for (const item of poItems) {
+    if (!item.part_number) continue;
+    const order = orders.find((o) => o.part_number === item.part_number);
+    if (order?.status !== "PO Created") continue;
+    try {
+      await updateMrItemStatus(
+        mrId,
+        item.part_number,
+        { status: MR_ITEM_STATUSES.PENDING_BAST, level: "Open 5" },
+        userId,
+      );
+    } catch (err) {
+      console.error(
+        `Gagal update status item MR (Pending BAST) untuk Part ${item.part_number}:`,
+        err,
+      );
+    }
+  }
+  await recalculateMrStatus(mrId);
+  await recalculateMrLevel(mrId);
+
   return data;
+};
+
+// Setelah sebuah item MR di-BAST (Completed), cek PO-PO yang statusnya masih
+// "Pending BAST" milik MR ini - kalau SEMUA item di PO tsb sudah Completed,
+// PO-nya ikut ditandai "Completed".
+export const recalculatePendingBastPos = async (
+  mrId: number,
+): Promise<void> => {
+  try {
+    const { data: pos, error } = await supabase
+      .from("purchase_orders")
+      .select("id, items")
+      .eq("mr_id", mrId)
+      .eq("status", "Pending BAST");
+
+    if (error || !pos || pos.length === 0) return;
+
+    const { data: mrRow } = await supabase
+      .from("material_requests")
+      .select("orders")
+      .eq("id", mrId)
+      .single();
+    const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
+
+    for (const po of pos) {
+      const items: POItem[] = Array.isArray(po.items) ? po.items : [];
+      const allCompleted =
+        items.length > 0 &&
+        items.every((item) => {
+          const order = orders.find(
+            (o) => o.part_number === item.part_number,
+          );
+          return order?.status === "Completed";
+        });
+
+      if (allCompleted) {
+        const { error: updateError } = await supabase
+          .from("purchase_orders")
+          .update({ status: "Completed" })
+          .eq("id", po.id);
+        if (updateError)
+          console.error(
+            `Gagal update status PO ${po.id} ke Completed:`,
+            updateError,
+          );
+      }
+    }
+  } catch (err) {
+    console.error("recalculatePendingBastPos: unexpected error", err);
+  }
 };
 
 /**
