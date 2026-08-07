@@ -6,8 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-const userId = "e0de47b2-19e9-4caa-b7e5-ed605fe6b534";
-const email = "k3.garudamart@gmail.com";
+const userId = "5deb72aa-28f6-4dc7-bd77-7846474f0ee5";
+const email = "admin.ami@garudamart.com";
 
 async function hardReset() {
   const { data: before, error: beforeError } =

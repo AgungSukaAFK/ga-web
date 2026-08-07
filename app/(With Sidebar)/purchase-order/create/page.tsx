@@ -403,11 +403,18 @@ function CreatePOPageContent() {
         }
         setUserProfile(profile);
 
+        // Kode PO awal pakai lokasi USER dulu sebagai fallback (buat alur
+        // "Buat PO" tanpa MR dari awal, lihat tombol di purchase-order/page.tsx)
+        // - begitu MR ke-link (baik langsung dari mrIdParam di bawah, maupun
+        // belakangan lewat dialog "Link MR"), loadMRData() generate ULANG
+        // kode PO-nya pakai `tujuan_site` MR, bukan lokasi user pembuat PO.
+        // Purchasing di HO sering bikinin PO buat MR dari site lain, jadi
+        // kode PO-nya harus ngikutin site TUJUAN MR, bukan site asal user.
         const newPoCode = await generatePoCode(profile.company, profile.lokasi);
         setPoForm((prev) => ({ ...prev, kode_po: newPoCode }));
 
         if (mrIdParam) {
-          await loadMRData(parseInt(mrIdParam));
+          await loadMRData(parseInt(mrIdParam), profile.company);
         }
       } catch (err: any) {
         toast.error("Gagal memuat data", { description: err.message });
@@ -419,17 +426,35 @@ function CreatePOPageContent() {
     initializeForm();
   }, [mrIdParam]);
 
-  const loadMRData = async (id: number) => {
+  const loadMRData = async (id: number, companyOverride?: string) => {
     const fetchedMr = await fetchMaterialRequestById(id);
     if (!fetchedMr) {
       toast.error("Data MR tidak ditemukan.");
       return;
     }
     setMrData(fetchedMr as any);
+
+    // Generate ULANG kode PO pakai kode lokasi TUJUAN MR (tempat barang
+    // dikirim), bukan lokasi asal user yang bikin PO - lihat catatan di
+    // initializeForm di atas. `companyOverride` dipakai pas dipanggil dari
+    // initializeForm (state `userProfile` belum ke-update di render yang
+    // sama), kalau dipanggil dari handleSelectMR (link MR manual belakangan)
+    // state-nya sudah reliable jadi fallback ke situ.
+    const company = companyOverride || userProfile?.company;
+    let regeneratedKodePo: string | undefined;
+    if (company && fetchedMr.tujuan_site) {
+      try {
+        regeneratedKodePo = await generatePoCode(company, fetchedMr.tujuan_site);
+      } catch (err) {
+        console.error("Gagal generate ulang kode PO dari tujuan_site MR:", err);
+      }
+    }
+
     setPoForm((prev) => ({
       ...prev,
       items: [],
       shipping_address: fetchedMr.tujuan_site || prev.shipping_address,
+      ...(regeneratedKodePo ? { kode_po: regeneratedKodePo } : {}),
     }));
 
     const barangIds = (fetchedMr.orders || [])

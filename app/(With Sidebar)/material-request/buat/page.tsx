@@ -209,9 +209,12 @@ export default function BuatMRPage() {
       kode_mr: "Memuat...",
     }));
     try {
+      // Kode MR ikut tujuan_site (site TUJUAN pengiriman barang), BUKAN
+      // lokasi asal user - fallback ke userProfile.lokasi kalau tujuan_site
+      // somehow belum keisi (harusnya sudah, di-default pas profile ke-load).
       const newKodeMR = await generateMRCode(
         userProfile.department,
-        userProfile.lokasi,
+        formCreateMR.tujuan_site || userProfile.lokasi,
         company,
       );
       setFormCreateMR((prev) => ({ ...prev, kode_mr: newKodeMR }));
@@ -219,6 +222,36 @@ export default function BuatMRPage() {
       toast.error("Gagal generate kode MR", { description: error.message });
     }
   };
+
+  // Regenerate kode_mr (preview) tiap kali site TUJUAN pengiriman berubah -
+  // baik lewat toggle "Sama dengan lokasi saya" maupun combobox pilih lokasi
+  // tujuan manual. Kode MR harus ikut tujuan_site, BUKAN lokasi asal user
+  // yang bikin MR (lihat juga proceedCreateMR yang regenerate ulang tepat
+  // sebelum submit, sumber kebenarannya sama).
+  useEffect(() => {
+    if (!userProfile) return;
+    if (!formCreateMR.tujuan_site || !formCreateMR.department) return;
+    if (isLourdes && !formCreateMR.company_code) return;
+
+    const company = isLourdes ? formCreateMR.company_code : userProfile.company;
+    if (!company) return;
+
+    generateMRCode(formCreateMR.department, formCreateMR.tujuan_site, company)
+      .then((newKodeMR) => {
+        setFormCreateMR((prev) => ({ ...prev, kode_mr: newKodeMR }));
+      })
+      .catch((error: any) => {
+        toast.error("Gagal generate ulang kode MR", {
+          description: error.message,
+        });
+      });
+  }, [
+    formCreateMR.tujuan_site,
+    formCreateMR.department,
+    formCreateMR.company_code,
+    userProfile,
+    isLourdes,
+  ]);
 
   useEffect(() => {
     const total = formCreateMR.orders.reduce((acc, item) => {
@@ -448,11 +481,15 @@ export default function BuatMRPage() {
 
       const { company_code, ...payload } = formCreateMR;
 
-      // Regenerate kode MR fresh tepat sebelum submit agar tidak pakai kode stale
-      // dari saat halaman pertama dibuka (menghindari race condition antar user)
+      // Regenerate kode MR fresh tepat sebelum submit agar tidak pakai kode
+      // stale dari saat halaman pertama dibuka (menghindari race condition
+      // antar user). Pakai tujuan_site (site TUJUAN pengiriman barang),
+      // BUKAN userLokasi (lokasi asal user yang bikin MR) - keduanya bisa
+      // beda kalau user uncheck "Sama dengan lokasi saya" dan pilih tujuan
+      // site lain secara manual.
       const freshKodeMr = await generateMRCode(
         payload.department,
-        userLokasi,
+        payload.tujuan_site,
         company_code,
       );
 

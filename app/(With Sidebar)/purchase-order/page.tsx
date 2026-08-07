@@ -226,6 +226,7 @@ function PurchaseOrderPageContent() {
   const endDate = searchParams.get("end_date") || "";
   const paymentFilter = searchParams.get("payment_status") || "";
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
+  const assetTypeFilter = searchParams.get("asset_type") || "";
 
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
@@ -363,6 +364,9 @@ function PurchaseOrderPageContent() {
 
         // --- 3. FILTER STANDAR ---
         if (statusFilter) query = query.eq("status", statusFilter);
+        if (assetTypeFilter === "asset") query = query.eq("is_asset", true);
+        else if (assetTypeFilter === "goods")
+          query = query.eq("is_asset", false);
         if (minPrice) query = query.gte("total_price", Number(minPrice));
         if (maxPrice) query = query.lte("total_price", Number(maxPrice));
         if (startDate) query = query.gte("created_at", startDate);
@@ -444,6 +448,7 @@ function PurchaseOrderPageContent() {
     endDate,
     paymentFilter,
     paymentTermFilter,
+    assetTypeFilter,
   ]);
 
   useEffect(() => {
@@ -492,7 +497,7 @@ function PurchaseOrderPageContent() {
         `
             kode_po, status, total_price, company_code, created_at,
             items, approvals, payment_term, vendor_details,
-            dp_paid, bp_paid, attachments,
+            dp_paid, bp_paid, attachments, is_asset,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
@@ -542,6 +547,9 @@ function PurchaseOrderPageContent() {
         query = query.or(orFilter);
       }
       if (statusFilter) query = query.eq("status", statusFilter);
+      if (assetTypeFilter === "asset") query = query.eq("is_asset", true);
+      else if (assetTypeFilter === "goods")
+        query = query.eq("is_asset", false);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
       if (startDate) query = query.gte("created_at", startDate);
@@ -761,6 +769,27 @@ function PurchaseOrderPageContent() {
                           {opt.label}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Jenis PO</label>
+                  <Select
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        asset_type: value === "all" ? undefined : value,
+                      })
+                    }
+                    defaultValue={assetTypeFilter || "all"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter jenis PO..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      <SelectItem value="asset">Asset</SelectItem>
+                      <SelectItem value="goods">Barang (Non-Asset)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

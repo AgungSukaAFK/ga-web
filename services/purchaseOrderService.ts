@@ -518,14 +518,16 @@ export const createPurchaseOrder = async (
         (sum, entry) => sum + (entry.qty || 0),
         0,
       );
-      // Qty kumulatif dari semua PO terkait < qty yang diminta MR => item
-      // baru terpenuhi sebagian, jangan tandai "PO Created" dulu supaya
-      // sisa qty tetap kelihatan masih perlu di-PO-kan.
+      // Status item MR SELALU "Processing" begitu masuk PO (baik qty-nya
+      // baru terpenuhi sebagian maupun sudah penuh - "PO Created" sebagai
+      // status terpisah sudah tidak dipakai lagi). Sinyal "qty sudah penuh
+      // ke-cover PO" dipindah ke `level` (Open 3A) di bawah - itu yang
+      // dipakai recalculateMrStatus buat nentuin item ini sudah "linked".
       const isQtyFulfilled =
         !!originalOrder && cumulativeQty >= Number(originalOrder.qty);
-      // Level Open 3A cuma dipasang begitu qty terpenuhi penuh (selaras
-      // dengan status "PO Created") - dan jangan timpa kalau item ini
-      // sudah ditandai "Open 3B" (payment issue) secara manual.
+      // Level Open 3A cuma dipasang begitu qty terpenuhi penuh - dan jangan
+      // timpa kalau item ini sudah ditandai "Open 3B" (payment issue) secara
+      // manual.
       const nextLevel =
         isQtyFulfilled && originalOrder?.level !== "Open 3B"
           ? "Open 3A"
@@ -535,7 +537,7 @@ export const createPurchaseOrder = async (
           mr_id,
           poItem.part_number,
           {
-            status: isQtyFulfilled ? "PO Created" : "Processing",
+            status: "Processing",
             level: nextLevel,
             poRef: newPo.kode_po,
           },
@@ -770,8 +772,11 @@ export const submitReceiveRecord = async (
     const order = orders.find((o) => o.part_number === item.part_number);
     // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
     // PO lain) dilewati supaya tidak ketimpa - sama seperti guard lama.
+    // "PO Created" di sini cuma backward-compat buat data lama yang belum
+    // sempat dimigrasikan ke "Processing" (lihat migrate-legacy-mr-po.mjs) -
+    // item baru tidak akan pernah ditulis dengan status ini lagi.
     if (
-      order?.status !== "PO Created" &&
+      (order?.status as string | undefined) !== "PO Created" &&
       order?.status !== MR_ITEM_STATUSES.PROCESSING &&
       order?.status !== MR_ITEM_STATUSES.PENDING_BAST
     ) {

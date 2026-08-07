@@ -547,7 +547,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       poBreakdown[selectedItemForStatus.part_number] || []
     ).reduce((sum, entry) => sum + (entry.qty || 0), 0);
     const requestedQty = Number(selectedItemForStatus.qty) || 0;
-    const isFulfillingStatus = ["PO Created", "Completed"].includes(
+    // "PO Created" (dulu status terpisah utk "qty penuh ke-cover PO") sudah
+    // dilebur ke "Processing" - jadi warning qty-belum-penuh ini sekarang
+    // ikut dicek juga kalau admin manual set "Processing".
+    const isFulfillingStatus = ["Processing", "Completed"].includes(
       itemStatusForm.status,
     );
 
@@ -628,18 +631,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       0,
     );
     const requested = Number(item.qty) || 0;
-    const newStatus =
-      cumulative >= requested && requested > 0
-        ? "PO Created"
-        : cumulative > 0
-          ? "Processing"
-          : "Pending";
+    // "PO Created" (dulu status terpisah utk qty penuh ke-cover) sudah
+    // dilebur ke "Processing" - sinyal "penuh ke-cover" dipindah ke `level`
+    // (Open 3A), sama seperti alur pembuatan PO normal di
+    // purchaseOrderService.ts, supaya recalculateMrStatus (mrService.ts)
+    // tetap bisa bedain item yang sudah penuh vs masih sebagian ke-cover.
+    const isFulfilled = cumulative >= requested && requested > 0;
+    const newStatus = cumulative > 0 ? "Processing" : "Pending";
+    const newLevel =
+      isFulfilled && item.level !== "Open 3B" ? "Open 3A" : undefined;
 
-    if (newStatus !== item.status) {
+    if (newStatus !== item.status || (newLevel && newLevel !== item.level)) {
       await updateMrItemStatus(
         mrId,
         item.part_number,
-        { status: newStatus },
+        { status: newStatus, level: newLevel },
         currentUser.id,
       );
     }
