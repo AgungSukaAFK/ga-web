@@ -4,6 +4,7 @@
 
 # Dumps dari production (jangan pernah commit - berisi data real)
 prod-dump/
+migration-reports/
 
 # dotenvx
 .env.keys

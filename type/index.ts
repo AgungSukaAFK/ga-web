@@ -459,8 +459,12 @@ export interface Notification {
 
 export type MrItemStatus =
   | "Pending"
-  | "Processing" // Sedang diproses (misal masuk Draft PO)
-  | "PO Created" // Sudah resmi ada di PO
+  // Sedang diproses - baik masih sebagian ke-cover PO, sudah PENUH ke-cover
+  // PO (tinggal nunggu vendor kirim - cek `level` "Open 3A" ke atas untuk
+  // bedain dari yang masih sebagian), maupun hasil checklist Receiver yang
+  // qty-nya belum sesuai. "PO Created" (status terpisah dulu) sudah tidak
+  // dipakai lagi, dilebur ke sini.
+  | "Processing"
   | "Pending BAST" // Barang sudah diterima GA, tinggal nunggu requester upload BAST
   | "Completed" // Requester sudah upload BAST utk item ini
   | "Cancelled" // Dibatalkan oleh Purchasing

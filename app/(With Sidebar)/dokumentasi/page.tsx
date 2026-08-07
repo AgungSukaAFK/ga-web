@@ -29,10 +29,14 @@ import {
   FileX,
   HelpCircle,
   Layers,
+  ListChecks,
   Package,
+  PackageCheck,
+  Printer,
   Send,
   Truck,
   Users,
+  Wallet,
   WalletCards,
   Workflow,
 } from "lucide-react";
@@ -64,6 +68,24 @@ const ListItem = ({ children }: { children: React.ReactNode }) => (
   </li>
 );
 
+const StatusRow = ({
+  icon: Icon,
+  badge,
+  children,
+}: {
+  icon: React.ElementType;
+  badge: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <div className="flex items-start gap-3">
+    <Icon className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+    <div>
+      {badge}
+      <p className="text-xs text-muted-foreground">{children}</p>
+    </div>
+  </div>
+);
+
 export default function DokumentasiPage() {
   return (
     <>
@@ -90,6 +112,58 @@ export default function DokumentasiPage() {
             General Affair (GA) pada saat proses validasi. Estimasi Biaya MR
             juga sekarang dihitung otomatis berdasarkan total estimasi harga per
             item.
+          </AlertDescription>
+        </Alert>
+      </Content>
+
+      <Content className="col-span-12">
+        <Alert variant="default" className="bg-emerald-50 border-emerald-200">
+          <PackageCheck className="h-4 w-4 text-emerald-600" />
+          <AlertTitle className="text-emerald-700 font-semibold">
+            Pembaruan Alur Kerja: Penerimaan Barang (PO)!
+          </AlertTitle>
+          <AlertDescription className="text-emerald-700 space-y-2">
+            <p>
+              Istilah status PO <strong>&quot;Pending BAST&quot;</strong> dan{" "}
+              <strong>&quot;Completed&quot;</strong> sudah tidak dipakai lagi.
+              Sebagai gantinya, ada 3 status baru seputar penerimaan barang:{" "}
+              <Badge variant="secondary">Pending Receive</Badge>,{" "}
+              <Badge className="bg-amber-600 text-white">Partial Receive</Badge>
+              , dan <Badge variant="outline">Full Received</Badge>.
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-sm">
+              <li>
+                Ada peran/step approval baru bernama{" "}
+                <strong>&quot;Receiver&quot;</strong> - step ini (kalau dipakai
+                di template approval PO) atau tombol &quot;Terima Barang&quot;
+                manual oleh GA, sekarang WAJIB mengisi checklist qty barang
+                yang aktual diterima dibandingkan qty di PO, per item.
+              </li>
+              <li>
+                Kalau semua item qty-nya pas → PO otomatis{" "}
+                <Badge variant="outline">Full Received</Badge>. Kalau ada yang
+                kurang/tidak datang →{" "}
+                <Badge className="bg-amber-600 text-white">
+                  Partial Receive
+                </Badge>
+                , dan checklist-nya bisa diedit ulang kapan saja sampai sesuai.
+              </li>
+              <li>
+                Riwayat checklist penerimaan barang ini bisa dicetak (tombol
+                &quot;Cetak Riwayat Receive&quot; di halaman detail PO).
+              </li>
+              <li>
+                Untuk PO dengan metode pembayaran DP & Pelunasan, Payment
+                Validator sekarang bisa mengedit status DP/BP kapan saja
+                (tombol &quot;Edit DP/BP&quot;) - tidak cuma sekali pas
+                approve.
+              </li>
+              <li>
+                Urutan step Receiver vs Payment Validator di template approval
+                menentukan urutan alurnya - lihat penjelasan lengkap di bagian
+                &quot;4 Varian Alur Pembayaran PO&quot; di bawah.
+              </li>
+            </ul>
           </AlertDescription>
         </Alert>
       </Content>
@@ -343,6 +417,96 @@ export default function DokumentasiPage() {
           </AccordionItem>
 
           {/* ====================================================== */}
+          {/* VARIAN ALUR PEMBAYARAN PO */}
+          {/* ====================================================== */}
+          <AccordionItem value="item-payment-flow">
+            <AccordionTrigger className="text-xl font-semibold">
+              <div className="flex items-center gap-3">
+                <Wallet className="h-5 w-5" />4 Varian Alur Pembayaran PO
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Urutan step <strong>&quot;Receiver&quot;</strong> (terima
+                barang) vs <strong>&quot;Payment Validator&quot;</strong>{" "}
+                (bayar) di template approval PO menentukan jalur mana yang
+                dipakai - GA yang menerapkan template ke PO harus memastikan
+                urutannya sesuai metode pembayaran PO tersebut. Status akhir
+                tetap sama untuk semua jalur:{" "}
+                <Badge variant="outline">Full Received</Badge> (kalau qty
+                sesuai) atau{" "}
+                <Badge className="bg-amber-600 text-white">
+                  Partial Receive
+                </Badge>{" "}
+                (kalau tidak).
+              </p>
+
+              <div className="space-y-3">
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    1. Jalur Cash
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Template: <strong>Payment Validator lebih dulu</strong>,
+                    baru Receiver.
+                    <br />
+                    MR dibuat → full approval → PO dibuat → Payment Validator
+                    approve (PO jadi{" "}
+                    <Badge variant="secondary">Pending Receive</Badge>) →
+                    Receiver terima barang & isi checklist → langsung final
+                    (Full Received/Partial Receive).
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    2. Jalur Termin
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Template: <strong>Receiver lebih dulu</strong>, baru
+                    Payment Validator.
+                    <br />
+                    MR dibuat → full approval → PO dibuat (mis. Termin 30
+                    Hari) → Receiver terima barang & isi checklist duluan (PO
+                    jadi <Badge variant="secondary">Pending Payment</Badge>)
+                    → approval lanjut ke Payment Validator → begitu
+                    disetujui, langsung final (Full Received/Partial Receive
+                    - tergantung hasil checklist Receiver sebelumnya).
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    3. Jalur DP & Pelunasan (barang dikirim setelah DP)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Sama urutan template-nya seperti Jalur Termin (Receiver
+                    lebih dulu). Bedanya, step Payment Validator di sini
+                    punya 2 checkbox terpisah: <strong>DP</strong> dan{" "}
+                    <strong>BP (Pelunasan)</strong>. Vendor sudah boleh kirim
+                    &amp; Receiver sudah bisa terima barang begitu DP lunas -
+                    BP boleh menyusul belakangan, dan bisa diedit kapan saja
+                    lewat tombol &quot;Edit DP/BP&quot;.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    4. Jalur DP & Pelunasan (barang dikirim setelah lunas)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Sama urutan template-nya seperti Jalur Cash (Payment
+                    Validator lebih dulu). Bedanya, step Payment Validator di
+                    sini juga punya checkbox DP &amp; BP terpisah - tapi
+                    barang baru boleh dikirim &amp; diterima setelah{" "}
+                    <strong>DP dan BP sama-sama lunas</strong>.
+                  </p>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* ====================================================== */}
           {/* PERAN & TANGGUNG JAWAB */}
           {/* ====================================================== */}
           <AccordionItem value="item-3">
@@ -383,6 +547,18 @@ export default function DokumentasiPage() {
                   Bertanggung jawab mengeksekusi MR yang berstatus &quot;Waiting
                   PO&quot;. Membuat PO, memilih barang dari master data,
                   menginput harga final, dan mengelola data master barang.
+                </p>
+              </div>
+              <div>
+                <Badge className="bg-emerald-600 text-white">Receiver</Badge>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Biasanya GA/Warehouse. Bertanggung jawab mengecek fisik
+                  barang yang datang dari vendor dan mengisi checklist qty
+                  aktual diterima vs qty di PO - baik lewat step approval
+                  &quot;Receiver&quot; (kalau dipakai di template) maupun
+                  tombol &quot;Terima Barang&quot; manual. Bisa mengedit
+                  checklist ini lagi kalau statusnya masih &quot;Partial
+                  Receive&quot;.
                 </p>
               </div>
               <div>
@@ -495,92 +671,277 @@ export default function DokumentasiPage() {
                 belum diterima. Hanya Requester asli yang membuat MR yang
                 dapat mengunggah BAST.
               </p>
+
+              <h5 className="font-semibold">
+                T: Kapan saya (Receiver/GA) bisa mulai isi checklist
+                penerimaan barang?
+              </h5>
+              <p className="text-sm text-muted-foreground -mt-2">
+                J: Begitu status PO sudah{" "}
+                <Badge variant="secondary">Pending Receive</Badge> (kalau
+                pembayaran sudah beres duluan) atau saat giliran step approval
+                &quot;Receiver&quot; tiba (kalau barang diterima duluan -
+                Jalur Termin/DP&amp;BP-setelah-DP). Tombol &quot;Terima
+                Barang&quot; akan muncul di halaman detail PO.
+              </p>
+
+              <h5 className="font-semibold">
+                T: Saya salah isi qty saat checklist penerimaan barang,
+                bagaimana cara membetulkannya?
+              </h5>
+              <p className="text-sm text-muted-foreground -mt-2">
+                J: Selama status PO masih{" "}
+                <Badge className="bg-amber-600 text-white">
+                  Partial Receive
+                </Badge>
+                , tombol &quot;Edit Penerimaan Barang&quot; akan tetap muncul
+                dan checklist-nya bisa diisi ulang. Begitu semua qty sudah
+                sesuai PO, status otomatis jadi{" "}
+                <Badge variant="outline">Full Received</Badge>.
+              </p>
+
+              <h5 className="font-semibold">
+                T: PO saya metode DP &amp; Pelunasan, tapi saya (Payment
+                Validator) salah centang DP/BP. Bisa diubah lagi?
+              </h5>
+              <p className="text-sm text-muted-foreground -mt-2">
+                J: Bisa, kapan saja - klik tombol &quot;Edit DP/BP&quot; di
+                halaman detail PO. Tombol ini selalu tersedia untuk Payment
+                Validator PO tersebut (atau Admin), tidak dibatasi cuma sekali
+                pas approve.
+              </p>
             </AccordionContent>
           </AccordionItem>
         </Accordion>
       </Content>
 
       <Content className="col-span-12 lg:col-span-4">
-        <h3 className="font-semibold text-lg mb-4">Status MR & PO</h3>
-        <div className="space-y-3">
-          <div className="flex items-start gap-3">
-            <FileClock className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="secondary">Pending Validation</Badge>
-              <p className="text-xs text-muted-foreground">
-                Dokumen baru dibuat dan sedang ditinjau oleh General Affair
-                (GA).
-              </p>
+        <h3 className="font-semibold text-lg mb-4">
+          Referensi Status & Istilah
+        </h3>
+
+        <div className="space-y-6">
+          {/* ---------------- STATUS MR ---------------- */}
+          <div>
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Status MR (Dokumen)
+            </h4>
+            <div className="space-y-3">
+              <StatusRow
+                icon={FileClock}
+                badge={<Badge variant="secondary">Pending Validation</Badge>}
+              >
+                MR baru dibuat, sedang ditinjau &amp; ditentukan Cost
+                Center-nya oleh GA.
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={<Badge variant="outline">On Hold</Badge>}
+              >
+                MR ditahan sementara (mis. menunggu info tambahan dari
+                Requester) sebelum lanjut ke antrian approval.
+              </StatusRow>
+              <StatusRow
+                icon={ChevronsUpDown}
+                badge={<Badge variant="secondary">Pending Approval</Badge>}
+              >
+                Sedang dalam antrian persetujuan berjenjang oleh
+                Manager/GM/Direksi sesuai template approval.
+              </StatusRow>
+              <StatusRow
+                icon={FileSpreadsheet}
+                badge={
+                  <Badge className="bg-blue-500 text-white">Waiting PO</Badge>
+                }
+              >
+                Sudah disetujui penuh oleh semua approver, siap dibuatkan PO
+                oleh Purchasing. Budget Cost Center dipotong di titik ini.
+              </StatusRow>
+              <StatusRow
+                icon={Package}
+                badge={
+                  <Badge className="bg-cyan-600 text-white">On Process</Badge>
+                }
+              >
+                Sebagian/semua item MR sudah masuk PO tapi belum semua item
+                selesai diterima &amp; di-BAST.
+              </StatusRow>
+              <StatusRow
+                icon={CheckCheck}
+                badge={<Badge variant="outline">Completed</Badge>}
+              >
+                Semua item di MR ini statusnya sudah &quot;Completed&quot;
+                (sudah di-BAST semua) - siklus MR selesai.
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={<Badge variant="destructive">Rejected</Badge>}
+              >
+                Ditolak oleh GA saat validasi, atau oleh salah satu approver
+                di jalur persetujuan.
+              </StatusRow>
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <ChevronsUpDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="secondary">Pending Approval</Badge>
-              <p className="text-xs text-muted-foreground">
-                Dokumen sedang dalam antrian persetujuan oleh
-                Manager/GM/Direksi.
-              </p>
+
+          {/* ---------------- STATUS ITEM/BARANG ---------------- */}
+          <div>
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Status Item/Barang (di dalam MR)
+            </h4>
+            <p className="text-xs text-muted-foreground mb-2">
+              Tiap barang yang diminta di dalam satu MR punya status
+              sendiri-sendiri, terpisah dari status MR keseluruhan di atas -
+              karena satu MR bisa berisi banyak barang yang diproses lewat PO
+              berbeda-beda.
+            </p>
+            <div className="space-y-3">
+              <StatusRow
+                icon={FileBox}
+                badge={<Badge variant="secondary">Pending (Menunggu)</Badge>}
+              >
+                Barang belum diproses Purchasing sama sekali, belum masuk PO
+                manapun.
+              </StatusRow>
+              <StatusRow
+                icon={FileBox}
+                badge={
+                  <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+                    Processing (Proses PO)
+                  </Badge>
+                }
+              >
+                Sedang disiapkan Purchasing / sudah masuk ke sebuah PO,
+                menunggu vendor kirim &amp; barangnya diterima (baik yang
+                qty-nya baru sebagian maupun sudah penuh ke-cover PO -
+                keduanya sama-sama &quot;Processing&quot;).
+              </StatusRow>
+              <StatusRow
+                icon={PackageCheck}
+                badge={<Badge variant="secondary">Pending BAST</Badge>}
+              >
+                Barang sudah dicek fisik &amp; qty-nya sesuai oleh Receiver/GA
+                (PO-nya sudah &quot;Full Received&quot;) - tinggal menunggu
+                Requester upload bukti BAST.
+              </StatusRow>
+              <StatusRow
+                icon={CheckCheck}
+                badge={
+                  <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Completed (BAST Selesai)
+                  </Badge>
+                }
+              >
+                Requester sudah upload bukti BAST untuk item ini - dipakai
+                untuk kebutuhan laporan.
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={
+                  <Badge className="bg-red-50 text-red-700 border border-red-200">
+                    Cancelled (Dibatalkan)
+                  </Badge>
+                }
+              >
+                Dibatalkan (mis. PO yang meng-cover barang ini di-Reject dan
+                tidak ada PO lain yang menggantikannya).
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={
+                  <Badge className="bg-yellow-50 text-yellow-700 border border-yellow-200">
+                    Replaced (Diganti)
+                  </Badge>
+                }
+              >
+                Barang ini diganti dengan barang lain saat proses belanja
+                Purchasing (substitusi).
+              </StatusRow>
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <FileSpreadsheet className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge className="bg-blue-500 text-white">Waiting PO</Badge>
-              <p className="text-xs text-muted-foreground">
-                Hanya untuk MR. MR sudah disetujui penuh dan siap dibuatkan PO
-                oleh Purchasing.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="secondary">Pending Receive</Badge>
-              <p className="text-xs text-muted-foreground">
-                Hanya untuk PO. PO sudah disetujui penuh, menunggu barang
+
+          {/* ---------------- STATUS PO ---------------- */}
+          <div>
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Status PO
+            </h4>
+            <div className="space-y-3">
+              <StatusRow
+                icon={FileClock}
+                badge={<Badge variant="secondary">Pending Validation</Badge>}
+              >
+                PO baru dibuat Purchasing, menunggu GA menerapkan template
+                approval.
+              </StatusRow>
+              <StatusRow
+                icon={ChevronsUpDown}
+                badge={<Badge variant="secondary">Pending Approval</Badge>}
+              >
+                Sedang dalam antrian persetujuan berjenjang (Payment
+                Validator/Payment Approval/Receiver/dst, sesuai template).
+              </StatusRow>
+              <StatusRow
+                icon={WalletCards}
+                badge={
+                  <Badge className="bg-orange-500 text-white">
+                    Pending Payment
+                  </Badge>
+                }
+              >
+                Menunggu step pembayaran (Payment Approval/Payment Validator)
+                selesai - bisa muncul sebelum ATAU sesudah barang diterima,
+                tergantung jalur pembayarannya (lihat &quot;4 Varian Alur
+                Pembayaran PO&quot;).
+              </StatusRow>
+              <StatusRow
+                icon={Truck}
+                badge={<Badge variant="secondary">Pending Receive</Badge>}
+              >
+                Approval &amp; pembayaran sudah selesai, menunggu barang
                 diterima &amp; di-checklist oleh Receiver/GA.
-              </p>
+              </StatusRow>
+              <StatusRow
+                icon={ListChecks}
+                badge={
+                  <Badge className="bg-amber-600 text-white">
+                    Partial Receive
+                  </Badge>
+                }
+              >
+                Barang sudah diterima &amp; di-checklist, tapi qty/jenisnya
+                belum sesuai PO - menunggu Receiver mengedit ulang
+                checklist-nya sampai sesuai.
+              </StatusRow>
+              <StatusRow
+                icon={PackageCheck}
+                badge={<Badge variant="outline">Full Received</Badge>}
+              >
+                Siklus PO selesai - semua barang sudah diterima sesuai qty di
+                PO (status akhir/final untuk PO).
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={<Badge variant="destructive">Rejected</Badge>}
+              >
+                Ditolak oleh salah satu approver di jalur persetujuan PO.
+              </StatusRow>
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge className="bg-amber-600 text-white">Partial Receive</Badge>
-              <p className="text-xs text-muted-foreground">
-                Hanya untuk PO. Barang sudah diterima tapi qty/jenisnya belum
-                sesuai PO - menunggu Receiver mengedit checklist-nya.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <CheckCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="outline">Full Received</Badge>
-              <p className="text-xs text-muted-foreground">
-                Hanya untuk PO. Siklus PO selesai - semua barang sudah
-                diterima sesuai qty PO.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <CheckCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="outline">Completed</Badge>
-              <p className="text-xs text-muted-foreground">
-                Hanya untuk MR/item. Item sudah di-BAST oleh Requester
-                (laporan) - tidak lagi mempengaruhi status PO.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <FileX className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <Badge variant="destructive">Rejected</Badge>
-              <p className="text-xs text-muted-foreground">
-                Permintaan ditolak oleh GA atau salah satu Approver.
-              </p>
-            </div>
+
+          {/* ---------------- CATATAN BAST ---------------- */}
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-2">
+              <Printer className="h-4 w-4" /> Soal BAST
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              BAST (Berita Acara Serah Terima) itu <strong>bukan</strong>{" "}
+              status PO - itu dokumen bukti yang di-upload{" "}
+              <strong>Requester</strong> (bukan Receiver) per item, setelah
+              item tersebut berstatus &quot;Pending BAST&quot;. Upload BAST
+              cuma menandai item MR jadi &quot;Completed&quot; untuk
+              kebutuhan laporan - <strong>tidak lagi mengubah status PO</strong>{" "}
+              (status akhir PO cukup berhenti di &quot;Full Received&quot;
+              begitu Receiver selesai checklist).
+            </p>
           </div>
         </div>
       </Content>

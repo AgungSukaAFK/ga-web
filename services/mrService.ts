@@ -417,8 +417,9 @@ export const uploadBastForMrItem = async (
 // yang dibeli disubstitusi pas belanja sehingga part_number-nya beda dari
 // permintaan MR asli, jadi matching otomatis by part_number gagal detect.
 // Cuma nyimpen link-nya di sini; pemanggil bertanggung jawab menghitung
-// ulang status item (pending/processing/PO Created) dari qty kumulatif
-// terbaru (lihat fetchPoQtyBreakdownForMr) lalu panggil updateMrItemStatus.
+// ulang status item (pending/processing, + level Open 3A kalau qty sudah
+// penuh) dari qty kumulatif terbaru (lihat fetchPoQtyBreakdownForMr) lalu
+// panggil updateMrItemStatus.
 export const addManualPoLink = async (
   mrId: number,
   partNumber: string,
@@ -546,11 +547,26 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
     const relevantItems = orders.filter((i) => i.status !== "Cancelled");
     if (relevantItems.length === 0) return;
 
+    // "Linked" = qty item ini sudah PENUH ke-cover oleh PO (tidak perlu
+    // di-PO-kan lagi oleh Purchasing). Dulu ini dicek lewat status "PO
+    // Created", tapi status itu sudah dilebur ke "Processing" (item yang
+    // baru SEBAGIAN ke-cover PO juga "Processing", jadi status doang tidak
+    // cukup buat bedain). Sinyal "penuh ke-cover" sekarang di `level` -
+    // "Open 3A" ke atas cuma dipasang begitu qty benar-benar terpenuhi
+    // (lihat purchaseOrderService.ts & syncItemStatusFromBreakdown di
+    // material-request/[id]/page.tsx).
+    const LINKED_LEVELS = new Set([
+      "Open 3A",
+      "Open 3B",
+      "Open 4",
+      "Open 5",
+      "Close",
+    ]);
     const allLinked = relevantItems.every(
       (i) =>
-        i.status === "PO Created" ||
         i.status === "Pending BAST" ||
-        i.status === "Completed",
+        i.status === "Completed" ||
+        (!!i.level && LINKED_LEVELS.has(i.level)),
     );
 
     // Selama masih "Waiting PO", baru pindah ke "On Process" begitu SEMUA

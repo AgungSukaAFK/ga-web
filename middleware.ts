@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
@@ -6,23 +6,38 @@ export async function middleware(request: NextRequest) {
     request: { headers: request.headers },
   });
 
+  // --- DEBUG SEMENTARA - HAPUS SETELAH MASALAH REDIRECT KETEMU ---
+  console.log("[middleware debug env]", {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY_len: process.env.SUPABASE_ANON_KEY?.length,
+    SUPABASE_ANON_KEY_tail: process.env.SUPABASE_ANON_KEY?.slice(-12),
+  });
+  // ----------------------------------------------------------------
+
   const supabase = createServerClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
+        // PENTING: setAll dipanggil SEKALI per request dengan SEMUA cookie
+        // sesi (access + refresh token, kadang di-chunk jadi beberapa
+        // cookie) - response cuma di-reassign SEKALI di sini, baru semua
+        // cookie di-apply ke response yang baru itu. Pola lama (set/remove
+        // per-cookie yang masing-masing reassign `response` sendiri-sendiri)
+        // bikin cookie yang di-set di panggilan sebelumnya ketiban/hilang -
+        // ini yang bikin sesi putus/nyangkut di /auth/login pas ada token
+        // refresh (soalnya refresh nulis lebih dari 1 cookie sekaligus).
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
           response = NextResponse.next({ request });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: "", ...options });
-          response = NextResponse.next({ request });
-          response.cookies.set({ name, value: "", ...options });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
         },
       },
     }
@@ -32,7 +47,24 @@ export async function middleware(request: NextRequest) {
   // getUser() memvalidasi token ke server auth Supabase
   const {
     data: { user },
+    error: getUserError,
   } = await supabase.auth.getUser();
+
+  // --- DEBUG SEMENTARA - HAPUS SETELAH MASALAH REDIRECT KETEMU ---
+  const rawAuthCookie = request.cookies.get("sb-127-auth-token")?.value;
+  console.log("[middleware debug cookie]", {
+    exists: !!rawAuthCookie,
+    length: rawAuthCookie?.length,
+    startsWithBase64Prefix: rawAuthCookie?.startsWith("base64-"),
+    first30: rawAuthCookie?.slice(0, 30),
+  });
+  console.log("[middleware debug]", {
+    pathname: request.nextUrl.pathname,
+    cookieNames: request.cookies.getAll().map((c) => c.name),
+    hasUser: !!user,
+    getUserError: getUserError?.message,
+  });
+  // ----------------------------------------------------------------
 
   const { pathname } = request.nextUrl;
 
