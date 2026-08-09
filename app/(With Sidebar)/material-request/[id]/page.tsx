@@ -33,6 +33,7 @@ import {
   X,
   Loader2,
   Edit,
+  Pencil,
   Save,
   Plus,
   Trash2,
@@ -1628,7 +1629,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                   }
                                   title="Kelola status & PO"
                                 >
-                                  <Edit className="h-3 w-3" />
+                                  <Pencil className="h-3 w-3" />
                                 </Button>
                               )}
                             </div>

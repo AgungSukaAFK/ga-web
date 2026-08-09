@@ -135,6 +135,17 @@ interface ExtendedPOItem extends POItem {
 // biasa (bukan counter terpisah) - segmen ini murni penanda, dilakukan
 // client-side (string manipulation) supaya tidak perlu fetch ulang nomor
 // urut ke server tiap kali komposisi item berubah.
+// Ambil segmen lokasi/departemen dari kode_mr (format
+// "{company}/MR/{bulan}/{tahun}/{identifier}/{urut}"), dipakai supaya
+// segmen lokasi kode_po PERSIS sama dengan kode_mr saat PO ditautkan ke MR -
+// lihat pemakaiannya di loadMRData.
+const extractIdentifierFromMrCode = (kodeMr: string): string | undefined => {
+  const parts = kodeMr.split("/");
+  const mrIdx = parts.indexOf("MR");
+  if (mrIdx === -1 || parts.length < mrIdx + 4) return undefined;
+  return parts[mrIdx + 3];
+};
+
 const withAssetMarker = (kodePo: string, isAsset: boolean): string => {
   const parts = kodePo.split("/");
   const poIdx = parts.indexOf("PO");
@@ -361,6 +372,7 @@ function CreatePOPageContent() {
     pph_type: null,
     pph_rate: 0,
     pph_amount: 0,
+    is_asset: false,
   });
 
   // Tax States
@@ -444,7 +456,14 @@ function CreatePOPageContent() {
     let regeneratedKodePo: string | undefined;
     if (company && fetchedMr.tujuan_site) {
       try {
-        regeneratedKodePo = await generatePoCode(company, fetchedMr.tujuan_site);
+        const mrIdentifier = fetchedMr.kode_mr
+          ? extractIdentifierFromMrCode(fetchedMr.kode_mr)
+          : undefined;
+        regeneratedKodePo = await generatePoCode(
+          company,
+          fetchedMr.tujuan_site,
+          mrIdentifier,
+        );
       } catch (err) {
         console.error("Gagal generate ulang kode PO dari tujuan_site MR:", err);
       }
@@ -611,17 +630,15 @@ function CreatePOPageContent() {
   ]);
 
   // --- PENANDA KODE PO ASSET ---
-  // Begitu komposisi item diketahui (semua item bertipe sama, sesuai aturan
-  // no-mixing), tandai kode_po dengan segmen "AST" kalau PO ini PO Asset.
+  // Tandai kode_po dengan segmen "AST" mengikuti checkbox "Ini adalah PO
+  // Aset" (poForm.is_asset), bukan lagi dari komposisi item.
   useEffect(() => {
     if (!poForm.kode_po || poForm.kode_po === "Generating...") return;
-    const isAssetPO =
-      poForm.items.length > 0 && poForm.items.every((i) => i.is_asset);
-    const updated = withAssetMarker(poForm.kode_po, isAssetPO);
+    const updated = withAssetMarker(poForm.kode_po, !!poForm.is_asset);
     if (updated !== poForm.kode_po) {
       setPoForm((prev) => ({ ...prev, kode_po: updated }));
     }
-  }, [poForm.items, poForm.kode_po]);
+  }, [poForm.is_asset, poForm.kode_po]);
 
   useEffect(() => {
     let termString = "";
@@ -660,18 +677,6 @@ function CreatePOPageContent() {
   };
 
   const handleAddItemFromDB = (barang: Barang) => {
-    if (
-      poForm.items.length > 0 &&
-      !!barang.is_asset !== !!poForm.items[0].is_asset
-    ) {
-      toast.error(
-        `Tidak bisa ditambahkan - PO ini sudah berisi item ${
-          poForm.items[0].is_asset ? "Asset" : "Barang"
-        }, tidak boleh dicampur dengan ${barang.is_asset ? "Asset" : "Barang"}.`,
-      );
-      return;
-    }
-
     const newItem: ExtendedPOItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
@@ -713,21 +718,6 @@ function CreatePOPageContent() {
 
   const handleReplaceItem = (barang: Barang) => {
     if (replacingIndex === null) return;
-
-    const otherItemsAssetType = poForm.items.find(
-      (_, i) => i !== replacingIndex,
-    )?.is_asset;
-    if (
-      otherItemsAssetType !== undefined &&
-      !!barang.is_asset !== !!otherItemsAssetType
-    ) {
-      toast.error(
-        `Tidak bisa diganti - item lain di PO ini bertipe ${
-          otherItemsAssetType ? "Asset" : "Barang"
-        }, tidak boleh dicampur dengan ${barang.is_asset ? "Asset" : "Barang"}.`,
-      );
-      return;
-    }
 
     const newItems = [...poForm.items];
     const item = newItems[replacingIndex];
@@ -843,12 +833,6 @@ function CreatePOPageContent() {
     }
   };
 
-  // Tipe (asset/goods) yang sudah "dikunci" oleh item-item yang ada di PO
-  // saat ini - null berarti belum ada item sama sekali (bebas pilih tipe apa
-  // dulu). 1 PO tidak boleh campur asset & goods.
-  const lockedAssetType: boolean | null =
-    poForm.items.length > 0 ? !!poForm.items[0].is_asset : null;
-
   const getOrderIsAsset = (order: any): boolean =>
     order.barang_id ? !!barangAssetMap[order.barang_id] : false;
 
@@ -865,11 +849,7 @@ function CreatePOPageContent() {
     return Math.max(0, Number(order.qty) - covered);
   };
 
-  const isOrderSelectable = (order: any): boolean => {
-    if (getRemainingQty(order) <= 0) return false;
-    if (lockedAssetType === null) return true;
-    return getOrderIsAsset(order) === lockedAssetType;
-  };
+  const isOrderSelectable = (order: any): boolean => getRemainingQty(order) > 0;
 
   const toggleSelection = (index: number) => {
     const order = mrData?.orders[index];
@@ -927,12 +907,26 @@ function CreatePOPageContent() {
               <span className="font-semibold text-primary">
                 {poForm.kode_po}
               </span>
-              {poForm.items.length > 0 &&
-                poForm.items.every((i) => i.is_asset) && (
-                  <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
-                    PO Asset
-                  </Badge>
-                )}
+              <div className="flex items-center gap-1.5 ml-1">
+                <Checkbox
+                  id="is-asset-po"
+                  checked={!!poForm.is_asset}
+                  onCheckedChange={(c) =>
+                    setPoForm((prev) => ({ ...prev, is_asset: c as boolean }))
+                  }
+                />
+                <label
+                  htmlFor="is-asset-po"
+                  className="text-sm font-medium cursor-pointer select-none"
+                >
+                  Ini adalah PO Aset
+                </label>
+              </div>
+              {poForm.is_asset && (
+                <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
+                  PO Asset
+                </Badge>
+              )}
               {mrData ? (
                 <Tooltip>
                   <TooltipTrigger>
@@ -1091,14 +1085,6 @@ function CreatePOPageContent() {
             title="Pilih Item dari Material Request"
             description="Centang item yang akan diproses ke PO."
           >
-            {lockedAssetType !== null && (
-              <div className="mb-3 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
-                PO ini sudah terkunci sebagai PO{" "}
-                <strong>{lockedAssetType ? "Asset" : "Barang"}</strong> -
-                item dengan tipe berbeda tidak bisa ikut dipilih. Buat PO
-                terpisah untuk tipe lainnya.
-              </div>
-            )}
             <div className="mb-2 flex items-center space-x-2">
               <Checkbox
                 id="select-all"
@@ -1132,14 +1118,10 @@ function CreatePOPageContent() {
                     const selectable = isOrderSelectable(order);
                     const remaining = getRemainingQty(order);
                     const isAsset = getOrderIsAsset(order);
-                    const typeMismatch =
-                      lockedAssetType !== null && isAsset !== lockedAssetType;
                     const disabledReason =
                       remaining <= 0
                         ? "Qty sudah terpenuhi sepenuhnya oleh PO lain"
-                        : typeMismatch
-                          ? `Tidak bisa digabung - PO ini sudah terkunci sebagai PO ${lockedAssetType ? "Asset" : "Barang"}`
-                          : undefined;
+                        : undefined;
 
                     return (
                       <TableRow

@@ -242,6 +242,7 @@ export const fetchMaterialRequestById = async (mrId: number) => {
 export const generatePoCode = async (
   company_code: string,
   lokasi: string,
+  identifierOverride?: string,
 ): Promise<string> => {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -291,7 +292,15 @@ export const generatePoCode = async (
     "Head Office": "HO",
   };
 
-  const identifier = lokasiAbbreviations[lokasi] || lokasi;
+  // identifierOverride dipakai saat PO ditautkan ke MR - segmen lokasi PO
+  // harus PERSIS sama dengan yang ada di kode_mr (lihat pemanggil di
+  // purchase-order/create/page.tsx), bukan dihitung ulang dari tujuan_site
+  // via lokasiAbbreviations di sini, karena generateMRCode di mrService.ts
+  // punya branching khusus (pakai deptAbbreviations) saat tujuan_site MR-nya
+  // "Head Office" - kalau dihitung ulang di sini hasilnya bisa beda ("HO")
+  // dari yang sebenarnya tertulis di kode_mr (kode departemen).
+  const identifier =
+    identifierOverride || lokasiAbbreviations[lokasi] || lokasi;
 
   return `${prefix}/PO/${currentMonthRoman}/${currentYearYY}/${identifier}/${nextNumber}`;
 };
@@ -403,17 +412,9 @@ export const createPurchaseOrder = async (
   user_id: string,
   company_code: string,
 ) => {
-  // Aturan keras: 1 PO tidak boleh mencampur item Asset dan Barang biasa.
-  // UI sudah mencegah ini saat user menambah item, tapi divalidasi lagi di
-  // sini sebagai lapisan pertahanan terakhir sebelum data masuk DB.
-  const assetFlags = new Set((poData.items || []).map((i) => !!i.is_asset));
-  if (assetFlags.size > 1) {
-    throw new Error(
-      "PO tidak boleh mencampur item Asset dan Barang biasa. Pisahkan menjadi PO terpisah.",
-    );
-  }
-  const isAssetPO = assetFlags.has(true);
-
+  // Status PO Asset ditentukan manual oleh purchasing lewat checkbox "Ini
+  // adalah PO Aset" saat bikin PO (poData.is_asset), bukan lagi auto-derive
+  // dari is_asset item (data master Barang).
   const payload = {
     ...poData,
     mr_id,
@@ -421,7 +422,7 @@ export const createPurchaseOrder = async (
     company_code,
     status: "Pending Validation" as const,
     approvals: [],
-    is_asset: isAssetPO,
+    is_asset: !!poData.is_asset,
   };
 
   let newPo;
