@@ -39,6 +39,7 @@ import {
   Tag,
   DollarSign,
   MoreHorizontal,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -51,7 +52,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
-import { Profile, Order, MaterialRequestListItem } from "@/type";
+import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
@@ -61,13 +62,16 @@ import {
   cn,
 } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { LIMIT_OPTIONS, STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
 import {
   fetchActiveCostCenters,
   normalizeMrOrders,
+  uploadBastForMrItem,
 } from "@/services/mrService";
+import { uploadAttachmentVps } from "@/services/storageService";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -131,6 +135,13 @@ export default function MrManagementClient() {
   const [selectedMr, setSelectedMr] = useState<MaterialRequestListItem | null>(
     null,
   );
+
+  // --- Upload BAST State (Admin, via MR Management) ---
+  const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
+  const [selectedItemForBast, setSelectedItemForBast] =
+    useState<Order | null>(null);
+  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
+  const [uploadingBast, setUploadingBast] = useState(false);
 
   // --- URL Params ---
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
@@ -524,6 +535,87 @@ export default function MrManagementClient() {
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
     setIsQuickViewOpen(true);
+  };
+
+  // --- Upload BAST (Admin, via MR Management) ---
+  const handleOpenBastUpload = (item: Order) => {
+    setSelectedItemForBast(item);
+    setBastFiles(null);
+    setIsBastUploadOpen(true);
+  };
+
+  // Refresh status/level/orders satu MR saja (dipanggil setelah upload BAST)
+  // - biar Quick View & baris tabel ikut update tanpa refetch seluruh list.
+  const refreshMrRow = async (mrId: number) => {
+    const { data, error } = await s
+      .from("material_requests")
+      .select("id, status, level, orders")
+      .eq("id", mrId)
+      .single();
+    if (error || !data) return;
+
+    const orders = normalizeMrOrders(
+      Array.isArray(data.orders) ? data.orders : [],
+    );
+    setSelectedMr((prev) =>
+      prev && Number(prev.id) === mrId
+        ? { ...prev, status: data.status, level: data.level, orders }
+        : prev,
+    );
+    setDataMR((prev) =>
+      prev.map((mr) =>
+        Number(mr.id) === mrId
+          ? { ...mr, status: data.status, level: data.level, orders }
+          : mr,
+      ),
+    );
+  };
+
+  const handleUploadItemBast = async () => {
+    if (!selectedMr || !selectedItemForBast?.part_number) return;
+    if (!bastFiles || bastFiles.length === 0) {
+      toast.error("Pilih file BAST terlebih dahulu");
+      return;
+    }
+    if (!currentUser) {
+      toast.error("Sesi tidak valid, silakan muat ulang halaman");
+      return;
+    }
+
+    setUploadingBast(true);
+    try {
+      const uploadedAttachments: Attachment[] = [];
+      for (let i = 0; i < bastFiles.length; i++) {
+        const file = bastFiles[i];
+        const filePath = `${selectedMr.kode_mr.replace(/\//g, "-")}/bast/${
+          selectedItemForBast.part_number
+        }/${Date.now()}_${file.name}`;
+        const formData = new FormData();
+        formData.append("file", file);
+        const result = await uploadAttachmentVps(formData, filePath);
+        if (!result.success) throw new Error(result.message);
+        uploadedAttachments.push({
+          name: file.name,
+          url: result.url,
+          type: "bast",
+        });
+      }
+
+      await uploadBastForMrItem(
+        Number(selectedMr.id),
+        selectedItemForBast.part_number,
+        uploadedAttachments,
+        currentUser.id,
+      );
+
+      toast.success("BAST berhasil diunggah, item ditandai selesai");
+      setIsBastUploadOpen(false);
+      await refreshMrRow(Number(selectedMr.id));
+    } catch (err: any) {
+      toast.error("Gagal upload BAST", { description: err.message });
+    } finally {
+      setUploadingBast(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -1082,6 +1174,7 @@ export default function MrManagementClient() {
                         <TableHead>Est. Harga</TableHead>
                         <TableHead>Total</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1107,12 +1200,27 @@ export default function MrManagementClient() {
                                 {item.status || "Pending"}
                               </Badge>
                             </TableCell>
+                            <TableCell>
+                              {currentUser?.role === "admin" &&
+                                item.status === "Pending BAST" &&
+                                item.part_number && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={() => handleOpenBastUpload(item)}
+                                  >
+                                    <Upload className="mr-1 h-3 w-3" /> Upload
+                                    BAST
+                                  </Button>
+                                )}
+                            </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
                           <TableCell
-                            colSpan={6}
+                            colSpan={7}
                             className="text-center text-muted-foreground h-16"
                           >
                             Tidak ada barang.
@@ -1144,6 +1252,45 @@ export default function MrManagementClient() {
                 </Link>
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- UPLOAD BAST DIALOG (Admin, via MR Management) --- */}
+      <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload BAST Barang</DialogTitle>
+            <DialogDescription>
+              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
+              untuk <strong>{selectedItemForBast?.name}</strong>. Item ini
+              akan ditandai selesai setelah bukti diunggah.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="admin-item-bast-file">File BAST / Bukti Foto</Label>
+            <Input
+              id="admin-item-bast-file"
+              type="file"
+              multiple
+              onChange={(e) => setBastFiles(e.target.files)}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBastUploadOpen(false)}
+              disabled={uploadingBast}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleUploadItemBast} disabled={uploadingBast}>
+              {uploadingBast && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Upload & Selesaikan
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
