@@ -418,6 +418,81 @@ export const uploadBastForMrItem = async (
   return { success: true };
 };
 
+// Hapus satu lampiran BAST dari item MR (kebalikan dari uploadBastForMrItem).
+// `bast_attachments` per-item adalah SATU-SATUNYA sumber data BAST di
+// seluruh app (list item MR, MR Management, tabel referensi barang di PO,
+// dan "Lampiran BAST" di PO semuanya baca field yang sama) - jadi hapus di
+// sini otomatis kepropagasi ke semua tempat itu tanpa perlu sinkronisasi
+// manual. Kalau ini lampiran TERAKHIR utk item ini, item dikembalikan ke
+// "Pending BAST" (bukti sudah gak ada lagi, gak valid lagi disebut selesai)
+// - status/level MR ikut dihitung ulang biar konsisten.
+export const removeBastForMrItem = async (
+  mrId: number,
+  partNumber: string,
+  attachmentUrl: string,
+  userId: string,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk hapus BAST.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const itemIndex = currentOrders.findIndex(
+    (item) => item.part_number && item.part_number === partNumber,
+  );
+
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  const existingAttachments: Attachment[] = Array.isArray(
+    itemToUpdate.bast_attachments,
+  )
+    ? itemToUpdate.bast_attachments
+    : [];
+  const remainingAttachments = existingAttachments.filter(
+    (a) => a.url !== attachmentUrl,
+  );
+  itemToUpdate.bast_attachments = remainingAttachments;
+
+  if (remainingAttachments.length === 0 && itemToUpdate.status === "Completed") {
+    itemToUpdate.status = "Pending BAST";
+    itemToUpdate.level = "Open 5";
+  }
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal hapus BAST item: " + updateError.message);
+
+  // Best-effort hapus file fisik di storage - sama seperti pola hapus
+  // lampiran lain di app ini (tidak nge-block kalau gagal).
+  removeAttachment(attachmentUrl).catch((err) =>
+    console.error("removeBastForMrItem: gagal hapus file fisik", err),
+  );
+
+  await recalculateMrStatus(mrId);
+  await recalculateMrLevel(mrId);
+
+  return { success: true };
+};
+
 // Link manual satu item MR ke sebuah PO (dengan qty) - dipakai kalau barang
 // yang dibeli disubstitusi pas belanja sehingga part_number-nya beda dari
 // permintaan MR asli, jadi matching otomatis by part_number gagal detect.
