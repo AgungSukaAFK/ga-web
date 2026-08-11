@@ -94,6 +94,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { searchVendors } from "@/services/vendorService";
+import { isMarketplaceVendor } from "@/type/enum";
 
 // --- Komponen Helper Info ---
 const InfoItem = ({
@@ -151,9 +152,15 @@ const APPROVAL_STATUS_OPTIONS: Approval["status"][] = [
 function VendorSearchCombobox({
   poForm,
   setPoForm,
+  onVendorSelected,
 }: {
   poForm: any;
   setPoForm: React.Dispatch<React.SetStateAction<any>>;
+  // Dipanggil begitu user MEMILIH vendor (bukan pas initial load) - dipakai
+  // parent buat auto-set default PPN (marketplace = 0%, lainnya = inclusive
+  // 11%). Taruh di sini (bukan useEffect watching vendor_id) supaya gak
+  // ke-trigger pas data lama di-load ulang.
+  onVendorSelected?: (vendor: Vendor) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,6 +186,7 @@ function VendorSearchCombobox({
       ...prev,
       vendor_details: newVendorDetails,
     }));
+    onVendorSelected?.(vendor);
     setOpen(false);
     setSearchQuery("");
   };
@@ -965,7 +973,21 @@ export function PoManagementEditClientContent({
           <div className="space-y-4">
             <div>
               <Label className="mb-1 block">Pilih Vendor Utama</Label>
-              <VendorSearchCombobox poForm={poForm} setPoForm={setPoForm} />
+              <VendorSearchCombobox
+                poForm={poForm}
+                setPoForm={setPoForm}
+                onVendorSelected={(vendor) => {
+                  if (isMarketplaceVendor(vendor.nama_vendor)) {
+                    setIsTaxIncluded(false);
+                    setTaxMode("percentage");
+                    setTaxPercentage(0);
+                  } else {
+                    setIsTaxIncluded(true);
+                    setTaxMode("percentage");
+                    setTaxPercentage(11);
+                  }
+                }}
+              />
             </div>
 
             <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">

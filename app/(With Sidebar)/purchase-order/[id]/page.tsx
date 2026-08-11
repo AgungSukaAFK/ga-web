@@ -1952,6 +1952,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           : "—"}
                       </span>
                     </>
+                  ) : po.ppn_rate === 0 ? (
+                    <>
+                      <div>
+                        <span className="text-muted-foreground">PPN</span>
+                        <p className="text-xs text-muted-foreground">
+                          Tidak ada PPN (pembelian marketplace)
+                        </p>
+                      </div>
+                      <span className="text-muted-foreground text-xs">—</span>
+                    </>
                   ) : (
                     <>
                       <div>
@@ -2539,6 +2549,14 @@ const PrintablePO = ({
                   {printIncludedTaxInfo != null
                     ? formatCurrency(printIncludedTaxInfo)
                     : "-"}
+                </span>
+              </div>
+            )}
+            {po.tax === 0 && !po.tax_included && po.ppn_rate === 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">PPN</span>
+                <span className="text-gray-600">
+                  Tidak ada (pembelian marketplace)
                 </span>
               </div>
             )}
