@@ -964,24 +964,56 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   const [printCompany, setPrintCompany] = useState<"GMI" | "GIS" | null>(null);
 
+  // Preload semua logo perusahaan begitu halaman dibuka - tanpa ini, ganti
+  // `src` logo pas klik "Cetak GMI"/"Cetak GIS" baru mulai fetch dari
+  // network, dan window.print() (dipanggil sesaat sesudahnya) bisa nge-capture
+  // sebelum logo baru selesai load/decode, jadi kepakenya logo dari print
+  // sebelumnya (ketuker). Sekali di-preload, ganti src jadi instan dari cache.
+  useEffect(() => {
+    const uniqueLogos = Array.from(
+      new Set(Object.values(COMPANY_DETAILS).map((c) => c.logo)),
+    );
+    uniqueLogos.forEach((src) => {
+      const img = new window.Image();
+      img.src = src;
+    });
+  }, []);
+
   const handlePrint = (company: "GMI" | "GIS") => {
     setPrintCompany(company);
   };
 
   useEffect(() => {
     if (!printCompany) return;
-    window.print();
+    // Tunggu 2 frame (double rAF) sebelum window.print() - kasih browser
+    // kesempatan beneran repaint DOM dengan logo/company info yang baru
+    // (React commit != browser sudah paint), biar gak ke-print state lama.
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
     const reset = () => setPrintCompany(null);
     window.addEventListener("afterprint", reset, { once: true });
-    return () => window.removeEventListener("afterprint", reset);
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.removeEventListener("afterprint", reset);
+    };
   }, [printCompany]);
 
   useEffect(() => {
     if (!isPrintingReceive) return;
-    window.print();
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
     const reset = () => setIsPrintingReceive(false);
     window.addEventListener("afterprint", reset, { once: true });
-    return () => window.removeEventListener("afterprint", reset);
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.removeEventListener("afterprint", reset);
+    };
   }, [isPrintingReceive]);
 
   if (loading) return <DetailPOSkeleton />;
