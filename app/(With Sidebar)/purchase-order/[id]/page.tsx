@@ -1069,8 +1069,21 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     0,
   );
   const dpp = subtotal - (po.discount || 0);
-  const inferredPpnRate =
-    dpp > 0 && po.tax > 0 ? Math.round((po.tax / dpp) * 100) : null;
+  // PO baru nyimpen ppn_rate beneran (lihat tax_included/ppn_rate di
+  // type/index.ts) - PO lama (sebelum field ini ada) masih ditebak dari
+  // tax/dpp seperti sebelumnya.
+  const displayPpnRate =
+    po.ppn_rate != null
+      ? po.ppn_rate
+      : dpp > 0 && po.tax > 0
+        ? Math.round((po.tax / dpp) * 100)
+        : null;
+  // Info PPN yang SUDAH termasuk harga item (subtotal x rate) - sekadar
+  // informasi, TIDAK ditambahkan ke total (harga item udah termasuk ini).
+  const includedTaxInfo =
+    po.tax_included && displayPpnRate != null
+      ? subtotal * (displayPpnRate / 100)
+      : null;
 
   const companyKey = (po.company_code ||
     "DEFAULT") as keyof typeof COMPANY_DETAILS;
@@ -1912,7 +1925,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <>
                       <div>
                         <span className="font-medium text-blue-600">
-                          PPN{inferredPpnRate ? ` ${inferredPpnRate}%` : ""}
+                          PPN{displayPpnRate ? ` ${displayPpnRate}%` : ""}
                         </span>
                         <p className="text-xs text-muted-foreground">
                           Di luar harga item (eksklusif)
@@ -1920,6 +1933,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       </div>
                       <span className="font-medium text-blue-600 whitespace-nowrap">
                         + {formatCurrency(po.tax)}
+                      </span>
+                    </>
+                  ) : po.tax_included ? (
+                    <>
+                      <div>
+                        <span className="font-medium text-muted-foreground">
+                          PPN{displayPpnRate != null ? ` ${displayPpnRate}%` : ""}{" "}
+                          <span className="italic">(info)</span>
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          Sudah termasuk harga item - bukan tambahan ke total
+                        </p>
+                      </div>
+                      <span className="font-medium text-muted-foreground whitespace-nowrap">
+                        {includedTaxInfo != null
+                          ? formatCurrency(includedTaxInfo)
+                          : "—"}
                       </span>
                     </>
                   ) : (
@@ -2283,6 +2313,24 @@ const PrintablePO = ({
   qrUrl: string;
   vendorData: { name: string; address: string; contact: string; code: string };
 }) => {
+  const printSubtotal = po.items.reduce(
+    (acc, item) => acc + item.price * item.qty,
+    0,
+  );
+  const printDpp = printSubtotal - (po.discount || 0);
+  const printPpnRate =
+    po.ppn_rate != null
+      ? po.ppn_rate
+      : printDpp > 0 && po.tax > 0
+        ? Math.round((po.tax / printDpp) * 100)
+        : null;
+  // Info PPN yang sudah termasuk harga item - sekadar informasi di cetak,
+  // TIDAK ditambahkan ke Grand Total (lihat catatan sama di halaman detail).
+  const printIncludedTaxInfo =
+    po.tax_included && printPpnRate != null
+      ? printSubtotal * (printPpnRate / 100)
+      : null;
+
   return (
     <div
       id="printable-po-a4"
@@ -2455,12 +2503,7 @@ const PrintablePO = ({
             <div className="flex justify-between text-xs">
               <span className="text-gray-600">Subtotal</span>
               <span className="font-medium text-gray-900">
-                {formatCurrency(
-                  po.items.reduce(
-                    (acc, item) => acc + item.price * item.qty,
-                    0,
-                  ),
-                )}
+                {formatCurrency(printSubtotal)}
               </span>
             </div>
             {po.discount > 0 && (
@@ -2475,12 +2518,30 @@ const PrintablePO = ({
                 <span>- {formatCurrency(po.pph_amount || 0)}</span>
               </div>
             )}
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-600">Pajak (PPN)</span>
-              <span className="font-medium text-gray-900">
-                + {formatCurrency(po.tax)}
-              </span>
-            </div>
+            {po.tax > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">
+                  Pajak (PPN{printPpnRate ? ` ${printPpnRate}%` : ""})
+                </span>
+                <span className="font-medium text-gray-900">
+                  + {formatCurrency(po.tax)}
+                </span>
+              </div>
+            )}
+            {po.tax === 0 && po.tax_included && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">
+                  PPN
+                  {printPpnRate != null ? ` ${printPpnRate}%` : ""} (sudah
+                  termasuk harga)
+                </span>
+                <span className="font-medium text-gray-900">
+                  {printIncludedTaxInfo != null
+                    ? formatCurrency(printIncludedTaxInfo)
+                    : "-"}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-xs pb-2 border-b border-gray-300">
               <span className="text-gray-600">Ongkos Kirim</span>
               <span className="font-medium text-gray-900">

@@ -310,9 +310,16 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         }
 
         // --- Init PPN ---
-        if (initialData.tax === 0 && initialData.items.length > 0) {
-          // Asumsi jika tax 0 tapi ada item, mungkin inclusive atau emang 0
-          // Tapi disini logicnya agak tricky, kita default ke logic sebelumnya
+        if (initialData.ppn_rate != null) {
+          // PO ini udah disimpan pakai field tax_included/ppn_rate yang
+          // beneran ke-persist (bukan PO lama) - percaya langsung, gak
+          // perlu nebak2 lagi kayak di bawah.
+          setIsTaxIncluded(!!initialData.tax_included);
+          setTaxMode("percentage");
+          setTaxPercentage(initialData.ppn_rate);
+        } else if (initialData.tax === 0 && initialData.items.length > 0) {
+          // PO lama (dibuat sebelum ppn_rate ada) - tax 0 tapi ada item,
+          // kemungkinan besar inclusive. Tetap nebak kayak sebelumnya.
           setIsTaxIncluded(true);
           setTaxMode("manual");
         } else {
@@ -375,13 +382,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       // Update only if changed to avoid infinite loop
       const newTax =
         taxMode !== "manual" || isTaxIncluded ? calculatedTax : prev.tax;
+      const newPpnRate =
+        isTaxIncluded || taxMode === "percentage" ? taxPercentage : null;
 
       // Compare old values with new values
       if (
         prev.tax !== newTax ||
         prev.total_price !== grandTotal ||
         prev.pph_type !== (pphType === "none" ? null : pphType) ||
-        prev.pph_amount !== pphAmount
+        prev.pph_amount !== pphAmount ||
+        prev.tax_included !== isTaxIncluded ||
+        prev.ppn_rate !== newPpnRate
       ) {
         return {
           ...prev,
@@ -390,6 +401,8 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           pph_type: pphType === "none" ? null : pphType,
           pph_rate: selectedPph.rate,
           pph_amount: pphAmount,
+          tax_included: isTaxIncluded,
+          ppn_rate: newPpnRate,
         };
       }
       return prev;
@@ -1362,6 +1375,35 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   )}
                 </div>
               )}
+              {isTaxIncluded && (
+                <div className="pl-6 space-y-2 pt-2 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Persentase PPN (info saja)
+                    </Label>
+                    <div className="relative w-20">
+                      <Input
+                        type="number"
+                        value={taxPercentage}
+                        onChange={(e) =>
+                          setTaxPercentage(Number(e.target.value) || 0)
+                        }
+                        className="text-right pr-6 h-9 text-xs"
+                        step="0.01"
+                        disabled={actionLoading}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Harga item sudah termasuk PPN - tarif ini cuma dipakai
+                    buat nampilin info PPN-nya (subtotal x tarif), harga &
+                    total gak berubah.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Input PPH */}
@@ -1420,10 +1462,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 </div>
               )}
 
-              {(poForm.tax || 0) > 0 && (
+              {!isTaxIncluded && (poForm.tax || 0) > 0 && (
                 <div className="flex justify-between text-blue-600">
-                  <span>+ PPN {isTaxIncluded ? "(Included)" : ""}</span>
+                  <span>+ PPN ({taxPercentage}%)</span>
                   <span>{formatCurrency(poForm.tax || 0)}</span>
+                </div>
+              )}
+
+              {isTaxIncluded && (
+                <div className="flex justify-between text-muted-foreground italic">
+                  <span>PPN ({taxPercentage}%, sudah termasuk harga)</span>
+                  <span>{formatCurrency(subtotal * (taxPercentage / 100))}</span>
                 </div>
               )}
 

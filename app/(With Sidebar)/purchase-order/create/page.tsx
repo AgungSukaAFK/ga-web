@@ -618,6 +618,11 @@ function CreatePOPageContent() {
       pph_type: pphType === "none" ? null : pphType,
       pph_rate: selectedPph.rate,
       pph_amount: pphAmount,
+      tax_included: isTaxIncluded,
+      // Rate cuma bermakna kalau dihitung dari persentase (mode manual gak
+      // punya tarif eksplisit) - dipakai buat info PPN inclusive & biar
+      // detail/cetak gak perlu nebak tarif dari tax/dpp lagi.
+      ppn_rate: isTaxIncluded || taxMode === "percentage" ? taxPercentage : null,
     }));
   }, [
     poForm.items,
@@ -1683,6 +1688,35 @@ function CreatePOPageContent() {
                   )}
                 </div>
               )}
+              {isTaxIncluded && (
+                <div className="pl-6 space-y-2 pt-2">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Persentase PPN (info saja)
+                    </Label>
+                    <div className="relative w-20">
+                      <Input
+                        type="number"
+                        value={taxPercentage}
+                        onChange={(e) =>
+                          setTaxPercentage(Number(e.target.value) || 0)
+                        }
+                        className="text-right pr-6 h-9 text-xs"
+                        step="0.01"
+                        disabled={loading}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Harga item sudah termasuk PPN - tarif ini cuma dipakai
+                    buat nampilin info PPN-nya (subtotal x tarif), harga &
+                    total gak berubah.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* PPH Section */}
@@ -1738,10 +1772,17 @@ function CreatePOPageContent() {
                 </div>
               )}
 
-              {(poForm.tax || 0) > 0 && (
+              {!isTaxIncluded && (poForm.tax || 0) > 0 && (
                 <div className="flex justify-between text-primary">
-                  <span>+ PPN {isTaxIncluded ? "(Included)" : ""}</span>
+                  <span>+ PPN ({taxPercentage}%)</span>
                   <span>{formatCurrency(poForm.tax || 0)}</span>
+                </div>
+              )}
+
+              {isTaxIncluded && (
+                <div className="flex justify-between text-muted-foreground italic">
+                  <span>PPN ({taxPercentage}%, sudah termasuk harga)</span>
+                  <span>{formatCurrency(subtotal * (taxPercentage / 100))}</span>
                 </div>
               )}
 
