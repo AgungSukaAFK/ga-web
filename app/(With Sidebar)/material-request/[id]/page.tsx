@@ -127,6 +127,7 @@ import {
   updateMrItemStatus,
   recalculateMrStatus,
   uploadBastForMrItem,
+  removeBastForMrItem,
   addManualPoLink,
   removeManualPoLink,
   setItemPaymentIssue,
@@ -778,6 +779,23 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.error("Gagal upload BAST", { description: err.message });
     } finally {
       setUploadingBast(false);
+    }
+  };
+
+  const handleRemoveItemBast = async (item: Order, attachmentUrl: string) => {
+    if (!item.part_number || !currentUser) return;
+    try {
+      await removeBastForMrItem(
+        mrId,
+        item.part_number,
+        attachmentUrl,
+        currentUser.id,
+      );
+      toast.success("Lampiran BAST dihapus");
+      await fetchMrData();
+      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+    } catch (err: any) {
+      toast.error("Gagal hapus lampiran BAST", { description: err.message });
     }
   };
 
@@ -1696,15 +1714,31 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               item.bast_attachments.length > 0 && (
                                 <div className="flex flex-wrap gap-1">
                                   {item.bast_attachments.map((att, idx) => (
-                                    <Link
+                                    <div
                                       key={idx}
-                                      href={resolveAttachmentUrl(att.url)}
-                                      target="_blank"
-                                      className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
+                                      className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
                                     >
-                                      <FileText className="w-3 h-3" />
-                                      {att.name}
-                                    </Link>
+                                      <Link
+                                        href={resolveAttachmentUrl(att.url)}
+                                        target="_blank"
+                                        className="hover:underline flex items-center gap-1"
+                                      >
+                                        <FileText className="w-3 h-3" />
+                                        {att.name}
+                                      </Link>
+                                      {isOwner && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleRemoveItemBast(item, att.url)
+                                          }
+                                          className="hover:text-red-600"
+                                          title="Hapus lampiran"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
                                   ))}
                                 </div>
                               )}

@@ -77,6 +77,7 @@ import {
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
   recalculateMrStatus,
   recalculateMrLevel,
+  removeBastForMrItem,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
 import {
@@ -827,6 +828,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
   // ---------------------------------
 
+  const handleRemoveItemBast = async (item: Order, attachmentUrl: string) => {
+    if (!po?.mr_id || !item.part_number || !currentUser) return;
+    try {
+      await removeBastForMrItem(
+        po.mr_id,
+        item.part_number,
+        attachmentUrl,
+        currentUser.id,
+      );
+      toast.success("Lampiran BAST dihapus");
+      fetchPoData();
+    } catch (err: any) {
+      toast.error("Gagal hapus lampiran BAST", { description: err.message });
+    }
+  };
+
   const handleClickApprove = () => {
     if (myApproval?.type === APPROVAL_TYPE_RECEIVER) {
       setIsReceiveDialogOpen(true);
@@ -989,8 +1006,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     po.attachments?.filter((att) => att.type === "finance") || [];
   const invoiceAttachments =
     po.attachments?.filter((att) => att.type === "invoice") || [];
-  const bastAttachments =
-    po.attachments?.filter((att) => att.type === "bast") || [];
+  // BAST bukan lampiran milik PO sendiri - sumbernya `bast_attachments` per
+  // item MR (satu-satunya sumber data BAST di seluruh app, lihat
+  // removeBastForMrItem di services/mrService.ts), difilter ke item yang
+  // di-cover PO ini saja (isMrItemInPO).
+  const bastAttachmentEntries: { item: Order; att: Attachment }[] = (
+    po.material_requests?.orders || []
+  )
+    .filter(
+      (mrItem) => isMrItemInPO(mrItem) && (mrItem.bast_attachments?.length ?? 0) > 0,
+    )
+    .flatMap((mrItem) =>
+      (mrItem.bast_attachments || []).map((att) => ({ item: mrItem, att })),
+    );
   const currentTurnIndex = po.approvals?.findIndex(
     (app) => app.status === "pending",
   );
@@ -1380,6 +1408,47 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                         ))}
                                       </div>
                                     )}
+
+                                  {/* Lampiran BAST (sumber sama dgn Lampiran BAST/list item MR) */}
+                                  {mrItem.bast_attachments &&
+                                    mrItem.bast_attachments.length > 0 && (
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {mrItem.bast_attachments.map(
+                                          (att, i) => (
+                                            <div
+                                              key={i}
+                                              className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
+                                            >
+                                              <Link
+                                                href={resolveAttachmentUrl(
+                                                  att.url,
+                                                )}
+                                                target="_blank"
+                                                className="hover:underline flex items-center gap-1"
+                                              >
+                                                <FileText className="w-3 h-3" />
+                                                {att.name}
+                                              </Link>
+                                              {canUploadAttachment && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleRemoveItemBast(
+                                                      mrItem,
+                                                      att.url,
+                                                    )
+                                                  }
+                                                  className="hover:text-red-600"
+                                                  title="Hapus lampiran"
+                                                >
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              )}
+                                            </div>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
                                 </TableCell>
                                 <TableCell>
                                   {isInPO ? (
@@ -1687,18 +1756,34 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
             <Content title="Lampiran BAST / Bukti Terima">
               <ul className="space-y-2">
-                {bastAttachments.length > 0 ? (
-                  bastAttachments.map((file, index) => (
-                    <li key={index}>
+                {bastAttachmentEntries.length > 0 ? (
+                  bastAttachmentEntries.map(({ item, att }, index) => (
+                    <li
+                      key={index}
+                      className="flex items-center justify-between gap-2"
+                    >
                       <Link
-                        href={resolveAttachmentUrl(file.url)}
+                        href={resolveAttachmentUrl(att.url)}
                         target="_blank"
                         className="flex items-center gap-2 text-sm text-primary hover:underline"
                       >
                         <Check className="h-4 w-4 text-green-600" />
-                        <span>{file.name}</span>
+                        <span>{att.name}</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          ({item.name})
+                        </span>
                         <ExternalLink className="h-3 w-3 text-muted-foreground" />
                       </Link>
+                      {canUploadAttachment && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemBast(item, att.url)}
+                          className="text-muted-foreground hover:text-red-600"
+                          title="Hapus lampiran"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </li>
                   ))
                 ) : (
