@@ -767,8 +767,31 @@ export default function DokumentasiPage() {
                 selesai diterima &amp; di-BAST.
               </StatusRow>
               <StatusRow
+                icon={PackageCheck}
+                badge={
+                  <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-200">
+                    Pending Receive
+                  </Badge>
+                }
+              >
+                Semua item MR ini sudah punya PO yang meng-cover penuh
+                qty-nya (belum tentu barangnya sudah diterima), tapi belum
+                ada satupun item yang di-BAST.
+              </StatusRow>
+              <StatusRow
+                icon={PackageCheck}
+                badge={
+                  <Badge className="bg-amber-100 text-amber-800 border border-amber-200">
+                    Partial Receive
+                  </Badge>
+                }
+              >
+                Sebagian item MR sudah di-BAST (statusnya sudah
+                &quot;Completed&quot;), tapi belum semua.
+              </StatusRow>
+              <StatusRow
                 icon={CheckCheck}
-                badge={<Badge variant="outline">Completed</Badge>}
+                badge={<Badge variant="outline">Full Received</Badge>}
               >
                 Semua item di MR ini statusnya sudah &quot;Completed&quot;
                 (sudah di-BAST semua) - siklus MR selesai.

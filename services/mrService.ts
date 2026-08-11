@@ -3,6 +3,11 @@
 import { createClient } from "@/lib/supabase/client";
 import { MaterialRequest, Order, Attachment, Profile } from "@/type";
 import { uploadAttachmentVps, removeAttachmentVps } from "./storageService";
+import {
+  PO_STATUS_PENDING_RECEIVE,
+  PO_STATUS_PARTIAL_RECEIVE,
+  PO_STATUS_FULL_RECEIVED,
+} from "@/type/enum";
 
 const supabase = createClient();
 
@@ -521,6 +526,12 @@ export const removeManualPoLink = async (
 // tidak throw). Mengabaikan status pra-persetujuan (Pending Validation, On
 // Hold, Pending Approval, Rejected) agar tidak "menghidupkan kembali" MR
 // yang belum/sudah tidak diproses.
+//
+// Status MR seputar penerimaan barang disamakan dengan penamaan status PO
+// (PO_STATUS_PENDING_RECEIVE/PARTIAL_RECEIVE/FULL_RECEIVED) - "Pending BAST"
+// sebagai status MR (bukan status per-item) & "Completed" SUDAH TIDAK
+// DIPAKAI LAGI. "Pending BAST" tetap ada sebagai status PER-ITEM
+// (MR_ITEM_STATUSES.PENDING_BAST, lihat type/index.ts) - itu tidak berubah.
 export const recalculateMrStatus = async (mrId: number): Promise<void> => {
   const supabase = createClient();
   try {
@@ -572,7 +583,7 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
     // Selama masih "Waiting PO", baru pindah ke "On Process" begitu SEMUA
     // item sudah ke-cover PO (qty terpenuhi). Kalau masih ada item yang
     // belum di-PO-kan / qty-nya kurang, tetap "Waiting PO" - jangan ikut
-    // dihitung ke status lain (Pending BAST/On Process/Completed) dulu.
+    // dihitung ke status lain (Pending Receive/On Process/Full Received) dulu.
     if (mr.status === "Waiting PO") {
       if (allLinked) {
         const { error: updateError } = await supabase
@@ -585,11 +596,18 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
       return;
     }
 
+    // allLinked = semua item non-cancelled sudah ke-cover PO (lihat definisi
+    // di atas). Begitu ada item yang BAST-nya sudah diupload ("Completed")
+    // tapi belum semua, MR "Partial Receive" - baru "Full Received" kalau
+    // SEMUA item sudah "Completed".
     const allCompleted = relevantItems.every((i) => i.status === "Completed");
+    const someCompleted = relevantItems.some((i) => i.status === "Completed");
     const newStatus = allCompleted
-      ? "Completed"
+      ? PO_STATUS_FULL_RECEIVED
       : allLinked
-        ? "Pending BAST"
+        ? someCompleted
+          ? PO_STATUS_PARTIAL_RECEIVE
+          : PO_STATUS_PENDING_RECEIVE
         : "On Process";
 
     if (newStatus !== mr.status) {
