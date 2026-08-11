@@ -190,6 +190,25 @@
     display: block !important;
   }
 
+  /* Sidebar (shadcn/ui): className yg dioper ke <Sidebar> (lihat
+     app-sidebar.tsx -> "no-print") cuma nyampe ke div [data-slot=
+     "sidebar-container"] (kotak sidebar yg fixed), BUKAN ke div
+     [data-slot="sidebar-gap"] (spacer selebar --sidebar-width yg jaga
+     supaya konten utama gak ketiban sidebar fixed itu). Akibatnya pas
+     print, sidebar-nya kehide tapi spacer-nya tetap makan tempat di kiri
+     halaman - kejadian di semua browser (Safari/Firefox/Chromium), bukan
+     soal vendor-quirk. Fix: hide seluruh wrapper [data-slot="sidebar"]
+     (termasuk gap-nya) langsung lewat attribute selector, gak gantung ke
+     className yg salah sasaran itu. */
+  [data-slot="sidebar"] {
+    display: none !important;
+  }
+
+  [data-slot="sidebar-inset"] {
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
   #printable-po-a4 {
     position: absolute;
     left: 0;
