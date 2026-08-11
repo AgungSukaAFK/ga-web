@@ -112,7 +112,7 @@ export const fetchDashboardStats = async (
     ]),
 
     // 2. MR Closed
-    createQuery("material_requests", "Completed"),
+    createQuery("material_requests", "Full Received"),
 
     // 3. MR Total
     createQuery("material_requests", null), // null = tanpa filter status

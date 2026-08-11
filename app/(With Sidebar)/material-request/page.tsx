@@ -664,16 +664,22 @@ function MaterialRequestContent() {
             On Process
           </Badge>
         );
-      case "pending bast":
+      case "pending receive":
         return (
           <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800">
-            Pending BAST
+            Pending Receive
           </Badge>
         );
-      case "completed":
+      case "partial receive":
+        return (
+          <Badge className="bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-800">
+            Partial Receive
+          </Badge>
+        );
+      case "full received":
         return (
           <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-800">
-            Completed
+            Full Received
           </Badge>
         );
       default:

@@ -559,16 +559,22 @@ export default function MrManagementClient() {
             On Process
           </Badge>
         );
-      case "pending bast":
+      case "pending receive":
         return (
           <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-800">
-            Pending BAST
+            Pending Receive
           </Badge>
         );
-      case "completed":
+      case "partial receive":
+        return (
+          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800">
+            Partial Receive
+          </Badge>
+        );
+      case "full received":
         return (
           <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800">
-            Completed
+            Full Received
           </Badge>
         );
       default:
@@ -933,7 +939,7 @@ export default function MrManagementClient() {
                           </Link>
                         </DropdownMenuItem>
                         {/* Admin Special: Edit available for most statuses except Closed */}
-                        {mr.status !== "Completed" && (
+                        {mr.status !== "Full Received" && (
                           <DropdownMenuItem asChild>
                             <Link
                               href={`/mr-management/edit/${mr.id}`}

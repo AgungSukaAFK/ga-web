@@ -1015,10 +1015,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge className="bg-orange-500 text-white">On Hold</Badge>;
       case "waiting po":
         return <Badge className="bg-blue-500 text-white">Waiting PO</Badge>;
-      case "pending bast":
-        return <Badge className="bg-yellow-500 text-white">Pending BAST</Badge>;
-      case "completed":
-        return <Badge className="bg-green-500 text-white">Completed</Badge>;
+      case "pending receive":
+        return <Badge className="bg-yellow-500 text-white">Pending Receive</Badge>;
+      case "partial receive":
+        return <Badge className="bg-amber-500 text-white">Partial Receive</Badge>;
+      case "full received":
+        return <Badge className="bg-green-500 text-white">Full Received</Badge>;
       case "po open":
       case "on process":
         return <Badge className="bg-cyan-500 text-white">PO Open</Badge>;
