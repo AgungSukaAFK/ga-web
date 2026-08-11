@@ -156,6 +156,18 @@ export interface PurchaseOrderPayload {
   pph_type?: string | null;
   pph_rate?: number | null;
   pph_amount?: number | null;
+  // Harga item di PO ini sudah termasuk PPN atau belum. Kalau true, `tax`
+  // TETAP 0 (gak ada nominal tambahan ke total - PPN-nya udah nempel di
+  // `price` tiap item), tapi `ppn_rate` tetap disimpan supaya UI (detail +
+  // cetak) bisa nampilin info "PPN yang sudah termasuk" = subtotal x
+  // ppn_rate% (sekadar informasi, TIDAK mengubah harga/total - lihat
+  // diskusi fitur ini).
+  tax_included?: boolean | null;
+  // Persentase PPN yang dipakai - baik pas `tax_included` true (buat hitung
+  // info PPN) maupun false (buat tau tarif yang dipakai ngitung `tax`, gak
+  // perlu ditebak dari tax/dpp lagi kayak inferredPpnRate lama). Null utk PO
+  // lama sebelum field ini ada, atau saat tax mode manual.
+  ppn_rate?: number | null;
   // Progress pembayaran khusus payment_term "DP & Pelunasan" (DP_BP)
   dp_paid?: boolean | null;
   bp_paid?: boolean | null;
@@ -359,6 +371,10 @@ export interface PurchaseOrder {
   pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
   pph_rate?: number | null; // Persentase (misal: 1.5)
   pph_amount?: number | null; // Nominal Rupiah
+
+  // Lihat komentar di PurchaseOrderPayload - sama persis.
+  tax_included?: boolean | null;
+  ppn_rate?: number | null;
 
   users_with_profiles?: {
     nama: string;
