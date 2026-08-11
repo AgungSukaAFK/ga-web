@@ -120,6 +120,27 @@ export const isDpBpPaymentTerm = (
   return normalized.includes("dp") && normalized.includes("pelunasan");
 };
 
+// Kata kunci nama vendor yang dianggap marketplace - pembelian lewat sini
+// PPN-nya dianggap flat 0% (bukan "termasuk", beneran gak ada PPN), beda
+// dari vendor lain yang defaultnya dianggap harga sudah termasuk PPN 11%
+// (lihat isMarketplaceVendor & pemakaiannya di VendorSearchCombobox pada
+// purchase-order/create, purchase-order/edit, po-management/edit).
+const MARKETPLACE_VENDOR_KEYWORDS = ["tokopedia", "tokped", "shopee", "shope"];
+
+/**
+ * Deteksi apakah nama vendor mengarah ke marketplace (Tokopedia/Shopee, dkk,
+ * case-insensitive, toleran typo umum). Dipakai buat auto-set default PPN
+ * pas vendor dipilih di form PO - marketplace = PPN 0% flat, vendor lain =
+ * default dianggap harga sudah termasuk PPN 11% (bisa di-override manual).
+ */
+export const isMarketplaceVendor = (
+  vendorName: string | null | undefined,
+): boolean => {
+  if (!vendorName) return false;
+  const normalized = vendorName.toLowerCase();
+  return MARKETPLACE_VENDOR_KEYWORDS.some((kw) => normalized.includes(kw));
+};
+
 /**
  * Approval terakhir yang sudah di-approve (bukan yang masih pending).
  * `approvals` berurutan sesuai step approval (lihat pemakaian nextApprover
