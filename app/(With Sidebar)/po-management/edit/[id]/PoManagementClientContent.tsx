@@ -615,38 +615,45 @@ export function PoManagementEditClientContent({
     );
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
 
-    const formData = new FormData();
-    formData.append("file", file);
-    const uploadResult = await uploadAttachmentVps(formData, filePath);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadResult = await uploadAttachmentVps(formData, filePath);
 
-    if (!uploadResult.success) {
+      if (!uploadResult.success) {
+        toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
+          id: toastId,
+          description: uploadResult.message,
+        });
+        return;
+      }
+
+      const newAttachment: Attachment = {
+        name: file.name,
+        url: uploadResult.url,
+        type: type,
+      };
+
+      const currentAttachments = Array.isArray(poForm.attachments)
+        ? poForm.attachments
+        : [];
+      const updatedAttachments = [...currentAttachments, newAttachment];
+
+      setPoForm((prev) =>
+        prev ? { ...prev, attachments: updatedAttachments } : null
+      );
+      toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
+        id: toastId,
+      });
+    } catch (err: any) {
       toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
         id: toastId,
-        description: uploadResult.message,
+        description: err?.message,
       });
+    } finally {
       setIsLoading(false);
-      return;
+      e.target.value = "";
     }
-
-    const newAttachment: Attachment = {
-      name: file.name,
-      url: uploadResult.url,
-      type: type,
-    };
-
-    const currentAttachments = Array.isArray(poForm.attachments)
-      ? poForm.attachments
-      : [];
-    const updatedAttachments = [...currentAttachments, newAttachment];
-
-    setPoForm((prev) =>
-      prev ? { ...prev, attachments: updatedAttachments } : null
-    );
-    toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
-      id: toastId,
-    });
-    setIsLoading(false);
-    e.target.value = "";
   };
 
   const removeAttachment = (indexToRemove: number) => {
