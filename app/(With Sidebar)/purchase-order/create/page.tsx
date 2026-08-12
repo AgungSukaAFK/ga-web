@@ -813,23 +813,28 @@ function CreatePOPageContent() {
           : setIsUploadingInvoice;
     setIsLoading(true);
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
-    const formData = new FormData();
-    formData.append("file", file);
-    const result = await uploadAttachmentVps(formData, filePath);
-    if (!result.success) {
-      toast.error("Gagal upload", { description: result.message });
-    } else {
-      setPoForm((prev) => ({
-        ...prev,
-        attachments: [
-          ...(prev.attachments || []),
-          { name: file.name, url: result.url, type },
-        ],
-      }));
-      toast.success("Berhasil diunggah");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadAttachmentVps(formData, filePath);
+      if (!result.success) {
+        toast.error("Gagal upload", { description: result.message });
+      } else {
+        setPoForm((prev) => ({
+          ...prev,
+          attachments: [
+            ...(prev.attachments || []),
+            { name: file.name, url: result.url, type },
+          ],
+        }));
+        toast.success("Berhasil diunggah");
+      }
+    } catch (err: any) {
+      toast.error("Gagal upload", { description: err?.message });
+    } finally {
+      setIsLoading(false);
+      e.target.value = "";
     }
-    setIsLoading(false);
-    e.target.value = "";
   };
 
   const removeAttachment = (index: number) => {
