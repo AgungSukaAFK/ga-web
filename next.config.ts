@@ -7,7 +7,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: "15mb",
+      // Sedikit di atas MAX_ATTACHMENT_SIZE_BYTES (15MB, lib/attachments.ts)
+      // untuk memberi ruang overhead multipart form-data.
+      bodySizeLimit: "20mb",
     },
   },
 };

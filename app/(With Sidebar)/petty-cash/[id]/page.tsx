@@ -39,6 +39,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentVps } from "@/services/storageService";
+import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { isGADepartment } from "@/lib/constants/departments";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -342,8 +343,9 @@ export default function PettyCashDetailPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024)
-      return toast.error("Ukuran file maksimal 5MB.");
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError)
+      return toast.error("Ukuran file terlalu besar", { description: sizeError });
 
     setUploading(true);
     try {
@@ -362,7 +364,9 @@ export default function PettyCashDetailPage() {
       ]);
       toast.success("Bukti nota berhasil diunggah.");
     } catch (error: any) {
-      toast.error("Gagal unggah file", { description: error.message });
+      toast.error("Gagal unggah file", {
+        description: getUploadErrorMessage(error),
+      });
     } finally {
       setUploading(false);
       e.target.value = "";

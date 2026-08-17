@@ -1,11 +1,13 @@
-// src/app/(With Sidebar)/material-request/page.tsx
+// src/app/(With Sidebar)/mr-saya/page.tsx
+
+"use client";
 
 import { Suspense } from "react";
 import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MaterialRequestContent } from "./MaterialRequestClient";
+import { MaterialRequestContent } from "../material-request/MaterialRequestClient";
 
-export default function MaterialRequestPage() {
+export default function MrSayaPage() {
   return (
     <Suspense
       fallback={
@@ -14,7 +16,7 @@ export default function MaterialRequestPage() {
         </Content>
       }
     >
-      <MaterialRequestContent />
+      <MaterialRequestContent onlyMine />
     </Suspense>
   );
 }

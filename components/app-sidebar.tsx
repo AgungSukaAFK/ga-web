@@ -39,6 +39,8 @@ import {
   FileSignature,
   Users,
   Warehouse,
+  HardDrive,
+  ClipboardList,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -70,6 +72,11 @@ const data = {
       title: "Cost Center Management",
       url: "/cost-center-management",
       icon: BadgeDollarSign,
+    },
+    {
+      title: "File Management",
+      url: "/file-management",
+      icon: HardDrive,
     },
   ],
   navMain: [
@@ -208,6 +215,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         title: "Approval & Validation",
         url: "/approval-validation",
         icon: CheckCheck,
+      });
+    }
+
+    if (profile?.role === "requester") {
+      const mrIndex = baseNav.findIndex(
+        (item) => item.title === "Material Request",
+      );
+      baseNav.splice(mrIndex + 1, 0, {
+        title: "MR Saya",
+        url: "/mr-saya",
+        icon: ClipboardList,
       });
     }
 

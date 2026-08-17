@@ -1,4 +1,4 @@
-// src/app/(With Sidebar)/mr-management/MrManagementClient.tsx
+// src/app/(With Sidebar)/material-request/MaterialRequestClient.tsx
 
 "use client";
 
@@ -28,7 +28,6 @@ import {
   Printer,
   Search,
   Loader2,
-  Edit,
   Layers,
   Building2,
   X,
@@ -38,46 +37,29 @@ import {
   MapPin,
   Tag,
   DollarSign,
-  MoreHorizontal,
-  Upload,
+  AlertCircle,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import {
-  Suspense,
-  useEffect,
-  useState,
-  useCallback,
-  useTransition,
-} from "react";
+import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
-import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
+import { Profile, Order, MaterialRequestListItem } from "@/type";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
-import {
-  formatCurrency,
-  formatDateFriendly,
-  calculatePriority,
-  cn,
-} from "@/lib/utils";
+import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { LIMIT_OPTIONS, STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
+import { STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
+import { ItemLevelBadge } from "@/components/item-level-badge";
+import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
+import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import {
   fetchActiveCostCenters,
   normalizeMrOrders,
-  uploadBastForMrItem,
-  removeBastForMrItem,
 } from "@/services/mrService";
-import { uploadAttachmentVps } from "@/services/storageService";
-import {
-  resolveAttachmentUrl,
-  getAttachmentSizeError,
-  getUploadErrorMessage,
-} from "@/lib/attachments";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -85,7 +67,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -115,9 +96,27 @@ const dataLokasi: ComboboxData = [
   { label: "Site BGE", value: "Site BGE" },
 ];
 
+const PRIORITY_OPTIONS = [
+  { label: "P0 (Emergency)", value: "P0" },
+  { label: "P1 (High)", value: "P1" },
+  { label: "P2 (Medium)", value: "P2" },
+  { label: "P3 (Low)", value: "P3" },
+];
+
+const SORT_OPTIONS = [
+  { label: "Tanggal Dibuat (Terbaru)", value: "created_at.desc" },
+  { label: "Tanggal Dibuat (Terlama)", value: "created_at.asc" },
+  { label: "Due Date (Mendesak)", value: "due_date.asc" },
+  { label: "Due Date (Lama)", value: "due_date.desc" },
+];
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
 
-export default function MrManagementClient() {
+export function MaterialRequestContent({
+  onlyMine = false,
+}: {
+  onlyMine?: boolean;
+} = {}) {
   const s = createClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -141,13 +140,10 @@ export default function MrManagementClient() {
   const [selectedMr, setSelectedMr] = useState<MaterialRequestListItem | null>(
     null,
   );
-
-  // --- Upload BAST State (Admin, via MR Management) ---
-  const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
-  const [selectedItemForBast, setSelectedItemForBast] =
-    useState<Order | null>(null);
-  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
-  const [uploadingBast, setUploadingBast] = useState(false);
+  // Peta barang_id -> is_asset utk badge Aset/Barang di daftar barang Quick View.
+  const [quickViewAssetMap, setQuickViewAssetMap] = useState<
+    Record<number, boolean>
+  >({});
 
   // --- URL Params ---
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
@@ -158,10 +154,12 @@ export default function MrManagementClient() {
   const endDate = searchParams.get("endDate") || "";
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
+  const sortFilter = searchParams.get("sort") || "created_at.desc";
   const levelFilter = searchParams.get("level") || "";
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
   const costCenterFilter = searchParams.get("cost_center") || "all";
+  const prioritasFilter = searchParams.get("prioritas") || "";
 
   // Local Input State
   const [searchInput, setSearchInput] = useState(searchTerm);
@@ -170,7 +168,6 @@ export default function MrManagementClient() {
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
   const [maxEstimasiInput, setMaxEstimasiInput] = useState(maxEstimasi);
 
-  // --- Helper: Create Query String ---
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -195,7 +192,6 @@ export default function MrManagementClient() {
     [searchParams],
   );
 
-  // --- Helper: Handle Page Change ---
   const handlePageChange = (page: number) => {
     const queryString = createQueryString({ page });
     startTransition(() => {
@@ -203,7 +199,6 @@ export default function MrManagementClient() {
     });
   };
 
-  // --- Load User & Default Filters ---
   useEffect(() => {
     const loadUser = async () => {
       const {
@@ -220,7 +215,6 @@ export default function MrManagementClient() {
       const fullUser = { ...user, ...profile };
       setCurrentUser(fullUser as AuthUser & Profile);
 
-      // Default Filter Company Logic (Admin scope)
       if (profile?.company) {
         if (profile.company === "LOURDES") {
           setSelectedCompanies(["GMI", "GIS", "LOURDES"]);
@@ -231,7 +225,6 @@ export default function MrManagementClient() {
         }
       }
 
-      // Load Cost Centers
       try {
         const ccData = await fetchActiveCostCenters(
           profile?.company || "LOURDES",
@@ -248,7 +241,7 @@ export default function MrManagementClient() {
     loadUser();
   }, []);
 
-  // --- Fetch Data ---
+  // --- Fetch Data Tabel ---
   useEffect(() => {
     if (!currentUser) return;
 
@@ -260,7 +253,7 @@ export default function MrManagementClient() {
       try {
         let query = s.from("material_requests").select(
           `
-            id, kode_mr, kategori, status, department, created_at, due_date, 
+            id, kode_mr, kategori, status, department, created_at, due_date,
             tujuan_site, prioritas, level, cost_estimation, remarks, company_code, orders,
             users_with_profiles!userid (nama),
             cost_centers (code)
@@ -268,7 +261,8 @@ export default function MrManagementClient() {
           { count: "exact" },
         );
 
-        // --- Filter Logic ---
+        if (onlyMine) query = query.eq("userid", currentUser.id);
+
         if (searchTerm) {
           const { data: matchingUsers } = await s
             .from("users_with_profiles")
@@ -283,22 +277,27 @@ export default function MrManagementClient() {
           query = query.or(orFilter);
         }
 
-        if (statusFilter) query = query.eq("status", statusFilter);
+        if (statusFilter && statusFilter !== "all")
+          query = query.eq("status", statusFilter);
         if (startDate) query = query.gte("created_at", startDate);
         if (endDate)
           query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-        if (departmentFilter) query = query.eq("department", departmentFilter);
-        if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-        if (levelFilter) query = query.eq("level", levelFilter);
-        if (costCenterFilter && costCenterFilter !== "all") {
+        if (departmentFilter && departmentFilter !== "all")
+          query = query.eq("department", departmentFilter);
+        if (siteFilter && siteFilter !== "all")
+          query = query.eq("tujuan_site", siteFilter);
+        if (prioritasFilter && prioritasFilter !== "all")
+          query = query.eq("prioritas", prioritasFilter);
+        if (levelFilter && levelFilter !== "all")
+          query = query.eq("level", levelFilter);
+        if (costCenterFilter && costCenterFilter !== "all")
           query = query.eq("cost_center_id", costCenterFilter);
-        }
         if (minEstimasi)
           query = query.gte("cost_estimation", Number(minEstimasi));
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
-        // Company Visibility Logic
+        // FILTER PERUSAHAAN (Untuk Tabel)
         const userCompany = currentUser.company;
         let allowedScope: string[] = [];
 
@@ -329,10 +328,12 @@ export default function MrManagementClient() {
           }
         }
 
-        const { data, error, count } = await query
-          .order("created_at", { ascending: false })
+        const [sortBy, sortOrder] = sortFilter.split(".");
+        query = query
+          .order(sortBy, { ascending: sortOrder === "asc" })
           .range(from, to);
 
+        const { data, error, count } = await query;
         if (error) throw error;
 
         const transformedData =
@@ -348,6 +349,7 @@ export default function MrManagementClient() {
               Array.isArray(mr.orders) ? mr.orders : [],
             ),
             company_code: mr.company_code ?? null,
+            prioritas: mr.prioritas || "P3",
           })) || [];
 
         setDataMR(transformedData as MaterialRequestListItem[]);
@@ -362,6 +364,7 @@ export default function MrManagementClient() {
     fetchData();
   }, [
     currentUser,
+    onlyMine,
     currentPage,
     limit,
     searchTerm,
@@ -370,6 +373,8 @@ export default function MrManagementClient() {
     endDate,
     departmentFilter,
     siteFilter,
+    sortFilter,
+    prioritasFilter,
     levelFilter,
     minEstimasi,
     maxEstimasi,
@@ -377,7 +382,6 @@ export default function MrManagementClient() {
     selectedCompanies,
   ]);
 
-  // Debounce Search
   useEffect(() => {
     const handler = setTimeout(() => {
       if (searchInput !== searchTerm) {
@@ -391,7 +395,6 @@ export default function MrManagementClient() {
     return () => clearTimeout(handler);
   }, [searchInput, searchTerm, createQueryString, pathname, router]);
 
-  // Handlers
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>,
   ) => {
@@ -415,6 +418,7 @@ export default function MrManagementClient() {
     setEndDateInput("");
     setMinEstimasiInput("");
     setMaxEstimasiInput("");
+
     router.push(pathname);
 
     if (currentUser?.company) {
@@ -434,71 +438,150 @@ export default function MrManagementClient() {
     return [myCompany || ""];
   };
 
+  // --- Fungsi EXCEL (Sudah Diperbaiki Logika Izin Aksesnya) ---
   const handleDownloadExcel = async () => {
     if (!currentUser) return;
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap...");
+    toast.info("Mempersiapkan data lengkap untuk diunduh...");
 
     try {
       let query = s.from("material_requests").select(`
-            kode_mr, kategori, department, status, remarks, cost_estimation, 
-            tujuan_site, company_code, created_at, due_date,
-            prioritas, level, orders, 
-            users_with_profiles!userid (nama),
-            cost_centers (code)
-        `);
+          kode_mr, kategori, department, status, remarks, cost_estimation,
+          tujuan_site, company_code, created_at, due_date,
+          prioritas, level, orders, approvals,
+          users_with_profiles!userid (nama),
+          cost_centers (code)
+      `);
 
-      // Re-apply same filters as fetch logic...
-      if (searchTerm) query = query.or(`kode_mr.ilike.%${searchTerm}%`);
-      if (statusFilter) query = query.eq("status", statusFilter);
+      if (onlyMine) query = query.eq("userid", currentUser.id);
+
+      // FILTER PENCARIAN (Sama persis dengan tabel)
+      if (searchTerm) {
+        const { data: matchingUsers } = await s
+          .from("users_with_profiles")
+          .select("id")
+          .ilike("nama", `%${searchTerm}%`);
+
+        const userIds = matchingUsers?.map((u) => u.id) || [];
+        let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+        if (userIds.length > 0) {
+          orFilter += `,userid.in.(${userIds.join(",")})`;
+        }
+        query = query.or(orFilter);
+      }
+
+      if (statusFilter && statusFilter !== "all")
+        query = query.eq("status", statusFilter);
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-      if (departmentFilter) query = query.eq("department", departmentFilter);
-      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-      if (levelFilter) query = query.eq("level", levelFilter);
+      if (departmentFilter && departmentFilter !== "all")
+        query = query.eq("department", departmentFilter);
+      if (siteFilter && siteFilter !== "all")
+        query = query.eq("tujuan_site", siteFilter);
+      if (prioritasFilter && prioritasFilter !== "all")
+        query = query.eq("prioritas", prioritasFilter);
+      if (levelFilter && levelFilter !== "all")
+        query = query.eq("level", levelFilter);
+      if (costCenterFilter && costCenterFilter !== "all")
+        query = query.eq("cost_center_id", costCenterFilter);
+      if (minEstimasiInput)
+        query = query.gte("cost_estimation", Number(minEstimasiInput));
+      if (maxEstimasiInput)
+        query = query.lte("cost_estimation", Number(maxEstimasiInput));
 
+      // FILTER PERUSAHAAN UNTUK EXCEL (Mengembalikan Hak Akses yg Benar)
       const userCompany = currentUser.company;
-      if (userCompany !== "LOURDES") {
-        const allowed = ["GMI", "GIS"].includes(userCompany || "")
-          ? [userCompany!, "LOURDES"]
-          : [userCompany!];
-        if (selectedCompanies.length > 0) {
-          const valid = selectedCompanies.filter((c) => allowed.includes(c));
-          if (valid.length > 0) query = query.in("company_code", valid);
-          else query = query.eq("id", -1);
+      let allowedScope: string[] = [];
+
+      if (userCompany === "LOURDES") {
+        allowedScope = ["ALL"];
+      } else if (["GMI", "GIS"].includes(userCompany || "")) {
+        allowedScope = [userCompany!, "LOURDES"];
+      } else {
+        allowedScope = userCompany ? [userCompany] : [];
+      }
+
+      if (selectedCompanies.length > 0) {
+        if (allowedScope.includes("ALL")) {
+          query = query.in("company_code", selectedCompanies);
         } else {
-          query = query.in("company_code", allowed);
+          const validFilters = selectedCompanies.filter((c) =>
+            allowedScope.includes(c),
+          );
+          if (validFilters.length > 0) {
+            query = query.in("company_code", validFilters);
+          } else {
+            query = query.eq("id", -1);
+          }
         }
-      } else if (selectedCompanies.length > 0) {
-        query = query.in("company_code", selectedCompanies);
+      } else {
+        if (!allowedScope.includes("ALL")) {
+          query = query.in("company_code", allowedScope);
+        }
       }
 
       const { data, error } = await query
         .order("created_at", { ascending: false })
-        .limit(2000);
+        .limit(2500); // Batas aman untuk excel
 
       if (error) throw error;
       if (!data || data.length === 0) {
-        toast.warning("Tidak ada data untuk diekspor.");
+        toast.warning("Tidak ada data untuk diekspor sesuai filter.");
         setIsExporting(false);
         return;
       }
 
       const formattedData = data.flatMap((mr: any) => {
+        // TANGGAL APPROVE / REJECT BUNGA RATNANI
+        let fullApproveDate = "-";
+        let rejectDate = "-";
+
+        if (Array.isArray(mr.approvals)) {
+          const bungaApproval = mr.approvals.find(
+            (app: any) =>
+              app.email === "bunga@garudamart.com" ||
+              app.userid === "5dd1ac8e-ac88-4626-9540-e6f484e011c2",
+          );
+
+          if (bungaApproval) {
+            if (
+              bungaApproval.status === "approved" &&
+              bungaApproval.processed_at
+            ) {
+              fullApproveDate = formatDateFriendly(bungaApproval.processed_at);
+            } else if (
+              bungaApproval.status === "rejected" &&
+              bungaApproval.processed_at
+            ) {
+              rejectDate = formatDateFriendly(bungaApproval.processed_at);
+            }
+          }
+        }
+
+        const ccData = Array.isArray(mr.cost_centers)
+          ? mr.cost_centers[0]
+          : mr.cost_centers;
+        const requesterData = Array.isArray(mr.users_with_profiles)
+          ? mr.users_with_profiles[0]
+          : mr.users_with_profiles;
+
         const baseMrInfo = {
           "Kode MR": mr.kode_mr,
-          "Cost Center": mr.cost_centers?.code || "-",
+          "Cost Center": ccData?.code || "-",
+          Priority: mr.prioritas || "-",
           Level: mr.level,
           Kategori: mr.kategori,
           Departemen: mr.department,
           "Tujuan Site": mr.tujuan_site,
-          Requester: mr.users_with_profiles?.nama || "N/A",
+          Requester: requesterData?.nama || "N/A",
           "Status MR": mr.status,
+          "Tanggal Full Approve": fullApproveDate,
+          "Tanggal Approval Ditolak": rejectDate,
           Company: mr.company_code,
           "Tanggal Dibuat": formatDateFriendly(mr.created_at ?? undefined),
           "Due Date": formatDateFriendly(mr.due_date ?? undefined),
-          "Total Estimasi": Number(mr.cost_estimation),
-          Remarks: mr.remarks,
+          "Total Estimasi": Number(mr.cost_estimation) || 0,
+          Remarks: mr.remarks || "-",
         };
 
         const orders = normalizeMrOrders(mr.orders);
@@ -525,7 +608,7 @@ export default function MrManagementClient() {
 
       await exportStyledExcel(
         formattedData,
-        `Rekap_MR_Admin_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
         "Data MR & Tracking",
       );
       toast.success("Download berhasil!");
@@ -541,112 +624,13 @@ export default function MrManagementClient() {
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
     setIsQuickViewOpen(true);
-  };
-
-  // --- Upload BAST (Admin, via MR Management) ---
-  const handleOpenBastUpload = (item: Order) => {
-    setSelectedItemForBast(item);
-    setBastFiles(null);
-    setIsBastUploadOpen(true);
-  };
-
-  // Refresh status/level/orders satu MR saja (dipanggil setelah upload BAST)
-  // - biar Quick View & baris tabel ikut update tanpa refetch seluruh list.
-  const refreshMrRow = async (mrId: number) => {
-    const { data, error } = await s
-      .from("material_requests")
-      .select("id, status, level, orders")
-      .eq("id", mrId)
-      .single();
-    if (error || !data) return;
-
-    const orders = normalizeMrOrders(
-      Array.isArray(data.orders) ? data.orders : [],
-    );
-    setSelectedMr((prev) =>
-      prev && Number(prev.id) === mrId
-        ? { ...prev, status: data.status, level: data.level, orders }
-        : prev,
-    );
-    setDataMR((prev) =>
-      prev.map((mr) =>
-        Number(mr.id) === mrId
-          ? { ...mr, status: data.status, level: data.level, orders }
-          : mr,
-      ),
-    );
-  };
-
-  const handleUploadItemBast = async () => {
-    if (!selectedMr || !selectedItemForBast?.part_number) return;
-    if (!bastFiles || bastFiles.length === 0) {
-      toast.error("Pilih file BAST terlebih dahulu");
-      return;
-    }
-    if (!currentUser) {
-      toast.error("Sesi tidak valid, silakan muat ulang halaman");
-      return;
-    }
-
-    for (const file of bastFiles) {
-      const sizeError = getAttachmentSizeError(file);
-      if (sizeError) {
-        toast.error("Ukuran file terlalu besar", { description: sizeError });
-        return;
-      }
-    }
-
-    setUploadingBast(true);
-    try {
-      const uploadedAttachments: Attachment[] = [];
-      for (let i = 0; i < bastFiles.length; i++) {
-        const file = bastFiles[i];
-        const filePath = `${selectedMr.kode_mr.replace(/\//g, "-")}/bast/${
-          selectedItemForBast.part_number
-        }/${Date.now()}_${file.name}`;
-        const formData = new FormData();
-        formData.append("file", file);
-        const result = await uploadAttachmentVps(formData, filePath);
-        if (!result.success) throw new Error(result.message);
-        uploadedAttachments.push({
-          name: file.name,
-          url: result.url,
-          type: "bast",
-        });
-      }
-
-      await uploadBastForMrItem(
-        Number(selectedMr.id),
-        selectedItemForBast.part_number,
-        uploadedAttachments,
-        currentUser.id,
-      );
-
-      toast.success("BAST berhasil diunggah, item ditandai selesai");
-      setIsBastUploadOpen(false);
-      await refreshMrRow(Number(selectedMr.id));
-    } catch (err: any) {
-      toast.error("Gagal upload BAST", {
-        description: getUploadErrorMessage(err),
-      });
-    } finally {
-      setUploadingBast(false);
-    }
-  };
-
-  const handleRemoveItemBast = async (item: Order, attachmentUrl: string) => {
-    if (!selectedMr || !item.part_number || !currentUser) return;
-    try {
-      await removeBastForMrItem(
-        Number(selectedMr.id),
-        item.part_number,
-        attachmentUrl,
-        currentUser.id,
-      );
-      toast.success("Lampiran BAST dihapus");
-      await refreshMrRow(Number(selectedMr.id));
-    } catch (err: any) {
-      toast.error("Gagal hapus lampiran BAST", { description: err.message });
+    const barangIds = (mr.orders || [])
+      .map((o) => o.barang_id)
+      .filter((id): id is number => !!id);
+    if (barangIds.length > 0) {
+      fetchBarangAssetFlags(barangIds).then(setQuickViewAssetMap);
+    } else {
+      setQuickViewAssetMap({});
     }
   };
 
@@ -654,7 +638,7 @@ export default function MrManagementClient() {
     switch (status?.toLowerCase()) {
       case "approved":
         return (
-          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 dark:border-green-800">
+          <Badge className="bg-green-100 text-green-800 border-green-200">
             Approved
           </Badge>
         );
@@ -666,38 +650,38 @@ export default function MrManagementClient() {
         return (
           <Badge
             variant="outline"
-            className="border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800"
+            className="border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-950/20 dark:text-orange-400 dark:border-orange-800"
           >
             Validation
           </Badge>
         );
       case "waiting po":
         return (
-          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-800">
+          <Badge className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-800">
             Waiting PO
           </Badge>
         );
       case "on process":
         return (
-          <Badge className="bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-300 dark:border-cyan-800">
+          <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900 dark:text-cyan-200 dark:border-cyan-800">
             On Process
           </Badge>
         );
       case "pending receive":
         return (
-          <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-800">
+          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800">
             Pending Receive
           </Badge>
         );
       case "partial receive":
         return (
-          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800">
+          <Badge className="bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-800">
             Partial Receive
           </Badge>
         );
       case "full received":
         return (
-          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800">
+          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-800">
             Full Received
           </Badge>
         );
@@ -706,10 +690,54 @@ export default function MrManagementClient() {
     }
   };
 
+  const getPriorityBadge = (p?: string | null) => {
+    if (!p) return null;
+    let colorClass = "";
+    switch (p) {
+      case "P0":
+        colorClass = "border-red-500 text-red-600 bg-red-50 text-sm";
+        break;
+      case "P1":
+        colorClass = "border-orange-500 text-orange-600 bg-orange-50 text-sm";
+        break;
+      case "P2":
+        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50 text-sm";
+        break;
+      case "P3":
+        colorClass = "border-green-500 text-green-600 bg-green-50 text-sm";
+        break;
+      default:
+        colorClass = "border-gray-300 text-gray-500 bg-gray-50 text-sm";
+    }
+    return (
+      <Badge
+        variant="outline"
+        className={cn("px-1 py-0 text-[10px]", colorClass)}
+      >
+        {p}
+      </Badge>
+    );
+  };
+
   return (
     <Content
-      title="Manajemen Material Request"
-      description="Monitoring dan Kelola seluruh MR (Admin View)."
+      title={onlyMine ? "MR Saya" : "Daftar Material Request"}
+      description={
+        onlyMine
+          ? "Daftar Material Request yang kamu buat"
+          : "Kelola seluruh data Material Request"
+      }
+      cardAction={
+        currentUser &&
+        (currentUser.role === "requester" || currentUser.role === "admin") && (
+          <Button asChild>
+            <Link href="/material-request/buat">
+              <Plus className="mr-2 h-4 w-4" /> Buat Material Request
+            </Link>
+          </Button>
+        )
+      }
+      className="col-span-12"
     >
       <div className="flex flex-col gap-4 mb-6 no-print">
         {/* Row 1: Search & Actions */}
@@ -717,8 +745,8 @@ export default function MrManagementClient() {
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Cari Kode MR, Requester, Remarks..."
-              className="pl-10 bg-background"
+              placeholder="Cari Kode MR, Requester..."
+              className="pl-10"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
@@ -748,7 +776,7 @@ export default function MrManagementClient() {
         </div>
 
         {/* Row 2: Filter Grid */}
-        <div className="p-4 border rounded-lg bg-muted/50">
+        <div className="p-4 border rounded-lg bg-muted/50 dark:bg-muted/10">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
@@ -791,21 +819,21 @@ export default function MrManagementClient() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Level</label>
+              <label className="text-sm font-medium">Priority</label>
               <Select
-                value={levelFilter || "all"}
+                value={prioritasFilter || "all"}
                 onValueChange={(v) =>
-                  handleFilterChange({ level: v === "all" ? undefined : v })
+                  handleFilterChange({ prioritas: v === "all" ? undefined : v })
                 }
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Level" />
+                  <SelectValue placeholder="Priority" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Level</SelectItem>
-                  {MR_LEVELS.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
-                      {l.label}
+                  <SelectItem value="all">Semua Prioritas</SelectItem>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -971,6 +999,7 @@ export default function MrManagementClient() {
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
               <TableHead>Kode MR</TableHead>
+              <TableHead>Priority</TableHead>
               <TableHead>Cost Center</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
@@ -986,12 +1015,14 @@ export default function MrManagementClient() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={14} className="h-24 text-center">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                </TableCell>
-              </TableRow>
+            {loading || isPending ? (
+              Array.from({ length: limit }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={15}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
             ) : dataMR.length > 0 ? (
               dataMR.map((mr, index) => (
                 <TableRow
@@ -1003,9 +1034,19 @@ export default function MrManagementClient() {
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
 
+                  {/* 1. KODE MR */}
                   <TableCell className="font-semibold text-foreground">
-                    {mr.kode_mr}
+                    <Link
+                      href={`/material-request/${mr.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:underline hover:text-blue-600 decoration-blue-600 underline-offset-4"
+                    >
+                      {mr.kode_mr}
+                    </Link>
                   </TableCell>
+
+                  {/* 2. PRIORITY */}
+                  <TableCell>{getPriorityBadge(mr.prioritas)}</TableCell>
 
                   <TableCell>
                     <Badge variant="outline">
@@ -1040,48 +1081,22 @@ export default function MrManagementClient() {
                     {formatCurrency(Number(mr.cost_estimation))}
                   </TableCell>
 
-                  {/* Aksi: View + Edit (Admin Only) */}
                   <TableCell className="text-right no-print">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          className="h-8 w-8 p-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Aksi</DropdownMenuLabel>
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href={`/material-request/${mr.id}`}
-                            className="cursor-pointer"
-                          >
-                            <Eye className="mr-2 h-4 w-4" /> Lihat Detail
-                          </Link>
-                        </DropdownMenuItem>
-                        {/* Admin Special: Edit available for most statuses except Closed */}
-                        {mr.status !== "Full Received" && (
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href={`/mr-management/edit/${mr.id}`}
-                              className="cursor-pointer"
-                            >
-                              <Edit className="mr-2 h-4 w-4" /> Edit Admin
-                            </Link>
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/material-request/${mr.id}`}>View</Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={14}
+                  colSpan={15}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Tidak ada data ditemukan.
@@ -1100,7 +1115,7 @@ export default function MrManagementClient() {
             value={String(limit)}
             onValueChange={(val) => handleFilterChange({ limit: val, page: 1 })}
           >
-            <SelectTrigger className="w-[80px] h-8 bg-background">
+            <SelectTrigger className="w-[80px] h-8">
               <SelectValue placeholder={limit} />
             </SelectTrigger>
             <SelectContent>
@@ -1133,7 +1148,7 @@ export default function MrManagementClient() {
               Ringkasan MR: {selectedMr?.kode_mr}
             </DialogTitle>
             <DialogDescription>
-              Informasi singkat dan daftar barang (Admin Quick View).
+              Informasi singkat dan daftar barang.
             </DialogDescription>
           </DialogHeader>
 
@@ -1177,9 +1192,9 @@ export default function MrManagementClient() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs flex items-center gap-1">
-                    <Layers className="h-3 w-3" /> Level
+                    <AlertCircle className="h-3 w-3" /> Priority
                   </p>
-                  <p className="font-medium">{selectedMr.level}</p>
+                  {getPriorityBadge(selectedMr.prioritas)}
                 </div>
                 <div className="col-span-2">
                   <p className="text-muted-foreground text-xs flex items-center gap-1">
@@ -1206,7 +1221,6 @@ export default function MrManagementClient() {
                         <TableHead>Est. Harga</TableHead>
                         <TableHead>Total</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1214,7 +1228,17 @@ export default function MrManagementClient() {
                         selectedMr.orders.map((item, i) => (
                           <TableRow key={i}>
                             <TableCell className="font-medium">
-                              {item.name}
+                              <div className="flex items-center gap-2">
+                                {item.name}
+                                <AssetGoodsBadge
+                                  isAsset={
+                                    !!(
+                                      item.barang_id &&
+                                      quickViewAssetMap[item.barang_id]
+                                    )
+                                  }
+                                />
+                              </div>
                             </TableCell>
                             <TableCell>{item.qty}</TableCell>
                             <TableCell>{item.uom}</TableCell>
@@ -1228,66 +1252,19 @@ export default function MrManagementClient() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">
-                                {item.status || "Pending"}
-                              </Badge>
-                              {item.bast_attachments &&
-                                item.bast_attachments.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {item.bast_attachments.map((att, idx) => (
-                                      <div
-                                        key={idx}
-                                        className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
-                                      >
-                                        <Link
-                                          href={resolveAttachmentUrl(att.url)}
-                                          target="_blank"
-                                          className="hover:underline flex items-center gap-1"
-                                        >
-                                          <FileText className="w-3 h-3" />
-                                          {att.name}
-                                        </Link>
-                                        {currentUser?.role === "admin" && (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleRemoveItemBast(
-                                                item,
-                                                att.url,
-                                              )
-                                            }
-                                            className="hover:text-red-600"
-                                            title="Hapus lampiran"
-                                          >
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                              {currentUser?.role === "admin" &&
-                                item.status === "Pending BAST" &&
-                                item.part_number && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs"
-                                    onClick={() => handleOpenBastUpload(item)}
-                                  >
-                                    <Upload className="mr-1 h-3 w-3" /> Upload
-                                    BAST
-                                  </Button>
-                                )}
+                              <div className="flex flex-col items-start gap-1">
+                                <Badge variant="outline">
+                                  {item.status || "Pending"}
+                                </Badge>
+                                <ItemLevelBadge level={item.level} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
                           <TableCell
-                            colSpan={7}
+                            colSpan={6}
                             className="text-center text-muted-foreground h-16"
                           >
                             Tidak ada barang.
@@ -1306,58 +1283,12 @@ export default function MrManagementClient() {
               Tutup
             </Button>
             {selectedMr && (
-              <Button variant="outline" asChild>
-                <Link href={`/mr-management/edit/${selectedMr.id}`}>
-                  <Edit className="mr-2 h-4 w-4" /> Edit MR
-                </Link>
-              </Button>
-            )}
-            {selectedMr && (
               <Button asChild>
                 <Link href={`/material-request/${selectedMr.id}`}>
                   <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
                 </Link>
               </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* --- UPLOAD BAST DIALOG (Admin, via MR Management) --- */}
-      <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload BAST Barang</DialogTitle>
-            <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-              untuk <strong>{selectedItemForBast?.name}</strong>. Item ini
-              akan ditandai selesai setelah bukti diunggah.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="admin-item-bast-file">File BAST / Bukti Foto</Label>
-            <Input
-              id="admin-item-bast-file"
-              type="file"
-              multiple
-              onChange={(e) => setBastFiles(e.target.files)}
-              className="mt-2"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBastUploadOpen(false)}
-              disabled={uploadingBast}
-            >
-              Batal
-            </Button>
-            <Button onClick={handleUploadItemBast} disabled={uploadingBast}>
-              {uploadingBast && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Upload & Selesaikan
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

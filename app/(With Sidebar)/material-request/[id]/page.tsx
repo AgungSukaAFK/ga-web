@@ -9,7 +9,11 @@ import {
   uploadAttachmentVps,
   removeAttachmentVps,
 } from "@/services/storageService";
-import { resolveAttachmentUrl } from "@/lib/attachments";
+import {
+  resolveAttachmentUrl,
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+} from "@/lib/attachments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -745,6 +749,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
+    for (const file of bastFiles) {
+      const sizeError = getAttachmentSizeError(file);
+      if (sizeError) {
+        toast.error("Ukuran file terlalu besar", { description: sizeError });
+        return;
+      }
+    }
+
     setUploadingBast(true);
     try {
       const uploadedAttachments: Attachment[] = [];
@@ -776,7 +788,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       await fetchMrData();
       fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
     } catch (err: any) {
-      toast.error("Gagal upload BAST", { description: err.message });
+      toast.error("Gagal upload BAST", {
+        description: getUploadErrorMessage(err),
+      });
     } finally {
       setUploadingBast(false);
     }
@@ -895,49 +909,87 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   ) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
-    setIsUploading(true);
-    const toastId = toast.loading(`Mengunggah ${files.length} file...`);
-    const uploadPromises = Array.from(files).map(async (file) => {
-      const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
-        file.name
-      }`;
-      const formData = new FormData();
-      formData.append("file", file);
-      const result = await uploadAttachmentVps(formData, filePath);
-      if (!result.success) return { error: result.message };
-      return { data: { url: result.url, name: file.name }, error: null };
-    });
-    const results = await Promise.all(uploadPromises);
-    const successfulUploads = results
-      .filter((r) => !r.error)
-      .map((r) => r.data as Attachment);
-    if (successfulUploads.length === 0) {
-      toast.error("Semua file gagal diunggah.", { id: toastId });
-      setIsUploading(false);
+
+    const fileList = Array.from(files);
+    const oversizedErrors = fileList
+      .map((file) => getAttachmentSizeError(file))
+      .filter((err): err is string => !!err);
+    const validFiles = fileList.filter((file) => !getAttachmentSizeError(file));
+
+    if (oversizedErrors.length > 0) {
+      toast.error(
+        oversizedErrors.length === fileList.length
+          ? "Semua file melebihi batas ukuran"
+          : `${oversizedErrors.length} file dilewati karena melebihi batas ukuran`,
+        { description: oversizedErrors.join(" ") },
+      );
+    }
+
+    if (validFiles.length === 0) {
+      e.target.value = "";
       return;
     }
-    const updatedAttachments = [
-      ...(mr.attachments || []),
-      ...successfulUploads,
-    ];
-    const { error: updateError } = await supabase
-      .from("material_requests")
-      .update({ attachments: updatedAttachments })
-      .eq("id", mr.id);
-    if (updateError) {
-      toast.error("Gagal menyimpan data lampiran", {
-        id: toastId,
-        description: updateError.message,
+
+    setIsUploading(true);
+    const toastId = toast.loading(`Mengunggah ${validFiles.length} file...`);
+    try {
+      const uploadPromises = validFiles.map(async (file) => {
+        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
+          file.name
+        }`;
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const result = await uploadAttachmentVps(formData, filePath);
+          if (!result.success) return { error: result.message };
+          return { data: { url: result.url, name: file.name }, error: null };
+        } catch (err) {
+          return { error: getUploadErrorMessage(err) };
+        }
       });
-    } else {
-      toast.success(
-        `${successfulUploads.length} file berhasil diunggah & disimpan.`,
-        { id: toastId },
-      );
-      await fetchMrData();
+      const results = await Promise.all(uploadPromises);
+      const successfulUploads = results
+        .filter((r) => !r.error)
+        .map((r) => r.data as Attachment);
+      if (successfulUploads.length === 0) {
+        toast.error("Semua file gagal diunggah.", {
+          id: toastId,
+          description: results.map((r) => r.error).filter(Boolean).join(" "),
+        });
+        return;
+      }
+      const updatedAttachments = [
+        ...(mr.attachments || []),
+        ...successfulUploads,
+      ];
+      const { error: updateError } = await supabase
+        .from("material_requests")
+        .update({ attachments: updatedAttachments })
+        .eq("id", mr.id);
+      if (updateError) {
+        toast.error("Gagal menyimpan data lampiran", {
+          id: toastId,
+          description: updateError.message,
+        });
+      } else {
+        const failedCount = results.length - successfulUploads.length;
+        toast.success(
+          failedCount > 0
+            ? `${successfulUploads.length} file berhasil diunggah, ${failedCount} gagal.`
+            : `${successfulUploads.length} file berhasil diunggah & disimpan.`,
+          { id: toastId },
+        );
+        await fetchMrData();
+      }
+    } catch (err: any) {
+      toast.error("Gagal mengunggah file", {
+        id: toastId,
+        description: getUploadErrorMessage(err),
+      });
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
     }
-    setIsUploading(false);
-    e.target.value = "";
   };
 
   const removeAttachment = (indexToRemove: number) => {

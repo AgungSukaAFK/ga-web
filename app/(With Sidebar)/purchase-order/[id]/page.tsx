@@ -6,7 +6,11 @@ import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentVps } from "@/services/storageService";
-import { resolveAttachmentUrl } from "@/lib/attachments";
+import {
+  resolveAttachmentUrl,
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+} from "@/lib/attachments";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
@@ -588,6 +592,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     const file = e.target.files?.[0];
     if (!file || !po) return;
 
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError) {
+      toast.error("Ukuran file terlalu besar", { description: sizeError });
+      e.target.value = "";
+      return;
+    }
+
     const setIsLoading =
       type === "po"
         ? setIsUploadingPO
@@ -634,7 +645,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     } catch (err: any) {
       toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
         id: toastId,
-        description: err.message,
+        description: getUploadErrorMessage(err),
       });
     } finally {
       setIsLoading(false);

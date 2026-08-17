@@ -41,6 +41,7 @@ import {
 import { isMarketplaceVendor } from "@/type/enum";
 import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
+import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import {
   Loader2,
   Send,
@@ -805,6 +806,14 @@ function CreatePOPageContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (poForm.kode_po === "Generating...") return;
+
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError) {
+      toast.error("Ukuran file terlalu besar", { description: sizeError });
+      e.target.value = "";
+      return;
+    }
+
     const setIsLoading =
       type === "po"
         ? setIsUploadingPO
@@ -830,7 +839,7 @@ function CreatePOPageContent() {
         toast.success("Berhasil diunggah");
       }
     } catch (err: any) {
-      toast.error("Gagal upload", { description: err?.message });
+      toast.error("Gagal upload", { description: getUploadErrorMessage(err) });
     } finally {
       setIsLoading(false);
       e.target.value = "";
