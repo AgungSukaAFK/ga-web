@@ -54,7 +54,11 @@ import {
   uploadAttachmentVps,
   removeAttachmentVps,
 } from "@/services/storageService";
-import { resolveAttachmentUrl } from "@/lib/attachments";
+import {
+  resolveAttachmentUrl,
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+} from "@/lib/attachments";
 import {
   PurchaseOrderDetail,
   POItem,
@@ -606,6 +610,13 @@ export function PoManagementEditClientContent({
     const file = e.target.files?.[0];
     if (!file || !poForm) return;
 
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError) {
+      toast.error("Ukuran file terlalu besar", { description: sizeError });
+      e.target.value = "";
+      return;
+    }
+
     const setIsLoading =
       type === "po" ? setIsUploadingPO : setIsUploadingFinance;
     setIsLoading(true);
@@ -648,7 +659,7 @@ export function PoManagementEditClientContent({
     } catch (err: any) {
       toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
         id: toastId,
-        description: err?.message,
+        description: getUploadErrorMessage(err),
       });
     } finally {
       setIsLoading(false);

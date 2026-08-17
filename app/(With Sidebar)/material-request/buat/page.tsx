@@ -58,6 +58,7 @@ import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn } from "@/lib/utils";
+import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { format } from "date-fns";
 import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
@@ -410,41 +411,66 @@ export default function BuatMRPage() {
       toast.warning("Kode MR belum siap, tunggu sebentar.");
       return;
     }
+
+    const fileList = Array.from(files);
+    const oversizedErrors = fileList
+      .map((file) => getAttachmentSizeError(file))
+      .filter((err): err is string => !!err);
+    const validFiles = fileList.filter((file) => !getAttachmentSizeError(file));
+
+    if (oversizedErrors.length > 0) {
+      toast.error(
+        oversizedErrors.length === fileList.length
+          ? "Semua file melebihi batas ukuran"
+          : `${oversizedErrors.length} file dilewati karena melebihi batas ukuran`,
+        { description: oversizedErrors.join(" ") },
+      );
+    }
+
+    if (validFiles.length === 0) {
+      e.target.value = "";
+      return;
+    }
+
     setIsUploading(true);
-    const toastId = toast.loading(`Mengunggah ${files.length} file...`);
+    const toastId = toast.loading(`Mengunggah ${validFiles.length} file...`);
     const successfulUploads: Attachment[] = [];
-    let failedUploads = 0;
+    const failedMessages: string[] = [];
 
-    for (const file of files) {
-      try {
-        const newAttachment = await uploadAttachment(
-          file,
-          formCreateMR.kode_mr,
-        );
-        successfulUploads.push(newAttachment);
-      } catch (error) {
-        console.error("Gagal unggah satu file:", error);
-        failedUploads++;
+    try {
+      for (const file of validFiles) {
+        try {
+          const newAttachment = await uploadAttachment(
+            file,
+            formCreateMR.kode_mr,
+          );
+          successfulUploads.push(newAttachment);
+        } catch (error) {
+          failedMessages.push(`${file.name}: ${getUploadErrorMessage(error)}`);
+        }
       }
-    }
 
-    if (successfulUploads.length > 0) {
-      setFormCreateMR((prev) => ({
-        ...prev,
-        attachments: [...(prev.attachments || []), ...successfulUploads],
-      }));
-      toast.success(`${successfulUploads.length} file berhasil diunggah.`, {
-        id: toastId,
-      });
+      if (successfulUploads.length > 0) {
+        setFormCreateMR((prev) => ({
+          ...prev,
+          attachments: [...(prev.attachments || []), ...successfulUploads],
+        }));
+        toast.success(`${successfulUploads.length} file berhasil diunggah.`, {
+          id: toastId,
+        });
+      }
+      if (failedMessages.length > 0) {
+        toast.error(`Gagal mengunggah ${failedMessages.length} file.`, {
+          id: toastId,
+          description: failedMessages.join(" "),
+        });
+      } else if (successfulUploads.length === 0) {
+        toast.dismiss(toastId);
+      }
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
     }
-    if (failedUploads > 0) {
-      toast.error(`Gagal mengunggah ${failedUploads} file.`, { id: toastId });
-    } else if (successfulUploads.length === 0) {
-      toast.dismiss(toastId);
-    }
-
-    setIsUploading(false);
-    e.target.value = "";
   };
 
   const handleRemoveAttachment = async (index: number, path: string) => {

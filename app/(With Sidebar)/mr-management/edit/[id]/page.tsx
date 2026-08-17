@@ -9,7 +9,11 @@ import {
   uploadAttachmentVps,
   removeAttachmentVps,
 } from "@/services/storageService";
-import { resolveAttachmentUrl } from "@/lib/attachments";
+import {
+  resolveAttachmentUrl,
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+} from "@/lib/attachments";
 import { Content } from "@/components/content";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -519,54 +523,86 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     const files = e.target.files;
     if (!files || files.length === 0 || !mr) return;
 
-    setIsUploading(true);
-    const toastId = toast.loading(`Mengunggah ${files.length} file...`);
-    const uploadPromises = Array.from(files).map(async (file) => {
-      const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
-        file.name
-      }`;
-      const formData = new FormData();
-      formData.append("file", file);
-      const result = await uploadAttachmentVps(formData, filePath);
-      if (!result.success) return { error: result.message };
-      return { data: { url: result.url, name: file.name }, error: null };
-    });
+    const fileList = Array.from(files);
+    const oversizedErrors = fileList
+      .map((file) => getAttachmentSizeError(file))
+      .filter((err): err is string => !!err);
+    const validFiles = fileList.filter((file) => !getAttachmentSizeError(file));
 
-    const results = await Promise.all(uploadPromises);
-    const successfulUploads = results
-      .filter((r) => !r.error)
-      .map((r) => r.data as Attachment);
-
-    if (successfulUploads.length > 0) {
-      setMr((prevMr) =>
-        prevMr
-          ? {
-              ...prevMr,
-              attachments: [
-                ...(Array.isArray(prevMr.attachments)
-                  ? prevMr.attachments
-                  : []),
-                ...successfulUploads,
-              ],
-            }
-          : null,
+    if (oversizedErrors.length > 0) {
+      toast.error(
+        oversizedErrors.length === fileList.length
+          ? "Semua file melebihi batas ukuran"
+          : `${oversizedErrors.length} file dilewati karena melebihi batas ukuran`,
+        { description: oversizedErrors.join(" ") },
       );
-      toast.success(`${successfulUploads.length} file berhasil diunggah.`, {
-        id: toastId,
-      });
     }
 
-    const failedUploads = results.filter((r) => r.error);
-    if (failedUploads.length > 0) {
-      toast.error(`Gagal mengunggah ${failedUploads.length} file.`, {
-        id: toastId,
-      });
-    } else if (successfulUploads.length === 0) {
-      toast.dismiss(toastId);
+    if (validFiles.length === 0) {
+      e.target.value = "";
+      return;
     }
 
-    setIsUploading(false);
-    e.target.value = "";
+    setIsUploading(true);
+    const toastId = toast.loading(`Mengunggah ${validFiles.length} file...`);
+    try {
+      const uploadPromises = validFiles.map(async (file) => {
+        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
+          file.name
+        }`;
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const result = await uploadAttachmentVps(formData, filePath);
+          if (!result.success) return { error: result.message };
+          return { data: { url: result.url, name: file.name }, error: null };
+        } catch (err) {
+          return { error: getUploadErrorMessage(err) };
+        }
+      });
+
+      const results = await Promise.all(uploadPromises);
+      const successfulUploads = results
+        .filter((r) => !r.error)
+        .map((r) => r.data as Attachment);
+
+      if (successfulUploads.length > 0) {
+        setMr((prevMr) =>
+          prevMr
+            ? {
+                ...prevMr,
+                attachments: [
+                  ...(Array.isArray(prevMr.attachments)
+                    ? prevMr.attachments
+                    : []),
+                  ...successfulUploads,
+                ],
+              }
+            : null,
+        );
+        toast.success(`${successfulUploads.length} file berhasil diunggah.`, {
+          id: toastId,
+        });
+      }
+
+      const failedUploads = results.filter((r) => r.error);
+      if (failedUploads.length > 0) {
+        toast.error(`Gagal mengunggah ${failedUploads.length} file.`, {
+          id: toastId,
+          description: failedUploads.map((r) => r.error).join(" "),
+        });
+      } else if (successfulUploads.length === 0) {
+        toast.dismiss(toastId);
+      }
+    } catch (err: any) {
+      toast.error("Gagal mengunggah file", {
+        id: toastId,
+        description: getUploadErrorMessage(err),
+      });
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
+    }
   };
 
   const removeAttachment = (indexToRemove: number) => {

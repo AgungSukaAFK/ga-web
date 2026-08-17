@@ -73,7 +73,11 @@ import {
   removeBastForMrItem,
 } from "@/services/mrService";
 import { uploadAttachmentVps } from "@/services/storageService";
-import { resolveAttachmentUrl } from "@/lib/attachments";
+import {
+  resolveAttachmentUrl,
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+} from "@/lib/attachments";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -584,6 +588,14 @@ export default function MrManagementClient() {
       return;
     }
 
+    for (const file of bastFiles) {
+      const sizeError = getAttachmentSizeError(file);
+      if (sizeError) {
+        toast.error("Ukuran file terlalu besar", { description: sizeError });
+        return;
+      }
+    }
+
     setUploadingBast(true);
     try {
       const uploadedAttachments: Attachment[] = [];
@@ -614,7 +626,9 @@ export default function MrManagementClient() {
       setIsBastUploadOpen(false);
       await refreshMrRow(Number(selectedMr.id));
     } catch (err: any) {
-      toast.error("Gagal upload BAST", { description: err.message });
+      toast.error("Gagal upload BAST", {
+        description: getUploadErrorMessage(err),
+      });
     } finally {
       setUploadingBast(false);
     }

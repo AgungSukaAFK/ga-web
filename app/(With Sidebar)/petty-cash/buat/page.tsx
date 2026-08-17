@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentVps } from "@/services/storageService";
+import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -105,8 +106,9 @@ export default function CreatePettyCashPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      return toast.error("Ukuran file maksimal 5MB.");
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError) {
+      return toast.error("Ukuran file terlalu besar", { description: sizeError });
     }
 
     setUploading(true);
@@ -126,7 +128,9 @@ export default function CreatePettyCashPage() {
       }));
       toast.success("Lampiran berhasil diunggah");
     } catch (error: any) {
-      toast.error("Gagal mengunggah file", { description: error.message });
+      toast.error("Gagal mengunggah file", {
+        description: getUploadErrorMessage(error),
+      });
     } finally {
       setUploading(false);
       e.target.value = "";
