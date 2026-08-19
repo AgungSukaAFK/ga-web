@@ -63,6 +63,7 @@ import {
 } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { LIMIT_OPTIONS, STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
@@ -143,9 +144,13 @@ export default function MrManagementClient() {
   );
 
   // --- Upload BAST State (Admin, via MR Management) ---
+  // Bisa upload utk >1 barang sekaligus (mis. 1 foto BAST yg sama mewakili
+  // beberapa barang) - satu file diunggah sekali, lalu dilampirkan ke semua
+  // barang terpilih.
   const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
-  const [selectedItemForBast, setSelectedItemForBast] =
-    useState<Order | null>(null);
+  const [selectedItemsForBast, setSelectedItemsForBast] = useState<Order[]>(
+    [],
+  );
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
@@ -544,10 +549,26 @@ export default function MrManagementClient() {
   };
 
   // --- Upload BAST (Admin, via MR Management) ---
-  const handleOpenBastUpload = (item: Order) => {
-    setSelectedItemForBast(item);
+  // `item` di-pre-select kalau dibuka dari tombol per-baris; dialog tetap
+  // nampilin semua barang berstatus "Pending BAST" di MR yg sama biar bisa
+  // nambah barang lain (utk kasus 1 foto BAST yg sama dipakai buat beberapa
+  // barang).
+  const bastEligibleItems = (selectedMr?.orders || []).filter(
+    (o: Order) => o.status === "Pending BAST" && o.part_number,
+  );
+
+  const handleOpenBastUpload = (item?: Order) => {
+    setSelectedItemsForBast(item ? [item] : []);
     setBastFiles(null);
     setIsBastUploadOpen(true);
+  };
+
+  const toggleBastItemSelection = (item: Order) => {
+    setSelectedItemsForBast((prev) =>
+      prev.some((it) => it.part_number === item.part_number)
+        ? prev.filter((it) => it.part_number !== item.part_number)
+        : [...prev, item],
+    );
   };
 
   // Refresh status/level/orders satu MR saja (dipanggil setelah upload BAST)
@@ -578,7 +599,10 @@ export default function MrManagementClient() {
   };
 
   const handleUploadItemBast = async () => {
-    if (!selectedMr || !selectedItemForBast?.part_number) return;
+    if (!selectedMr || selectedItemsForBast.length === 0) {
+      toast.error("Pilih minimal satu barang");
+      return;
+    }
     if (!bastFiles || bastFiles.length === 0) {
       toast.error("Pilih file BAST terlebih dahulu");
       return;
@@ -598,12 +622,16 @@ export default function MrManagementClient() {
 
     setUploadingBast(true);
     try {
+      // Upload file(s) SEKALI, lalu lampirkan hasil yang sama ke setiap
+      // barang terpilih - bukan upload ulang per barang.
+      const pathSegment =
+        selectedItemsForBast.length === 1
+          ? selectedItemsForBast[0].part_number
+          : "multi-item";
       const uploadedAttachments: Attachment[] = [];
       for (let i = 0; i < bastFiles.length; i++) {
         const file = bastFiles[i];
-        const filePath = `${selectedMr.kode_mr.replace(/\//g, "-")}/bast/${
-          selectedItemForBast.part_number
-        }/${Date.now()}_${file.name}`;
+        const filePath = `${selectedMr.kode_mr.replace(/\//g, "-")}/bast/${pathSegment}/${Date.now()}_${file.name}`;
         const formData = new FormData();
         formData.append("file", file);
         const result = await uploadAttachmentVps(formData, filePath);
@@ -615,14 +643,24 @@ export default function MrManagementClient() {
         });
       }
 
-      await uploadBastForMrItem(
-        Number(selectedMr.id),
-        selectedItemForBast.part_number,
-        uploadedAttachments,
-        currentUser.id,
-      );
+      // Sequential (bukan Promise.all) - uploadBastForMrItem baca-ubah-tulis
+      // seluruh array `orders`, jadi kalau dijalankan paralel utk barang2
+      // dari MR yang sama, update bisa saling menimpa (lost update).
+      for (const item of selectedItemsForBast) {
+        if (!item.part_number) continue;
+        await uploadBastForMrItem(
+          Number(selectedMr.id),
+          item.part_number,
+          uploadedAttachments,
+          currentUser.id,
+        );
+      }
 
-      toast.success("BAST berhasil diunggah, item ditandai selesai");
+      toast.success(
+        selectedItemsForBast.length === 1
+          ? "BAST berhasil diunggah, item ditandai selesai"
+          : `BAST berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
+      );
       setIsBastUploadOpen(false);
       await refreshMrRow(Number(selectedMr.id));
     } catch (err: any) {
@@ -1193,9 +1231,22 @@ export default function MrManagementClient() {
 
               {/* Table Items */}
               <div>
-                <h4 className="font-semibold mb-2 flex items-center gap-2">
-                  <Layers className="h-4 w-4" /> Daftar Barang
-                </h4>
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <Layers className="h-4 w-4" /> Daftar Barang
+                  </h4>
+                  {currentUser?.role === "admin" &&
+                    bastEligibleItems.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenBastUpload()}
+                      >
+                        <Upload className="mr-2 h-3.5 w-3.5" /> Upload BAST
+                        Massal
+                      </Button>
+                    )}
+                </div>
                 <div className="border rounded-md overflow-hidden">
                   <Table>
                     <TableHeader className="bg-muted/50">
@@ -1324,25 +1375,66 @@ export default function MrManagementClient() {
       </Dialog>
 
       {/* --- UPLOAD BAST DIALOG (Admin, via MR Management) --- */}
+      {/* Bisa pilih >1 barang sekaligus - 1 file BAST yg sama dilampirkan ke
+          semua barang terpilih. */}
       <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload BAST Barang</DialogTitle>
             <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-              untuk <strong>{selectedItemForBast?.name}</strong>. Item ini
-              akan ditandai selesai setelah bukti diunggah.
+              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan.
+              Barang yang dicentang akan ditandai selesai dengan bukti yang
+              sama.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="admin-item-bast-file">File BAST / Bukti Foto</Label>
-            <Input
-              id="admin-item-bast-file"
-              type="file"
-              multiple
-              onChange={(e) => setBastFiles(e.target.files)}
-              className="mt-2"
-            />
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Barang ({selectedItemsForBast.length} dipilih)</Label>
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
+                {bastEligibleItems.length === 0 ? (
+                  <div className="p-3 text-sm text-muted-foreground">
+                    Tidak ada barang berstatus &quot;Pending BAST&quot;.
+                  </div>
+                ) : (
+                  bastEligibleItems.map((item) => {
+                    const checked = selectedItemsForBast.some(
+                      (it) => it.part_number === item.part_number,
+                    );
+                    return (
+                      <label
+                        key={item.part_number}
+                        className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() =>
+                            toggleBastItemSelection(item)
+                          }
+                        />
+                        <span className="flex-1">
+                          {item.name}{" "}
+                          <span className="text-muted-foreground">
+                            ({item.qty} {item.uom})
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="admin-item-bast-file">
+                File BAST / Bukti Foto
+              </Label>
+              <Input
+                id="admin-item-bast-file"
+                type="file"
+                multiple
+                onChange={(e) => setBastFiles(e.target.files)}
+                className="mt-2"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -1352,7 +1444,10 @@ export default function MrManagementClient() {
             >
               Batal
             </Button>
-            <Button onClick={handleUploadItemBast} disabled={uploadingBast}>
+            <Button
+              onClick={handleUploadItemBast}
+              disabled={uploadingBast || selectedItemsForBast.length === 0}
+            >
               {uploadingBast && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}

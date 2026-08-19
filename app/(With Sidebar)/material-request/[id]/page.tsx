@@ -94,6 +94,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -230,9 +231,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [savingManualLink, setSavingManualLink] = useState(false);
 
   // --- STATE: UPLOAD BAST PER ITEM (REQUESTER) ---
+  // Bisa upload utk >1 barang sekaligus (mis. 1 foto BAST yg sama mewakili
+  // beberapa barang) - satu file diunggah sekali, lalu dilampirkan ke semua
+  // barang terpilih.
   const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
-  const [selectedItemForBast, setSelectedItemForBast] =
-    useState<Order | null>(null);
+  const [selectedItemsForBast, setSelectedItemsForBast] = useState<Order[]>(
+    [],
+  );
   const [bastFiles, setBastFiles] = useState<FileList | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
@@ -732,14 +737,32 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- UPLOAD BAST PER ITEM (REQUESTER) ---
-  const handleOpenBastUpload = (item: Order) => {
-    setSelectedItemForBast(item);
+  // `item` di-pre-select kalau dibuka dari tombol per-baris; dialog tetap
+  // nampilin semua barang berstatus "Pending BAST" biar bisa nambah barang
+  // lain (utk kasus 1 foto BAST yg sama dipakai buat beberapa barang).
+  const bastEligibleItems = (mr?.orders || []).filter(
+    (o) => o.status === "Pending BAST" && o.part_number,
+  );
+
+  const handleOpenBastUpload = (item?: Order) => {
+    setSelectedItemsForBast(item ? [item] : []);
     setBastFiles(null);
     setIsBastUploadOpen(true);
   };
 
+  const toggleBastItemSelection = (item: Order) => {
+    setSelectedItemsForBast((prev) =>
+      prev.some((it) => it.part_number === item.part_number)
+        ? prev.filter((it) => it.part_number !== item.part_number)
+        : [...prev, item],
+    );
+  };
+
   const handleUploadItemBast = async () => {
-    if (!mr || !selectedItemForBast?.part_number) return;
+    if (!mr || selectedItemsForBast.length === 0) {
+      toast.error("Pilih minimal satu barang");
+      return;
+    }
     if (!bastFiles || bastFiles.length === 0) {
       toast.error("Pilih file BAST terlebih dahulu");
       return;
@@ -759,12 +782,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
     setUploadingBast(true);
     try {
+      // Upload file(s) SEKALI, lalu lampirkan hasil yang sama ke setiap
+      // barang terpilih - bukan upload ulang per barang.
+      const pathSegment =
+        selectedItemsForBast.length === 1
+          ? selectedItemsForBast[0].part_number
+          : "multi-item";
       const uploadedAttachments: Attachment[] = [];
       for (let i = 0; i < bastFiles.length; i++) {
         const file = bastFiles[i];
-        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/bast/${
-          selectedItemForBast.part_number
-        }/${Date.now()}_${file.name}`;
+        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/bast/${pathSegment}/${Date.now()}_${file.name}`;
         const formData = new FormData();
         formData.append("file", file);
         const result = await uploadAttachmentVps(formData, filePath);
@@ -776,14 +803,24 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         });
       }
 
-      await uploadBastForMrItem(
-        mrId,
-        selectedItemForBast.part_number,
-        uploadedAttachments,
-        currentUser.id,
-      );
+      // Sequential (bukan Promise.all) - uploadBastForMrItem baca-ubah-tulis
+      // seluruh array `orders`, jadi kalau dijalankan paralel utk barang2
+      // dari MR yang sama, update bisa saling menimpa (lost update).
+      for (const item of selectedItemsForBast) {
+        if (!item.part_number) continue;
+        await uploadBastForMrItem(
+          mrId,
+          item.part_number,
+          uploadedAttachments,
+          currentUser.id,
+        );
+      }
 
-      toast.success("BAST berhasil diunggah, item ditandai selesai");
+      toast.success(
+        selectedItemsForBast.length === 1
+          ? "BAST berhasil diunggah, item ditandai selesai"
+          : `BAST berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
+      );
       setIsBastUploadOpen(false);
       await fetchMrData();
       fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
@@ -1504,15 +1541,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         <Content
           title="Daftar Barang (Item Request)"
           cardAction={
-            isEditing && (
-              <Button
-                variant="outline"
-                onClick={handleOpenAddItemDialog}
-                disabled={actionLoading}
-              >
-                <Plus className="mr-2 h-4 w-4" /> Tambah Item
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {isOwner && bastEligibleItems.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenBastUpload()}
+                >
+                  <Upload className="mr-2 h-4 w-4" /> Upload BAST Massal
+                </Button>
+              )}
+              {isEditing && (
+                <Button
+                  variant="outline"
+                  onClick={handleOpenAddItemDialog}
+                  disabled={actionLoading}
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Tambah Item
+                </Button>
+              )}
+            </div>
           }
         >
           <div className="rounded-md border overflow-x-auto">
@@ -2347,26 +2394,63 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Upload BAST per Item */}
+      {/* Dialog Upload BAST per Item (bisa pilih >1 barang sekaligus) */}
       <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload BAST Barang</DialogTitle>
             <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan
-              untuk <strong>{selectedItemForBast?.name}</strong>. Item ini
-              akan ditandai selesai setelah bukti diunggah.
+              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan.
+              Barang yang dicentang akan ditandai selesai dengan bukti yang
+              sama.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="item-bast-file">File BAST / Bukti Foto</Label>
-            <Input
-              id="item-bast-file"
-              type="file"
-              multiple
-              onChange={(e) => setBastFiles(e.target.files)}
-              className="mt-2"
-            />
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Barang ({selectedItemsForBast.length} dipilih)</Label>
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
+                {bastEligibleItems.length === 0 ? (
+                  <div className="p-3 text-sm text-muted-foreground">
+                    Tidak ada barang berstatus &quot;Pending BAST&quot;.
+                  </div>
+                ) : (
+                  bastEligibleItems.map((item) => {
+                    const checked = selectedItemsForBast.some(
+                      (it) => it.part_number === item.part_number,
+                    );
+                    return (
+                      <label
+                        key={item.part_number}
+                        className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() =>
+                            toggleBastItemSelection(item)
+                          }
+                        />
+                        <span className="flex-1">
+                          {item.name}{" "}
+                          <span className="text-muted-foreground">
+                            ({item.qty} {item.uom})
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="item-bast-file">File BAST / Bukti Foto</Label>
+              <Input
+                id="item-bast-file"
+                type="file"
+                multiple
+                onChange={(e) => setBastFiles(e.target.files)}
+                className="mt-2"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -2376,7 +2460,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             >
               Batal
             </Button>
-            <Button onClick={handleUploadItemBast} disabled={uploadingBast}>
+            <Button
+              onClick={handleUploadItemBast}
+              disabled={uploadingBast || selectedItemsForBast.length === 0}
+            >
               {uploadingBast && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
