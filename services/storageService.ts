@@ -7,6 +7,15 @@ type UploadResult =
   | { success: true; url: string }
   | { success: false; message: string };
 
+// Path attachment sering dibangun dari data bebas-input user (part_number,
+// nama vendor, dll) - karakter seperti `"` (mis. part number ukuran inch
+// "10"") bikin object storage nolak dgn "Invalid key: ...". Nama file yang
+// ditampilkan ke user diambil dari field `name` terpisah (bukan dari path
+// storage ini), jadi aman disanitasi tanpa mempengaruhi tampilan.
+function sanitizeStorageKey(path: string): string {
+  return path.replace(/["'<>:\\|?*\x00-\x1F]/g, "-");
+}
+
 // Semua lampiran BARU disimpan di storage VPS (project lama sudah penuh kapasitasnya).
 // Auth tetap diverifikasi lewat project Supabase Cloud yang lama.
 export async function uploadAttachmentVps(
@@ -25,7 +34,7 @@ export async function uploadAttachmentVps(
   const vps = createVpsStorageClient();
   const { data, error } = await vps.storage
     .from(VPS_STORAGE_BUCKET)
-    .upload(path, file);
+    .upload(sanitizeStorageKey(path), file);
   if (error) return { success: false, message: error.message };
 
   const { data: pub } = vps.storage

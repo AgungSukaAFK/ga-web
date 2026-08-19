@@ -26,6 +26,25 @@ export const PO_STATUS_PENDING_RECEIVE = "Pending Receive";
 export const PO_STATUS_PARTIAL_RECEIVE = "Partial Receive";
 export const PO_STATUS_FULL_RECEIVED = "Full Received";
 
+// Warna badge "PO Refs" (referensi PO di tabel tracking MR item) - dikelompokkan
+// jadi 4 kategori visual: masih proses approval/payment/kirim (biru), partial
+// receive (kuning), full received (hijau), ditolak (merah). Status yang tidak
+// terdaftar di sini (harusnya tidak ada) fallback ke kategori "proses".
+export const PO_REF_STATUS_COLORS: Record<string, string> = {
+  "Pending Validation": "bg-blue-50 text-blue-700 border-blue-200",
+  "On Hold": "bg-blue-50 text-blue-700 border-blue-200",
+  "Pending Approval": "bg-blue-50 text-blue-700 border-blue-200",
+  "Pending Payment": "bg-blue-50 text-blue-700 border-blue-200",
+  "Waiting PO": "bg-blue-50 text-blue-700 border-blue-200",
+  "On Process": "bg-blue-50 text-blue-700 border-blue-200",
+  "Pending Receive": "bg-blue-50 text-blue-700 border-blue-200",
+  [PO_STATUS_PARTIAL_RECEIVE]: "bg-amber-50 text-amber-700 border-amber-200",
+  [PO_STATUS_FULL_RECEIVED]: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Rejected: "bg-red-50 text-red-700 border-red-200",
+};
+export const PO_REF_STATUS_COLOR_DEFAULT =
+  "bg-blue-50 text-blue-700 border-blue-200";
+
 // ==========================================
 // APPROVAL TYPE (jenis approver di template)
 // ==========================================
