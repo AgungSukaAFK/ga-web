@@ -116,6 +116,8 @@ import {
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
   PO_STATUS_FULL_RECEIVED,
+  PO_REF_STATUS_COLORS,
+  PO_REF_STATUS_COLOR_DEFAULT,
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
 } from "@/type/enum";
@@ -256,6 +258,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     {},
   );
 
+  // Peta kode_po -> {id, status} utk semua PO sesama-MR (termasuk yang
+  // Rejected, beda dgn fetchPosForMr) - dipakai buat warna badge "Status &
+  // PO Refs" dan lookup id saat badge di-klik (buka modal Quick View PO).
+  const [poRefsMap, setPoRefsMap] = useState<
+    Record<string, { id: number; status: string }>
+  >({});
+  const [poRefDialogOpen, setPoRefDialogOpen] = useState(false);
+  const [poRefLoading, setPoRefLoading] = useState(false);
+  const [poRefDetail, setPoRefDetail] = useState<PurchaseOrderDetail | null>(
+    null,
+  );
+
   const fetchPoData = async () => {
     if (isNaN(poId)) {
       setError("ID Purchase Order tidak valid.");
@@ -328,6 +342,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     fetchBarangAssetFlags(barangIds).then(setBarangAssetMap);
   }, [po?.material_requests?.orders]);
 
+  useEffect(() => {
+    if (!po?.mr_id) return;
+    supabase
+      .from("purchase_orders")
+      .select("id, kode_po, status")
+      .eq("mr_id", po.mr_id)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { id: number; status: string }> = {};
+        for (const row of data) {
+          map[row.kode_po] = { id: row.id, status: row.status };
+        }
+        setPoRefsMap(map);
+      });
+  }, [po?.mr_id]);
+
   const getCostCenterName = () => {
     const cc = po?.material_requests?.cost_centers;
     if (Array.isArray(cc)) return cc[0]?.name || "-";
@@ -371,6 +401,36 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     // Strict Part Number check
     if (!mrItem.part_number) return false;
     return po.items.some((poItem) => poItem.part_number === mrItem.part_number);
+  };
+
+  const handleOpenPoRef = async (kodePo: string) => {
+    const ref = poRefsMap[kodePo];
+    const id = ref?.id ?? (kodePo === po?.kode_po ? po?.id : undefined);
+    if (!id) {
+      toast.error("PO tidak ditemukan", { description: kodePo });
+      return;
+    }
+
+    setPoRefDialogOpen(true);
+    setPoRefDetail(null);
+
+    // PO yang lagi dibuka halamannya sendiri - langsung pakai data yang
+    // sudah ada, gak perlu fetch ulang.
+    if (id === po?.id) {
+      setPoRefDetail(po);
+      return;
+    }
+
+    setPoRefLoading(true);
+    try {
+      const data = await fetchPurchaseOrderById(id);
+      setPoRefDetail(data);
+    } catch (e: any) {
+      toast.error("Gagal memuat detail PO", { description: e.message });
+      setPoRefDialogOpen(false);
+    } finally {
+      setPoRefLoading(false);
+    }
   };
 
   const vendorData = getVendorData();
@@ -1408,8 +1468,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                             return (
                               <TableRow key={idx}>
                                 <TableCell>
-                                  <div className="font-medium flex items-center gap-2">
-                                    {mrItem.name}
+                                  <div className="font-medium">{mrItem.name}</div>
+                                  <div className="mt-1 flex items-center gap-1 flex-wrap">
                                     <AssetGoodsBadge isAsset={mrItemIsAsset} />
                                     <ItemLevelBadge level={mrItem.level} />
                                   </div>
@@ -1449,18 +1509,28 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                     )}
                                   </div>
 
-                                  {/* List PO References */}
+                                  {/* List PO References - klik utk quick view PO */}
                                   {mrItem.po_refs &&
                                     mrItem.po_refs.length > 0 && (
                                       <div className="mt-2 flex flex-wrap gap-1">
                                         {mrItem.po_refs.map((ref, i) => (
-                                          <Badge
+                                          <button
                                             key={i}
-                                            variant="secondary"
-                                            className="text-[10px] h-5 px-1.5 font-mono"
+                                            type="button"
+                                            onClick={() => handleOpenPoRef(ref)}
                                           >
-                                            {ref}
-                                          </Badge>
+                                            <Badge
+                                              variant="outline"
+                                              className={cn(
+                                                "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
+                                                PO_REF_STATUS_COLORS[
+                                                  poRefsMap[ref]?.status ?? ""
+                                                ] || PO_REF_STATUS_COLOR_DEFAULT,
+                                              )}
+                                            >
+                                              {ref}
+                                            </Badge>
+                                          </button>
                                         ))}
                                       </div>
                                     )}
@@ -2288,6 +2358,159 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </div>
             <DialogFooter>
               <Button onClick={() => setIsLevelInfoOpen(false)}>Tutup</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* --- QUICK VIEW PO REF (klik badge PO Refs di tabel tracking) --- */}
+        <Dialog open={poRefDialogOpen} onOpenChange={setPoRefDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-xl flex items-center gap-2 flex-wrap pr-6">
+                <FileText className="h-5 w-5 shrink-0" />
+                <span>Ringkasan PO: {poRefDetail?.kode_po ?? "..."}</span>
+                {poRefDetail?.is_asset && (
+                  <Badge className="bg-purple-600 hover:bg-purple-600 text-white shrink-0">
+                    PO Asset
+                  </Badge>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                Informasi singkat dan daftar barang.
+              </DialogDescription>
+            </DialogHeader>
+
+            {poRefLoading && (
+              <div className="flex justify-center items-center h-40">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            )}
+
+            {!poRefLoading && poRefDetail && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
+                  <div>
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      <Building2 className="h-3 w-3" /> Vendor
+                    </p>
+                    <p className="font-medium">
+                      {poRefDetail.vendor_details?.nama_vendor || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      <CircleUser className="h-3 w-3" /> Pembuat PO
+                    </p>
+                    <p className="font-medium">
+                      {poRefDetail.users_with_profiles?.nama || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      <Tag className="h-3 w-3" /> Status
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        PO_REF_STATUS_COLORS[poRefDetail.status ?? ""] ||
+                          PO_REF_STATUS_COLOR_DEFAULT,
+                      )}
+                    >
+                      {poRefDetail.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      <Calendar className="h-3 w-3" /> Dibuat
+                    </p>
+                    <p className="font-medium">
+                      {formatDateFriendly(poRefDetail.created_at)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      Ref. MR
+                    </p>
+                    <p className="font-medium">
+                      {poRefDetail.material_requests?.kode_mr || "N/A"}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground text-xs flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" /> Total Harga
+                    </p>
+                    <p className="font-bold text-lg">
+                      {formatCurrency(poRefDetail.total_price)}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <Layers className="h-4 w-4" /> Daftar Barang
+                  </h4>
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead>Nama Barang</TableHead>
+                          <TableHead>Qty</TableHead>
+                          <TableHead>Harga Satuan</TableHead>
+                          <TableHead>Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {poRefDetail.items && poRefDetail.items.length > 0 ? (
+                          poRefDetail.items.map((item, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {item.name}
+                                  <AssetGoodsBadge isAsset={item.is_asset} />
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {item.qty} {item.uom}
+                              </TableCell>
+                              <TableCell>{formatCurrency(item.price)}</TableCell>
+                              <TableCell>
+                                {formatCurrency(
+                                  item.total_price || item.price * item.qty,
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell
+                              colSpan={4}
+                              className="text-center text-muted-foreground h-16"
+                            >
+                              Tidak ada barang.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setPoRefDialogOpen(false)}
+              >
+                Tutup
+              </Button>
+              {poRefDetail && (
+                <Button asChild>
+                  <Link href={`/purchase-order/${poRefDetail.id}`}>
+                    <Eye className="mr-2 h-4 w-4" /> Lihat PO Lengkap
+                  </Link>
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
