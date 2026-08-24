@@ -50,9 +50,14 @@ export const updateVendor = async (
   id: number,
   updatedData: Partial<Vendor>,
 ) => {
+  // `id` di vendors GENERATED ALWAYS AS IDENTITY - Postgres menolak update
+  // apapun ke kolom itu (walau nilainya sama). Caller (form edit) biasanya
+  // nge-spread seluruh row lama termasuk id/created_at, jadi dibuang dulu
+  // di sini biar semua pemanggil aman, bukan cuma yang inget strip manual.
+  const { id: _id, created_at: _createdAt, ...safeData } = updatedData as any;
   const { data, error } = await supabase
     .from("vendors")
-    .update(updatedData)
+    .update(safeData)
     .eq("id", id)
     .select()
     .single();

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentVps } from "@/services/storageService";
@@ -48,6 +48,8 @@ import {
   ArrowRightLeft,
   Pencil,
   FileText,
+  QrCode,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,28 +64,43 @@ import {
   Order,
   Attachment,
   ReceiveRecord,
+  DeliveryType,
+  POItem,
 } from "@/type";
 import {
   formatCurrency,
   formatDateFriendly,
   cn,
   formatDateWithTime,
+  formatAge,
 } from "@/lib/utils";
 import {
   fetchPurchaseOrderById,
   submitReceiveRecord,
   deriveReceiveDrivenStatus,
   fetchBarangAssetFlags,
+  getFullReceivedStamp,
 } from "@/services/purchaseOrderService";
 import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
+import { PaginatedPrintDocument } from "./PaginatedPrintDocument";
 import {
   updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
   recalculateMrStatus,
   recalculateMrLevel,
   removeBastForMrItem,
+  sendItemsToRequester,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
+import { logActivity } from "@/services/logService";
+import { ensureReceiptToken } from "@/services/goodsReceiptService";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import {
   Dialog,
   DialogContent,
@@ -109,6 +126,7 @@ import { differenceInCalendarDays } from "date-fns";
 import {
   MR_LEVELS,
   MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_COLOR_DEFAULT,
   MR_ITEM_STATUS_LABELS,
   APPROVAL_TYPE_PAYMENT_APPROVAL,
   APPROVAL_TYPE_PAYMENT_VALIDATOR,
@@ -118,6 +136,8 @@ import {
   PO_STATUS_FULL_RECEIVED,
   PO_REF_STATUS_COLORS,
   PO_REF_STATUS_COLOR_DEFAULT,
+  DELIVERY_TYPE_OPTIONS,
+  MR_ITEM_STATUSES,
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
 } from "@/type/enum";
@@ -213,10 +233,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // State upload lampiran (PO/Finance/Invoice) langsung dari halaman detail
+  // State upload lampiran (PO/Finance/Purchasing) langsung dari halaman detail
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
-  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
+  const [isUploadingPurchasing, setIsUploadingPurchasing] = useState(false);
+  // Jenis lampiran yang mau diupload ke "Lampiran Purchasing" - wajib
+  // dipilih dulu (Quotation/Invoice) sebelum file bisa diunggah.
+  const [purchasingAttachmentType, setPurchasingAttachmentType] = useState<
+    "quotation" | "invoice" | ""
+  >("");
 
   // State Dialogs
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
@@ -227,6 +252,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [selectedItemToEdit, setSelectedItemToEdit] = useState<Order | null>(
     null,
   );
+  // Fallback identifier kalau item ini anomali (gak punya part_number) - lihat
+  // komentar di updateMrItemStatus (mrService.ts).
+  const [selectedItemIndexToEdit, setSelectedItemIndexToEdit] = useState<
+    number | null
+  >(null);
+  const [deliveryDetailItem, setDeliveryDetailItem] = useState<Order | null>(
+    null,
+  );
   const [editForm, setEditForm] = useState({
     status: "",
     note: "",
@@ -234,6 +267,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // ----------------------------------------------
 
   const [qrUrl, setQrUrl] = useState("");
+
+  // Cetak BAST - dokumen fisik yang ditempel ke paket, isinya QR yang
+  // mengarah ke halaman publik /goods-receipt/[token] (scan utk konfirmasi
+  // penerimaan barang, lihat services/goodsReceiptService.ts). Sama pola
+  // print-nya dengan isPrintingReceive/printCompany di bawah (double rAF +
+  // window.print()).
+  const [isPrintingBast, setIsPrintingBast] = useState(false);
+  const [bastPrintCompany, setBastPrintCompany] = useState<
+    "GMI" | "GIS" | "LOURDES" | null
+  >(null);
 
   // State Dialog Progress Pembayaran DP & BP (khusus Payment Validator).
   // `dpBpDialogMode` "approve" = lagi approve step Payment Validator (lewat
@@ -246,11 +289,34 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   );
   const [dpChecked, setDpChecked] = useState(false);
   const [bpChecked, setBpChecked] = useState(false);
+  // Bukti pembayaran - wajib dilampirkan tiap kali Payment Validator approve
+  // (berlaku untuk semua metode pembayaran: Cash, Termin, maupun DP/BP).
+  // File-nya otomatis ikut tersimpan sebagai lampiran Finance di PO ini.
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
 
   // State modal checklist penerimaan barang (Receiver) - dipakai dari step
   // approval "Receiver" maupun tombol "Terima Barang" manual.
   const [isReceiveDialogOpen, setIsReceiveDialogOpen] = useState(false);
   const [isPrintingReceive, setIsPrintingReceive] = useState(false);
+
+  // State dialog "Kirim ke Requester" (GA kirim barang yg sudah "Diterima
+  // GA" ke requester) - multi-select barang + qty per barang, form
+  // pengiriman (jenis/ekspedisi/resi/catatan) & lampiran dibagi bareng utk
+  // semua barang terpilih.
+  const [isDeliverDialogOpen, setIsDeliverDialogOpen] = useState(false);
+  const [selectedPartNumbersForDelivery, setSelectedPartNumbersForDelivery] =
+    useState<Set<string>>(new Set());
+  const [deliveryQtyByPartNumber, setDeliveryQtyByPartNumber] = useState<
+    Record<string, string>
+  >({});
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>(
+    DELIVERY_TYPE_OPTIONS[0],
+  );
+  const [deliveryCourier, setDeliveryCourier] = useState("");
+  const [deliveryTrackingNumber, setDeliveryTrackingNumber] = useState("");
+  const [deliveryNote, setDeliveryNote] = useState("");
+  const [deliveryFiles, setDeliveryFiles] = useState<FileList | null>(null);
+  const [sendingDelivery, setSendingDelivery] = useState(false);
 
   // Peta barang_id -> is_asset utk badge Aset/Barang di tabel "Referensi
   // Barang dari MR" (item PO sendiri sudah punya is_asset langsung).
@@ -269,6 +335,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [poRefDetail, setPoRefDetail] = useState<PurchaseOrderDetail | null>(
     null,
   );
+
 
   const fetchPoData = async () => {
     if (isNaN(poId)) {
@@ -301,6 +368,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         items: Array.isArray(data.items) ? data.items : [],
       };
       setPo(initialData as any);
+
       return initialData;
     } catch (poError: any) {
       setError("Gagal memuat data PO.");
@@ -403,6 +471,189 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     return po.items.some((poItem) => poItem.part_number === mrItem.part_number);
   };
 
+  // Barang yg sudah "Diterima GA" lewat PO ini, belum dikirim ke requester.
+  const deliverEligibleItems = (po?.material_requests?.orders || []).filter(
+    (item: Order) =>
+      item.status === MR_ITEM_STATUSES.DITERIMA_GA && isMrItemInPO(item),
+  );
+
+  // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected) - GA/
+  // Purchasing perlu bisa cetak & tempel BAST ke paket SEBELUM barang
+  // dikirim (QR di dalamnya baru berarti setelah discan pas barang sampai),
+  // jadi sengaja TIDAK digantung status pengiriman.
+  const canPrintBast = po?.status !== "Rejected";
+
+  const handlePrintBast = async (company: "GMI" | "GIS" | "LOURDES") => {
+    if (!po) return;
+    try {
+      let token = po.receipt_token;
+      if (!token) {
+        token = await ensureReceiptToken(po.id);
+        setPo((prev) => (prev ? { ...prev, receipt_token: token! } : prev));
+      }
+      setBastPrintCompany(company);
+      setIsPrintingBast(true);
+    } catch (err: any) {
+      toast.error("Gagal menyiapkan BAST", { description: err.message });
+    }
+  };
+
+  const handleOpenDeliverDialog = () => {
+    setSelectedPartNumbersForDelivery(new Set());
+    setDeliveryQtyByPartNumber(
+      Object.fromEntries(
+        deliverEligibleItems.map((item) => [
+          item.part_number as string,
+          String(item.qty),
+        ]),
+      ),
+    );
+    setDeliveryType(DELIVERY_TYPE_OPTIONS[0]);
+    setDeliveryCourier("");
+    setDeliveryTrackingNumber("");
+    setDeliveryNote("");
+    setDeliveryFiles(null);
+    setIsDeliverDialogOpen(true);
+  };
+
+  const toggleDeliveryItemSelection = (partNumber: string) => {
+    setSelectedPartNumbersForDelivery((prev) => {
+      const next = new Set(prev);
+      if (next.has(partNumber)) next.delete(partNumber);
+      else next.add(partNumber);
+      return next;
+    });
+  };
+
+  // Cerminkan aksi PO ini ke log MR terkait (kalau ada) - biar requester yang
+  // cuma buka halaman MR-nya juga lihat progress PO-nya, bukan cuma yang buka
+  // halaman PO.
+  const logMrActivity = async (
+    actionType: string,
+    description: string,
+    metadata?: any,
+  ) => {
+    if (!currentUser || !po?.mr_id) return;
+    await logActivity(
+      currentUser.id,
+      actionType,
+      "material_request",
+      String(po.mr_id),
+      description,
+      metadata,
+    );
+  };
+
+  const handleSendToRequester = async () => {
+    if (!po?.mr_id || !currentUser) {
+      toast.error("Sesi tidak valid, silakan muat ulang halaman");
+      return;
+    }
+    const selectedItems = deliverEligibleItems.filter(
+      (item) =>
+        item.part_number &&
+        selectedPartNumbersForDelivery.has(item.part_number),
+    );
+    if (selectedItems.length === 0) {
+      toast.error("Pilih minimal satu barang");
+      return;
+    }
+    if (deliveryType === "Kurir/Ekspedisi Eksternal" && !deliveryCourier.trim()) {
+      toast.error("Isi nama ekspedisi");
+      return;
+    }
+    for (const item of selectedItems) {
+      const qty = Number(deliveryQtyByPartNumber[item.part_number as string]);
+      if (!qty || qty <= 0) {
+        toast.error(`Isi qty terkirim untuk ${item.name}`);
+        return;
+      }
+    }
+    if (!deliveryFiles || deliveryFiles.length === 0) {
+      toast.error("Lampirkan bukti pengiriman terlebih dahulu");
+      return;
+    }
+    for (const file of deliveryFiles) {
+      const sizeError = getAttachmentSizeError(file);
+      if (sizeError) {
+        toast.error("Ukuran file terlalu besar", { description: sizeError });
+        return;
+      }
+    }
+
+    setSendingDelivery(true);
+    try {
+      // Upload lampiran SEKALI - dibagi bareng semua barang terpilih (1
+      // pengiriman fisik yg sama), sama pola dgn Upload BAST massal.
+      const kodeMr = po.material_requests?.kode_mr?.replace(/\//g, "-") || "mr";
+      const pathSegment =
+        selectedItems.length === 1
+          ? selectedItems[0].part_number
+          : "multi-item";
+      const uploadedAttachments: Attachment[] = [];
+      for (let i = 0; i < deliveryFiles.length; i++) {
+        const file = deliveryFiles[i];
+        const filePath = `${kodeMr}/delivery/${pathSegment}/${Date.now()}_${file.name}`;
+        const formData = new FormData();
+        formData.append("file", file);
+        const result = await uploadAttachmentVps(formData, filePath);
+        if (!result.success) throw new Error(result.message);
+        uploadedAttachments.push({
+          name: file.name,
+          url: result.url,
+          type: "delivery",
+        });
+      }
+
+      await sendItemsToRequester(
+        po.mr_id,
+        selectedItems.map((item) => ({
+          partNumber: item.part_number as string,
+          qtySent: Number(deliveryQtyByPartNumber[item.part_number as string]),
+        })),
+        {
+          delivery_type: deliveryType,
+          courier: deliveryCourier.trim() || undefined,
+          tracking_number: deliveryTrackingNumber.trim() || undefined,
+          note: deliveryNote.trim() || undefined,
+          attachments: uploadedAttachments,
+        },
+        currentUser.id,
+      );
+
+      await logActivity(
+        currentUser.id,
+        "SEND_TO_REQUESTER",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+        {
+          delivery_type: deliveryType,
+          courier: deliveryCourier.trim() || null,
+          tracking_number: deliveryTrackingNumber.trim() || null,
+          part_numbers: selectedItems.map((item) => item.part_number),
+        },
+      );
+      await logMrActivity(
+        "SEND_TO_REQUESTER",
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+        { po_id: po.id, part_numbers: selectedItems.map((item) => item.part_number) },
+      );
+
+      toast.success(
+        `${selectedItems.length} barang ditandai dalam pengiriman ke requester`,
+      );
+      setIsDeliverDialogOpen(false);
+      await fetchPoData();
+    } catch (err: any) {
+      toast.error("Gagal kirim barang ke requester", {
+        description: getUploadErrorMessage(err),
+      });
+    } finally {
+      setSendingDelivery(false);
+    }
+  };
+
   const handleOpenPoRef = async (kodePo: string) => {
     const ref = poRefsMap[kodePo];
     const id = ref?.id ?? (kodePo === po?.kode_po ? po?.id : undefined);
@@ -487,13 +738,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const isGA =
     isGADepartment(userProfile?.department) || userProfile?.role === "admin";
 
+  // Vendor tipe Site kirim langsung ke site tanpa lewat GA sama sekali -
+  // jadi requester sendiri (bukan GA) yang isi checklist konfirmasi terima.
+  const isSiteVendorPO = po?.vendor_details?.tipe_vendor === "Site";
+  const isMrRequesterForThisPO =
+    !!currentUser && currentUser.id === po?.material_requests?.userid;
+
   // Tombol "Terima Barang" manual - dipakai kalau template PO ini tidak
   // punya step approval "Receiver" (atau receiver-nya mau delegasikan ke GA).
   // Muncul begitu status sudah "Pending Receive" (mulai) atau "Partial
   // Receive" (edit checklist sampai sesuai). Begitu "Full Received", tombol
-  // ini hilang, diganti tombol cetak riwayat.
-  const showGAReceiveButton =
-    isGA &&
+  // ini hilang, diganti tombol cetak riwayat. Untuk vendor Site, yang boleh
+  // klik ini requester-nya sendiri (bukan GA) - lihat isSiteVendorPO di atas.
+  const canManuallyReceiveGoods =
+    userProfile?.role === "admin" ||
+    (isSiteVendorPO ? isMrRequesterForThisPO : isGA);
+  const showManualReceiveButton =
+    canManuallyReceiveGoods &&
     (po?.status === PO_STATUS_PENDING_RECEIVE ||
       po?.status === PO_STATUS_PARTIAL_RECEIVE);
 
@@ -515,6 +776,51 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setBpChecked(!!po?.bp_paid);
     setDpBpDialogMode("edit");
     setIsDpBpDialogOpen(true);
+  };
+
+  // Payment Validator baru approve (via approval turn ATAU edit DP/BP di
+  // luar turn - keduanya bisa jadi titik "pembayaran baru lunas") - barang
+  // mulai dikirim vendor. Naikkan level item yang di-cover PO ini ke
+  // "Open 4" + tandai status "Dikirim Vendor" biar jelas beda sama
+  // "Processing" biasa (yang ambigu - bisa berarti "belum di-PO-kan sama
+  // sekali" ATAU "sudah di-PO-kan tapi belum dibayar"). Item yang sudah
+  // lebih maju (level Open 5/Close, atau status sudah lewat Processing -
+  // dari PO lain yang juga meng-cover part_number yang sama) dilewati,
+  // tidak dimundurkan.
+  const markItemsShippedByVendor = async (mrId: number, poItems: POItem[]) => {
+    if (!currentUser) return;
+    const { data: mrRow } = await supabase
+      .from("material_requests")
+      .select("orders")
+      .eq("id", mrId)
+      .single();
+    const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
+    for (const item of poItems) {
+      if (!item.part_number) continue;
+      const order = orders.find((o) => o.part_number === item.part_number);
+      if (
+        !order ||
+        order.level === "Open 5" ||
+        order.level === "Close" ||
+        order.status !== MR_ITEM_STATUSES.PROCESSING
+      ) {
+        continue;
+      }
+      try {
+        await updateMrItemStatus(
+          mrId,
+          item.part_number,
+          { level: "Open 4", status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR },
+          currentUser.id,
+        );
+      } catch (err) {
+        console.error(
+          `Gagal update status item MR (Dikirim Vendor) untuk Part ${item.part_number}:`,
+          err,
+        );
+      }
+    }
+    await recalculateMrLevel(mrId);
   };
 
   // Edit dp_paid/bp_paid di luar approval turn (row Payment Validator sudah
@@ -542,7 +848,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         : dpChecked;
 
       let updatedApprovals = po.approvals;
+      let paymentJustSettledViaDpBp = false;
       if (pvApproval && pvApproval.status === "pending" && nowSettled) {
+        paymentJustSettledViaDpBp = true;
         updatedApprovals = JSON.parse(
           JSON.stringify(po.approvals),
         ) as Approval[];
@@ -555,6 +863,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           po.receive_record?.is_full_match,
           { paymentJustSettled: true },
         );
+        Object.assign(
+          updatePayload,
+          getFullReceivedStamp(po.status, updatePayload.status),
+        );
       }
 
       const { error } = await supabase
@@ -562,6 +874,25 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         .update(updatePayload)
         .eq("id", po.id);
       if (error) throw error;
+
+      if (paymentJustSettledViaDpBp && po.mr_id) {
+        await markItemsShippedByVendor(po.mr_id, po.items);
+      }
+
+      await logActivity(
+        currentUser.id,
+        "UPDATE_PAYMENT_DP_BP",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} memperbarui progress pembayaran PO ${po.kode_po} (DP: ${dpChecked ? "lunas" : "belum"}, Pelunasan: ${bpChecked ? "lunas" : "belum"})`,
+        { dp_paid: dpChecked, bp_paid: bpChecked },
+      );
+      await logMrActivity(
+        "UPDATE_PAYMENT_DP_BP",
+        `${userProfile?.nama || currentUser.email || "Unknown"} memperbarui progress pembayaran PO ${po.kode_po} (DP: ${dpChecked ? "lunas" : "belum"}, Pelunasan: ${bpChecked ? "lunas" : "belum"})`,
+        { po_id: po.id, dp_paid: dpChecked, bp_paid: bpChecked },
+      );
+
       toast.success("Progress pembayaran DP/BP disimpan.");
       setIsDpBpDialogOpen(false);
       await fetchPoData();
@@ -626,6 +957,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         });
       }
 
+      await logActivity(
+        currentUser.id,
+        "RECEIVE_GOODS",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} mencatat penerimaan barang PO ${po.kode_po} (${receiveRecord.is_full_match ? "lengkap sesuai PO" : "sebagian / qty tidak sesuai"})`,
+        {
+          is_full_match: receiveRecord.is_full_match,
+          received_qty: receivedQtyByPartNumber,
+        },
+      );
+      await logMrActivity(
+        "RECEIVE_GOODS",
+        `${userProfile?.nama || currentUser.email || "Unknown"} mencatat penerimaan barang PO ${po.kode_po} (${receiveRecord.is_full_match ? "lengkap sesuai PO" : "sebagian / qty tidak sesuai"})`,
+        { po_id: po.id, is_full_match: receiveRecord.is_full_match },
+      );
+
       toast.success(
         receiveRecord.is_full_match
           ? "Barang diterima lengkap sesuai PO. Status jadi Full Received."
@@ -647,7 +995,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // sama atau requester MR terkait (lihat canUploadAttachment).
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance" | "invoice",
+    type: "po" | "finance" | "invoice" | "quotation",
   ) => {
     const file = e.target.files?.[0];
     if (!file || !po) return;
@@ -664,7 +1012,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         ? setIsUploadingPO
         : type === "finance"
           ? setIsUploadingFinance
-          : setIsUploadingInvoice;
+          : setIsUploadingPurchasing;
     setIsLoading(true);
 
     const toastId = toast.loading(
@@ -698,6 +1046,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
       if (updateError) throw updateError;
 
+      if (currentUser) {
+        await logActivity(
+          currentUser.id,
+          "UPLOAD_ATTACHMENT_PO",
+          "purchase_order",
+          String(po.id),
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengunggah lampiran ${type.toUpperCase()} (${file.name}) pada PO ${po.kode_po}`,
+          { attachment_type: type, file_name: file.name },
+        );
+        await logMrActivity(
+          "UPLOAD_ATTACHMENT_PO",
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengunggah lampiran ${type.toUpperCase()} (${file.name}) pada PO ${po.kode_po}`,
+          { po_id: po.id, attachment_type: type, file_name: file.name },
+        );
+      }
+
       toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
         id: toastId,
       });
@@ -713,16 +1077,60 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
+  // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah.
+  const handlePurchasingAttachmentUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!purchasingAttachmentType) {
+      toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
+      e.target.value = "";
+      return;
+    }
+    handleAttachmentUpload(e, purchasingAttachmentType);
+  };
+
   const handleApprovalAction = async (
     decision: "approved" | "rejected",
     paymentProgress?: { dp_paid: boolean; bp_paid: boolean },
+    proofFile?: File,
   ) => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
     setActionLoading(true);
 
+    let updatedAttachments = po.attachments || [];
+    if (proofFile) {
+      const sizeError = getAttachmentSizeError(proofFile);
+      if (sizeError) {
+        toast.error("Ukuran file bukti pembayaran terlalu besar", {
+          description: sizeError,
+        });
+        setActionLoading(false);
+        return;
+      }
+      const filePath = `po/${po.kode_po}/finance/${Date.now()}_${proofFile.name}`;
+      const formData = new FormData();
+      formData.append("file", proofFile);
+      const uploadResult = await uploadAttachmentVps(formData, filePath);
+      if (!uploadResult.success) {
+        toast.error("Gagal mengunggah bukti pembayaran", {
+          description: uploadResult.message,
+        });
+        setActionLoading(false);
+        return;
+      }
+      const newAttachment: Attachment = {
+        name: proofFile.name,
+        url: uploadResult.url,
+        type: "finance",
+      };
+      updatedAttachments = [...updatedAttachments, newAttachment];
+    }
+
     const updatedApprovals = JSON.parse(JSON.stringify(po.approvals));
     const updatePayload: Record<string, any> = {};
+    if (proofFile) updatePayload.attachments = updatedAttachments;
 
     if (paymentProgress) {
       updatePayload.dp_paid = paymentProgress.dp_paid;
@@ -778,6 +1186,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         }
       }
       updatePayload.status = newPoStatus;
+      Object.assign(updatePayload, getFullReceivedStamp(po.status, newPoStatus));
     }
 
     // Catatan: progress approval hanya mengubah status PO ini sendiri.
@@ -795,40 +1204,45 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       return;
     }
 
-    // Payment Validator baru approve => naikkan level item-item yang
-    // di-cover PO ini ke "Open 4" (kecuali yang udah lanjut - Open 5/Close -
-    // dari PO lain yang juga meng-cover part_number yang sama).
+    if (proofFile) {
+      await logActivity(
+        currentUser.id,
+        "UPLOAD_ATTACHMENT_PO",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengunggah bukti pembayaran (${proofFile.name}) sebagai lampiran Finance pada PO ${po.kode_po}`,
+        { attachment_type: "finance", file_name: proofFile.name },
+      );
+      await logMrActivity(
+        "UPLOAD_ATTACHMENT_PO",
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengunggah bukti pembayaran (${proofFile.name}) sebagai lampiran Finance pada PO ${po.kode_po}`,
+        { po_id: po.id, attachment_type: "finance", file_name: proofFile.name },
+      );
+    }
+
+    // Payment Validator baru approve => tandai item-item yang di-cover PO
+    // ini "Dikirim Vendor" + level "Open 4" (lihat markItemsShippedByVendor).
     if (paymentValidatorJustApproved && po.mr_id) {
-      const { data: mrRow } = await supabase
-        .from("material_requests")
-        .select("orders")
-        .eq("id", po.mr_id)
-        .single();
-      const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
-      for (const item of po.items) {
-        if (!item.part_number) continue;
-        const order = orders.find((o) => o.part_number === item.part_number);
-        if (!order || order.level === "Open 5" || order.level === "Close") {
-          continue;
-        }
-        try {
-          await updateMrItemStatus(
-            po.mr_id,
-            item.part_number,
-            { level: "Open 4" },
-            currentUser.id,
-          );
-        } catch (err) {
-          console.error(
-            `Gagal update level item MR (Open 4) untuk Part ${item.part_number}:`,
-            err,
-          );
-        }
-      }
-      await recalculateMrLevel(po.mr_id);
+      await markItemsShippedByVendor(po.mr_id, po.items);
     }
 
     if (isPartialPayment) {
+      await logActivity(
+        currentUser.id,
+        "UPDATE_PAYMENT_DP_BP",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} menyimpan progress pembayaran PO ${po.kode_po} (DP: ${paymentProgress?.dp_paid ? "lunas" : "belum"}, Pelunasan: ${paymentProgress?.bp_paid ? "lunas" : "belum"})`,
+        {
+          dp_paid: paymentProgress?.dp_paid,
+          bp_paid: paymentProgress?.bp_paid,
+        },
+      );
+      await logMrActivity(
+        "UPDATE_PAYMENT_DP_BP",
+        `${userProfile?.nama || currentUser.email || "Unknown"} menyimpan progress pembayaran PO ${po.kode_po} (DP: ${paymentProgress?.dp_paid ? "lunas" : "belum"}, Pelunasan: ${paymentProgress?.bp_paid ? "lunas" : "belum"})`,
+        { po_id: po.id, dp_paid: paymentProgress?.dp_paid, bp_paid: paymentProgress?.bp_paid },
+      );
       toast.success(
         "Progress pembayaran disimpan. Approval selesai setelah DP & BP lunas.",
       );
@@ -855,6 +1269,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       poId: po.id,
     });
 
+    await logActivity(
+      currentUser.id,
+      decision === "approved" ? "APPROVE_PO" : "REJECT_PO",
+      "purchase_order",
+      String(po.id),
+      `${userProfile?.nama || currentUser.email || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} PO ${po.kode_po} pada tahap ${updatedApprovals[myApprovalIndex]?.type || "approval"}`,
+      {
+        approval_type: updatedApprovals[myApprovalIndex]?.type,
+        new_status: newPoStatus,
+      },
+    );
+    await logMrActivity(
+      decision === "approved" ? "APPROVE_PO" : "REJECT_PO",
+      `${userProfile?.nama || currentUser.email || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} PO ${po.kode_po} pada tahap ${updatedApprovals[myApprovalIndex]?.type || "approval"}`,
+      { po_id: po.id, approval_type: updatedApprovals[myApprovalIndex]?.type, new_status: newPoStatus },
+    );
+
     toast.success(
       `PO berhasil di-${decision === "approved" ? "setujui" : "tolak"}`,
     );
@@ -864,8 +1295,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- LOGIC EDIT STATUS MR ITEM ---
-  const handleOpenEditStatus = (item: Order) => {
+  const handleOpenEditStatus = (item: Order, index: number) => {
     setSelectedItemToEdit(item);
+    setSelectedItemIndexToEdit(index);
     setEditForm({
       status: item.status || "Pending",
       note: item.status_note || "",
@@ -874,7 +1306,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
 
   const handleSaveStatusUpdate = async () => {
-    if (!po?.mr_id || !selectedItemToEdit?.part_number || !currentUser) return;
+    if (
+      !po?.mr_id ||
+      !selectedItemToEdit ||
+      selectedItemIndexToEdit === null ||
+      !currentUser
+    )
+      return;
 
     setActionLoading(true);
     try {
@@ -886,8 +1324,28 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           note: editForm.note,
         },
         currentUser.id,
+        selectedItemIndexToEdit,
       );
       await recalculateMrStatus(po.mr_id);
+
+      await logActivity(
+        currentUser.id,
+        "UPDATE_ITEM_STATUS",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengubah status barang ${selectedItemToEdit.name} pada PO ${po.kode_po} menjadi ${editForm.status}`,
+        {
+          part_number: selectedItemToEdit.part_number,
+          status: editForm.status,
+          note: editForm.note,
+        },
+      );
+      await logMrActivity(
+        "UPDATE_ITEM_STATUS",
+        `${userProfile?.nama || currentUser.email || "Unknown"} mengubah status barang ${selectedItemToEdit.name} menjadi ${editForm.status} (lewat PO ${po.kode_po})`,
+        { po_id: po.id, part_number: selectedItemToEdit.part_number, status: editForm.status, note: editForm.note },
+      );
+
       toast.success("Status barang berhasil diperbarui");
       setIsEditStatusOpen(false);
       fetchPoData(); // Refresh data
@@ -908,10 +1366,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         attachmentUrl,
         currentUser.id,
       );
-      toast.success("Lampiran BAST dihapus");
+      await logActivity(
+        currentUser.id,
+        "REMOVE_ITEM_BAST",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} menghapus lampiran bukti penerimaan barang ${item.name} pada PO ${po.kode_po}`,
+        { part_number: item.part_number, attachment_url: attachmentUrl },
+      );
+      await logMrActivity(
+        "REMOVE_ITEM_BAST",
+        `${userProfile?.nama || currentUser.email || "Unknown"} menghapus lampiran bukti penerimaan barang ${item.name} (lewat PO ${po.kode_po})`,
+        { po_id: po.id, part_number: item.part_number, attachment_url: attachmentUrl },
+      );
+
+      toast.success("Lampiran bukti penerimaan dihapus");
       fetchPoData();
     } catch (err: any) {
-      toast.error("Gagal hapus lampiran BAST", { description: err.message });
+      toast.error("Gagal hapus lampiran bukti penerimaan", {
+        description: err.message,
+      });
     }
   };
 
@@ -920,10 +1394,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       setIsReceiveDialogOpen(true);
       return;
     }
-    if (isPaymentValidatorTurn && isDpBpPO) {
+    if (isPaymentValidatorTurn) {
       setDpChecked(!!po?.dp_paid);
       setBpChecked(!!po?.bp_paid);
       setDpBpDialogMode("approve");
+      setPaymentProofFile(null);
       setIsDpBpDialogOpen(true);
       return;
     }
@@ -1087,6 +1562,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     };
   }, [isPrintingReceive]);
 
+  useEffect(() => {
+    if (!isPrintingBast) return;
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+    const reset = () => {
+      setIsPrintingBast(false);
+      setBastPrintCompany(null);
+    };
+    window.addEventListener("afterprint", reset, { once: true });
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.removeEventListener("afterprint", reset);
+    };
+  }, [isPrintingBast]);
+
   if (loading) return <DetailPOSkeleton />;
 
   if (error || !po)
@@ -1107,8 +1600,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     po.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
     po.attachments?.filter((att) => att.type === "finance") || [];
-  const invoiceAttachments =
-    po.attachments?.filter((att) => att.type === "invoice") || [];
+  const purchasingAttachments =
+    po.attachments?.filter(
+      (att) => att.type === "invoice" || att.type === "quotation",
+    ) || [];
   // BAST bukan lampiran milik PO sendiri - sumbernya `bast_attachments` per
   // item MR (satu-satunya sumber data BAST di seluruh app, lihat
   // removeBastForMrItem di services/mrService.ts), difilter ke item yang
@@ -1176,7 +1671,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     </Badge>
                   )}
                 </div>
-                <p className="text-muted-foreground">Detail Purchase Order</p>
+                <p className="text-muted-foreground">
+                  Detail Purchase Order
+                  <span className="ml-2 text-xs">
+                    · Umur:{" "}
+                    {formatAge(
+                      po.created_at,
+                      po.full_received_at,
+                      po.status === "Full Received",
+                    )}
+                  </span>
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -1202,7 +1707,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <Printer className="mr-2 h-4 w-4" /> Cetak Riwayat Receive
                   </Button>
                 )}
-                {showGAReceiveButton && (
+                <ActivityLogDialog
+                  resourceType="purchase_order"
+                  resourceId={String(po.id)}
+                />
+                {showManualReceiveButton && (
                   <Button
                     size="sm"
                     className="bg-blue-600 hover:bg-blue-700"
@@ -1212,8 +1721,42 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <PackageCheck className="mr-2 h-4 w-4" />
                     {po.status === PO_STATUS_PARTIAL_RECEIVE
                       ? "Edit Penerimaan Barang"
-                      : "Terima Barang"}
+                      : isSiteVendorPO
+                        ? "Konfirmasi Terima Barang"
+                        : "Terima Barang"}
                   </Button>
+                )}
+                {isGA && deliverEligibleItems.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700"
+                    onClick={handleOpenDeliverDialog}
+                    disabled={actionLoading}
+                  >
+                    <Truck className="mr-2 h-4 w-4" /> Kirim ke Requester
+                  </Button>
+                )}
+                {canPrintBast && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <QrCode className="mr-2 h-4 w-4" /> Cetak BAST
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handlePrintBast("GMI")}>
+                        Cetak BAST (GMI)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handlePrintBast("GIS")}>
+                        Cetak BAST (GIS)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handlePrintBast("LOURDES")}
+                      >
+                        Cetak BAST (Lourdes)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {showEditDpBpButton && (
                   <Button
@@ -1455,7 +1998,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                             const statusColor =
                               MR_ITEM_STATUS_COLORS[
                                 mrItem.status || "Pending"
-                              ] || "bg-gray-100";
+                              ] || MR_ITEM_STATUS_COLOR_DEFAULT;
                             const statusLabel =
                               MR_ITEM_STATUS_LABELS[
                                 mrItem.status || "Pending"
@@ -1496,10 +2039,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                     </Badge>
 
                                     {/* Tombol Edit (Hanya untuk Purchasing/Admin) */}
-                                    {isPurchasing && mrItem.part_number && (
+                                    {isPurchasing && (
                                       <button
                                         onClick={() =>
-                                          handleOpenEditStatus(mrItem)
+                                          handleOpenEditStatus(mrItem, idx)
                                         }
                                         className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
                                         title="Edit Status Barang"
@@ -1543,7 +2086,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                           (att, i) => (
                                             <div
                                               key={i}
-                                              className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
+                                              className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
                                             >
                                               <Link
                                                 href={resolveAttachmentUrl(
@@ -1575,6 +2118,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                         )}
                                       </div>
                                     )}
+
+                                  {/* Info kirim GA ke requester - dibandingin
+                                      manual sama lampiran BAST di atas */}
+                                  {mrItem.delivery_info && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="mt-2 h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50"
+                                      onClick={() =>
+                                        setDeliveryDetailItem(mrItem)
+                                      }
+                                    >
+                                      <Truck className="mr-1 h-3 w-3" /> Lihat
+                                      Detail Pengiriman
+                                    </Button>
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   {isInPO ? (
@@ -1680,6 +2239,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 </div>
               </Content>
             )}
+
           </div>
 
           <div className="col-span-12 lg:col-span-4 space-y-6">
@@ -1834,32 +2394,50 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </div>
             </Content>
 
-            <Content title="Lampiran Invoice">
+            <Content title="Lampiran Purchasing">
               <div className="space-y-3">
                 {canUploadAttachment && (
                   <div>
-                    <Label
-                      htmlFor="invoice-attachment-upload"
-                      className="text-xs"
-                    >
-                      Tambah Lampiran Invoice
+                    <Label className="text-xs">
+                      Tambah Lampiran Purchasing (Quotation/Invoice)
                     </Label>
-                    <Input
-                      id="invoice-attachment-upload"
-                      type="file"
-                      className="mt-1"
-                      onChange={(e) => handleAttachmentUpload(e, "invoice")}
-                      disabled={isUploadingInvoice}
-                    />
-                    {isUploadingInvoice && (
+                    <div className="mt-1 flex flex-col sm:flex-row gap-2">
+                      <Select
+                        value={purchasingAttachmentType}
+                        onValueChange={(v) =>
+                          setPurchasingAttachmentType(
+                            v as "quotation" | "invoice",
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full sm:w-40">
+                          <SelectValue placeholder="Jenis lampiran" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="quotation">Quotation</SelectItem>
+                          <SelectItem value="invoice">Invoice</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        id="purchasing-attachment-upload"
+                        type="file"
+                        className="flex-1"
+                        onChange={handlePurchasingAttachmentUpload}
+                        disabled={isUploadingPurchasing}
+                      />
+                    </div>
+                    {isUploadingPurchasing && (
                       <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
                     )}
                   </div>
                 )}
                 <ul className="space-y-2">
-                  {invoiceAttachments.length > 0 ? (
-                    invoiceAttachments.map((file, index) => (
-                      <li key={index}>
+                  {purchasingAttachments.length > 0 ? (
+                    purchasingAttachments.map((file, index) => (
+                      <li key={index} className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px]">
+                          {file.type === "invoice" ? "Invoice" : "Quotation"}
+                        </Badge>
                         <Link
                           href={resolveAttachmentUrl(file.url)}
                           target="_blank"
@@ -1880,7 +2458,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </div>
             </Content>
 
-            <Content title="Lampiran BAST / Bukti Terima">
+            <Content title="Lampiran Bukti Terima Barang">
               <ul className="space-y-2">
                 {bastAttachmentEntries.length > 0 ? (
                   bastAttachmentEntries.map(({ item, att }, index) => (
@@ -1914,7 +2492,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Belum ada BAST.
+                    Belum ada bukti terima barang.
                   </p>
                 )}
               </ul>
@@ -2147,69 +2725,109 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {dpBpDialogMode === "approve"
-                  ? "Konfirmasi Pembayaran DP & Pelunasan"
-                  : "Edit Pembayaran DP & Pelunasan"}
+                {dpBpDialogMode !== "approve"
+                  ? "Edit Pembayaran DP & Pelunasan"
+                  : isDpBpPO
+                    ? "Konfirmasi Pembayaran DP & Pelunasan"
+                    : "Konfirmasi Approval Pembayaran"}
               </DialogTitle>
               <DialogDescription>
-                PO ini memakai metode pembayaran &quot;{po?.payment_term}
-                &quot; dengan skema{" "}
-                <strong>
-                  {dpBpRequiresFullPayment
-                    ? "Kirim Setelah Pelunasan"
-                    : "Kirim Setelah DP"}
-                </strong>
-                .{" "}
-                {dpBpDialogMode === "approve"
-                  ? dpBpRequiresFullPayment
-                    ? "DP dan BP (pelunasan) harus sama-sama lunas dulu untuk menyelesaikan approval ini."
-                    : 'Approval ini bisa selesai cukup dengan DP dicentang - barang sudah bisa diterima. BP boleh menyusul belakangan, dan progress ini tetap bisa diedit lagi kapan pun lewat tombol "Edit DP/BP" di halaman ini.'
-                  : "Progress DP/BP bisa diedit kapan pun oleh Payment Validator PO ini atau admin - dipakai untuk koreksi kalau ada salah input."}
+                {isDpBpPO ? (
+                  <>
+                    PO ini memakai metode pembayaran &quot;{po?.payment_term}
+                    &quot; dengan skema{" "}
+                    <strong>
+                      {dpBpRequiresFullPayment
+                        ? "Kirim Setelah Pelunasan"
+                        : "Kirim Setelah DP"}
+                    </strong>
+                    .{" "}
+                    {dpBpDialogMode === "approve"
+                      ? dpBpRequiresFullPayment
+                        ? "DP dan BP (pelunasan) harus sama-sama lunas dulu untuk menyelesaikan approval ini."
+                        : 'Approval ini bisa selesai cukup dengan DP dicentang - barang sudah bisa diterima. BP boleh menyusul belakangan, dan progress ini tetap bisa diedit lagi kapan pun lewat tombol "Edit DP/BP" di halaman ini.'
+                      : "Progress DP/BP bisa diedit kapan pun oleh Payment Validator PO ini atau admin - dipakai untuk koreksi kalau ada salah input."}
+                  </>
+                ) : (
+                  <>
+                    PO ini memakai metode pembayaran &quot;{po?.payment_term}
+                    &quot;. Lampirkan bukti pembayaran untuk menyelesaikan
+                    approval ini.
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="dp-paid"
-                  checked={dpChecked}
-                  onCheckedChange={(v) => setDpChecked(!!v)}
-                />
-                <Label htmlFor="dp-paid" className="cursor-pointer">
-                  DP (Down Payment) sudah dibayar
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="bp-paid"
-                  checked={bpChecked}
-                  onCheckedChange={(v) => setBpChecked(!!v)}
-                />
-                <Label htmlFor="bp-paid" className="cursor-pointer">
-                  BP / Pelunasan sudah dibayar
-                </Label>
-              </div>
-              {dpBpDialogMode === "approve" &&
-                (() => {
-                  const approvalWillComplete = dpBpRequiresFullPayment
-                    ? dpChecked && bpChecked
-                    : dpChecked;
-                  if (approvalWillComplete) {
-                    return (
-                      <p className="text-xs text-green-600">
-                        {dpChecked && bpChecked
-                          ? "DP & BP sudah lunas — approval selesai."
-                          : "DP sudah dicentang — approval selesai, barang sudah bisa diterima. BP menyusul belakangan."}
-                      </p>
-                    );
-                  }
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      {dpBpRequiresFullPayment
-                        ? 'Belum lunas — PO akan tetap "Pending Approval" sampai DP & BP sama-sama dicentang.'
-                        : 'DP belum dicentang — PO akan tetap "Pending Approval" sampai DP dicentang.'}
-                    </p>
-                  );
-                })()}
+              {isDpBpPO && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="dp-paid"
+                      checked={dpChecked}
+                      onCheckedChange={(v) => setDpChecked(!!v)}
+                    />
+                    <Label htmlFor="dp-paid" className="cursor-pointer">
+                      DP (Down Payment) sudah dibayar
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="bp-paid"
+                      checked={bpChecked}
+                      onCheckedChange={(v) => setBpChecked(!!v)}
+                    />
+                    <Label htmlFor="bp-paid" className="cursor-pointer">
+                      BP / Pelunasan sudah dibayar
+                    </Label>
+                  </div>
+                  {dpBpDialogMode === "approve" &&
+                    (() => {
+                      const approvalWillComplete = dpBpRequiresFullPayment
+                        ? dpChecked && bpChecked
+                        : dpChecked;
+                      if (approvalWillComplete) {
+                        return (
+                          <p className="text-xs text-green-600">
+                            {dpChecked && bpChecked
+                              ? "DP & BP sudah lunas — approval selesai."
+                              : "DP sudah dicentang — approval selesai, barang sudah bisa diterima. BP menyusul belakangan."}
+                          </p>
+                        );
+                      }
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          {dpBpRequiresFullPayment
+                            ? 'Belum lunas — PO akan tetap "Pending Approval" sampai DP & BP sama-sama dicentang.'
+                            : 'DP belum dicentang — PO akan tetap "Pending Approval" sampai DP dicentang.'}
+                        </p>
+                      );
+                    })()}
+                </>
+              )}
+              {dpBpDialogMode === "approve" && (
+                <div>
+                  <Label
+                    htmlFor="payment-proof-upload"
+                    className="text-xs font-medium"
+                  >
+                    Bukti Pembayaran (wajib)
+                  </Label>
+                  <Input
+                    key={isDpBpDialogOpen ? "proof-open" : "proof-closed"}
+                    id="payment-proof-upload"
+                    type="file"
+                    className="mt-1"
+                    onChange={(e) =>
+                      setPaymentProofFile(e.target.files?.[0] || null)
+                    }
+                    disabled={actionLoading}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    File ini otomatis tersimpan sebagai lampiran Finance pada
+                    PO ini.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -2222,12 +2840,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               {dpBpDialogMode === "approve" ? (
                 <Button
                   onClick={() =>
-                    handleApprovalAction("approved", {
-                      dp_paid: dpChecked,
-                      bp_paid: bpChecked,
-                    })
+                    handleApprovalAction(
+                      "approved",
+                      isDpBpPO
+                        ? { dp_paid: dpChecked, bp_paid: bpChecked }
+                        : undefined,
+                      paymentProofFile || undefined,
+                    )
                   }
-                  disabled={actionLoading || (!dpChecked && !bpChecked)}
+                  disabled={
+                    actionLoading ||
+                    !paymentProofFile ||
+                    (isDpBpPO && !dpChecked && !bpChecked)
+                  }
                 >
                   {actionLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2235,6 +2860,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <Check className="mr-2 h-4 w-4" />
                   )}
                   {(() => {
+                    if (!isDpBpPO) return "Setujui Pembayaran";
                     const approvalWillComplete = dpBpRequiresFullPayment
                       ? dpChecked && bpChecked
                       : dpChecked;
@@ -2258,6 +2884,97 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           </DialogContent>
         </Dialog>
 
+        {/* --- DIALOG DETAIL PENGIRIMAN ITEM MR --- */}
+        <Dialog
+          open={!!deliveryDetailItem}
+          onOpenChange={(open) => !open && setDeliveryDetailItem(null)}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5" /> Detail Pengiriman
+              </DialogTitle>
+              <DialogDescription>{deliveryDetailItem?.name}</DialogDescription>
+            </DialogHeader>
+            {deliveryDetailItem?.delivery_info && (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Jenis Kirim</p>
+                  <p className="font-medium">
+                    {deliveryDetailItem.delivery_info.delivery_type}
+                    {deliveryDetailItem.delivery_info.courier &&
+                      ` - ${deliveryDetailItem.delivery_info.courier}`}
+                  </p>
+                </div>
+                {deliveryDetailItem.delivery_info.tracking_number && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">No. Resi</p>
+                    <p className="font-medium">
+                      {deliveryDetailItem.delivery_info.tracking_number}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground">Qty Dikirim</p>
+                  <p className="font-medium">
+                    {deliveryDetailItem.delivery_info.qty_sent}{" "}
+                    {deliveryDetailItem.uom}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    Tanggal Kirim
+                  </p>
+                  <p className="font-medium">
+                    {formatDateWithTime(
+                      deliveryDetailItem.delivery_info.sent_at,
+                    )}
+                  </p>
+                </div>
+                {deliveryDetailItem.delivery_info.note && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Catatan</p>
+                    <p className="italic">
+                      &quot;{deliveryDetailItem.delivery_info.note}&quot;
+                    </p>
+                  </div>
+                )}
+                {deliveryDetailItem.delivery_info.attachments &&
+                  deliveryDetailItem.delivery_info.attachments.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Lampiran Bukti Kirim
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {deliveryDetailItem.delivery_info.attachments.map(
+                          (att, i) => (
+                            <Link
+                              key={i}
+                              href={resolveAttachmentUrl(att.url)}
+                              target="_blank"
+                              className="hover:underline flex items-center gap-1 text-primary"
+                            >
+                              <FileText className="w-3 h-3" />
+                              {att.name}
+                            </Link>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDeliveryDetailItem(null)}
+              >
+                Tutup
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* --- DIALOG EDIT STATUS BARANG MR --- */}
         <Dialog open={isEditStatusOpen} onOpenChange={setIsEditStatusOpen}>
           <DialogContent className="sm:max-w-md">
@@ -2270,6 +2987,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </DialogHeader>
 
             <div className="grid gap-4 py-4">
+              {selectedItemToEdit && !selectedItemToEdit.part_number && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <p>
+                    Barang ini tidak punya Part Number - perbaiki lewat
+                    halaman detail MR (&quot;Edit Rincian&quot;) kalau ini
+                    seharusnya barang dari Master Data.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="status">Status Barang</Label>
                 <Select
@@ -2388,7 +3115,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
             {!poRefLoading && poRefDetail && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
                   <div>
                     <p className="text-muted-foreground text-xs flex items-center gap-1">
                       <Building2 className="h-3 w-3" /> Vendor
@@ -2435,7 +3162,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       {poRefDetail.material_requests?.kode_mr || "N/A"}
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <p className="text-muted-foreground text-xs flex items-center gap-1">
                       <DollarSign className="h-3 w-3" /> Total Harga
                     </p>
@@ -2524,24 +3251,196 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           isSubmitting={actionLoading}
         />
 
-        {!isPrintingReceive && (
-          <div className="print-only">
-            <PrintablePO
-              po={po}
-              companyInfo={
-                printCompany ? COMPANY_DETAILS[printCompany] : companyInfo
-              }
-              qrUrl={qrUrl}
-              vendorData={vendorData}
-            />
-          </div>
-        )}
-        {isPrintingReceive && po.receive_record && (
-          <div className="print-only">
-            <PrintableReceiveRecord po={po} receiveRecord={po.receive_record} />
-          </div>
-        )}
+        {/* --- KIRIM KE REQUESTER (GA kirim barang "Diterima GA") --- */}
+        <Dialog open={isDeliverDialogOpen} onOpenChange={setIsDeliverDialogOpen}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Kirim Barang ke Requester</DialogTitle>
+              <DialogDescription>
+                Barang yang dicentang akan ditandai &quot;Dalam
+                Pengiriman&quot; ke requester. Bukti pengiriman wajib
+                dilampirkan.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>
+                  Barang ({selectedPartNumbersForDelivery.size} dipilih)
+                </Label>
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
+                  {deliverEligibleItems.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">
+                      Tidak ada barang berstatus &quot;Diterima GA&quot;.
+                    </div>
+                  ) : (
+                    deliverEligibleItems.map((item) => {
+                      const partNumber = item.part_number as string;
+                      const checked =
+                        selectedPartNumbersForDelivery.has(partNumber);
+                      return (
+                        <div
+                          key={partNumber}
+                          className="flex items-center gap-2 p-2 text-sm"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() =>
+                              toggleDeliveryItemSelection(partNumber)
+                            }
+                          />
+                          <span className="flex-1">{item.name}</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={deliveryQtyByPartNumber[partNumber] ?? ""}
+                            onChange={(e) =>
+                              setDeliveryQtyByPartNumber((prev) => ({
+                                ...prev,
+                                [partNumber]: e.target.value,
+                              }))
+                            }
+                            className="h-8 w-24"
+                            disabled={!checked}
+                          />
+                          <span className="text-xs text-muted-foreground w-10">
+                            {item.uom}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="delivery-type">Jenis Pengiriman</Label>
+                  <Select
+                    value={deliveryType}
+                    onValueChange={(v) => setDeliveryType(v as DeliveryType)}
+                  >
+                    <SelectTrigger id="delivery-type" className="mt-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DELIVERY_TYPE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="delivery-courier">
+                    Ekspedisi
+                    {deliveryType === "Kurir/Ekspedisi Eksternal" && " *"}
+                  </Label>
+                  <Input
+                    id="delivery-courier"
+                    value={deliveryCourier}
+                    onChange={(e) => setDeliveryCourier(e.target.value)}
+                    placeholder="mis. JNE, J&T, Gojek"
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="delivery-resi">No. Resi</Label>
+                  <Input
+                    id="delivery-resi"
+                    value={deliveryTrackingNumber}
+                    onChange={(e) => setDeliveryTrackingNumber(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="delivery-file">
+                    Bukti Pengiriman (wajib)
+                  </Label>
+                  <Input
+                    id="delivery-file"
+                    type="file"
+                    multiple
+                    onChange={(e) => setDeliveryFiles(e.target.files)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="delivery-note">Catatan</Label>
+                <Textarea
+                  id="delivery-note"
+                  value={deliveryNote}
+                  onChange={(e) => setDeliveryNote(e.target.value)}
+                  className="mt-2"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsDeliverDialogOpen(false)}
+                disabled={sendingDelivery}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleSendToRequester}
+                disabled={
+                  sendingDelivery || selectedPartNumbersForDelivery.size === 0
+                }
+              >
+                {sendingDelivery && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Kirim
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Content>
+
+      {/* Blok print-only SENGAJA di luar <Content> (Card) di atas - kalau
+          dinest di dalamnya, border/shadow/padding Card itu ikut ke-print
+          ngebungkus dokumennya (Card gak ke-hide oleh .no-print, cuma isinya
+          doang). Dulu ketutupan sama posisi absolute #printable-po-a4 yang
+          "kabur" dari box Card-nya - begitu absolute-nya dicabut (lihat
+          globals.css, fix bug +1 halaman kosong di Safari), harus taruh
+          blok ini di luar Card dari awal, bukan cuma diakalin CSS lagi. */}
+      {!isPrintingReceive && !isPrintingBast && (
+        <div className="print-only">
+          <PrintablePO
+            po={po}
+            companyInfo={
+              printCompany ? COMPANY_DETAILS[printCompany] : companyInfo
+            }
+            qrUrl={qrUrl}
+            vendorData={vendorData}
+            printTrigger={!!printCompany}
+          />
+        </div>
+      )}
+      {isPrintingReceive && po.receive_record && (
+        <div className="print-only">
+          <PrintableReceiveRecord po={po} receiveRecord={po.receive_record} />
+        </div>
+      )}
+      {isPrintingBast && bastPrintCompany && (
+        <div className="print-only">
+          <PrintableBAST
+            po={po}
+            companyInfo={COMPANY_DETAILS[bastPrintCompany]}
+            receiptUrl={
+              po.receipt_token
+                ? `${window.location.origin}/goods-receipt/${po.receipt_token}`
+                : ""
+            }
+            printTrigger={isPrintingBast}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -2551,11 +3450,13 @@ const PrintablePO = ({
   companyInfo,
   qrUrl,
   vendorData,
+  printTrigger,
 }: {
   po: PurchaseOrderDetail;
   companyInfo: (typeof COMPANY_DETAILS)["DEFAULT"];
   qrUrl: string;
   vendorData: { name: string; address: string; contact: string; code: string };
+  printTrigger: boolean;
 }) => {
   const printSubtotal = po.items.reduce(
     (acc, item) => acc + item.price * item.qty,
@@ -2575,278 +3476,298 @@ const PrintablePO = ({
       ? printSubtotal * (printPpnRate / 100)
       : null;
 
-  return (
-    <div
-      id="printable-po-a4"
-      className="p-8 bg-white text-black font-sans text-sm leading-normal min-h-[29.7cm] flex flex-col relative"
-    >
-      <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
-        <div className="flex items-center gap-6 w-2/3">
-          <div className="w-[120px] relative flex-shrink-0 flex items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={companyInfo.logo}
-              alt="Logo"
-              className="object-contain max-w-full max-h-full object-left"
-            />
-          </div>
-          <div>
-            <h1 className="text-xl font-black uppercase tracking-tight text-gray-900 leading-none">
-              {companyInfo.name}
-            </h1>
-            <p className="text-xs text-gray-600 mt-1.5 leading-snug max-w-sm">
-              {companyInfo.address}
-            </p>
-            <p className="text-xs font-medium text-gray-800 mt-1">
-              {companyInfo.email} | {companyInfo.phone}
-            </p>
-          </div>
+  const renderHeader = () => (
+    <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
+      <div className="flex items-center gap-6 w-2/3">
+        <div className="w-[120px] relative flex-shrink-0 flex items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={companyInfo.logo}
+            alt="Logo"
+            className="object-contain max-w-full max-h-full object-left"
+          />
         </div>
-        <div className="text-right w-1/3">
-          <h2 className="text-xl font-black text-gray-800 tracking-wide uppercase">
-            Purchase Order
-          </h2>
-          <div className="mt-2">
-            <p className="text-base font-bold text-gray-900">{po.kode_po}</p>
-            <p className="text-xs text-gray-500">
-              Tgl: {formatDateFriendly(po.created_at)}
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <section className="flex gap-6 mb-8">
-        <div className="w-1/2 border border-gray-300 rounded-sm">
-          <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
-            <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
-              Vendor (Supplier)
-            </h3>
-          </div>
-          <div className="p-3">
-            <p className="font-bold text-base text-gray-900">
-              {vendorData.name}
-            </p>
-            {vendorData.code && (
-              <p className="text-[10px] font-mono text-gray-500 mb-1">
-                ID: {vendorData.code}
-              </p>
-            )}
-            <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
-              {vendorData.address}
-            </p>
-            <div className="mt-3 pt-2 border-t border-dashed border-gray-200 flex flex-col gap-0.5">
-              <p className="text-xs">
-                <span className="text-gray-500">UP:</span> {vendorData.contact}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="w-1/2 border border-gray-300 rounded-sm">
-          <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
-            <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
-              Kirim Ke (Ship To)
-            </h3>
-          </div>
-          <div className="p-3">
-            <p className="font-bold text-base text-gray-900">
-              {companyInfo.name}
-            </p>
-            <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
-              {po.shipping_address}
-            </p>
-            <div className="mt-3 pt-2 border-t border-dashed border-gray-200">
-              <p className="text-xs font-mono text-gray-500">
-                Ref MR: {po.material_requests?.kode_mr || "-"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-6">
-        <table className="w-full border-collapse border-y-2 border-black table-fixed text-xs">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[5%] border-b border-gray-300 whitespace-nowrap">
-                No
-              </th>
-              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[30%] border-b border-gray-300 whitespace-nowrap">
-                Deskripsi Barang
-              </th>
-              <th className="py-2 px-2 text-left font-bold text-gray-700 w-[17%] border-b border-gray-300 whitespace-nowrap">
-                Part Number
-              </th>
-              <th className="py-2 px-2 text-center font-bold text-gray-700 w-[8%] border-b border-gray-300 whitespace-nowrap">
-                Qty
-              </th>
-              <th className="py-2 px-2 text-center font-bold text-gray-700 w-[10%] border-b border-gray-300 whitespace-nowrap">
-                Satuan
-              </th>
-              <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
-                Harga (@)
-              </th>
-              <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
-                Total
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {po.items.map((item, index) => (
-              <tr
-                key={index}
-                className="border-b border-gray-200 last:border-0"
-              >
-                <td className="py-3 px-2 text-left align-top text-gray-600">
-                  {index + 1}
-                </td>
-                <td className="py-3 px-2 text-left align-top font-medium text-gray-900 break-words whitespace-normal">
-                  {item.name}
-                </td>
-                <td className="py-3 px-2 text-left align-top font-mono text-[10px] text-gray-600 break-all">
-                  {item.part_number}
-                </td>
-                <td className="py-3 px-2 text-center align-top text-gray-900">
-                  {item.qty}
-                </td>
-                <td className="py-3 px-2 text-center align-top text-gray-600">
-                  {item.uom}
-                </td>
-                <td className="py-3 px-2 text-right align-top whitespace-nowrap text-gray-900">
-                  {formatCurrency(item.price)}
-                </td>
-                <td className="py-3 px-2 text-right align-top whitespace-nowrap font-semibold text-gray-900 bg-gray-50">
-                  {formatCurrency(item.total_price || item.price * item.qty)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="flex gap-10 break-inside-avoid items-start">
-        <div className="flex-1 space-y-4">
-          <div className="space-y-1">
-            <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
-              Catatan / Notes:
-            </h4>
-            <p className="text-xs italic text-gray-600 whitespace-pre-wrap leading-relaxed pt-1">
-              {po.notes || "Tidak ada catatan khusus."}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
-              Syarat Pembayaran:
-            </h4>
-            <p className="text-xs font-medium text-gray-800 pt-1">
-              {po.payment_term}
-            </p>
-          </div>
-        </div>
-        <div className="w-[40%]">
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium text-gray-900">
-                {formatCurrency(printSubtotal)}
-              </span>
-            </div>
-            {po.discount > 0 && (
-              <div className="flex justify-between text-xs text-red-600">
-                <span>Diskon</span>
-                <span>- {formatCurrency(po.discount)}</span>
-              </div>
-            )}
-            {(po.pph_amount || 0) > 0 && (
-              <div className="flex justify-between text-xs text-red-600">
-                <span>PPH ({po.pph_rate}%)</span>
-                <span>- {formatCurrency(po.pph_amount || 0)}</span>
-              </div>
-            )}
-            {po.tax > 0 && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-600">
-                  Pajak (PPN{printPpnRate ? ` ${printPpnRate}%` : ""})
-                </span>
-                <span className="font-medium text-gray-900">
-                  + {formatCurrency(po.tax)}
-                </span>
-              </div>
-            )}
-            {po.tax === 0 && po.tax_included && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-600">
-                  PPN
-                  {printPpnRate != null ? ` ${printPpnRate}%` : ""} (sudah
-                  termasuk harga)
-                </span>
-                <span className="font-medium text-gray-900">
-                  {printIncludedTaxInfo != null
-                    ? formatCurrency(printIncludedTaxInfo)
-                    : "-"}
-                </span>
-              </div>
-            )}
-            {po.tax === 0 && !po.tax_included && po.ppn_rate === 0 && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-600">PPN</span>
-                <span className="text-gray-600">
-                  Tidak ada (pembelian marketplace)
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs pb-2 border-b border-gray-300">
-              <span className="text-gray-600">Ongkos Kirim</span>
-              <span className="font-medium text-gray-900">
-                + {formatCurrency(po.postage)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-900 text-white px-3 py-2 rounded-sm mt-1 print:bg-gray-200 print:text-black print:border print:border-black">
-              <span className="font-bold text-xs uppercase tracking-wider">
-                Grand Total
-              </span>
-              <span className="font-black text-base">
-                {formatCurrency(po.total_price)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="mt-auto pt-12 break-inside-avoid">
-        <div className="border-t-2 border-black pt-4 flex flex-col items-center text-center">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
-                Digital Validation
-              </p>
-              <p className="text-[9px] text-gray-400">Scan to verify</p>
-            </div>
-            {qrUrl ? (
-              <div className="p-1 border border-gray-800 rounded-md">
-                <QRCodeCanvas value={qrUrl} size={60} />
-              </div>
-            ) : (
-              <Skeleton className="h-[60px] w-[60px]" />
-            )}
-            <div className="text-left">
-              <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
-                Approved By System
-              </p>
-              <p className="text-[9px] text-gray-400">Garuda Procure System</p>
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-500 italic max-w-xl leading-tight">
-            Dokumen ini diterbitkan secara elektronik oleh sistem Garuda Procure
-            dan sah tanpa tanda tangan basah. Status persetujuan dapat
-            diverifikasi melalui pemindaian kode QR di atas.
+        <div>
+          <h1 className="text-xl font-black uppercase tracking-tight text-gray-900 leading-none">
+            {companyInfo.name}
+          </h1>
+          <p className="text-xs text-gray-600 mt-1.5 leading-snug max-w-sm">
+            {companyInfo.address}
           </p>
-          <p className="text-[9px] text-gray-400 mt-1">
-            Dicetak oleh {po.users_with_profiles?.nama || "System"} pada{" "}
-            {new Date().toLocaleString("id-ID")}
+          <p className="text-xs font-medium text-gray-800 mt-1">
+            {companyInfo.email} | {companyInfo.phone}
           </p>
         </div>
       </div>
+      <div className="text-right w-1/3">
+        <h2 className="text-xl font-black text-gray-800 tracking-wide uppercase">
+          Purchase Order
+        </h2>
+        <div className="mt-2">
+          <p className="text-base font-bold text-gray-900">{po.kode_po}</p>
+          <p className="text-xs text-gray-500">
+            Tgl: {formatDateFriendly(po.created_at)}
+          </p>
+        </div>
+      </div>
+    </header>
+  );
+
+  const renderIntro = () => (
+    <section className="flex gap-6 mb-8">
+      <div className="w-1/2 border border-gray-300 rounded-sm">
+        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
+          <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
+            Vendor (Supplier)
+          </h3>
+        </div>
+        <div className="p-3">
+          <p className="font-bold text-base text-gray-900">
+            {vendorData.name}
+          </p>
+          {vendorData.code && (
+            <p className="text-[10px] font-mono text-gray-500 mb-1">
+              ID: {vendorData.code}
+            </p>
+          )}
+          <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
+            {vendorData.address}
+          </p>
+          <div className="mt-3 pt-2 border-t border-dashed border-gray-200 flex flex-col gap-0.5">
+            <p className="text-xs">
+              <span className="text-gray-500">UP:</span> {vendorData.contact}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="w-1/2 border border-gray-300 rounded-sm">
+        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-300">
+          <h3 className="font-bold text-[10px] uppercase tracking-wider text-gray-600">
+            Kirim Ke (Ship To)
+          </h3>
+        </div>
+        <div className="p-3">
+          <p className="font-bold text-base text-gray-900">
+            {companyInfo.name}
+          </p>
+          <p className="text-xs mt-1 text-gray-700 leading-relaxed whitespace-pre-line">
+            {po.shipping_address}
+          </p>
+          <div className="mt-3 pt-2 border-t border-dashed border-gray-200">
+            <p className="text-xs font-mono text-gray-500">
+              Ref MR: {po.material_requests?.kode_mr || "-"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderTableHead = () => (
+    <tr className="bg-gray-50">
+      <th className="py-2 px-2 text-left font-bold text-gray-700 w-[5%] border-b border-gray-300 whitespace-nowrap">
+        No
+      </th>
+      <th className="py-2 px-2 text-left font-bold text-gray-700 w-[30%] border-b border-gray-300 whitespace-nowrap">
+        Deskripsi Barang
+      </th>
+      <th className="py-2 px-2 text-left font-bold text-gray-700 w-[17%] border-b border-gray-300 whitespace-nowrap">
+        Part Number
+      </th>
+      <th className="py-2 px-2 text-center font-bold text-gray-700 w-[8%] border-b border-gray-300 whitespace-nowrap">
+        Qty
+      </th>
+      <th className="py-2 px-2 text-center font-bold text-gray-700 w-[10%] border-b border-gray-300 whitespace-nowrap">
+        Satuan
+      </th>
+      <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
+        Harga (@)
+      </th>
+      <th className="py-2 px-2 text-right font-bold text-gray-700 w-[15%] border-b border-gray-300 whitespace-nowrap">
+        Total
+      </th>
+    </tr>
+  );
+
+  const renderRow = (
+    item: POItem,
+    index: number,
+    ref?: React.Ref<HTMLTableRowElement>,
+  ) => (
+    <tr key={index} ref={ref} className="border-b border-gray-200 last:border-0">
+      <td className="py-3 px-2 text-left align-top text-gray-600">
+        {index + 1}
+      </td>
+      <td className="py-3 px-2 text-left align-top font-medium text-gray-900 break-words whitespace-normal">
+        {item.name}
+      </td>
+      <td className="py-3 px-2 text-left align-top font-mono text-[10px] text-gray-600 break-all">
+        {item.part_number}
+      </td>
+      <td className="py-3 px-2 text-center align-top text-gray-900">
+        {item.qty}
+      </td>
+      <td className="py-3 px-2 text-center align-top text-gray-600">
+        {item.uom}
+      </td>
+      <td className="py-3 px-2 text-right align-top whitespace-nowrap text-gray-900">
+        {formatCurrency(item.price)}
+      </td>
+      <td className="py-3 px-2 text-right align-top whitespace-nowrap font-semibold text-gray-900 bg-gray-50">
+        {formatCurrency(item.total_price || item.price * item.qty)}
+      </td>
+    </tr>
+  );
+
+  const renderOutro = () => (
+    <section className="flex gap-10 break-inside-avoid items-start">
+      <div className="flex-1 space-y-4">
+        <div className="space-y-1">
+          <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
+            Catatan / Notes:
+          </h4>
+          <p className="text-xs italic text-gray-600 whitespace-pre-wrap leading-relaxed pt-1">
+            {po.notes || "Tidak ada catatan khusus."}
+          </p>
+        </div>
+        <div className="space-y-1">
+          <h4 className="font-bold text-xs text-gray-900 uppercase border-b border-gray-300 pb-1 inline-block">
+            Syarat Pembayaran:
+          </h4>
+          <p className="text-xs font-medium text-gray-800 pt-1">
+            {po.payment_term}
+          </p>
+        </div>
+      </div>
+      <div className="w-[40%]">
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-600">Subtotal</span>
+            <span className="font-medium text-gray-900">
+              {formatCurrency(printSubtotal)}
+            </span>
+          </div>
+          {po.discount > 0 && (
+            <div className="flex justify-between text-xs text-red-600">
+              <span>Diskon</span>
+              <span>- {formatCurrency(po.discount)}</span>
+            </div>
+          )}
+          {(po.pph_amount || 0) > 0 && (
+            <div className="flex justify-between text-xs text-red-600">
+              <span>PPH ({po.pph_rate}%)</span>
+              <span>- {formatCurrency(po.pph_amount || 0)}</span>
+            </div>
+          )}
+          {po.tax > 0 && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">
+                Pajak (PPN{printPpnRate ? ` ${printPpnRate}%` : ""})
+              </span>
+              <span className="font-medium text-gray-900">
+                + {formatCurrency(po.tax)}
+              </span>
+            </div>
+          )}
+          {po.tax === 0 && po.tax_included && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">
+                PPN
+                {printPpnRate != null ? ` ${printPpnRate}%` : ""} (sudah
+                termasuk harga)
+              </span>
+              <span className="font-medium text-gray-900">
+                {printIncludedTaxInfo != null
+                  ? formatCurrency(printIncludedTaxInfo)
+                  : "-"}
+              </span>
+            </div>
+          )}
+          {po.tax === 0 && !po.tax_included && po.ppn_rate === 0 && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">PPN</span>
+              <span className="text-gray-600">
+                Tidak ada (pembelian marketplace)
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between text-xs pb-2 border-b border-gray-300">
+            <span className="text-gray-600">Ongkos Kirim</span>
+            <span className="font-medium text-gray-900">
+              + {formatCurrency(po.postage)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center bg-gray-900 text-white px-3 py-2 rounded-sm mt-1 print:bg-gray-200 print:text-black print:border print:border-black">
+            <span className="font-bold text-xs uppercase tracking-wider">
+              Grand Total
+            </span>
+            <span className="font-black text-base">
+              {formatCurrency(po.total_price)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderFooter = ({
+    pageIndex,
+    pageCount,
+  }: {
+    pageIndex: number;
+    pageCount: number;
+  }) => (
+    <div className="pt-12 break-inside-avoid">
+      <div className="border-t-2 border-black pt-4 flex flex-col items-center text-center">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="text-right">
+            <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
+              Digital Validation
+            </p>
+            <p className="text-[9px] text-gray-400">Scan to verify</p>
+          </div>
+          {qrUrl ? (
+            <div className="p-1 border border-gray-800 rounded-md">
+              <QRCodeCanvas value={qrUrl} size={60} />
+            </div>
+          ) : (
+            <Skeleton className="h-[60px] w-[60px]" />
+          )}
+          <div className="text-left">
+            <p className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">
+              Approved By System
+            </p>
+            <p className="text-[9px] text-gray-400">Garuda Procure System</p>
+          </div>
+        </div>
+        <p className="text-[10px] text-gray-500 italic max-w-xl leading-tight">
+          Dokumen ini diterbitkan secara elektronik oleh sistem Garuda Procure
+          dan sah tanpa tanda tangan basah. Status persetujuan dapat
+          diverifikasi melalui pemindaian kode QR di atas.
+        </p>
+        <p className="text-[9px] text-gray-400 mt-1">
+          Dicetak oleh {po.users_with_profiles?.nama || "System"} pada{" "}
+          {new Date().toLocaleString("id-ID")}
+        </p>
+        <p className="text-[9px] text-gray-400">
+          Halaman {pageIndex + 1} dari {pageCount}
+        </p>
+      </div>
     </div>
+  );
+
+  return (
+    <PaginatedPrintDocument
+      rows={po.items}
+      renderRow={renderRow}
+      renderTableHead={renderTableHead}
+      renderHeader={renderHeader}
+      renderFooter={renderFooter}
+      renderIntro={renderIntro}
+      renderOutro={renderOutro}
+      enabled={printTrigger}
+      tableClassName="table-fixed border-y-2 border-black"
+    />
   );
 };
 
@@ -2857,72 +3778,381 @@ const PrintableReceiveRecord = ({
   po: PurchaseOrderDetail;
   receiveRecord: ReceiveRecord;
 }) => {
-  return (
-    <div
-      id="printable-po-a4"
-      className="p-8 bg-white text-black font-sans text-sm leading-normal min-h-[29.7cm] flex flex-col relative"
-    >
-      <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
-        <div>
-          <h1 className="text-xl font-black uppercase tracking-tight text-gray-900 leading-none">
-            Riwayat Penerimaan Barang
-          </h1>
-          <p className="text-xs text-gray-600 mt-1.5">PO: {po.kode_po}</p>
-        </div>
-        <div className="text-right">
-          <h2 className="text-lg font-black text-gray-800 tracking-wide uppercase">
-            {receiveRecord.is_full_match ? "Full Received" : "Partial Receive"}
-          </h2>
-        </div>
-      </header>
+  const renderHeader = () => (
+    <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
+      <div>
+        <h1 className="text-xl font-black uppercase tracking-tight text-gray-900 leading-none">
+          Riwayat Penerimaan Barang
+        </h1>
+        <p className="text-xs text-gray-600 mt-1.5">PO: {po.kode_po}</p>
+      </div>
+      <div className="text-right">
+        <h2 className="text-lg font-black text-gray-800 tracking-wide uppercase">
+          {receiveRecord.is_full_match ? "Full Received" : "Partial Receive"}
+        </h2>
+      </div>
+    </header>
+  );
 
-      <div className="mb-6 text-xs space-y-1">
-        <p>
-          <span className="font-semibold">Diterima oleh:</span>{" "}
-          {receiveRecord.received_by_name}
+  const renderIntro = () => (
+    <div className="mb-6 text-xs space-y-1">
+      <p>
+        <span className="font-semibold">Diterima oleh:</span>{" "}
+        {receiveRecord.received_by_name}
+      </p>
+      <p>
+        <span className="font-semibold">Waktu:</span>{" "}
+        {new Date(receiveRecord.received_at).toLocaleString("id-ID")}
+      </p>
+    </div>
+  );
+
+  const renderTableHead = () => (
+    <tr className="border-b-2 border-black">
+      <th className="text-left py-2 pr-2">Nama Barang</th>
+      <th className="text-right py-2 px-2 w-24">Qty PO</th>
+      <th className="text-right py-2 px-2 w-24">Qty Diterima</th>
+      <th className="text-center py-2 pl-2 w-24">Status</th>
+    </tr>
+  );
+
+  const renderRow = (
+    item: ReceiveRecord["items"][number],
+    _index: number,
+    ref?: React.Ref<HTMLTableRowElement>,
+  ) => {
+    const match = item.received_qty === item.ordered_qty;
+    return (
+      <tr
+        key={item.part_number}
+        ref={ref}
+        className="border-b border-gray-300"
+      >
+        <td className="py-2 pr-2">{item.part_name}</td>
+        <td className="text-right py-2 px-2">{item.ordered_qty}</td>
+        <td className="text-right py-2 px-2">{item.received_qty}</td>
+        <td className="text-center py-2 pl-2">
+          {match ? "Sesuai" : "Tidak Sesuai"}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderFooter = ({
+    pageIndex,
+    pageCount,
+  }: {
+    pageIndex: number;
+    pageCount: number;
+  }) => (
+    <div className="pt-8">
+      <p className="text-[10px] text-gray-500 italic">
+        Dokumen ini diterbitkan secara elektronik oleh sistem Garuda
+        Procure.
+      </p>
+      <p className="text-[9px] text-gray-400 mt-1">
+        Dicetak pada {new Date().toLocaleString("id-ID")}
+      </p>
+      <p className="text-[9px] text-gray-400 mt-1">
+        Halaman {pageIndex + 1} dari {pageCount}
+      </p>
+    </div>
+  );
+
+  return (
+    <PaginatedPrintDocument
+      rows={receiveRecord.items}
+      renderRow={renderRow}
+      renderTableHead={renderTableHead}
+      renderHeader={renderHeader}
+      renderFooter={renderFooter}
+      renderIntro={renderIntro}
+      enabled
+      tableClassName="table-fixed"
+    />
+  );
+};
+
+// BAST (Berita Acara Serah Terima) - ditempel fisik ke paket sebelum
+// dikirim. QR di dalamnya mengarah ke halaman publik
+// /goods-receipt/[token] (scan utk konfirmasi penerimaan, lihat
+// services/goodsReceiptService.ts). Kolom "Qty Diterima"/"Foto Diterima"
+// baru muncul begitu po.goods_receipt sudah terisi (hasil konfirmasi) -
+// sebelum itu BAST cetak cuma 3 kolom qty (MR/PO/Dikirim). Qty & foto per
+// item pakai persis logic yang sama dengan fetchGoodsReceiptView di
+// services/goodsReceiptService.ts, supaya konsisten dengan yang dilihat
+// requester di halaman scan.
+interface BastRow {
+  name: string;
+  part_number: string;
+  uom: string;
+  qtyMr: number;
+  qtyPo: number;
+  qtyDikirim: number;
+  fotoDikirim: Attachment[];
+  qtyDiterima: number | undefined;
+  fotoDiterima: Attachment[];
+  isPartial: boolean;
+}
+
+const PrintableBAST = ({
+  po,
+  companyInfo,
+  receiptUrl,
+  printTrigger,
+}: {
+  po: PurchaseOrderDetail;
+  companyInfo: (typeof COMPANY_DETAILS)["DEFAULT"];
+  receiptUrl: string;
+  printTrigger: boolean;
+}) => {
+  const poItems = po.items || [];
+  const mrOrders = po.material_requests?.orders || [];
+  const isSiteVendor = po.vendor_details?.tipe_vendor === "Site";
+  const goodsReceipt = po.goods_receipt;
+  const hasReceipt = !!goodsReceipt;
+
+  const rows: BastRow[] = mrOrders
+    .filter(
+      (order) =>
+        !!order.part_number &&
+        poItems.some((pi) => pi.part_number === order.part_number),
+    )
+    .map((order) => {
+      const poItem = poItems.find((pi) => pi.part_number === order.part_number);
+      const receiveRecordEntry = po.receive_record?.items?.find(
+        (i) => i.part_number === order.part_number,
+      );
+      const qtyDikirim =
+        order.delivery_info?.qty_sent ??
+        receiveRecordEntry?.received_qty ??
+        poItem?.qty ??
+        Number(order.qty) ??
+        0;
+      const receiptItem = goodsReceipt?.items.find(
+        (i) => i.part_number === order.part_number,
+      );
+      return {
+        name: order.name,
+        part_number: order.part_number as string,
+        uom: order.uom,
+        qtyMr: Number(order.qty) || 0,
+        qtyPo: poItem?.qty || 0,
+        qtyDikirim,
+        fotoDikirim: order.delivery_info?.attachments || [],
+        qtyDiterima: receiptItem?.qty_received,
+        fotoDiterima: receiptItem?.photos || [],
+        isPartial:
+          receiptItem !== undefined && receiptItem.qty_received < qtyDikirim,
+      };
+    });
+
+  const renderHeader = () => (
+    <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
+      <div className="flex items-center gap-4 w-2/3">
+        <div className="w-[100px] relative flex-shrink-0 flex items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={companyInfo.logo}
+            alt="Logo"
+            className="object-contain max-w-full max-h-full object-left"
+          />
+        </div>
+        <div>
+          <h1 className="text-lg font-black uppercase tracking-tight text-gray-900 leading-none">
+            {companyInfo.name}
+          </h1>
+          <p className="text-[10px] text-gray-600 mt-1 leading-snug max-w-xs">
+            {companyInfo.address}
+          </p>
+        </div>
+      </div>
+      <div className="text-right w-1/3">
+        <h2 className="text-base font-black text-gray-800 tracking-wide uppercase">
+          Berita Acara Serah Terima Barang
+        </h2>
+        <p className="text-xs text-gray-700 mt-1">No. PO: {po.kode_po}</p>
+        <p className="text-xs text-gray-700">
+          No. MR: {po.material_requests?.kode_mr || "-"}
         </p>
-        <p>
-          <span className="font-semibold">Waktu:</span>{" "}
-          {new Date(receiveRecord.received_at).toLocaleString("id-ID")}
+        <p className="text-[10px] text-gray-500">
+          Tgl: {new Date().toLocaleDateString("id-ID")}
         </p>
       </div>
+    </header>
+  );
 
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="border-b-2 border-black">
-            <th className="text-left py-2 pr-2">Nama Barang</th>
-            <th className="text-right py-2 px-2 w-24">Qty PO</th>
-            <th className="text-right py-2 px-2 w-24">Qty Diterima</th>
-            <th className="text-center py-2 pl-2 w-24">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {receiveRecord.items.map((item) => {
-            const match = item.received_qty === item.ordered_qty;
-            return (
-              <tr key={item.part_number} className="border-b border-gray-300">
-                <td className="py-2 pr-2">{item.part_name}</td>
-                <td className="text-right py-2 px-2">{item.ordered_qty}</td>
-                <td className="text-right py-2 px-2">{item.received_qty}</td>
-                <td className="text-center py-2 pl-2">
-                  {match ? "Sesuai" : "Tidak Sesuai"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+  const renderIntro = () => (
+    <div className="mb-6 flex gap-6 items-start border border-gray-300 rounded-sm p-3">
+      <div className="flex-1">
+        <p className="text-xs font-bold uppercase text-gray-700 mb-1">
+          Petunjuk Penerimaan Barang
+        </p>
+        <p className="text-[11px] text-gray-700 leading-relaxed">
+          Mohon <strong>SCAN QR code</strong> di samping{" "}
+          <strong>SEBELUM membuka seluruh kemasan (unboxing)</strong> secara
+          menyeluruh, untuk memverifikasi kondisi &amp; jumlah barang saat
+          diterima. Setelah scan, ikuti instruksi di halaman yang muncul
+          untuk mengisi jumlah &amp; foto tiap barang.
+        </p>
+      </div>
+      {receiptUrl ? (
+        <div className="p-2 border border-gray-800 rounded-md flex-shrink-0">
+          <QRCodeCanvas value={receiptUrl} size={90} />
+        </div>
+      ) : (
+        <Skeleton className="h-[90px] w-[90px] flex-shrink-0" />
+      )}
+    </div>
+  );
 
-      <div className="mt-auto pt-8">
-        <p className="text-[10px] text-gray-500 italic">
-          Dokumen ini diterbitkan secara elektronik oleh sistem Garuda
-          Procure.
+  const renderTableHead = () => (
+    <tr className="border-b-2 border-black">
+      <th className="text-left py-2 pr-2">Nama Barang</th>
+      <th className="text-right py-2 px-1 w-14">Qty MR</th>
+      <th className="text-right py-2 px-1 w-14">Qty PO</th>
+      <th className="text-right py-2 px-1 w-16">Qty Dikirim</th>
+      {hasReceipt && (
+        <th className="text-right py-2 px-1 w-16">Qty Diterima</th>
+      )}
+      <th className="text-center py-2 px-1 w-20">Foto Dikirim GA</th>
+      {hasReceipt && (
+        <th className="text-center py-2 px-1 w-20">Foto Diterima</th>
+      )}
+      <th className="text-center py-2 pl-1 w-20">Ket.</th>
+    </tr>
+  );
+
+  const renderRow = (
+    row: BastRow,
+    _index: number,
+    ref?: React.Ref<HTMLTableRowElement>,
+  ) => (
+    <tr key={row.part_number} ref={ref} className="border-b border-gray-300">
+      <td className="py-2 pr-2 align-top">
+        {row.name}
+        <div className="text-[9px] text-gray-500 font-mono">
+          {row.part_number}
+        </div>
+      </td>
+      <td className="text-right py-2 px-1 align-top">
+        {row.qtyMr} {row.uom}
+      </td>
+      <td className="text-right py-2 px-1 align-top">{row.qtyPo}</td>
+      <td className="text-right py-2 px-1 align-top">{row.qtyDikirim}</td>
+      {hasReceipt && (
+        <td className="text-right py-2 px-1 align-top">
+          {row.qtyDiterima ?? "-"}
+        </td>
+      )}
+      <td className="text-center py-2 px-1 align-top">
+        {isSiteVendor ? (
+          <span className="text-gray-400 text-[9px] italic">
+            N/A - Langsung dari Vendor
+          </span>
+        ) : row.fotoDikirim.length > 0 ? (
+          <div className="flex flex-wrap justify-center gap-1">
+            {row.fotoDikirim.map((att, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={resolveAttachmentUrl(att.url)}
+                alt="Foto dikirim"
+                className="h-10 w-10 object-cover border border-gray-300"
+              />
+            ))}
+          </div>
+        ) : (
+          <span className="text-gray-400 text-[9px]">-</span>
+        )}
+      </td>
+      {hasReceipt && (
+        <td className="text-center py-2 px-1 align-top">
+          {row.fotoDiterima.length > 0 ? (
+            <div className="flex flex-wrap justify-center gap-1">
+              {row.fotoDiterima.map((att, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={resolveAttachmentUrl(att.url)}
+                  alt="Foto diterima"
+                  className="h-10 w-10 object-cover border border-gray-300"
+                />
+              ))}
+            </div>
+          ) : (
+            <span className="text-gray-400 text-[9px]">-</span>
+          )}
+        </td>
+      )}
+      <td className="text-center py-2 pl-1 align-top">
+        {row.isPartial && (
+          <span className="text-[9px] font-bold text-red-600 uppercase">
+            Partial Receive
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+
+  // Tanda tangan Requester/Receiver SENGAJA jadi "outro" (cuma di halaman
+  // TERAKHIR), bukan diulang tiap halaman kayak header/footer - tanda
+  // tangannya cuma sekali, logisnya nempel di akhir dokumen.
+  const renderOutro = () => (
+    <div className="pt-10 flex justify-between gap-8">
+      <div className="text-center w-1/3">
+        <p className="text-xs font-semibold uppercase text-gray-600 mb-10">
+          Requester
         </p>
-        <p className="text-[9px] text-gray-400 mt-1">
-          Dicetak pada {new Date().toLocaleString("id-ID")}
+        <p className="text-xs border-t border-gray-400 pt-1">
+          {po.material_requests?.users_with_profiles?.nama || "-"}
         </p>
+      </div>
+      <div className="text-center w-1/3">
+        <p className="text-xs font-semibold uppercase text-gray-600 mb-10">
+          Receiver
+        </p>
+        <p className="text-xs border-t border-gray-400 pt-1">
+          {goodsReceipt?.receiver_name || "-"}
+        </p>
+        {goodsReceipt?.confirmed_at && (
+          <p className="text-[9px] text-gray-400 mt-0.5">
+            {new Date(goodsReceipt.confirmed_at).toLocaleString("id-ID")}
+          </p>
+        )}
       </div>
     </div>
+  );
+
+  const renderFooter = ({
+    pageIndex,
+    pageCount,
+  }: {
+    pageIndex: number;
+    pageCount: number;
+  }) => (
+    <div className="mt-6">
+      <p className="text-[9px] text-gray-400">
+        Dicetak pada {new Date().toLocaleString("id-ID")}
+      </p>
+      <p className="text-[9px] text-gray-400">
+        Halaman {pageIndex + 1} dari {pageCount}
+      </p>
+    </div>
+  );
+
+  return (
+    <PaginatedPrintDocument
+      rows={rows}
+      renderRow={renderRow}
+      renderTableHead={renderTableHead}
+      renderHeader={renderHeader}
+      renderFooter={renderFooter}
+      renderIntro={renderIntro}
+      renderOutro={renderOutro}
+      enabled={printTrigger}
+      tableClassName="table-fixed text-[10px]"
+    />
   );
 };
 

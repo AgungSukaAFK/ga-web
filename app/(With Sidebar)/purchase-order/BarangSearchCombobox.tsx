@@ -79,8 +79,8 @@ export function BarangSearchCombobox({ onSelect }: BarangSearchComboboxProps) {
                         className={cn(
                           "text-[10px] font-normal px-1.5 py-0",
                           barang.is_asset
-                            ? "border-purple-200 bg-purple-50 text-purple-700"
-                            : "border-slate-200 bg-slate-50 text-slate-600",
+                            ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+                            : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300",
                         )}
                       >
                         {barang.is_asset ? "Aset" : "Barang"}

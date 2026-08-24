@@ -26,7 +26,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CustomPagination } from "@/components/custom-pagination";
-import { formatCurrency, formatDateFriendly } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDateFriendly,
+  getCurrentApprover,
+  formatAge,
+} from "@/lib/utils";
+import { PicGaPopover } from "@/components/pic-ga-popover";
 import { CreatePOModal } from "./CreatePOModal";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
@@ -293,7 +299,7 @@ function PurchaseOrderPageContent() {
         // Query Utama
         let query = s.from("purchase_orders").select(
           `
-            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term, dp_paid, bp_paid, items, is_asset,
+            id, kode_po, status, total_price, created_at, company_code, approvals, vendor_details, payment_term, dp_paid, bp_paid, items, is_asset, full_received_at,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
@@ -497,7 +503,7 @@ function PurchaseOrderPageContent() {
         `
             kode_po, status, total_price, company_code, created_at,
             items, approvals, payment_term, vendor_details,
-            dp_paid, bp_paid, attachments, is_asset,
+            dp_paid, bp_paid, attachments, is_asset, full_received_at,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (
               kode_mr,
@@ -594,6 +600,11 @@ function PurchaseOrderPageContent() {
           Vendor: po.vendor_details?.nama_vendor || "N/A",
           "Requester MR": requesterName || "N/A",
           Status: po.status,
+          Umur: formatAge(
+            po.created_at,
+            po.full_received_at,
+            po.status === "Full Received",
+          ),
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
           "Last Approve": lastApprover?.nama || "",
           DP: po.dp_paid ? "Dibayar" : "",
@@ -913,6 +924,7 @@ function PurchaseOrderPageContent() {
                   <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
                   <TableHead>Status PO</TableHead>
+                  <TableHead>Umur</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead className="text-right">Total Harga</TableHead>
                   <TableHead>Tanggal Dibuat</TableHead>
@@ -923,7 +935,7 @@ function PurchaseOrderPageContent() {
                 {loading || isPending ? (
                   Array.from({ length: limit }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={10}>
+                      <TableCell colSpan={11}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -975,7 +987,30 @@ function PurchaseOrderPageContent() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{po.status}</Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant="secondary">{po.status}</Badge>
+                          {po.status === "Pending Approval" &&
+                            (() => {
+                              const approver = getCurrentApprover(
+                                po.approvals,
+                              );
+                              return approver ? (
+                                <span className="text-[11px] text-muted-foreground">
+                                  Menunggu: {approver.nama}
+                                </span>
+                              ) : null;
+                            })()}
+                          {po.status === "Pending Validation" && (
+                            <PicGaPopover />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatAge(
+                          po.created_at,
+                          po.full_received_at,
+                          po.status === "Full Received",
+                        )}
                       </TableCell>
                       <TableCell>
                         {isPoPaid(po.approvals) ? (
@@ -1043,7 +1078,7 @@ function PurchaseOrderPageContent() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center h-24">
+                    <TableCell colSpan={11} className="text-center h-24">
                       Tidak ada data ditemukan.
                     </TableCell>
                   </TableRow>
@@ -1096,7 +1131,7 @@ function PurchaseOrderPageContent() {
 
       {/* --- QUICK VIEW DIALOG --- */}
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2 flex-wrap pr-6">
               <Newspaper className="h-5 w-5 shrink-0" />
@@ -1115,7 +1150,7 @@ function PurchaseOrderPageContent() {
           {selectedPo && (
             <div className="space-y-6">
               {/* Header Info */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg text-sm border">
                 <div>
                   <p className="text-muted-foreground text-xs flex items-center gap-1">
                     <Building2 className="h-3 w-3" /> Vendor
@@ -1154,7 +1189,7 @@ function PurchaseOrderPageContent() {
                     {selectedPo.material_requests?.kode_mr || "N/A"}
                   </p>
                 </div>
-                <div className="col-span-2">
+                <div>
                   <p className="text-muted-foreground text-xs flex items-center gap-1">
                     <DollarSign className="h-3 w-3" /> Total Harga
                   </p>
@@ -1183,8 +1218,8 @@ function PurchaseOrderPageContent() {
                       {selectedPo.items && selectedPo.items.length > 0 ? (
                         selectedPo.items.map((item, i) => (
                           <TableRow key={i}>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
+                            <TableCell className="font-medium whitespace-normal break-words max-w-[260px]">
+                              <div className="flex flex-wrap items-center gap-2">
                                 {item.name}
                                 <AssetGoodsBadge isAsset={item.is_asset} />
                               </div>

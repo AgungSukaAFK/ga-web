@@ -71,18 +71,21 @@ export async function middleware(request: NextRequest) {
   const authPaths = [
     "/auth/login",
     "/auth/sign-up",
-    "/auth/forgot-password",
     "/auth/error",
     "/auth/sign-up-success",
     "/auth/confirm",
-    "/auth/update-password",
   ];
 
   const pendingPath = "/pending-approval";
 
   const otherPublicPaths = ["/"];
 
-  const dynamicPublicPatterns = [/^\/approval-po\/[0-9]+$/];
+  const dynamicPublicPatterns = [
+    /^\/approval-po\/[0-9]+$/,
+    // Scan QR di BAST cetak - konfirmasi penerimaan barang tanpa login
+    // (kode global), lihat app/goods-receipt/[token]/page.tsx.
+    /^\/goods-receipt\/[A-Za-z0-9-]+$/,
+  ];
 
   const isAuthPath = authPaths.includes(pathname);
   const isPendingPath = pathname === pendingPath;

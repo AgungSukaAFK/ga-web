@@ -43,6 +43,31 @@ export async function uploadAttachmentVps(
   return { success: true, url: pub.publicUrl };
 }
 
+// Sama seperti uploadAttachmentVps, TAPI tanpa gate auth.getUser() - dipakai
+// khusus dari alur konfirmasi goods-receipt publik (scan QR, lihat
+// services/goodsReceiptService.ts) yang jalan tanpa sesi Supabase browser
+// (bisa anonim + kode global, bukan login). Otorisasinya sudah dicek di
+// lapisan atas (verifyGoodsReceiptCode) sebelum fungsi ini dipanggil - JANGAN
+// dipakai di alur lain yang butuh proteksi login.
+export async function uploadAttachmentPublic(
+  formData: FormData,
+  path: string
+): Promise<UploadResult> {
+  const file = formData.get("file") as File | null;
+  if (!file) return { success: false, message: "File tidak ditemukan" };
+
+  const vps = createVpsStorageClient();
+  const { data, error } = await vps.storage
+    .from(VPS_STORAGE_BUCKET)
+    .upload(sanitizeStorageKey(path), file);
+  if (error) return { success: false, message: error.message };
+
+  const { data: pub } = vps.storage
+    .from(VPS_STORAGE_BUCKET)
+    .getPublicUrl(data.path);
+  return { success: true, url: pub.publicUrl };
+}
+
 // url = full public URL hasil uploadAttachmentVps. Best-effort, sama seperti
 // perilaku hapus lampiran lama (tidak memblok UI kalau gagal).
 export async function removeAttachmentVps(

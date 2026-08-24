@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { differenceInCalendarDays, isValid, parse } from "date-fns";
 import { twMerge } from "tailwind-merge";
+import { Approval } from "@/type";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -198,6 +199,42 @@ export const calculatePriority = (
 
   // > 25 Hari -> P4
   return "P4";
+};
+
+// Approver yang gilirannya sedang berjalan - pending & semua approval
+// sebelumnya di array udah approved (approval jalan berurutan per index).
+export const getCurrentApprover = (
+  approvals?: Approval[] | null,
+): Approval | null => {
+  if (!Array.isArray(approvals)) return null;
+  return (
+    approvals.find(
+      (a, i) =>
+        a.status === "pending" &&
+        approvals.slice(0, i).every((p) => p.status === "approved"),
+    ) || null
+  );
+};
+
+// Umur MR/PO: dari dibuat sampai Full Received (kalau sudah selesai), atau
+// umur berjalan sampai sekarang (kalau belum) - format "X Hari Y Jam".
+// `isFullReceived` tanpa `fullReceivedAt` = data lama dari sebelum fitur ini
+// ada (tidak sempat tercatat kapan selesainya) -> "-", bukan ditebak.
+export const formatAge = (
+  createdAt: string | Date,
+  fullReceivedAt: string | null | undefined,
+  isFullReceived: boolean,
+): string => {
+  if (isFullReceived && !fullReceivedAt) return "-";
+
+  const start = new Date(createdAt).getTime();
+  const end = fullReceivedAt ? new Date(fullReceivedAt).getTime() : Date.now();
+  const diffMs = Math.max(0, end - start);
+
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+  return `${days} Hari ${hours} Jam`;
 };
 
 // Helper untuk mendapatkan warna badge berdasarkan prioritas (Opsional)

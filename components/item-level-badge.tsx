@@ -30,7 +30,8 @@ const ITEM_LEVEL_DESCRIPTIONS: Record<string, string> = {
   "Open 4":
     "Pembayaran item ini sudah disetujui oleh Payment Validator.",
   "Open 5": "Barang sudah diterima oleh tim GA/Warehouse.",
-  Close: "Proses untuk item ini sudah selesai (dokumen/BAST sudah lengkap).",
+  Close:
+    "Proses untuk item ini sudah selesai (dokumen/bukti penerimaan sudah lengkap).",
 };
 
 interface ItemLevelBadgeProps {

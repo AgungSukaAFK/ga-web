@@ -67,7 +67,7 @@ import { toast } from "sonner";
 const DOC_TYPE_OPTIONS: { value: AttachmentDocType | "all"; label: string }[] = [
   { value: "all", label: "Semua Tipe" },
   { value: "material_request", label: "MR - Lampiran" },
-  { value: "material_request_bast", label: "MR - BAST Item" },
+  { value: "material_request_bast", label: "MR - Bukti Penerimaan Item" },
   { value: "purchase_order", label: "PO - Lampiran" },
   { value: "petty_cash", label: "Petty Cash" },
   { value: "petty_cash_settlement", label: "Petty Cash - Settlement" },

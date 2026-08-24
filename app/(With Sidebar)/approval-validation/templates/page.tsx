@@ -3,6 +3,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +38,7 @@ import {
 import { toast } from "sonner";
 import {
   ApprovalTemplate,
+  AutoRule,
   createTemplate,
   deleteTemplate,
   fetchTemplates,
@@ -44,10 +48,13 @@ import { TemplateForm } from "./TemplateForm";
 import { Loader2, Plus, Trash2, Edit, Search } from "lucide-react";
 import { Approval } from "@/type";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ApprovalTemplatesPage() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<ApprovalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
   // Modal buat/edit template. `null` = tertutup, "new" = mode buat baru,
   // objek template = mode edit.
@@ -91,7 +98,34 @@ export default function ApprovalTemplatesPage() {
   };
 
   useEffect(() => {
-    loadTemplates();
+    const checkAccess = async () => {
+      const s = createClient();
+      const {
+        data: { user },
+      } = await s.auth.getUser();
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
+      const { data: profile } = await s
+        .from("profiles")
+        .select("role, department")
+        .eq("id", user.id)
+        .single();
+
+      const isAllowed =
+        isGADepartment(profile?.department) || profile?.role === "admin";
+      if (!isAllowed) {
+        toast.error("Akses ditolak.", {
+          description: "Halaman ini khusus untuk General Affair/Admin.",
+        });
+        router.push("/dashboard");
+        return;
+      }
+      setCheckingAccess(false);
+      loadTemplates();
+    };
+    checkAccess();
   }, []);
 
   const handleOpenCreate = () => {
@@ -111,6 +145,7 @@ export default function ApprovalTemplatesPage() {
     template_name: string;
     description: string;
     approval_path: Approval[];
+    auto_rules: AutoRule[];
   }) => {
     const isEditing = activeForm && activeForm !== "new";
     const toastId = toast.loading(
@@ -126,9 +161,12 @@ export default function ApprovalTemplatesPage() {
       handleCancelForm();
       await loadTemplates();
     } catch (error: any) {
+      const isDuplicateAuto = error.code === "23505";
       toast.error("Gagal menyimpan template", {
         id: toastId,
-        description: error.message,
+        description: isDuplicateAuto
+          ? "Sudah ada template lain yang auto-terapkan untuk kombinasi dokumen & departemen ini. Kosongkan dulu setting auto-terapkan di template lain tersebut, atau pilih kombinasi berbeda."
+          : error.message,
       });
     }
   };
@@ -161,6 +199,14 @@ export default function ApprovalTemplatesPage() {
   // hanya tombol Batal / X yang boleh nutup, supaya progress ngisi form
   // (nyari & nyusun approver) ga ilang gara-gara ke-klik di luar.
   const preventOutsideClose = (e: Event) => e.preventDefault();
+
+  if (checkingAccess) {
+    return (
+      <Content title="Manajemen Template Approval">
+        <Skeleton className="h-96 w-full" />
+      </Content>
+    );
+  }
 
   return (
     <>
@@ -208,7 +254,26 @@ export default function ApprovalTemplatesPage() {
                     onClick={() => setDetailTemplate(template)}
                   >
                     <TableCell className="font-medium">
-                      {template.template_name}
+                      <div className="flex flex-col items-start gap-1">
+                        {template.template_name}
+                        {template.auto_rules.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {template.auto_rules.map((rule, i) => (
+                              <Badge
+                                key={i}
+                                variant="outline"
+                                className="font-normal text-[10px] text-primary border-primary/40"
+                              >
+                                Auto:{" "}
+                                {rule.document_type === "material_request"
+                                  ? "MR"
+                                  : "PO"}{" "}
+                                - {rule.department}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-[320px] truncate text-muted-foreground">
                       {template.description || "-"}

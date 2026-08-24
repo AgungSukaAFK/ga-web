@@ -48,9 +48,25 @@ import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
-import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDateFriendly,
+  cn,
+  getCurrentApprover,
+  formatAge,
+} from "@/lib/utils";
+import { PicPoPopover } from "@/components/pic-po-popover";
+import { PicGaPopover } from "@/components/pic-ga-popover";
 import { Badge } from "@/components/ui/badge";
-import { STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
+import {
+  STATUS_OPTIONS,
+  MR_LEVELS,
+  MR_ITEM_STATUS_LABELS,
+  MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_COLOR_DEFAULT,
+  PO_REF_STATUS_COLORS,
+  PO_REF_STATUS_COLOR_DEFAULT,
+} from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
@@ -143,6 +159,10 @@ export function MaterialRequestContent({
   // Peta barang_id -> is_asset utk badge Aset/Barang di daftar barang Quick View.
   const [quickViewAssetMap, setQuickViewAssetMap] = useState<
     Record<number, boolean>
+  >({});
+  // Peta kode_po -> {id, status} utk badge PO Refs per item di Quick View.
+  const [quickViewPoRefsMap, setQuickViewPoRefsMap] = useState<
+    Record<string, { id: number; status: string }>
   >({});
 
   // --- URL Params ---
@@ -254,7 +274,7 @@ export function MaterialRequestContent({
         let query = s.from("material_requests").select(
           `
             id, kode_mr, kategori, status, department, created_at, due_date,
-            tujuan_site, prioritas, level, cost_estimation, remarks, company_code, orders,
+            tujuan_site, prioritas, level, cost_estimation, remarks, company_code, orders, approvals, full_received_at,
             users_with_profiles!userid (nama),
             cost_centers (code)
           `,
@@ -596,7 +616,10 @@ export function MaterialRequestContent({
             "Estimasi Harga": Number(item.estimasi_harga) || 0,
             "Total Harga Item":
               (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0),
-            "Status Barang": item.status || "Pending",
+            "Status Barang":
+              MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+              item.status ||
+              "Pending",
             "No. PO": item.po_refs?.join(", ") || "-",
             "Catatan Item": item.note || item.status_note || "-",
             URL: item.url || "-",
@@ -632,13 +655,25 @@ export function MaterialRequestContent({
     } else {
       setQuickViewAssetMap({});
     }
+    setQuickViewPoRefsMap({});
+    s.from("purchase_orders")
+      .select("id, kode_po, status")
+      .eq("mr_id", mr.id)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { id: number; status: string }> = {};
+        for (const row of data) {
+          map[row.kode_po] = { id: row.id, status: row.status };
+        }
+        setQuickViewPoRefsMap(map);
+      });
   };
 
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "approved":
         return (
-          <Badge className="bg-green-100 text-green-800 border-green-200">
+          <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800">
             Approved
           </Badge>
         );
@@ -688,6 +723,25 @@ export function MaterialRequestContent({
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
+  };
+
+  const renderStatusCell = (mr: MaterialRequestListItem) => {
+    const approver =
+      mr.status === "Pending Approval" ? getCurrentApprover(mr.approvals) : null;
+    return (
+      <div className="flex flex-col items-start gap-1">
+        {getStatusBadge(mr.status)}
+        {approver && (
+          <span className="text-[11px] text-muted-foreground">
+            Menunggu: {approver.nama}
+          </span>
+        )}
+        {mr.status === "Pending Validation" && <PicGaPopover />}
+        {mr.status === "Waiting PO" && (
+          <PicPoPopover companyCode={mr.company_code} />
+        )}
+      </div>
+    );
   };
 
   const getPriorityBadge = (p?: string | null) => {
@@ -1007,6 +1061,7 @@ export function MaterialRequestContent({
               <TableHead>Tujuan Site</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Umur</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead>Due Date</TableHead>
@@ -1018,7 +1073,7 @@ export function MaterialRequestContent({
             {loading || isPending ? (
               Array.from({ length: limit }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={15}>
+                  <TableCell colSpan={16}>
                     <Skeleton className="h-8 w-full" />
                   </TableCell>
                 </TableRow>
@@ -1065,7 +1120,14 @@ export function MaterialRequestContent({
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>{getStatusBadge(mr.status)}</TableCell>
+                  <TableCell>{renderStatusCell(mr)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {formatAge(
+                      mr.created_at,
+                      mr.full_received_at,
+                      mr.status === "Full Received",
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs font-mono">
                       {mr.company_code}
@@ -1096,7 +1158,7 @@ export function MaterialRequestContent({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={15}
+                  colSpan={16}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Tidak ada data ditemukan.
@@ -1141,7 +1203,7 @@ export function MaterialRequestContent({
 
       {/* --- QUICK VIEW DIALOG --- */}
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -1225,10 +1287,18 @@ export function MaterialRequestContent({
                     </TableHeader>
                     <TableBody>
                       {selectedMr.orders && selectedMr.orders.length > 0 ? (
-                        selectedMr.orders.map((item, i) => (
+                        selectedMr.orders.map((item, i) => {
+                          const statusColor =
+                            MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
+                            MR_ITEM_STATUS_COLOR_DEFAULT;
+                          const statusLabel =
+                            MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+                            item.status;
+
+                          return (
                           <TableRow key={i}>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
+                            <TableCell className="font-medium whitespace-normal break-words max-w-[220px]">
+                              <div className="flex flex-wrap items-center gap-2">
                                 {item.name}
                                 <AssetGoodsBadge
                                   isAsset={
@@ -1253,14 +1323,47 @@ export function MaterialRequestContent({
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col items-start gap-1">
-                                <Badge variant="outline">
-                                  {item.status || "Pending"}
+                                <Badge
+                                  variant="outline"
+                                  className={cn("capitalize font-normal", statusColor)}
+                                >
+                                  {statusLabel}
                                 </Badge>
+                                {item.po_refs && item.po_refs.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {item.po_refs.map((ref, refIdx) => (
+                                      <Link
+                                        key={refIdx}
+                                        href={`/purchase-order/${quickViewPoRefsMap[ref]?.id ?? ""}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => {
+                                          if (!quickViewPoRefsMap[ref]?.id)
+                                            e.preventDefault();
+                                        }}
+                                      >
+                                        <Badge
+                                          variant="outline"
+                                          className={cn(
+                                            "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
+                                            PO_REF_STATUS_COLORS[
+                                              quickViewPoRefsMap[ref]
+                                                ?.status ?? ""
+                                            ] || PO_REF_STATUS_COLOR_DEFAULT,
+                                          )}
+                                        >
+                                          {ref}
+                                        </Badge>
+                                      </Link>
+                                    ))}
+                                  </div>
+                                )}
                                 <ItemLevelBadge level={item.level} />
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))
+                          );
+                        })
                       ) : (
                         <TableRow>
                           <TableCell

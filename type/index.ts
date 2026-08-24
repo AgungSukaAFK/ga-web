@@ -38,6 +38,26 @@ export interface Order {
   // MrItemLevel. Default 'Open 1' saat item dibuat.
   level?: MrItemLevel;
   payment_issue_note?: string; // Alasan Open 3B (payment issue), opsional
+  // Diisi GA saat kirim barang ke requester (status "On Delivery") - dipakai
+  // buat bandingin apa yg dikirim GA vs apa yg diterima requester (BAST).
+  delivery_info?: DeliveryInfo;
+}
+
+export type DeliveryType =
+  | "Kurir/Ekspedisi Eksternal"
+  | "Kendaraan Internal GA"
+  | "Diambil Langsung Requester"
+  | "Lainnya";
+
+export interface DeliveryInfo {
+  delivery_type: DeliveryType;
+  courier?: string; // Nama ekspedisi - wajib kalau delivery_type "Kurir/Ekspedisi Eksternal"
+  tracking_number?: string; // No. resi
+  note?: string;
+  qty_sent: number;
+  attachments: Attachment[]; // Bukti kirim (foto/surat jalan), wajib min. 1
+  sent_at: string;
+  sent_by: string; // User ID GA yang kirim
 }
 
 export type MrItemLevel =
@@ -52,7 +72,7 @@ export type MrItemLevel =
 export interface Attachment {
   url: string;
   name: string;
-  type?: "po" | "finance" | "bast" | "invoice";
+  type?: "po" | "finance" | "bast" | "invoice" | "quotation" | "delivery";
 }
 
 export interface Discussion {
@@ -105,6 +125,12 @@ export interface MaterialRequest {
   level: string;
 
   users_with_profiles?: { nama: string; email?: string } | null;
+
+  // Umur MR: stempel sekali pas status pertama kali jadi "Full Received"
+  // (lihat recalculateMrStatus, services/mrService.ts) - null kalau belum
+  // selesai, atau kalau MR ini sudah Full Received dari sebelum fitur ini
+  // ada (data lama, tidak sempat tercatat - lihat formatAge di lib/utils.ts).
+  full_received_at?: string | null;
 }
 
 export interface POItem {
@@ -176,6 +202,40 @@ export interface PurchaseOrderPayload {
   // bertumpuk. Null selama status masih "Pending Payment"/"Pending Receive"
   // sebelum ada checklist yang disubmit sama sekali.
   receive_record?: ReceiveRecord | null;
+  // Umur PO: stempel sekali pas status pertama kali jadi "Full Received"
+  // (lihat getFullReceivedStamp, services/purchaseOrderService.ts) - null
+  // kalau belum selesai, atau PO ini Full Received dari sebelum fitur ini
+  // ada (data lama, tidak sempat tercatat - lihat formatAge di lib/utils.ts).
+  full_received_at?: string | null;
+  // Token acak dipakai sebagai URL publik `/goods-receipt/<token>` yang
+  // di-encode ke QR di BAST cetak - digenerate sekali (lazy, lihat
+  // ensureReceiptToken di services/goodsReceiptService.ts), dipakai ulang
+  // tiap reprint (tidak dirotasi).
+  receipt_token?: string | null;
+  // Snapshot konfirmasi penerimaan barang lewat scan QR publik (atau login)
+  // - null selama belum ada yang submit. Sekali terisi, PO ini dianggap
+  // "sudah diterima" dan token di atas jadi single-use (lihat
+  // fetchGoodsReceiptView, services/goodsReceiptService.ts).
+  goods_receipt?: GoodsReceipt | null;
+}
+
+// Hasil konfirmasi fisik penerimaan barang - diisi lewat halaman publik
+// /goods-receipt/[token] (scan QR di BAST cetak) begitu barang sampai ke
+// requester. Per-PO (bukan per-item MR) karena satu item MR bisa dipecah ke
+// >1 PO - qty & foto yang dikonfirmasi di sini spesifik utk pengiriman PO
+// ini saja.
+export interface GoodsReceiptItem {
+  part_number: string;
+  qty_received: number;
+  photos: Attachment[];
+}
+
+export interface GoodsReceipt {
+  receiver_name: string;
+  confirmed_at: string;
+  confirmed_via: "login" | "public_code";
+  confirmed_by_user_id: string;
+  items: GoodsReceiptItem[];
 }
 
 export interface ReceiveRecordItem {
@@ -211,6 +271,7 @@ export interface MaterialRequestListItem {
 
   prioritas: "P0" | "P1" | "P2" | "P3" | "P4" | null;
   level: string;
+  full_received_at?: string | null;
 }
 
 export interface PurchaseOrderListItem {
@@ -233,6 +294,8 @@ export interface PurchaseOrderListItem {
   dp_bp_shipping_type?: "ship_after_dp" | "ship_after_full_payment" | null;
   items?: POItem[];
   is_asset?: boolean | null;
+  // Umur PO - lihat komentar full_received_at di MaterialRequest.
+  full_received_at?: string | null;
 }
 
 export interface ApprovedMaterialRequest {
@@ -284,6 +347,7 @@ export interface Vendor {
   pic_contact_person: string | null;
   alamat: string | null;
   email: string | null;
+  tipe_vendor: "HO" | "Branch" | "Site" | null;
 }
 
 export interface StoredVendorDetails {
@@ -293,6 +357,10 @@ export interface StoredVendorDetails {
   alamat: string;
   contact_person: string;
   email: string;
+  // Snapshot dari Vendor.tipe_vendor pas PO dibuat - dipakai buat nentuin
+  // alur penerimaan barang (lihat "canReceiveGoods" di purchase-order/[id]/page.tsx):
+  // HO/Branch tetap lewat GA, Site langsung ke requester tanpa proses terima GA.
+  tipe_vendor?: "HO" | "Branch" | "Site" | null;
 }
 
 export interface MaterialRequestForPO {
@@ -481,7 +549,18 @@ export type MrItemStatus =
   // qty-nya belum sesuai. "PO Created" (status terpisah dulu) sudah tidak
   // dipakai lagi, dilebur ke sini.
   | "Processing"
-  | "Pending BAST" // Barang sudah diterima GA, tinggal nunggu requester upload BAST
+  // Payment Validator baru approve PO ini - barang mulai dikirim vendor,
+  // TAPI belum ada yang nerima secara fisik (belum "Diterima GA"/langsung
+  // "On Delivery" utk vendor Site). Lihat MR_ITEM_STATUSES.SHIPPED_BY_VENDOR,
+  // type/enum.ts.
+  | "Dikirim Vendor"
+  | "Diterima GA" // Barang sudah diterima GA dari vendor, belum dikirim ke requester
+  | "On Delivery" // GA sudah kirim ke requester, tinggal nunggu requester terima & upload BAST
+  // Legacy - dipakai sebelum ada pemisahan "Diterima GA"/"On Delivery" (GA
+  // terima & "siap di-BAST" dianggap 1 momen). Data lama yang masih di status
+  // ini TETAP bisa di-upload BAST-nya (lihat pengecekan status di halaman MR/
+  // MR Management) - status baru tidak akan set nilai ini lagi.
+  | "Pending BAST"
   | "Completed" // Requester sudah upload BAST utk item ini
   | "Cancelled" // Dibatalkan oleh Purchasing
   | "Replaced"; // Diganti dengan barang lain

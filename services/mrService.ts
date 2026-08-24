@@ -1,7 +1,7 @@
 // src/services/mrService.ts
 
 import { createClient } from "@/lib/supabase/client";
-import { MaterialRequest, Order, Attachment, Profile } from "@/type";
+import { MaterialRequest, Order, Attachment, Profile, DeliveryType } from "@/type";
 import { uploadAttachmentVps, removeAttachmentVps } from "./storageService";
 import {
   PO_STATUS_PENDING_RECEIVE,
@@ -300,7 +300,7 @@ export const deleteMaterialRequest = async (mrId: number) => {
 // --- FUNGSI UPDATE STATUS ITEM ---
 export const updateMrItemStatus = async (
   mrId: number,
-  partNumber: string,
+  partNumber: string | null | undefined,
   updates: {
     status?: string;
     level?: string;
@@ -308,6 +308,10 @@ export const updateMrItemStatus = async (
     note?: string;
   },
   userId: string,
+  // Fallback kalau item ini gak punya part_number (data anomali/legacy - lihat
+  // komentar di komponen pemanggil) - dipakai untuk tetap bisa nemuin &
+  // memperbaiki item itu lewat posisinya di array `orders`.
+  fallbackIndex?: number,
 ) => {
   const supabase = createClient();
 
@@ -322,9 +326,18 @@ export const updateMrItemStatus = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  let itemIndex = partNumber
+    ? currentOrders.findIndex(
+        (item) => item.part_number && item.part_number === partNumber,
+      )
+    : -1;
+  if (
+    itemIndex === -1 &&
+    fallbackIndex !== undefined &&
+    currentOrders[fallbackIndex]
+  ) {
+    itemIndex = fallbackIndex;
+  }
 
   if (itemIndex === -1) {
     return { success: false, message: "Item not found" };
@@ -361,8 +374,9 @@ export const updateMrItemStatus = async (
 };
 
 // Upload bukti BAST utk SATU item MR (bukan seluruh PO). Item harus sudah
-// "Pending BAST" (barang diterima receiver) sebelum requester bisa upload di
-// sini. Menandai item itu "Completed" - dipakai untuk laporan BAST, TIDAK
+// "On Delivery" (GA sudah kirim ke requester) - atau "Pending BAST" utk data
+// lama - sebelum requester bisa upload di sini. Menandai item itu
+// "Completed" - dipakai untuk laporan BAST, TIDAK
 // mengubah status PO (status akhir PO cukup "Full Received", ditentukan oleh
 // checklist receiver lewat submitReceiveRecord di purchaseOrderService.ts).
 export const uploadBastForMrItem = async (
@@ -370,8 +384,14 @@ export const uploadBastForMrItem = async (
   partNumber: string,
   attachments: Attachment[],
   userId: string,
+  // Client yang dipakai bisa di-override (mis. admin/service-role client) -
+  // dipakai oleh alur konfirmasi via scan QR publik
+  // (services/goodsReceiptService.ts), yang jalan tanpa sesi user browser
+  // biasa jadi gak bisa pakai client anon bawaan (material_requests gak
+  // punya RLS anon).
+  client: ReturnType<typeof createClient> = createClient(),
 ) => {
-  const supabase = createClient();
+  const supabase = client;
 
   const { data: mr, error: fetchError } = await supabase
     .from("material_requests")
@@ -380,7 +400,7 @@ export const uploadBastForMrItem = async (
     .single();
 
   if (fetchError || !mr) {
-    throw new Error("Gagal mengambil data MR untuk upload BAST.");
+    throw new Error("Gagal mengambil data MR untuk upload bukti penerimaan.");
   }
 
   const currentOrders = mr.orders as any[];
@@ -410,7 +430,73 @@ export const uploadBastForMrItem = async (
     .eq("id", mrId);
 
   if (updateError)
-    throw new Error("Gagal simpan BAST item: " + updateError.message);
+    throw new Error(
+      "Gagal simpan bukti penerimaan item: " + updateError.message,
+    );
+
+  await recalculateMrStatus(mrId, supabase);
+  await recalculateMrLevel(mrId, supabase);
+
+  return { success: true };
+};
+
+// GA kirim barang yang sudah diterima (status "Diterima GA") ke requester -
+// bisa banyak barang sekaligus dalam 1 pengiriman (beda dgn uploadBastForMrItem
+// yg baca-ubah-tulis per item, di sini semua item diupdate dalam SATU
+// read-modify-write karena memang 1 form/1 pengiriman fisik). Tiap barang
+// nyimpen qty terkirimnya sendiri, tapi info ekspedisi/resi/catatan/lampiran
+// dibagi bareng (1 pengiriman yg sama).
+export const sendItemsToRequester = async (
+  mrId: number,
+  items: { partNumber: string; qtySent: number }[],
+  delivery: {
+    delivery_type: DeliveryType;
+    courier?: string;
+    tracking_number?: string;
+    note?: string;
+    attachments: Attachment[];
+  },
+  userId: string,
+) => {
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk kirim barang.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const sentAt = new Date().toISOString();
+
+  for (const { partNumber, qtySent } of items) {
+    const itemIndex = currentOrders.findIndex(
+      (item) => item.part_number && item.part_number === partNumber,
+    );
+    if (itemIndex === -1) continue;
+
+    const itemToUpdate = { ...currentOrders[itemIndex] };
+    itemToUpdate.status = "On Delivery";
+    itemToUpdate.delivery_info = {
+      ...delivery,
+      qty_sent: qtySent,
+      sent_at: sentAt,
+      sent_by: userId,
+    };
+    itemToUpdate.updated_by = userId;
+    itemToUpdate.updated_at = sentAt;
+    currentOrders[itemIndex] = itemToUpdate;
+  }
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal simpan info pengiriman: " + updateError.message);
 
   await recalculateMrStatus(mrId);
   await recalculateMrLevel(mrId);
@@ -424,7 +510,7 @@ export const uploadBastForMrItem = async (
 // dan "Lampiran BAST" di PO semuanya baca field yang sama) - jadi hapus di
 // sini otomatis kepropagasi ke semua tempat itu tanpa perlu sinkronisasi
 // manual. Kalau ini lampiran TERAKHIR utk item ini, item dikembalikan ke
-// "Pending BAST" (bukti sudah gak ada lagi, gak valid lagi disebut selesai)
+// "On Delivery" (bukti sudah gak ada lagi, gak valid lagi disebut selesai)
 // - status/level MR ikut dihitung ulang biar konsisten.
 export const removeBastForMrItem = async (
   mrId: number,
@@ -441,7 +527,7 @@ export const removeBastForMrItem = async (
     .single();
 
   if (fetchError || !mr) {
-    throw new Error("Gagal mengambil data MR untuk hapus BAST.");
+    throw new Error("Gagal mengambil data MR untuk hapus bukti penerimaan.");
   }
 
   const currentOrders = mr.orders as any[];
@@ -465,7 +551,7 @@ export const removeBastForMrItem = async (
   itemToUpdate.bast_attachments = remainingAttachments;
 
   if (remainingAttachments.length === 0 && itemToUpdate.status === "Completed") {
-    itemToUpdate.status = "Pending BAST";
+    itemToUpdate.status = "On Delivery";
     itemToUpdate.level = "Open 5";
   }
   itemToUpdate.updated_by = userId;
@@ -479,7 +565,9 @@ export const removeBastForMrItem = async (
     .eq("id", mrId);
 
   if (updateError)
-    throw new Error("Gagal hapus BAST item: " + updateError.message);
+    throw new Error(
+      "Gagal hapus bukti penerimaan item: " + updateError.message,
+    );
 
   // Best-effort hapus file fisik di storage - sama seperti pola hapus
   // lampiran lain di app ini (tidak nge-block kalau gagal).
@@ -607,8 +695,11 @@ export const removeManualPoLink = async (
 // sebagai status MR (bukan status per-item) & "Completed" SUDAH TIDAK
 // DIPAKAI LAGI. "Pending BAST" tetap ada sebagai status PER-ITEM
 // (MR_ITEM_STATUSES.PENDING_BAST, lihat type/index.ts) - itu tidak berubah.
-export const recalculateMrStatus = async (mrId: number): Promise<void> => {
-  const supabase = createClient();
+export const recalculateMrStatus = async (
+  mrId: number,
+  client: ReturnType<typeof createClient> = createClient(),
+): Promise<void> => {
+  const supabase = client;
   try {
     const { data: mr, error } = await supabase
       .from("material_requests")
@@ -686,9 +777,16 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
         : "On Process";
 
     if (newStatus !== mr.status) {
+      const updatePayload: Record<string, any> = { status: newStatus };
+      // Stempel "umur MR" (dari created_at sampai sini) sekali aja pas
+      // transisi PERTAMA kali jadi Full Received - lihat formatAge di
+      // lib/utils.ts.
+      if (newStatus === PO_STATUS_FULL_RECEIVED) {
+        updatePayload.full_received_at = new Date().toISOString();
+      }
       const { error: updateError } = await supabase
         .from("material_requests")
-        .update({ status: newStatus })
+        .update(updatePayload)
         .eq("id", mrId);
       if (updateError)
         console.error("recalculateMrStatus: gagal update", updateError);
@@ -702,8 +800,11 @@ export const recalculateMrStatus = async (mrId: number): Promise<void> => {
 // beda dari `status` (approval/dokumen). Selama ada item non-cancelled yang
 // levelnya belum "Close", MR dianggap "OPEN". Baru "CLOSE" kalau semua item
 // sudah "Close" (BAST-nya sudah diupload semua).
-export const recalculateMrLevel = async (mrId: number): Promise<void> => {
-  const supabase = createClient();
+export const recalculateMrLevel = async (
+  mrId: number,
+  client: ReturnType<typeof createClient> = createClient(),
+): Promise<void> => {
+  const supabase = client;
   try {
     const { data: mr, error } = await supabase
       .from("material_requests")
@@ -1199,4 +1300,29 @@ export const calculatePriority = (
 
   // Lebih dari 25 hari (misal 30 hari)
   return "P4";
+};
+
+// Kebalikan dari calculatePriority - dipakai form "Buat MR" & alur
+// "Perbaiki & Submit Ulang" (material-request/[id]/page.tsx) yang sekarang
+// minta Requester pilih Prioritas dulu, baru due_date digenerate otomatis
+// dari situ (bukan requester isi tanggal lalu sistem hitung prioritas).
+// Selalu pakai batas hari MAKSIMAL tiap tier supaya calculatePriority(hasil
+// due_date-nya) balik lagi ke prioritas yang sama persis - P0=2, P1=10,
+// P2=15, P3=25. P4 sengaja di-set 30 hari (bukan dibiarkan open-ended)
+// sesuai ketentuan eksplisit dari user.
+export const PRIORITY_MAX_DAYS: Record<"P0" | "P1" | "P2" | "P3" | "P4", number> = {
+  P0: 2,
+  P1: 10,
+  P2: 15,
+  P3: 25,
+  P4: 30,
+};
+
+export const getDueDateFromPriority = (
+  priority: "P0" | "P1" | "P2" | "P3" | "P4",
+): Date => {
+  const dueDate = new Date();
+  dueDate.setHours(0, 0, 0, 0);
+  dueDate.setDate(dueDate.getDate() + PRIORITY_MAX_DAYS[priority]);
+  return dueDate;
 };

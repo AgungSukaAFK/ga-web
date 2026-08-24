@@ -11,9 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PurchaseOrderDetail, Approval } from "@/type";
+import { PurchaseOrderDetail, Approval, User } from "@/type";
 import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+import { logActivity } from "@/services/logService";
 import {
   AlertTriangle,
   ArrowDown,
@@ -46,6 +47,7 @@ import { Combobox, ComboboxData } from "@/components/combobox";
 import {
   fetchTemplateById,
   fetchTemplateList,
+  fetchAutoTemplate,
 } from "@/services/approvalTemplateService";
 import {
   fetchPurchaseOrderById,
@@ -53,6 +55,7 @@ import {
 } from "@/services/purchaseOrderService";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { ApproverSearchAdd } from "@/components/approver-search-add";
 import {
   notifyOnPOValidated,
   sendNotification,
@@ -141,6 +144,29 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
           value: String(t.id),
         }));
         setTemplateList(templateOptions);
+
+        // Auto-detect template default untuk departemen MR yang di-link PO ini
+        // (kalau ada) - GA tetap bisa ganti manual lewat Combobox di bawah.
+        const department = poDataResult.material_requests?.department;
+        const autoTemplate = await fetchAutoTemplate(
+          "purchase_order",
+          department,
+        );
+        if (autoTemplate) {
+          setSelectedTemplateId(String(autoTemplate.id));
+          setNewApprovals(
+            (autoTemplate.approval_path as any[]).map(
+              (app: any): Approval => ({
+                ...app,
+                status: "pending" as const,
+                type: app.type || "",
+              }),
+            ),
+          );
+          toast.info(
+            `Template otomatis "${autoTemplate.template_name}" diterapkan untuk departemen ${department}.`,
+          );
+        }
       } catch (err: any) {
         setError("Gagal memuat data: " + err.message);
         toast.error("Gagal memuat data", { description: err.message });
@@ -178,6 +204,26 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
 
   const removeApprover = (userId: string) =>
     setNewApprovals((prev) => prev.filter((a) => a.userid !== userId));
+
+  // Tambah approver ad-hoc ke jalur approval PO ini - cuma berlaku untuk
+  // validasi ini saja, tidak menyimpan/mengubah template aslinya.
+  const addApprover = (user: User) => {
+    if (newApprovals.some((a) => a.userid === user.id)) {
+      toast.warning(`${user.nama} sudah ada di jalur approval ini.`);
+    }
+    setNewApprovals((prev) => [
+      ...prev,
+      {
+        userid: user.id,
+        status: "pending",
+        type: "",
+        nama: user.nama || "",
+        department: user.department || "",
+        role: user.role || "",
+        email: user.email || "",
+      },
+    ]);
+  };
 
   const moveApprover = (index: number, direction: "up" | "down") => {
     const newArr = [...newApprovals];
@@ -223,6 +269,24 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
       // In-app notifications (non-blocking)
       if (user && po) {
         const creatorId = po.user_id;
+        await logActivity(
+          user.id,
+          "VALIDATE_PO",
+          "purchase_order",
+          String(po.id),
+          `GA memvalidasi PO ${po.kode_po} dan menetapkan jalur approval (${newApprovals.length} approver)`,
+          { approvers: newApprovals.map((a) => a.nama) },
+        );
+        if (po.mr_id) {
+          await logActivity(
+            user.id,
+            "VALIDATE_PO",
+            "material_request",
+            String(po.mr_id),
+            `GA memvalidasi PO ${po.kode_po} yang terkait MR ini dan menetapkan jalur approval (${newApprovals.length} approver)`,
+            { po_id: po.id, approvers: newApprovals.map((a) => a.nama) },
+          );
+        }
         notifyOnPOValidated({
           actorId: user.id,
           creatorId,
@@ -303,6 +367,24 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
         data: { user },
       } = await s.auth.getUser();
       if (user && po) {
+        await logActivity(
+          user.id,
+          "REJECT_PO_VALIDATION",
+          "purchase_order",
+          String(po.id),
+          `GA menolak PO ${po.kode_po} pada tahap validasi dengan alasan: ${rejectionReason}`,
+          { rejection_reason: rejectionReason },
+        );
+        if (po.mr_id) {
+          await logActivity(
+            user.id,
+            "REJECT_PO_VALIDATION",
+            "material_request",
+            String(po.mr_id),
+            `GA menolak PO ${po.kode_po} yang terkait MR ini pada tahap validasi dengan alasan: ${rejectionReason}`,
+            { po_id: po.id, rejection_reason: rejectionReason },
+          );
+        }
         sendNotification({
           userId: po.user_id,
           actorId: user.id,
@@ -515,6 +597,14 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
                 defaultValue={selectedTemplateId}
                 placeholder="Pilih template..."
               />
+            </div>
+
+            <div>
+              <Label className="text-sm font-normal text-muted-foreground">
+                Tambah approver tambahan (opsional, hanya untuk validasi ini -
+                template aslinya tidak berubah)
+              </Label>
+              <ApproverSearchAdd onAdd={addApprover} />
             </div>
 
             <div className="border rounded-md overflow-x-auto">

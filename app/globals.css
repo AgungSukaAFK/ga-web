@@ -181,13 +181,31 @@
   display: none;
 }
 
+/* SENGAJA di luar @media print (selalu aktif) - dipakai juga oleh render
+   pengukuran off-screen di PaginatedPrintDocument.tsx (konteks layar
+   biasa, bukan print) supaya cara teks di sel tabel melipat baris PERSIS
+   sama antara pengukuran & hasil cetak sungguhan (word-wrap ikut
+   mempengaruhi tinggi baris yang terukur). */
+#printable-po-a4 th,
+#printable-po-a4 td {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
 @media print {
   .no-print {
     display: none !important;
   }
 
+  /* Halaman "(With Sidebar)" nge-render children-nya di dalam wrapper
+     `grid grid-cols-12` (lihat app/(With Sidebar)/layout.tsx) yang TIDAK
+     ke-.no-print (masih grid aktif pas print). Kalau .print-only jadi anak
+     langsung grid itu tanpa col-span sendiri, dia cuma kebagian 1/12 lebar
+     kolom - grid-column: 1/-1 maksa dia selalu ngambil lebar penuh berapa
+     pun jumlah kolom grid induknya, apapun konteksnya. */
   .print-only {
     display: block !important;
+    grid-column: 1 / -1;
   }
 
   /* Sidebar (shadcn/ui): className yg dioper ke <Sidebar> (lihat
@@ -209,26 +227,35 @@
     width: 100% !important;
   }
 
-  #printable-po-a4 {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 15mm;
-    font-size: 10pt;
-    color: black;
-    background-color: white;
-  }
+  /* Dulu #printable-po-a4 di-position:absolute + padding:15mm manual buat
+     "nempatin" halaman A4, dengan tinggi elemen dipatok PERSIS 1 halaman
+     (min-h-[29.7cm] di komponennya). Itu sumber bug "+1 halaman kosong" di
+     Safari: absolute positioning bikin engine print beda browser beda cara
+     ngitung tinggi dokumen buat pagination, dan tinggi yang PERSIS 29.7cm
+     gak nyisain toleransi sama sekali - sedikit aja beda rounding antar
+     browser langsung meluber ke halaman ke-2 yang isinya kosong. Fix: pakai
+     margin halaman native (@page margin) + biarkan elemen mengalir normal
+     (bukan absolute, bukan dipatok tinggi 1 halaman pas) - dokumen pendek
+     otomatis 1 halaman, dokumen panjang otomatis lanjut ke halaman
+     berikutnya tanpa halaman kosong nyasar.
 
-  #printable-po-a4 table {
-    table-layout: fixed;
-    width: 100%;
-  }
+     Ukuran font/padding/warna #printable-po-a4 (dulu di-set di sini)
+     SEKARANG dibakukan langsung di className komponennya
+     (PaginatedPrintDocument.tsx) - BUKAN lagi digantung di @media print.
+     Alasannya: fitur "Halaman X dari Y" ngukur tinggi render dulu di
+     context layar biasa (bukan print) sebelum tau harus dipecah jadi
+     berapa halaman - kalau ukuran font/padding beda antara render
+     pengukuran (layar) & hasil cetak beneran (dulu override di sini),
+     hasil ukurnya jadi gak representatif. Sama halnya table-layout:fixed
+     - sekarang jadi bagian className tabel di tiap komponen (prop
+     `tableClassName`), bukan rule global lagi. */
 
-  #printable-po-a4 th,
-  #printable-po-a4 td {
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+  /* Kalau tabel item meluber ke halaman berikutnya, header kolomnya ikut
+     keulang otomatis di tiap halaman baru (dukungan native browser utk
+     <thead>, bukan trik custom) - relevan buat fallback 1-halaman kalau
+     pengukuran pagination gagal/belum sempat jalan. */
+  #printable-po-a4 thead {
+    display: table-header-group;
   }
 
   tr, td, th {
@@ -237,7 +264,7 @@
 
   @page {
     size: A4;
-    margin: 0;
+    margin: 15mm;
   }
 }
 

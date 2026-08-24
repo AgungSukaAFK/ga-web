@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Discussion } from "@/type";
+import { logActivity } from "@/services/logService";
 
 interface DiscussionSectionProps {
   mrId: string;
@@ -61,6 +62,15 @@ export function DiscussionSection({
         .eq("id", mrId);
 
       if (error) throw error;
+
+      await logActivity(
+        user.id,
+        "ADD_MR_DISCUSSION",
+        "material_request",
+        String(mrId),
+        `${userName} menambahkan pesan diskusi pada MR ini.`,
+        { message: newMessage },
+      );
 
       setDiscussions(updatedDiscussions);
       setNewMessage("");

@@ -36,8 +36,8 @@ export function AssetGoodsBadge({ isAsset, className }: AssetGoodsBadgeProps) {
         className={cn(
           "text-[10px] font-normal px-1.5 py-0 cursor-pointer hover:opacity-75 transition-opacity",
           isAsset
-            ? "border-purple-200 bg-purple-50 text-purple-700"
-            : "border-slate-200 bg-slate-50 text-slate-600",
+            ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+            : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300",
           className,
         )}
       >
@@ -55,12 +55,13 @@ export function AssetGoodsBadge({ isAsset, className }: AssetGoodsBadgeProps) {
             <div
               className={cn(
                 "rounded-md border p-3",
-                isAsset && "border-purple-300 bg-purple-50/60",
+                isAsset &&
+                  "border-purple-300 bg-purple-50/60 dark:border-purple-700 dark:bg-purple-900/20",
               )}
             >
               <Badge
                 variant="outline"
-                className="border-purple-200 bg-purple-50 text-purple-700 font-normal"
+                className="border-purple-200 bg-purple-50 text-purple-700 font-normal dark:border-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
               >
                 Aset
               </Badge>
@@ -72,12 +73,13 @@ export function AssetGoodsBadge({ isAsset, className }: AssetGoodsBadgeProps) {
             <div
               className={cn(
                 "rounded-md border p-3",
-                !isAsset && "border-slate-300 bg-slate-50/60",
+                !isAsset &&
+                  "border-slate-300 bg-slate-50/60 dark:border-slate-600 dark:bg-slate-800/40",
               )}
             >
               <Badge
                 variant="outline"
-                className="border-slate-200 bg-slate-50 text-slate-600 font-normal"
+                className="border-slate-200 bg-slate-50 text-slate-600 font-normal dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
               >
                 Barang
               </Badge>

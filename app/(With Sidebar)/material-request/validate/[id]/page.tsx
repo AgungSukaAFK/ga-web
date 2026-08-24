@@ -60,7 +60,10 @@ import { Combobox, ComboboxData } from "@/components/combobox";
 import {
   fetchTemplateById,
   fetchTemplateList,
+  fetchAutoTemplate,
 } from "@/services/approvalTemplateService";
+import { ApproverSearchAdd } from "@/components/approver-search-add";
+import { User } from "@/type";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import {
@@ -214,6 +217,28 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           budgetMap[cc.id.toString()] = Number(cc.current_budget) || 0;
         });
         setCostCenterBudgets(budgetMap);
+
+        // 4. Auto-detect template default untuk departemen MR ini (kalau ada) -
+        // GA tetap bisa ganti manual lewat Combobox template di bawah.
+        const autoTemplate = await fetchAutoTemplate(
+          "material_request",
+          mrData.department,
+        );
+        if (autoTemplate) {
+          setSelectedTemplateId(String(autoTemplate.id));
+          setNewApprovals(
+            (autoTemplate.approval_path as any[]).map(
+              (app: any): Approval => ({
+                ...app,
+                status: "pending" as const,
+                type: app.type || "",
+              }),
+            ),
+          );
+          toast.info(
+            `Template otomatis "${autoTemplate.template_name}" diterapkan untuk departemen ${mrData.department}.`,
+          );
+        }
       } catch (err: any) {
         setError("Gagal memuat data.");
         toast.error("Gagal memuat data", { description: err.message });
@@ -255,6 +280,26 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
   const removeApprover = (userId: string) =>
     setNewApprovals((prev) => prev.filter((a) => a.userid !== userId));
+
+  // Tambah approver ad-hoc ke jalur approval MR ini - cuma berlaku untuk
+  // validasi ini saja, tidak menyimpan/mengubah template aslinya.
+  const addApprover = (user: User) => {
+    if (newApprovals.some((a) => a.userid === user.id)) {
+      toast.warning(`${user.nama} sudah ada di jalur approval ini.`);
+    }
+    setNewApprovals((prev) => [
+      ...prev,
+      {
+        userid: user.id,
+        status: "pending",
+        type: "",
+        nama: user.nama || "",
+        department: user.department || "",
+        role: user.role || "",
+        email: user.email || "",
+      },
+    ]);
+  };
 
   const moveApprover = (index: number, direction: "up" | "down") => {
     const newArr = [...newApprovals];
@@ -343,6 +388,22 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
 
       if (updateError) throw updateError;
 
+      await logActivity(
+        profile.id,
+        "VALIDATE_MR",
+        "material_request",
+        String(mrId),
+        `GA ${profile.nama || "Unknown"} memvalidasi MR ${effectiveKodeMr} dan meneruskannya ke jalur approval (${newApprovals.length} approver).`,
+        {
+          cost_center_id: selectedCostCenterId,
+          total_approvers: newApprovals.length,
+          approvers: newApprovals.map((a) => ({
+            nama: a.nama,
+            type: a.type,
+          })),
+        },
+      );
+
       // Catat perubahan departemen ke activity log (terlihat di tab Logs mr-management/edit)
       if (departmentChanged) {
         const kodeNote = newKodeMr
@@ -411,6 +472,17 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
     if (error) {
       toast.error("Gagal menolak MR", { description: error.message });
     } else {
+      if (profile?.id) {
+        await logActivity(
+          profile.id,
+          "REJECT_MR",
+          "material_request",
+          String(mrId),
+          `GA ${profile.nama || "Unknown"} menolak MR ${mr?.kode_mr || mrId} saat validasi. Alasan: ${rejectionReason}`,
+          { reason: rejectionReason },
+        );
+      }
+
       // Notify creator of rejection by GA
       if (profile?.id && mr?.userid) {
         sendNotification({
@@ -764,6 +836,14 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                 placeholder="Pilih template..."
                 disabled={templateList.length === 0}
               />
+            </div>
+
+            <div>
+              <Label className="text-sm font-normal text-muted-foreground">
+                Tambah approver tambahan (opsional, hanya untuk validasi ini -
+                template aslinya tidak berubah)
+              </Label>
+              <ApproverSearchAdd onAdd={addApprover} />
             </div>
 
             <div className="border rounded-md overflow-x-auto">

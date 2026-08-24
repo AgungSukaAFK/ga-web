@@ -40,6 +40,8 @@ import {
   Mail,
   User,
   MapPin,
+  Newspaper,
+  Building2,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
@@ -52,8 +54,10 @@ import {
   updateVendor,
 } from "@/services/vendorService";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { LIMIT_OPTIONS } from "@/type/enum";
+import { LIMIT_OPTIONS, VENDOR_TIPE_OPTIONS, VENDOR_TIPE_LABELS } from "@/type/enum";
 import { PaginationComponent } from "@/components/pagination-components";
+import { Badge } from "@/components/ui/badge";
+import { exportStyledExcel } from "@/lib/excel-export";
 
 // --- Komponen Dialog CRUD Vendor ---
 function VendorDialog({
@@ -153,6 +157,32 @@ function VendorDialog({
             />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="tipe_vendor" className="text-right">
+              Tipe Vendor
+            </Label>
+            <Select
+              value={formData.tipe_vendor || undefined}
+              onValueChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  tipe_vendor: value as Vendor["tipe_vendor"],
+                }))
+              }
+              disabled={loading}
+            >
+              <SelectTrigger className="col-span-3">
+                <SelectValue placeholder="Pilih tipe vendor..." />
+              </SelectTrigger>
+              <SelectContent>
+                {VENDOR_TIPE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {VENDOR_TIPE_LABELS[opt]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="pic_contact_person" className="text-right">
               PIC Contact
             </Label>
@@ -234,6 +264,7 @@ export function VendorManagementClientContent() {
   // State Dialog
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // State dari URL
   const currentPage = Number(searchParams.get("page") || "1");
@@ -308,6 +339,38 @@ export function VendorManagementClientContent() {
     setIsFormOpen(true);
   };
 
+  const handleDownloadExcel = async () => {
+    setIsExporting(true);
+    try {
+      const { data } = await fetchVendors(1, 10000, searchTerm);
+      if (!data || data.length === 0) {
+        toast.warning("Tidak ada data vendor untuk diexport.");
+        return;
+      }
+      const dataToExport = data.map((vendor, index) => ({
+        No: index + 1,
+        "Kode Vendor": vendor.kode_vendor,
+        "Nama Vendor": vendor.nama_vendor,
+        "Tipe Vendor": vendor.tipe_vendor
+          ? VENDOR_TIPE_LABELS[vendor.tipe_vendor]
+          : "-",
+        "PIC Contact": vendor.pic_contact_person || "-",
+        Email: vendor.email || "-",
+        Alamat: vendor.alamat || "-",
+      }));
+      await exportStyledExcel(
+        dataToExport,
+        `Data_Vendor_${new Date().toISOString().split("T")[0]}.xlsx`,
+        "Data Vendor",
+      );
+      toast.success("File Excel berhasil didownload!");
+    } catch (err: any) {
+      toast.error("Gagal export data vendor", { description: err.message });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleOpenEdit = (vendor: Vendor) => {
     setSelectedVendor(vendor);
     setIsFormOpen(true);
@@ -333,9 +396,23 @@ export function VendorManagementClientContent() {
         title="Manajemen Vendor"
         description="Kelola daftar Vendor (Pemasok) untuk Purchase Order."
         cardAction={
-          <Button onClick={handleOpenNew}>
-            <Plus className="mr-2 h-4 w-4" /> Tambah Vendor
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleDownloadExcel}
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Newspaper className="mr-2 h-4 w-4" />
+              )}
+              Excel
+            </Button>
+            <Button onClick={handleOpenNew}>
+              <Plus className="mr-2 h-4 w-4" /> Tambah Vendor
+            </Button>
+          </div>
         }
         className="col-span-12"
       >
@@ -358,6 +435,7 @@ export function VendorManagementClientContent() {
                 <TableHead className="w-[50px]">No</TableHead>
                 <TableHead>Kode Vendor</TableHead>
                 <TableHead>Nama Vendor</TableHead>
+                <TableHead>Tipe Vendor</TableHead>
                 <TableHead>PIC Contact</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Alamat</TableHead>
@@ -367,7 +445,7 @@ export function VendorManagementClientContent() {
             <TableBody>
               {loading || isPending ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
+                  <TableCell colSpan={8} className="text-center h-24">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
@@ -381,6 +459,16 @@ export function VendorManagementClientContent() {
                       {vendor.kode_vendor}
                     </TableCell>
                     <TableCell>{vendor.nama_vendor}</TableCell>
+                    <TableCell>
+                      {vendor.tipe_vendor ? (
+                        <Badge variant="outline" className="gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {VENDOR_TIPE_LABELS[vendor.tipe_vendor]}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-muted-foreground" />
@@ -421,7 +509,7 @@ export function VendorManagementClientContent() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
+                  <TableCell colSpan={8} className="text-center h-24">
                     Tidak ada data vendor ditemukan.
                   </TableCell>
                 </TableRow>

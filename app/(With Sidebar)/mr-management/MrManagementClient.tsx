@@ -60,11 +60,25 @@ import {
   formatDateFriendly,
   calculatePriority,
   cn,
+  getCurrentApprover,
+  formatAge,
 } from "@/lib/utils";
+import { PicPoPopover } from "@/components/pic-po-popover";
+import { PicGaPopover } from "@/components/pic-ga-popover";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { LIMIT_OPTIONS, STATUS_OPTIONS, MR_LEVELS } from "@/type/enum";
+import {
+  LIMIT_OPTIONS,
+  STATUS_OPTIONS,
+  MR_LEVELS,
+  MR_ITEM_BAST_ELIGIBLE_STATUSES,
+  MR_ITEM_STATUS_LABELS,
+  MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_COLOR_DEFAULT,
+  PO_REF_STATUS_COLORS,
+  PO_REF_STATUS_COLOR_DEFAULT,
+} from "@/type/enum";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
 import {
@@ -74,6 +88,7 @@ import {
   removeBastForMrItem,
 } from "@/services/mrService";
 import { uploadAttachmentVps } from "@/services/storageService";
+import { logActivity } from "@/services/logService";
 import {
   resolveAttachmentUrl,
   getAttachmentSizeError,
@@ -142,6 +157,10 @@ export default function MrManagementClient() {
   const [selectedMr, setSelectedMr] = useState<MaterialRequestListItem | null>(
     null,
   );
+  // Peta kode_po -> {id, status} utk badge PO Refs per item di Quick View.
+  const [quickViewPoRefsMap, setQuickViewPoRefsMap] = useState<
+    Record<string, { id: number; status: string }>
+  >({});
 
   // --- Upload BAST State (Admin, via MR Management) ---
   // Bisa upload utk >1 barang sekaligus (mis. 1 foto BAST yg sama mewakili
@@ -265,8 +284,8 @@ export default function MrManagementClient() {
       try {
         let query = s.from("material_requests").select(
           `
-            id, kode_mr, kategori, status, department, created_at, due_date, 
-            tujuan_site, prioritas, level, cost_estimation, remarks, company_code, orders,
+            id, kode_mr, kategori, status, department, created_at, due_date,
+            tujuan_site, prioritas, level, cost_estimation, remarks, company_code, orders, approvals, full_received_at,
             users_with_profiles!userid (nama),
             cost_centers (code)
           `,
@@ -518,7 +537,10 @@ export default function MrManagementClient() {
             "Estimasi Harga": Number(item.estimasi_harga) || 0,
             "Total Harga Item":
               (Number(item.qty) || 0) * (Number(item.estimasi_harga) || 0),
-            "Status Barang": item.status || "Pending",
+            "Status Barang":
+              MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+              item.status ||
+              "Pending",
             "No. PO": item.po_refs?.join(", ") || "-",
             "Catatan Item": item.note || item.status_note || "-",
             URL: item.url || "-",
@@ -546,15 +568,29 @@ export default function MrManagementClient() {
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
     setIsQuickViewOpen(true);
+    setQuickViewPoRefsMap({});
+    s.from("purchase_orders")
+      .select("id, kode_po, status")
+      .eq("mr_id", mr.id)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { id: number; status: string }> = {};
+        for (const row of data) {
+          map[row.kode_po] = { id: row.id, status: row.status };
+        }
+        setQuickViewPoRefsMap(map);
+      });
   };
 
   // --- Upload BAST (Admin, via MR Management) ---
   // `item` di-pre-select kalau dibuka dari tombol per-baris; dialog tetap
-  // nampilin semua barang berstatus "Pending BAST" di MR yg sama biar bisa
-  // nambah barang lain (utk kasus 1 foto BAST yg sama dipakai buat beberapa
-  // barang).
+  // nampilin semua barang berstatus "On Delivery" (atau "Pending BAST" utk
+  // data lama) di MR yg sama biar bisa nambah barang lain (utk kasus 1 foto
+  // BAST yg sama dipakai buat beberapa barang).
   const bastEligibleItems = (selectedMr?.orders || []).filter(
-    (o: Order) => o.status === "Pending BAST" && o.part_number,
+    (o: Order) =>
+      MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(o.status || "") &&
+      o.part_number,
   );
 
   const handleOpenBastUpload = (item?: Order) => {
@@ -604,7 +640,7 @@ export default function MrManagementClient() {
       return;
     }
     if (!bastFiles || bastFiles.length === 0) {
-      toast.error("Pilih file BAST terlebih dahulu");
+      toast.error("Pilih file bukti penerimaan terlebih dahulu");
       return;
     }
     if (!currentUser) {
@@ -656,15 +692,27 @@ export default function MrManagementClient() {
         );
       }
 
+      await logActivity(
+        currentUser.id,
+        "UPLOAD_ITEM_BAST",
+        "material_request",
+        String(selectedMr.id),
+        `Admin ${currentUser.nama || "Unknown"} mengunggah ${uploadedAttachments.length} file bukti penerimaan untuk ${selectedItemsForBast.length} barang pada MR ${selectedMr.kode_mr}`,
+        {
+          part_numbers: selectedItemsForBast.map((it) => it.part_number),
+          files: uploadedAttachments.map((att) => att.name),
+        },
+      );
+
       toast.success(
         selectedItemsForBast.length === 1
-          ? "BAST berhasil diunggah, item ditandai selesai"
-          : `BAST berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
+          ? "Bukti penerimaan berhasil diunggah, item ditandai selesai"
+          : `Bukti penerimaan berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
       );
       setIsBastUploadOpen(false);
       await refreshMrRow(Number(selectedMr.id));
     } catch (err: any) {
-      toast.error("Gagal upload BAST", {
+      toast.error("Gagal upload bukti penerimaan", {
         description: getUploadErrorMessage(err),
       });
     } finally {
@@ -681,10 +729,22 @@ export default function MrManagementClient() {
         attachmentUrl,
         currentUser.id,
       );
-      toast.success("Lampiran BAST dihapus");
+
+      await logActivity(
+        currentUser.id,
+        "REMOVE_ITEM_BAST",
+        "material_request",
+        String(selectedMr.id),
+        `Admin ${currentUser.nama || "Unknown"} menghapus lampiran bukti penerimaan dari barang "${item.name}" (${item.part_number}) pada MR ${selectedMr.kode_mr}`,
+        { part_number: item.part_number, attachment_url: attachmentUrl },
+      );
+
+      toast.success("Lampiran bukti penerimaan dihapus");
       await refreshMrRow(Number(selectedMr.id));
     } catch (err: any) {
-      toast.error("Gagal hapus lampiran BAST", { description: err.message });
+      toast.error("Gagal hapus lampiran bukti penerimaan", {
+        description: err.message,
+      });
     }
   };
 
@@ -742,6 +802,25 @@ export default function MrManagementClient() {
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
+  };
+
+  const renderStatusCell = (mr: MaterialRequestListItem) => {
+    const approver =
+      mr.status === "Pending Approval" ? getCurrentApprover(mr.approvals) : null;
+    return (
+      <div className="flex flex-col items-start gap-1">
+        {getStatusBadge(mr.status)}
+        {approver && (
+          <span className="text-[11px] text-muted-foreground">
+            Menunggu: {approver.nama}
+          </span>
+        )}
+        {mr.status === "Pending Validation" && <PicGaPopover />}
+        {mr.status === "Waiting PO" && (
+          <PicPoPopover companyCode={mr.company_code} />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1016,6 +1095,7 @@ export default function MrManagementClient() {
               <TableHead>Tujuan Site</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Umur</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Tanggal Dibuat</TableHead>
               <TableHead>Due Date</TableHead>
@@ -1026,7 +1106,7 @@ export default function MrManagementClient() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={14} className="h-24 text-center">
+                <TableCell colSpan={15} className="h-24 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
@@ -1062,7 +1142,14 @@ export default function MrManagementClient() {
                   <TableCell>{mr.department}</TableCell>
                   <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
                   <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>{getStatusBadge(mr.status)}</TableCell>
+                  <TableCell>{renderStatusCell(mr)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {formatAge(
+                      mr.created_at,
+                      mr.full_received_at,
+                      mr.status === "Full Received",
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs font-mono">
                       {mr.company_code}
@@ -1119,7 +1206,7 @@ export default function MrManagementClient() {
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={14}
+                  colSpan={15}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Tidak ada data ditemukan.
@@ -1164,7 +1251,7 @@ export default function MrManagementClient() {
 
       {/* --- QUICK VIEW DIALOG --- */}
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -1242,8 +1329,8 @@ export default function MrManagementClient() {
                         variant="outline"
                         onClick={() => handleOpenBastUpload()}
                       >
-                        <Upload className="mr-2 h-3.5 w-3.5" /> Upload BAST
-                        Massal
+                        <Upload className="mr-2 h-3.5 w-3.5" /> Upload Bukti
+                        Penerimaan Massal
                       </Button>
                     )}
                 </div>
@@ -1262,9 +1349,17 @@ export default function MrManagementClient() {
                     </TableHeader>
                     <TableBody>
                       {selectedMr.orders && selectedMr.orders.length > 0 ? (
-                        selectedMr.orders.map((item, i) => (
+                        selectedMr.orders.map((item, i) => {
+                          const statusColor =
+                            MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
+                            MR_ITEM_STATUS_COLOR_DEFAULT;
+                          const statusLabel =
+                            MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+                            item.status;
+
+                          return (
                           <TableRow key={i}>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium whitespace-normal break-words max-w-[220px]">
                               {item.name}
                             </TableCell>
                             <TableCell>{item.qty}</TableCell>
@@ -1279,9 +1374,41 @@ export default function MrManagementClient() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">
-                                {item.status || "Pending"}
+                              <Badge
+                                variant="outline"
+                                className={cn("capitalize font-normal", statusColor)}
+                              >
+                                {statusLabel}
                               </Badge>
+                              {item.po_refs && item.po_refs.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.po_refs.map((ref, refIdx) => (
+                                    <Link
+                                      key={refIdx}
+                                      href={`/purchase-order/${quickViewPoRefsMap[ref]?.id ?? ""}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => {
+                                        if (!quickViewPoRefsMap[ref]?.id)
+                                          e.preventDefault();
+                                      }}
+                                    >
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
+                                          PO_REF_STATUS_COLORS[
+                                            quickViewPoRefsMap[ref]?.status ??
+                                              ""
+                                          ] || PO_REF_STATUS_COLOR_DEFAULT,
+                                        )}
+                                      >
+                                        {ref}
+                                      </Badge>
+                                    </Link>
+                                  ))}
+                                </div>
+                              )}
                               {item.bast_attachments &&
                                 item.bast_attachments.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-1">
@@ -1320,7 +1447,9 @@ export default function MrManagementClient() {
                             </TableCell>
                             <TableCell>
                               {currentUser?.role === "admin" &&
-                                item.status === "Pending BAST" &&
+                                MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(
+                                  item.status || "",
+                                ) &&
                                 item.part_number && (
                                   <Button
                                     size="sm"
@@ -1329,12 +1458,13 @@ export default function MrManagementClient() {
                                     onClick={() => handleOpenBastUpload(item)}
                                   >
                                     <Upload className="mr-1 h-3 w-3" /> Upload
-                                    BAST
+                                    Bukti Terima
                                   </Button>
                                 )}
                             </TableCell>
                           </TableRow>
-                        ))
+                          );
+                        })
                       ) : (
                         <TableRow>
                           <TableCell
@@ -1380,9 +1510,9 @@ export default function MrManagementClient() {
       <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Upload BAST Barang</DialogTitle>
+            <DialogTitle>Upload Bukti Penerimaan Barang</DialogTitle>
             <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan.
+              Unggah bukti penerimaan barang (foto/dokumen serah terima).
               Barang yang dicentang akan ditandai selesai dengan bukti yang
               sama.
             </DialogDescription>
@@ -1393,7 +1523,7 @@ export default function MrManagementClient() {
               <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
                 {bastEligibleItems.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground">
-                    Tidak ada barang berstatus &quot;Pending BAST&quot;.
+                    Tidak ada barang yang bisa diunggah bukti penerimaannya.
                   </div>
                 ) : (
                   bastEligibleItems.map((item) => {
@@ -1425,7 +1555,7 @@ export default function MrManagementClient() {
             </div>
             <div>
               <Label htmlFor="admin-item-bast-file">
-                File BAST / Bukti Foto
+                File Bukti Penerimaan / Bukti Foto
               </Label>
               <Input
                 id="admin-item-bast-file"

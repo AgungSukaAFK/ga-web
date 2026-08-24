@@ -37,9 +37,9 @@ export const fetchActivityLogs = async (
     .select(
       `
       *,
-      users_with_profiles:user_id (nama, email)
+      users_with_profiles!user_id (nama, email)
     `,
-    ) // PASTIKAN ADA RELASI FOREIGN KEY users_with_profiles!
+    )
     .eq("resource_type", resourceType)
     .eq("resource_id", resourceId)
     .order("created_at", { ascending: false });

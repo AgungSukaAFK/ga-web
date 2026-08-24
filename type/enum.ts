@@ -4,6 +4,14 @@ import { Approval } from "@/type";
 
 export const LIMIT_OPTIONS = [10, 25, 50, 100, 1000, 10000];
 
+export const VENDOR_TIPE_OPTIONS = ["HO", "Branch", "Site"] as const;
+
+export const VENDOR_TIPE_LABELS: Record<string, string> = {
+  HO: "Head Office",
+  Branch: "Branch",
+  Site: "Site",
+};
+
 export const STATUS_OPTIONS = [
   "Pending Validation",
   "On Hold",
@@ -30,20 +38,25 @@ export const PO_STATUS_FULL_RECEIVED = "Full Received";
 // jadi 4 kategori visual: masih proses approval/payment/kirim (biru), partial
 // receive (kuning), full received (hijau), ditolak (merah). Status yang tidak
 // terdaftar di sini (harusnya tidak ada) fallback ke kategori "proses".
+const BLUE_BADGE =
+  "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800";
+
 export const PO_REF_STATUS_COLORS: Record<string, string> = {
-  "Pending Validation": "bg-blue-50 text-blue-700 border-blue-200",
-  "On Hold": "bg-blue-50 text-blue-700 border-blue-200",
-  "Pending Approval": "bg-blue-50 text-blue-700 border-blue-200",
-  "Pending Payment": "bg-blue-50 text-blue-700 border-blue-200",
-  "Waiting PO": "bg-blue-50 text-blue-700 border-blue-200",
-  "On Process": "bg-blue-50 text-blue-700 border-blue-200",
-  "Pending Receive": "bg-blue-50 text-blue-700 border-blue-200",
-  [PO_STATUS_PARTIAL_RECEIVE]: "bg-amber-50 text-amber-700 border-amber-200",
-  [PO_STATUS_FULL_RECEIVED]: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Rejected: "bg-red-50 text-red-700 border-red-200",
+  "Pending Validation": BLUE_BADGE,
+  "On Hold": BLUE_BADGE,
+  "Pending Approval": BLUE_BADGE,
+  "Pending Payment": BLUE_BADGE,
+  "Waiting PO": BLUE_BADGE,
+  "On Process": BLUE_BADGE,
+  "Pending Receive": BLUE_BADGE,
+  [PO_STATUS_PARTIAL_RECEIVE]:
+    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800",
+  [PO_STATUS_FULL_RECEIVED]:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
+  Rejected:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
 };
-export const PO_REF_STATUS_COLOR_DEFAULT =
-  "bg-blue-50 text-blue-700 border-blue-200";
+export const PO_REF_STATUS_COLOR_DEFAULT = BLUE_BADGE;
 
 // ==========================================
 // APPROVAL TYPE (jenis approver di template)
@@ -266,6 +279,17 @@ export const DATA_LEVEL = MR_LEVELS.map((l) => ({
 export const MR_ITEM_STATUSES = {
   PENDING: "Pending",
   PROCESSING: "Processing",
+  // Payment Validator baru approve PO ini (bukti pembayaran sudah ada) -
+  // barang mulai dikirim vendor ke HO/Branch/Site, TAPI belum ada yang
+  // nerima secara fisik (belum "Diterima GA"/langsung "On Delivery" utk
+  // vendor Site). Dipasang di handleApprovalAction & handleEditDpBpPayment,
+  // purchase-order/[id]/page.tsx, di titik yang sama dengan bump level ke
+  // "Open 4" - supaya jelas bedanya sama "Processing" biasa (yang bisa
+  // berarti "masih nunggu di-PO-kan" ATAU "sudah di-PO-kan tapi belum
+  // dibayar").
+  SHIPPED_BY_VENDOR: "Dikirim Vendor",
+  DITERIMA_GA: "Diterima GA",
+  ON_DELIVERY: "On Delivery",
   PENDING_BAST: "Pending BAST",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
@@ -275,20 +299,55 @@ export const MR_ITEM_STATUSES = {
 export const MR_ITEM_STATUS_LABELS: Record<string, string> = {
   Pending: "Menunggu",
   Processing: "Proses PO",
-  "Pending BAST": "Menunggu BAST",
-  Completed: "BAST Selesai",
+  "Dikirim Vendor": "Dikirim dari Vendor",
+  "Diterima GA": "Diterima GA",
+  "On Delivery": "Dalam Pengiriman",
+  "Pending BAST": "Pending Terima User",
+  Completed: "Barang Diterima User",
   Cancelled: "Dibatalkan",
   Replaced: "Diganti",
 };
 
+// Default/fallback badge (mis. status legacy "PO Created" yang sudah tidak
+// dipakai lagi tapi masih bisa muncul di data lama) - HARUS selalu bawa
+// text+border sendiri, jangan cuma bg. Badge variant="outline" nyetel
+// text-foreground (ngikut tema) sebagai base; kalau fallback cuma kasih bg
+// tanpa text override, di dark mode text-foreground jadi nyaris putih di
+// atas bg-gray-100 yang tetap terang -> teksnya ketutupan/ga kebaca.
+export const MR_ITEM_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
 export const MR_ITEM_STATUS_COLORS: Record<string, string> = {
-  Pending: "bg-gray-100 text-gray-800 border-gray-200",
-  Processing: "bg-blue-50 text-blue-700 border-blue-200",
-  "Pending BAST": "bg-orange-50 text-orange-700 border-orange-200",
-  Completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  Cancelled: "bg-red-50 text-red-700 border-red-200",
-  Replaced: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  Pending: MR_ITEM_STATUS_COLOR_DEFAULT,
+  Processing:
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  "Dikirim Vendor":
+    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800",
+  "Diterima GA":
+    "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800",
+  "On Delivery":
+    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800",
+  "Pending BAST":
+    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
+  Completed:
+    "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800",
+  Cancelled:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  Replaced:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
 };
+
+// Barang berstatus salah satu dari ini artinya siap di-upload BAST-nya oleh
+// requester - "Pending BAST" dipertahankan buat data lama (lihat komentar di
+// MrItemStatus, type/index.ts) yang belum sempat lewat status "On Delivery".
+export const MR_ITEM_BAST_ELIGIBLE_STATUSES = ["On Delivery", "Pending BAST"];
+
+export const DELIVERY_TYPE_OPTIONS = [
+  "Kurir/Ekspedisi Eksternal",
+  "Kendaraan Internal GA",
+  "Diambil Langsung Requester",
+  "Lainnya",
+] as const;
 
 // Level fisik/approval/payment per item MR - terpisah dari MR_ITEM_STATUSES
 // (yang track progress dokumen PO/BAST). Lihat MrItemLevel di type/index.ts.
@@ -302,14 +361,22 @@ export const MR_ITEM_LEVELS: Record<string, string> = {
   Close: "Close: Selesai",
 };
 
+export const MR_ITEM_LEVEL_COLOR_DEFAULT = MR_ITEM_STATUS_COLOR_DEFAULT;
+
 export const MR_ITEM_LEVEL_COLORS: Record<string, string> = {
-  "Open 1": "bg-gray-100 text-gray-800 border-gray-200",
-  "Open 2": "bg-sky-50 text-sky-700 border-sky-200",
-  "Open 3A": "bg-blue-50 text-blue-700 border-blue-200",
-  "Open 3B": "bg-red-50 text-red-700 border-red-200",
-  "Open 4": "bg-indigo-50 text-indigo-700 border-indigo-200",
-  "Open 5": "bg-orange-50 text-orange-700 border-orange-200",
-  Close: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  "Open 1": MR_ITEM_LEVEL_COLOR_DEFAULT,
+  "Open 2":
+    "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800",
+  "Open 3A":
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  "Open 3B":
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  "Open 4":
+    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800",
+  "Open 5":
+    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
+  Close:
+    "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800",
 };
 
 // ==========================================
@@ -335,10 +402,18 @@ export const PETTY_CASH_STATUS_OPTIONS = [
 ] as const;
 
 export const PETTY_CASH_STATUS_COLORS: Record<string, string> = {
-  "Pending Validation": "bg-slate-100 text-slate-700 border-slate-300",
-  "In Approval": "bg-yellow-50 text-yellow-700 border-yellow-200",
-  "Cash Distributed": "bg-blue-50 text-blue-700 border-blue-200",
-  "Pending Settlement": "bg-purple-50 text-purple-700 border-purple-200",
-  Settled: "bg-green-50 text-green-700 border-green-200",
-  Rejected: "bg-red-50 text-red-700 border-red-200",
+  "Pending Validation":
+    "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600",
+  "In Approval":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  "Cash Distributed":
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  "Pending Settlement":
+    "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
+  Settled:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Rejected:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
 };
+export const PETTY_CASH_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";

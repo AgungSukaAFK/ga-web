@@ -185,6 +185,7 @@ function VendorSearchCombobox({
       alamat: vendor.alamat || "",
       contact_person: vendor.pic_contact_person || "",
       email: vendor.email || "",
+      tipe_vendor: vendor.tipe_vendor,
     };
     setPoForm((prev: any) => ({
       ...prev,
@@ -196,51 +197,61 @@ function VendorSearchCombobox({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between truncate"
-          title={poForm.vendor_details?.nama_vendor}
-        >
-          {poForm.vendor_details?.nama_vendor ||
-            "Cari Nama atau Kode Vendor..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Ketik untuk mencari vendor..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-          />
-          <CommandList>
-            {results.length === 0 && searchQuery.length > 0 && (
-              <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
-            )}
-            <CommandGroup>
-              {results.map((vendor) => (
-                <CommandItem
-                  key={vendor.id}
-                  value={`${vendor.kode_vendor} - ${vendor.nama_vendor}`}
-                  onSelect={() => handleSelect(vendor)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-semibold">{vendor.nama_vendor}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {vendor.kode_vendor}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <div className="space-y-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between truncate"
+            title={poForm.vendor_details?.nama_vendor}
+          >
+            {poForm.vendor_details?.nama_vendor ||
+              "Cari Nama atau Kode Vendor..."}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[400px] p-0">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Ketik untuk mencari vendor..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+            />
+            <CommandList>
+              {results.length === 0 && searchQuery.length > 0 && (
+                <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+              )}
+              <CommandGroup>
+                {results.map((vendor) => (
+                  <CommandItem
+                    key={vendor.id}
+                    value={`${vendor.kode_vendor} - ${vendor.nama_vendor}`}
+                    onSelect={() => handleSelect(vendor)}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-semibold">
+                        {vendor.nama_vendor}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {vendor.kode_vendor}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {poForm.vendor_details && !poForm.vendor_details.tipe_vendor && (
+        <p className="text-xs font-medium text-red-600 dark:text-red-400">
+          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site) - lengkapi
+          dulu di Manajemen Vendor sebelum PO ini bisa diajukan.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -561,6 +572,12 @@ export function PoManagementEditClientContent({
     // Validasi Vendor Utama
     if (!poForm.vendor_details || !poForm.vendor_details.vendor_id) {
       toast.error("Vendor Utama wajib dipilih.");
+      return;
+    }
+    if (!poForm.vendor_details.tipe_vendor) {
+      toast.error(
+        "Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site). Lengkapi dulu di Manajemen Vendor sebelum PO bisa disimpan.",
+      );
       return;
     }
 

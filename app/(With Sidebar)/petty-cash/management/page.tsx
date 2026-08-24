@@ -28,6 +28,7 @@ import { fetchManagementPettyCash } from "@/services/pettyCashService";
 import { PettyCashRequest } from "@/type";
 import {
   PETTY_CASH_STATUS_COLORS,
+  PETTY_CASH_STATUS_COLOR_DEFAULT,
   PETTY_CASH_STATUS_OPTIONS,
 } from "@/type/enum";
 import {
@@ -128,7 +129,7 @@ export default function PettyCashManagementPage() {
 
   const getStatusBadge = (status: string) => {
     const colorClass =
-      PETTY_CASH_STATUS_COLORS[status] || "bg-gray-100 text-gray-800";
+      PETTY_CASH_STATUS_COLORS[status] || PETTY_CASH_STATUS_COLOR_DEFAULT;
     return (
       <Badge className={`${colorClass} whitespace-nowrap`}>{status}</Badge>
     );
