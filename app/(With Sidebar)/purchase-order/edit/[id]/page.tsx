@@ -52,6 +52,8 @@ import {
   FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { User } from "@supabase/supabase-js";
+import { logActivity } from "@/services/logService";
 import {
   uploadAttachmentVps,
   removeAttachmentVps,
@@ -73,6 +75,7 @@ import {
   StoredVendorDetails,
 } from "@/type";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -165,6 +168,7 @@ function VendorSearchCombobox({
       alamat: vendor.alamat || "",
       contact_person: vendor.pic_contact_person || "",
       email: vendor.email || "",
+      tipe_vendor: vendor.tipe_vendor,
     };
     setPoForm((prev: any) => ({
       ...prev,
@@ -176,51 +180,61 @@ function VendorSearchCombobox({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between truncate"
-          title={poForm.vendor_details?.nama_vendor}
-        >
-          {poForm.vendor_details?.nama_vendor ||
-            "Cari Nama atau Kode Vendor..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Ketik untuk mencari vendor..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-          />
-          <CommandList>
-            {results.length === 0 && searchQuery.length > 0 && (
-              <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
-            )}
-            <CommandGroup>
-              {results.map((vendor) => (
-                <CommandItem
-                  key={vendor.id}
-                  value={String(vendor.id)}
-                  onSelect={() => handleSelect(vendor)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-semibold">{vendor.nama_vendor}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {vendor.kode_vendor}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <div className="space-y-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between truncate"
+            title={poForm.vendor_details?.nama_vendor}
+          >
+            {poForm.vendor_details?.nama_vendor ||
+              "Cari Nama atau Kode Vendor..."}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[400px] p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Ketik untuk mencari vendor..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+            />
+            <CommandList>
+              {results.length === 0 && searchQuery.length > 0 && (
+                <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+              )}
+              <CommandGroup>
+                {results.map((vendor) => (
+                  <CommandItem
+                    key={vendor.id}
+                    value={String(vendor.id)}
+                    onSelect={() => handleSelect(vendor)}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-semibold">
+                        {vendor.nama_vendor}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {vendor.kode_vendor}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {poForm.vendor_details && !poForm.vendor_details.tipe_vendor && (
+        <p className="text-xs font-medium text-red-600 dark:text-red-400">
+          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site) - lengkapi
+          dulu di Manajemen Vendor sebelum PO ini bisa diajukan.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -229,10 +243,17 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const poId = parseInt(params.id);
 
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
-  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
+  const [isUploadingPurchasing, setIsUploadingPurchasing] = useState(false);
+  // Jenis lampiran yang mau diupload ke "Lampiran Purchasing" - wajib
+  // dipilih dulu (Quotation/Invoice) sebelum file bisa diunggah.
+  const [purchasingAttachmentType, setPurchasingAttachmentType] = useState<
+    "quotation" | "invoice" | ""
+  >("");
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,6 +291,25 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       `ID: ${mrData.cost_center_id} (Data tidak ditemukan)`
     );
   };
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        setUserProfile(profile);
+      }
+    };
+    loadUser();
+  }, []);
 
   useEffect(() => {
     if (isNaN(poId)) {
@@ -571,6 +611,12 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
       toast.error("Vendor Utama wajib dipilih.");
       return;
     }
+    if (!poForm.vendor_details.tipe_vendor) {
+      toast.error(
+        "Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site). Lengkapi dulu di Manajemen Vendor sebelum PO bisa disimpan.",
+      );
+      return;
+    }
 
     // FIX: Gunakan non-null assertion (!) untuk vendor_details agar sesuai tipe
     const payload: Partial<PurchaseOrderPayload> = {
@@ -590,6 +636,28 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const toastId = toast.loading(`Memperbarui PO...`);
     try {
       await updatePurchaseOrder(poId, payload);
+
+      if (currentUser) {
+        await logActivity(
+          currentUser.id,
+          "UPDATE_PO",
+          "purchase_order",
+          String(poId),
+          `${userProfile?.nama || currentUser.email || "Unknown"} memperbarui data Purchase Order ${poForm.kode_po}`,
+          { updated_fields: Object.keys(payload) },
+        );
+        if (poForm.mr_id) {
+          await logActivity(
+            currentUser.id,
+            "UPDATE_PO",
+            "material_request",
+            String(poForm.mr_id),
+            `${userProfile?.nama || currentUser.email || "Unknown"} memperbarui Purchase Order ${poForm.kode_po} yang terkait MR ini`,
+            { po_id: poId, updated_fields: Object.keys(payload) },
+          );
+        }
+      }
+
       toast.success("Purchase Order berhasil diperbarui!", { id: toastId });
       router.push(`/purchase-order/${poId}`);
       router.refresh();
@@ -605,7 +673,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance" | "invoice",
+    type: "po" | "finance" | "invoice" | "quotation",
   ) => {
     const file = e.target.files?.[0];
     if (!file || !poForm) return;
@@ -622,7 +690,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         ? setIsUploadingPO
         : type === "finance"
           ? setIsUploadingFinance
-          : setIsUploadingInvoice;
+          : setIsUploadingPurchasing;
     setIsLoading(true);
 
     const toastId = toast.loading(
@@ -671,6 +739,19 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     }
   };
 
+  // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
+  // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah.
+  const handlePurchasingAttachmentUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!purchasingAttachmentType) {
+      toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
+      e.target.value = "";
+      return;
+    }
+    handleAttachmentUpload(e, purchasingAttachmentType);
+  };
+
   const removeAttachment = (indexToRemove: number) => {
     if (!poForm || !Array.isArray(poForm.attachments)) return;
     const attachmentToRemove = poForm.attachments?.[indexToRemove];
@@ -699,8 +780,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     poForm?.attachments?.filter((att) => !att.type || att.type === "po") || [];
   const financeAttachments =
     poForm?.attachments?.filter((att) => att.type === "finance") || [];
-  const invoiceAttachments =
-    poForm?.attachments?.filter((att) => att.type === "invoice") || [];
+  const purchasingAttachments =
+    poForm?.attachments?.filter(
+      (att) => att.type === "invoice" || att.type === "quotation",
+    ) || [];
 
   if (loading)
     return (
@@ -740,7 +823,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               actionLoading ||
               isUploadingPO ||
               isUploadingFinance ||
-              isUploadingInvoice
+              isUploadingPurchasing
             }
           >
             {actionLoading ? (
@@ -1135,7 +1218,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               disabled={
                 isUploadingPO ||
                 isUploadingFinance ||
-                isUploadingInvoice ||
+                isUploadingPurchasing ||
                 actionLoading
               }
             />
@@ -1174,7 +1257,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                           actionLoading ||
                           isUploadingPO ||
                           isUploadingFinance ||
-                          isUploadingInvoice
+                          isUploadingPurchasing
                         }
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1204,7 +1287,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               disabled={
                 isUploadingPO ||
                 isUploadingFinance ||
-                isUploadingInvoice ||
+                isUploadingPurchasing ||
                 actionLoading
               }
             />
@@ -1243,7 +1326,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                           actionLoading ||
                           isUploadingPO ||
                           isUploadingFinance ||
-                          isUploadingInvoice
+                          isUploadingPurchasing
                         }
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1260,31 +1343,46 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           </div>
         </Content>
 
-        {/* --- Konten Lampiran Invoice --- */}
-        <Content title="Lampiran Invoice">
+        {/* --- Konten Lampiran Purchasing --- */}
+        <Content title="Lampiran Purchasing">
           <div className="space-y-4">
-            <Label htmlFor="invoice-attachment-upload">
-              Tambah Lampiran Invoice
-            </Label>
-            <Input
-              id="invoice-attachment-upload"
-              type="file"
-              onChange={(e) => handleAttachmentUpload(e, "invoice")}
-              disabled={
-                isUploadingPO ||
-                isUploadingFinance ||
-                isUploadingInvoice ||
-                actionLoading
-              }
-            />
-            {isUploadingInvoice && (
+            <Label>Tambah Lampiran Purchasing (Quotation/Invoice)</Label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Select
+                value={purchasingAttachmentType}
+                onValueChange={(v) =>
+                  setPurchasingAttachmentType(v as "quotation" | "invoice")
+                }
+              >
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue placeholder="Jenis lampiran" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="quotation">Quotation</SelectItem>
+                  <SelectItem value="invoice">Invoice</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                id="purchasing-attachment-upload"
+                type="file"
+                className="flex-1"
+                onChange={handlePurchasingAttachmentUpload}
+                disabled={
+                  isUploadingPO ||
+                  isUploadingFinance ||
+                  isUploadingPurchasing ||
+                  actionLoading
+                }
+              />
+            </div>
+            {isUploadingPurchasing && (
               <div className="flex items-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengunggah...
               </div>
             )}
-            {invoiceAttachments.length > 0 ? (
+            {purchasingAttachments.length > 0 ? (
               <ul className="space-y-2">
-                {invoiceAttachments.map((att, index) => {
+                {purchasingAttachments.map((att, index) => {
                   const originalIndex =
                     poForm.attachments?.findIndex((a) => a.url === att.url) ??
                     -1;
@@ -1294,15 +1392,20 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                       key={originalIndex}
                       className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                     >
-                      <a
-                        href={resolveAttachmentUrl(att.url)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 truncate hover:underline text-primary"
-                      >
-                        <Paperclip className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">{att.name}</span>
-                      </a>
+                      <div className="flex items-center gap-2 truncate">
+                        <Badge variant="outline" className="text-[10px]">
+                          {att.type === "invoice" ? "Invoice" : "Quotation"}
+                        </Badge>
+                        <a
+                          href={resolveAttachmentUrl(att.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 truncate hover:underline text-primary"
+                        >
+                          <Paperclip className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate">{att.name}</span>
+                        </a>
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1312,7 +1415,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                           actionLoading ||
                           isUploadingPO ||
                           isUploadingFinance ||
-                          isUploadingInvoice
+                          isUploadingPurchasing
                         }
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1323,7 +1426,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground text-center pt-2">
-                Belum ada lampiran invoice.
+                Belum ada lampiran purchasing.
               </p>
             )}
           </div>

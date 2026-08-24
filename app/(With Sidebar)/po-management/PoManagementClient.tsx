@@ -660,12 +660,12 @@ export function PoManagementClientContent() {
                   </TableCell>
                   <TableCell>
                     {isPoPaid(po.approvals) ? (
-                      <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300">
+                      <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
                         <CreditCard className="h-3 w-3" /> Paid
                       </Badge>
                     ) : isDpBpPaymentTerm(po.payment_term) &&
                       (po.dp_paid || po.bp_paid) ? (
-                      <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300">
+                      <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
                         <CreditCard className="h-3 w-3" />{" "}
                         {po.dp_paid ? "DP Lunas" : "BP Lunas"}
                       </Badge>

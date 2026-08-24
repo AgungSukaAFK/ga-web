@@ -15,7 +15,6 @@ import {
   getUploadErrorMessage,
 } from "@/lib/attachments";
 import { Content } from "@/components/content";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -37,8 +36,6 @@ import {
   Calendar as CalendarIcon,
   AlertTriangle,
   Loader2,
-  Clock,
-  History,
   LinkIcon,
   ArrowLeftRight,
 } from "lucide-react";
@@ -92,8 +89,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { logActivity, fetchActivityLogs } from "@/services/logService"; // Import Service Log
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { logActivity } from "@/services/logService";
+import { ActivityLogDialog } from "@/components/activity-log-dialog";
 
 // --- Data Konstanta Lokal ---
 const dataUoM: ComboboxData = [
@@ -179,7 +176,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const [isConverting, setIsConverting] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
-  const [activityLogs, setActivityLogs] = useState<any[]>([]); // State Log
 
   // State UI Dialog/Popover
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
@@ -249,10 +245,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
-
-      // Fetch Logs
-      const logs = await fetchActivityLogs("material_request", String(mrId));
-      setActivityLogs(logs || []);
 
       return initialData;
     }
@@ -665,6 +657,10 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               )}
               Simpan & Catat Log
             </Button>
+            <ActivityLogDialog
+              resourceType="material_request"
+              resourceId={String(mr.id)}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -702,17 +698,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* --- TABS UTAMA (Form & Activity Log) --- */}
-      <Tabs defaultValue="form" className="col-span-12 w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="form">Formulir MR</TabsTrigger>
-          <TabsTrigger value="logs" className="flex items-center gap-2">
-            <History className="h-4 w-4" /> Activity Logs
-          </TabsTrigger>
-        </TabsList>
-
-        {/* TAB FORM (Isi Lama) */}
-        <TabsContent value="form" className="grid grid-cols-12 gap-6">
+      <div className="col-span-12 grid grid-cols-12 gap-6">
           <div className="col-span-12 lg:col-span-8 space-y-6">
             <Content title="Informasi Utama">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -1190,53 +1176,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               />
             </div>
           </div>
-        </TabsContent>
-
-        {/* TAB LOGS (Fitur Baru) */}
-        <TabsContent value="logs">
-          <Content
-            title="Riwayat Aktivitas"
-            description="Log perubahan yang dilakukan oleh Admin atau Sistem pada MR ini."
-          >
-            <div className="space-y-4">
-              {activityLogs.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Belum ada riwayat aktivitas.
-                </p>
-              ) : (
-                activityLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="flex gap-4 p-4 border rounded-lg bg-card"
-                  >
-                    <div className="mt-1">
-                      <Clock className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between items-start">
-                        <p className="font-semibold text-sm">
-                          {log.users_with_profiles?.nama || "Sistem"}
-                        </p>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDateWithTime(log.created_at)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-foreground/90">
-                        {log.description}
-                      </p>
-                      <div className="flex gap-2 mt-2">
-                        <Badge variant="secondary" className="text-[10px]">
-                          {log.action_type}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Content>
-        </TabsContent>
-      </Tabs>
+      </div>
 
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>

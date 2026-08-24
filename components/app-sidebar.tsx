@@ -41,6 +41,8 @@ import {
   Warehouse,
   HardDrive,
   ClipboardList,
+  Workflow,
+  KeyRound,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -77,6 +79,11 @@ const data = {
       title: "File Management",
       url: "/file-management",
       icon: HardDrive,
+    },
+    {
+      title: "Kode Global Terima Barang",
+      url: "/goods-receipt-settings",
+      icon: KeyRound,
     },
   ],
   navMain: [
@@ -215,6 +222,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         title: "Approval & Validation",
         url: "/approval-validation",
         icon: CheckCheck,
+      });
+    }
+
+    // Template Approval (MR/PO): khusus GA/Admin - selalu ditaruh tepat di
+    // atas "Approval & Validation" (kalau menu itu ada di sidebar user ini).
+    if (isGADepartment(profile?.department) || profile?.role === "admin") {
+      const approvalIdx = baseNav.findIndex(
+        (item) => item.title === "Approval & Validation",
+      );
+      baseNav.splice(approvalIdx !== -1 ? approvalIdx : 1, 0, {
+        title: "Template Approval",
+        url: "/approval-validation/templates",
+        icon: Workflow,
       });
     }
 

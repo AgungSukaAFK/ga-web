@@ -24,7 +24,10 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchMyPettyCash } from "@/services/pettyCashService";
 import { PettyCashRequest } from "@/type";
-import { PETTY_CASH_STATUS_COLORS } from "@/type/enum";
+import {
+  PETTY_CASH_STATUS_COLORS,
+  PETTY_CASH_STATUS_COLOR_DEFAULT,
+} from "@/type/enum";
 import {
   Loader2,
   RefreshCcw,
@@ -95,7 +98,7 @@ export default function MyPettyCashPage() {
 
   const getStatusBadge = (status: string) => {
     const colorClass =
-      PETTY_CASH_STATUS_COLORS[status] || "bg-gray-100 text-gray-800";
+      PETTY_CASH_STATUS_COLORS[status] || PETTY_CASH_STATUS_COLOR_DEFAULT;
     return (
       <Badge className={`${colorClass} whitespace-nowrap`}>{status}</Badge>
     );

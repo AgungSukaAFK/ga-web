@@ -78,7 +78,7 @@ import {
   formatDateFriendly,
   cn,
   formatDateWithTime,
-  calculatePriority, // <--- Pastikan ini terimport
+  formatAge,
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { Input } from "@/components/ui/input";
@@ -115,17 +115,12 @@ import {
 import {
   MR_LEVELS,
   MR_ITEM_STATUS_COLORS,
+  MR_ITEM_STATUS_COLOR_DEFAULT,
   MR_ITEM_STATUS_LABELS,
+  MR_ITEM_BAST_ELIGIBLE_STATUSES,
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { format } from "date-fns";
 import { processMrApproval } from "@/services/approvalService";
 import {
   fetchMaterialRequestById,
@@ -136,6 +131,7 @@ import {
   addManualPoLink,
   removeManualPoLink,
   setItemPaymentIssue,
+  getDueDateFromPriority,
 } from "@/services/mrService";
 import {
   fetchPoQtyBreakdownForMr,
@@ -148,6 +144,7 @@ import {
   notifyGAOnMRSubmit,
 } from "@/lib/notifications/client";
 import { logActivity } from "@/services/logService";
+import { ActivityLogDialog } from "@/components/activity-log-dialog";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -183,6 +180,33 @@ const dataUoM: ComboboxData = [
   { label: "Roll", value: "Roll" },
 ];
 
+const PRIORITY_OPTIONS: {
+  value: "P0" | "P1" | "P2" | "P3" | "P4";
+  label: string;
+  days: string;
+}[] = [
+  { value: "P0", label: "Emergency", days: "Maks. 2 hari" },
+  { value: "P1", label: "High", days: "Maks. 10 hari" },
+  { value: "P2", label: "Medium", days: "Maks. 15 hari" },
+  { value: "P3", label: "Low", days: "Maks. 25 hari" },
+  { value: "P4", label: "Umum", days: "30 hari" },
+];
+
+const getPriorityPickerColor = (p: string) => {
+  switch (p) {
+    case "P0":
+      return "bg-red-600 hover:bg-red-700";
+    case "P1":
+      return "bg-orange-500 hover:bg-orange-600";
+    case "P2":
+      return "bg-yellow-500 hover:bg-yellow-600";
+    case "P3":
+      return "bg-green-600 hover:bg-green-700";
+    default:
+      return "bg-gray-500";
+  }
+};
+
 function DetailMRPageContent({ params }: { params: { id: string } }) {
   const mrId = parseInt(params.id);
   const router = useRouter();
@@ -203,7 +227,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
 
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
-  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
   // --- STATE: KELOLA STATUS & PO PER ITEM ---
   const [poBreakdown, setPoBreakdown] = useState<
@@ -216,6 +239,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [isItemStatusOpen, setIsItemStatusOpen] = useState(false);
   const [selectedItemForStatus, setSelectedItemForStatus] =
     useState<Order | null>(null);
+  // Fallback identifier kalau item ini anomali (gak punya part_number, mis.
+  // data lama/rusak) - dipakai updateMrItemStatus supaya tombol edit tetap
+  // bisa dipakai GA/Purchasing/Admin buat benerin, bukan malah ke-lock permanen.
+  const [selectedItemIndexForStatus, setSelectedItemIndexForStatus] =
+    useState<number | null>(null);
+  const [deliveryDetailItem, setDeliveryDetailItem] = useState<Order | null>(
+    null,
+  );
+  const [bastDetailItem, setBastDetailItem] = useState<Order | null>(null);
   const [itemStatusForm, setItemStatusForm] = useState({
     status: "Pending" as string,
     note: "",
@@ -391,6 +423,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       });
       return false;
     } else {
+      if (currentUser) {
+        await logActivity(
+          currentUser.id,
+          "UPDATE_MR",
+          "material_request",
+          String(mr.id),
+          `${userProfile?.role === "requester" ? "Requester" : "User"} ${userProfile?.nama || "Unknown"} memperbarui data MR ${mr.kode_mr}`,
+          { total_items: mr.orders.length, cost_estimation: totalCost },
+        );
+      }
+
       toast.success("Perubahan berhasil disimpan!", { id: toastId });
       setIsEditing(false);
       await fetchMrData();
@@ -501,6 +544,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               (a, i) => i > myIndex && a.status === "pending",
             )
           : undefined;
+      await logActivity(
+        currentUser.id,
+        decision === "approved" ? "APPROVE_MR" : "REJECT_MR_APPROVER",
+        "material_request",
+        String(mr.id),
+        `Approver ${userProfile?.nama || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} MR ${mr.kode_mr}`,
+        { decision, approval_index: myIndex },
+      );
+
       notifyOnMRApproval({
         actorId: currentUser.id,
         creatorId: mr.userid,
@@ -532,6 +584,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
       if (error) throw error;
 
+      if (currentUser) {
+        await logActivity(
+          currentUser.id,
+          "DELETE_MR",
+          "material_request",
+          String(mrId),
+          `${userProfile?.role === "requester" ? "Requester" : "User"} ${userProfile?.nama || "Unknown"} menghapus MR ${mr?.kode_mr || mrId}`,
+          { kode_mr: mr?.kode_mr, status: mr?.status },
+        );
+      }
+
       toast.success("MR berhasil dihapus");
       router.push("/material-request");
     } catch (error: any) {
@@ -540,8 +603,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- KELOLA STATUS & PO PER ITEM ---
-  const handleOpenItemStatusDialog = (item: Order) => {
+  const handleOpenItemStatusDialog = (item: Order, index: number) => {
     setSelectedItemForStatus(item);
+    setSelectedItemIndexForStatus(index);
     setItemStatusForm({
       status: item.status || "Pending",
       note: item.status_note || "",
@@ -552,11 +616,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const handleSaveItemStatus = async () => {
-    if (!mr?.id || !selectedItemForStatus?.part_number) return;
+    if (!mr?.id || !selectedItemForStatus || selectedItemIndexForStatus === null)
+      return;
 
-    const cumulativeQty = (
-      poBreakdown[selectedItemForStatus.part_number] || []
-    ).reduce((sum, entry) => sum + (entry.qty || 0), 0);
+    const cumulativeQty = selectedItemForStatus.part_number
+      ? (poBreakdown[selectedItemForStatus.part_number] || []).reduce(
+          (sum, entry) => sum + (entry.qty || 0),
+          0,
+        )
+      : 0;
     const requestedQty = Number(selectedItemForStatus.qty) || 0;
     // "PO Created" (dulu status terpisah utk "qty penuh ke-cover PO") sudah
     // dilebur ke "Processing" - jadi warning qty-belum-penuh ini sekarang
@@ -572,8 +640,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         selectedItemForStatus.part_number,
         { status: itemStatusForm.status, note: itemStatusForm.note },
         currentUser?.id || "",
+        selectedItemIndexForStatus,
       );
       await recalculateMrStatus(mrId);
+
+      if (currentUser) {
+        await logActivity(
+          currentUser.id,
+          "UPDATE_ITEM_STATUS",
+          "material_request",
+          String(mrId),
+          `${userProfile?.nama || "Unknown"} mengubah status barang "${selectedItemForStatus.name}" (${selectedItemForStatus.part_number}) pada MR ${mr.kode_mr} dari "${selectedItemForStatus.status || "Pending"}" menjadi "${itemStatusForm.status}"`,
+          {
+            part_number: selectedItemForStatus.part_number,
+            old_status: selectedItemForStatus.status,
+            new_status: itemStatusForm.status,
+            note: itemStatusForm.note,
+          },
+        );
+      }
 
       if (isFulfillingStatus && cumulativeQty < requestedQty) {
         toast.warning("Status disimpan, tapi qty PO belum penuh", {
@@ -607,6 +692,20 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         hasIssue,
         currentUser.id,
       );
+
+      await logActivity(
+        currentUser.id,
+        "TOGGLE_PAYMENT_ISSUE",
+        "material_request",
+        String(mrId),
+        `${userProfile?.nama || "Unknown"} ${hasIssue ? "menandai" : "melepas"} Payment Issue pada barang "${selectedItemForStatus.name}" (${selectedItemForStatus.part_number}) di MR ${mr?.kode_mr || mrId}`,
+        {
+          part_number: selectedItemForStatus.part_number,
+          has_payment_issue: hasIssue,
+          new_level: hasIssue ? "Open 3B" : "Open 3A",
+        },
+      );
+
       toast.success(
         hasIssue
           ? "Item ditandai Payment Issue (Open 3B)"
@@ -626,9 +725,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   // Status "lanjutan" yang ga boleh dimundurkan cuma gara-gara utak-atik
-  // link PO manual (barang sudah diterima GA / requester sudah upload BAST /
-  // sudah dibatalkan/diganti secara sengaja).
-  const ADVANCED_ITEM_STATUSES = ["Completed", "Pending BAST", "Cancelled", "Replaced"];
+  // link PO manual (barang sudah diterima GA / dalam pengiriman / requester
+  // sudah upload BAST / sudah dibatalkan/diganti secara sengaja).
+  const ADVANCED_ITEM_STATUSES = [
+    "Dikirim Vendor",
+    "Diterima GA",
+    "On Delivery",
+    "Pending BAST",
+    "Completed",
+    "Cancelled",
+    "Replaced",
+  ];
 
   const syncItemStatusFromBreakdown = async (
     item: Order,
@@ -689,6 +796,19 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
       await recalculateMrStatus(mrId);
 
+      await logActivity(
+        currentUser.id,
+        "ADD_MANUAL_PO_LINK",
+        "material_request",
+        String(mrId),
+        `${userProfile?.nama || "Unknown"} menautkan PO ${manualLinkPoCode} (qty ${qty}) secara manual ke barang "${selectedItemForStatus.name}" (${selectedItemForStatus.part_number}) pada MR ${mr?.kode_mr || mrId}`,
+        {
+          part_number: selectedItemForStatus.part_number,
+          kode_po: manualLinkPoCode,
+          qty,
+        },
+      );
+
       toast.success("Link PO manual berhasil ditambahkan");
       setManualLinkPoCode("");
       setManualLinkQty("");
@@ -722,6 +842,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
       await recalculateMrStatus(mrId);
 
+      await logActivity(
+        currentUser.id,
+        "REMOVE_MANUAL_PO_LINK",
+        "material_request",
+        String(mrId),
+        `${userProfile?.nama || "Unknown"} menghapus tautan PO ${kodePo} dari barang "${selectedItemForStatus.name}" (${selectedItemForStatus.part_number}) pada MR ${mr?.kode_mr || mrId}`,
+        { part_number: selectedItemForStatus.part_number, kode_po: kodePo },
+      );
+
       toast.success("Link PO manual dihapus");
 
       const freshMr = await fetchMrData();
@@ -738,10 +867,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
   // --- UPLOAD BAST PER ITEM (REQUESTER) ---
   // `item` di-pre-select kalau dibuka dari tombol per-baris; dialog tetap
-  // nampilin semua barang berstatus "Pending BAST" biar bisa nambah barang
-  // lain (utk kasus 1 foto BAST yg sama dipakai buat beberapa barang).
+  // nampilin semua barang berstatus "On Delivery" (atau "Pending BAST" utk
+  // data lama) biar bisa nambah barang lain (utk kasus 1 foto BAST yg sama
+  // dipakai buat beberapa barang).
   const bastEligibleItems = (mr?.orders || []).filter(
-    (o) => o.status === "Pending BAST" && o.part_number,
+    (o) =>
+      MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(o.status || "") &&
+      o.part_number,
   );
 
   const handleOpenBastUpload = (item?: Order) => {
@@ -764,7 +896,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       return;
     }
     if (!bastFiles || bastFiles.length === 0) {
-      toast.error("Pilih file BAST terlebih dahulu");
+      toast.error("Pilih file bukti penerimaan terlebih dahulu");
       return;
     }
     if (!currentUser) {
@@ -816,16 +948,28 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         );
       }
 
+      await logActivity(
+        currentUser.id,
+        "UPLOAD_ITEM_BAST",
+        "material_request",
+        String(mrId),
+        `Requester ${userProfile?.nama || "Unknown"} mengunggah ${uploadedAttachments.length} file bukti penerimaan untuk ${selectedItemsForBast.length} barang pada MR ${mr.kode_mr}`,
+        {
+          part_numbers: selectedItemsForBast.map((it) => it.part_number),
+          files: uploadedAttachments.map((att) => att.name),
+        },
+      );
+
       toast.success(
         selectedItemsForBast.length === 1
-          ? "BAST berhasil diunggah, item ditandai selesai"
-          : `BAST berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
+          ? "Bukti penerimaan berhasil diunggah, item ditandai selesai"
+          : `Bukti penerimaan berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
       );
       setIsBastUploadOpen(false);
       await fetchMrData();
       fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
     } catch (err: any) {
-      toast.error("Gagal upload BAST", {
+      toast.error("Gagal upload bukti penerimaan", {
         description: getUploadErrorMessage(err),
       });
     } finally {
@@ -842,11 +986,23 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         attachmentUrl,
         currentUser.id,
       );
-      toast.success("Lampiran BAST dihapus");
+
+      await logActivity(
+        currentUser.id,
+        "REMOVE_ITEM_BAST",
+        "material_request",
+        String(mrId),
+        `Requester ${userProfile?.nama || "Unknown"} menghapus lampiran bukti penerimaan dari barang "${item.name}" (${item.part_number}) pada MR ${mr?.kode_mr || mrId}`,
+        { part_number: item.part_number, attachment_url: attachmentUrl },
+      );
+
+      toast.success("Lampiran bukti penerimaan dihapus");
       await fetchMrData();
       fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
     } catch (err: any) {
-      toast.error("Gagal hapus lampiran BAST", { description: err.message });
+      toast.error("Gagal hapus lampiran bukti penerimaan", {
+        description: err.message,
+      });
     }
   };
 
@@ -1009,6 +1165,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           description: updateError.message,
         });
       } else {
+        if (currentUser) {
+          await logActivity(
+            currentUser.id,
+            "UPLOAD_ATTACHMENT",
+            "material_request",
+            String(mr.id),
+            `${userProfile?.nama || "Unknown"} mengunggah ${successfulUploads.length} lampiran pada MR ${mr.kode_mr}`,
+            { files: successfulUploads.map((att) => att.name) },
+          );
+        }
+
         const failedCount = results.length - successfulUploads.length;
         toast.success(
           failedCount > 0
@@ -1046,11 +1213,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       .from("material_requests")
       .update({ attachments: updatedAttachments })
       .eq("id", mr.id)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error) {
           toast.error("Gagal menghapus lampiran dari DB");
           fetchMrData();
         } else {
+          if (currentUser) {
+            await logActivity(
+              currentUser.id,
+              "REMOVE_ATTACHMENT",
+              "material_request",
+              String(mr.id),
+              `${userProfile?.nama || "Unknown"} menghapus lampiran "${attachmentToRemove.name}" dari MR ${mr.kode_mr}`,
+              { file: attachmentToRemove.name, url: attachmentToRemove.url },
+            );
+          }
           toast.success(
             `Lampiran "${attachmentToRemove.name}" berhasil dihapus.`,
           );
@@ -1166,19 +1343,24 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     let colorClass = "";
     switch (p) {
       case "P0":
-        colorClass = "border-red-500 text-red-600 bg-red-50";
+        colorClass =
+          "border-red-500 text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950/40";
         break;
       case "P1":
-        colorClass = "border-orange-500 text-orange-600 bg-orange-50";
+        colorClass =
+          "border-orange-500 text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/40";
         break;
       case "P2":
-        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50";
+        colorClass =
+          "border-yellow-500 text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950/40";
         break;
       case "P3":
-        colorClass = "border-green-500 text-green-600 bg-green-50";
+        colorClass =
+          "border-green-500 text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950/40";
         break;
       default:
-        colorClass = "border-gray-300 text-gray-500 bg-gray-50";
+        colorClass =
+          "border-gray-300 text-gray-500 bg-gray-50 dark:text-gray-400 dark:bg-gray-900/40 dark:border-gray-600";
     }
     return (
       <Badge
@@ -1227,9 +1409,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 Dibuat pada {formatDateFriendly(mr.created_at)}
               </span>
               {getStatusBadge(mr.status)}
+              <span className="text-muted-foreground text-xs">
+                Umur:{" "}
+                {formatAge(
+                  mr.created_at,
+                  mr.full_received_at,
+                  mr.status === "Full Received",
+                )}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ActivityLogDialog
+              resourceType="material_request"
+              resourceId={String(mr.id)}
+            />
             {canDelete && (
               <Button variant="destructive" size="sm" onClick={handleDelete}>
                 Hapus MR
@@ -1356,74 +1550,70 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               </div>
             </div>
 
-            {/* 5. DUE DATE */}
+            {/* 5. DUE DATE - sekarang selalu read-only, diturunkan dari
+                Prioritas yang dipilih di bawah (bukan diisi manual). */}
             <div className="space-y-1">
               <Label>Due Date (Target)</Label>
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-                {isEditing ? (
-                  <Popover
-                    open={isDatePopoverOpen}
-                    onOpenChange={setIsDatePopoverOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal bg-background",
-                          !mr.due_date && "text-muted-foreground",
-                        )}
-                      >
-                        {mr.due_date ? (
-                          format(new Date(mr.due_date), "PPP")
-                        ) : (
-                          <span>Pilih tanggal...</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <CalendarComponent
-                        mode="single"
-                        selected={
-                          mr.due_date ? new Date(mr.due_date) : undefined
-                        }
-                        onSelect={(date) => {
-                          const newPriority = date
-                            ? (calculatePriority(date) as any)
-                            : mr.prioritas;
-                          setMr({
-                            ...mr,
-                            due_date: date,
-                            prioritas: newPriority,
-                          });
-                          setIsDatePopoverOpen(false);
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                ) : (
-                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                    {formatDateFriendly(mr.due_date)}
-                  </div>
-                )}
+                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                  {formatDateFriendly(mr.due_date)}
+                </div>
               </div>
+              {isEditing && (
+                <p className="text-[10px] text-muted-foreground">
+                  *Due date otomatis ditentukan dari prioritas di bawah.
+                </p>
+              )}
             </div>
 
             {/* 6. PRIORITAS */}
             <div className="space-y-1">
               <Label>Prioritas</Label>
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {getPriorityBadge(mr.prioritas)}
-                  {isEditing && (
-                    <span className="ml-2 text-[10px] text-muted-foreground">
-                      *Ditentukan berdasarkan due date dan tanggal MR
-                    </span>
-                  )}
+              {isEditing ? (
+                <div className="grid grid-cols-5 gap-1.5">
+                  {PRIORITY_OPTIONS.map((opt) => {
+                    const selected = mr.prioritas === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          setMr({
+                            ...mr,
+                            prioritas: opt.value,
+                            due_date: getDueDateFromPriority(opt.value),
+                          })
+                        }
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
+                          selected
+                            ? cn(
+                                getPriorityPickerColor(opt.value),
+                                "text-white border-transparent",
+                              )
+                            : "border-input hover:bg-muted",
+                        )}
+                      >
+                        <span className="text-xs font-bold">{opt.value}</span>
+                        <span className="text-[9px] leading-tight">
+                          {opt.label}
+                        </span>
+                        <span className="text-[9px] leading-tight opacity-80">
+                          {opt.days}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
+                    {getPriorityBadge(mr.prioritas)}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 7. LEVEL */}
@@ -1547,7 +1737,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   variant="outline"
                   onClick={() => handleOpenBastUpload()}
                 >
-                  <Upload className="mr-2 h-4 w-4" /> Upload BAST Massal
+                  <Upload className="mr-2 h-4 w-4" /> Upload Bukti Penerimaan
+                  Massal
                 </Button>
               )}
               {isEditing && (
@@ -1583,7 +1774,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   mr.orders.map((item, index) => {
                     const statusColor =
                       MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
-                      "bg-gray-100";
+                      MR_ITEM_STATUS_COLOR_DEFAULT;
                     const statusLabel =
                       MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
                       item.status;
@@ -1738,13 +1929,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               >
                                 {statusLabel}
                               </Badge>
-                              {isPurchasing && item.part_number && (
+                              {isPurchasing && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-6 w-6"
                                   onClick={() =>
-                                    handleOpenItemStatusDialog(item)
+                                    handleOpenItemStatusDialog(item, index)
                                   }
                                   title="Kelola status & PO"
                                 >
@@ -1795,8 +1986,24 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               );
                             })()}
 
+                            {/* Info kirim dari GA - bandingin sama bukti
+                                BAST sebelum upload */}
+                            {item.delivery_info && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50"
+                                onClick={() => setDeliveryDetailItem(item)}
+                              >
+                                <Truck className="mr-1 h-3 w-3" /> Lihat Detail
+                                Pengiriman
+                              </Button>
+                            )}
+
                             {isOwner &&
-                              item.status === "Pending BAST" &&
+                              MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(
+                                item.status || "",
+                              ) &&
                               item.part_number && (
                                 <Button
                                   size="sm"
@@ -1805,41 +2012,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                   onClick={() => handleOpenBastUpload(item)}
                                 >
                                   <Upload className="mr-1 h-3 w-3" /> Upload
-                                  BAST
+                                  Bukti Terima
                                 </Button>
                               )}
 
                             {item.bast_attachments &&
                               item.bast_attachments.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {item.bast_attachments.map((att, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
-                                    >
-                                      <Link
-                                        href={resolveAttachmentUrl(att.url)}
-                                        target="_blank"
-                                        className="hover:underline flex items-center gap-1"
-                                      >
-                                        <FileText className="w-3 h-3" />
-                                        {att.name}
-                                      </Link>
-                                      {isOwner && (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleRemoveItemBast(item, att.url)
-                                          }
-                                          className="hover:text-red-600"
-                                          title="Hapus lampiran"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-emerald-200 text-emerald-700 hover:text-emerald-700 hover:bg-emerald-50"
+                                  onClick={() => setBastDetailItem(item)}
+                                >
+                                  <FileText className="mr-1 h-3 w-3" /> Lihat
+                                  Bukti Terima
+                                </Button>
                               )}
                           </div>
                         </TableCell>
@@ -2004,6 +2191,66 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           ) : (
             <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
           )}
+
+          {(() => {
+            const bastAttachments = (mr.orders || []).flatMap(
+              (orderItem) =>
+                (orderItem.bast_attachments || []).map((att, idx) => ({
+                  ...att,
+                  itemName: orderItem.name,
+                  orderItem,
+                  attIdx: idx,
+                })),
+            );
+            if (bastAttachments.length === 0) return null;
+            return (
+              <div className="mt-4 pt-4 border-t">
+                <Label className="text-sm text-muted-foreground">
+                  Lampiran Bukti Penerimaan
+                </Label>
+                <ul className="space-y-2 mt-2">
+                  {bastAttachments.map((att, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded gap-2"
+                    >
+                      <Link
+                        href={resolveAttachmentUrl(att.url)}
+                        target="_blank"
+                        className="flex items-center gap-2 text-primary hover:underline truncate min-w-0"
+                      >
+                        <FileText className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                      </Link>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800"
+                        >
+                          Bukti Terima
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {att.itemName}
+                        </Badge>
+                        {isOwner && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              handleRemoveItemBast(att.orderItem, att.url)
+                            }
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </Content>
       </div>
 
@@ -2166,6 +2413,142 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       </Dialog>
 
       {/* Dialog Kelola Status & PO per Item */}
+      <Dialog
+        open={!!deliveryDetailItem}
+        onOpenChange={(open) => !open && setDeliveryDetailItem(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5" /> Detail Pengiriman
+            </DialogTitle>
+            <DialogDescription>
+              {deliveryDetailItem?.name}
+            </DialogDescription>
+          </DialogHeader>
+          {deliveryDetailItem?.delivery_info && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Jenis Kirim</p>
+                <p className="font-medium">
+                  {deliveryDetailItem.delivery_info.delivery_type}
+                  {deliveryDetailItem.delivery_info.courier &&
+                    ` - ${deliveryDetailItem.delivery_info.courier}`}
+                </p>
+              </div>
+              {deliveryDetailItem.delivery_info.tracking_number && (
+                <div>
+                  <p className="text-xs text-muted-foreground">No. Resi</p>
+                  <p className="font-medium">
+                    {deliveryDetailItem.delivery_info.tracking_number}
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-muted-foreground">Qty Dikirim</p>
+                <p className="font-medium">
+                  {deliveryDetailItem.delivery_info.qty_sent}{" "}
+                  {deliveryDetailItem.uom}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Tanggal Kirim</p>
+                <p className="font-medium">
+                  {formatDateWithTime(deliveryDetailItem.delivery_info.sent_at)}
+                </p>
+              </div>
+              {deliveryDetailItem.delivery_info.note && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Catatan</p>
+                  <p className="italic">
+                    &quot;{deliveryDetailItem.delivery_info.note}&quot;
+                  </p>
+                </div>
+              )}
+              {deliveryDetailItem.delivery_info.attachments &&
+                deliveryDetailItem.delivery_info.attachments.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Lampiran Bukti Kirim
+                    </p>
+                    <div className="flex flex-col gap-1">
+                      {deliveryDetailItem.delivery_info.attachments.map(
+                        (att, i) => (
+                          <Link
+                            key={i}
+                            href={resolveAttachmentUrl(att.url)}
+                            target="_blank"
+                            className="hover:underline flex items-center gap-1 text-primary"
+                          >
+                            <FileText className="w-3 h-3" />
+                            {att.name}
+                          </Link>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeliveryDetailItem(null)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Bukti Terima (BAST) per Item */}
+      <Dialog
+        open={!!bastDetailItem}
+        onOpenChange={(open) => !open && setBastDetailItem(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" /> Bukti Terima Barang
+            </DialogTitle>
+            <DialogDescription>{bastDetailItem?.name}</DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-2">
+            {bastDetailItem?.bast_attachments?.map((att, idx) => (
+              <li
+                key={idx}
+                className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+              >
+                <Link
+                  href={resolveAttachmentUrl(att.url)}
+                  target="_blank"
+                  className="flex items-center gap-2 text-primary hover:underline truncate min-w-0"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{att.name}</span>
+                  <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                </Link>
+                {isOwner && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 flex-shrink-0"
+                    onClick={() =>
+                      bastDetailItem &&
+                      handleRemoveItemBast(bastDetailItem, att.url)
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBastDetailItem(null)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isItemStatusOpen} onOpenChange={setIsItemStatusOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2178,6 +2561,17 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
+            {selectedItemForStatus && !selectedItemForStatus.part_number && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <p>
+                  Barang ini tidak punya Part Number, jadi info Breakdown PO
+                  &amp; Link PO Manual di bawah tidak bisa ditampilkan. Kalau
+                  ini seharusnya barang dari Master Data, perbaiki Part
+                  Number-nya lewat &quot;Edit Rincian&quot; di halaman ini.
+                </p>
+              </div>
+            )}
             {selectedItemForStatus?.level && (
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
@@ -2398,9 +2792,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Upload BAST Barang</DialogTitle>
+            <DialogTitle>Upload Bukti Penerimaan Barang</DialogTitle>
             <DialogDescription>
-              Unggah Berita Acara Serah Terima (BAST) atau bukti penerimaan.
+              Unggah bukti penerimaan barang (foto/dokumen serah terima).
               Barang yang dicentang akan ditandai selesai dengan bukti yang
               sama.
             </DialogDescription>
@@ -2411,7 +2805,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
                 {bastEligibleItems.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground">
-                    Tidak ada barang berstatus &quot;Pending BAST&quot;.
+                    Tidak ada barang yang bisa diunggah bukti penerimaannya.
                   </div>
                 ) : (
                   bastEligibleItems.map((item) => {
@@ -2442,7 +2836,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               </div>
             </div>
             <div>
-              <Label htmlFor="item-bast-file">File BAST / Bukti Foto</Label>
+              <Label htmlFor="item-bast-file">
+                File Bukti Penerimaan / Bukti Foto
+              </Label>
               <Input
                 id="item-bast-file"
                 type="file"

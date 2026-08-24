@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Building2, Headset } from "lucide-react";
 import { signInWithEmailOrNrp } from "@/services/userService";
 import {
   Card,
@@ -19,11 +19,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   // Tampilkan pesan jika user diarahkan ke sini karena akunnya dinonaktifkan.
   useEffect(() => {
@@ -93,12 +102,13 @@ export default function LoginPage() {
               />
             </div>
             <div className="w-full flex justify-end">
-              <Link
-                href={"/auth/forgot-password"}
-                className="text-end text-sm bg-blac"
+              <button
+                type="button"
+                onClick={() => setIsForgotPasswordOpen(true)}
+                className="text-end text-sm underline-offset-4 hover:underline"
               >
                 Lupa password?
-              </Link>
+              </button>
             </div>
             {error && (
               <Alert variant="destructive">
@@ -119,6 +129,40 @@ export default function LoginPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" /> Lupa Password?
+            </DialogTitle>
+            <DialogDescription>
+              Reset password mandiri lewat email tidak tersedia untuk sistem
+              ini.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-3 rounded-md border p-3">
+              <Headset className="h-5 w-5 flex-shrink-0 text-primary mt-0.5" />
+              <p>
+                Silakan hubungi pihak <strong>IT</strong> atau{" "}
+                <strong>Admin General Affair (GA)</strong> di{" "}
+                <strong>Head Office PT. Garuda Mart Indonesia</strong> untuk
+                dibantu proses reset password akun Anda.
+              </p>
+            </div>
+            <p className="text-muted-foreground">
+              Siapkan Nama, Email/NRP yang terdaftar, dan Departemen Anda saat
+              menghubungi, agar proses verifikasi lebih cepat.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsForgotPasswordOpen(false)}>
+              Mengerti
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

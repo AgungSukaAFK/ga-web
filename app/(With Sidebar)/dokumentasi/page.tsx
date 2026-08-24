@@ -101,12 +101,15 @@ export default function DokumentasiPage() {
       </Content>
 
       <Content className="col-span-12">
-        <Alert variant="default" className="bg-blue-50 border-blue-200">
-          <AlertCircle className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-700 font-semibold">
+        <Alert
+          variant="default"
+          className="bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800"
+        >
+          <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <AlertTitle className="text-blue-700 font-semibold dark:text-blue-300">
             Pembaruan Alur Kerja Cost Center!
           </AlertTitle>
-          <AlertDescription className="text-blue-600">
+          <AlertDescription className="text-blue-600 dark:text-blue-400">
             Sesuai pembaruan terbaru, Requester (Pembuat MR) tidak lagi memilih
             Cost Center. Penentuan Cost Center kini menjadi tanggung jawab
             General Affair (GA) pada saat proses validasi. Estimasi Biaya MR
@@ -117,12 +120,15 @@ export default function DokumentasiPage() {
       </Content>
 
       <Content className="col-span-12">
-        <Alert variant="default" className="bg-emerald-50 border-emerald-200">
-          <PackageCheck className="h-4 w-4 text-emerald-600" />
-          <AlertTitle className="text-emerald-700 font-semibold">
+        <Alert
+          variant="default"
+          className="bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800"
+        >
+          <PackageCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          <AlertTitle className="text-emerald-700 font-semibold dark:text-emerald-300">
             Pembaruan Alur Kerja: Penerimaan Barang (PO)!
           </AlertTitle>
-          <AlertDescription className="text-emerald-700 space-y-2">
+          <AlertDescription className="text-emerald-700 space-y-2 dark:text-emerald-400">
             <p>
               Istilah status PO <strong>&quot;Pending BAST&quot;</strong> dan{" "}
               <strong>&quot;Completed&quot;</strong> sudah tidak dipakai lagi.
@@ -408,7 +414,7 @@ export default function DokumentasiPage() {
                   </ListItem>
                   <ListItem>
                     Terpisah dari status PO, Requester (pembuat MR) tetap bisa
-                    mengunggah bukti BAST per item untuk kebutuhan laporan -
+                    mengunggah bukti penerimaan per item untuk kebutuhan laporan -
                     ini tidak lagi mengubah status PO.
                   </ListItem>
                 </ul>
@@ -507,6 +513,66 @@ export default function DokumentasiPage() {
           </AccordionItem>
 
           {/* ====================================================== */}
+          {/* ALUR PENERIMAAN BERDASARKAN TIPE VENDOR */}
+          {/* ====================================================== */}
+          <AccordionItem value="item-vendor-flow">
+            <AccordionTrigger className="text-xl font-semibold">
+              <div className="flex items-center gap-3">
+                <Truck className="h-5 w-5" />
+                Alur Penerimaan Berdasarkan Tipe Vendor
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Tiap Vendor di Manajemen Vendor wajib punya{" "}
+                <strong>Tipe Vendor</strong> (HO/Branch/Site) - PO tidak bisa
+                diajukan pakai vendor yang belum diset tipe-nya. Tipe ini
+                menentukan siapa yang mengonfirmasi barang sudah sampai
+                setelah PO dibayar lunas (Payment Validator approve dengan
+                bukti pembayaran).
+              </p>
+              <div className="space-y-3">
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    Vendor HO (Head Office)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Barang dikirim vendor ke Head Office. GA yang isi
+                    checklist &quot;Terima Barang&quot;, baru klik &quot;Kirim
+                    ke Requester&quot; - requester upload bukti penerimaan
+                    setelahnya.
+                    Ini alur standar (tidak berubah dari sebelumnya).
+                  </p>
+                </div>
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">Vendor Branch</p>
+                  <p className="text-xs text-muted-foreground">
+                    Sama seperti HO (GA terima → GA kirim ke requester →
+                    requester upload bukti penerimaan) - bedanya yang terima GA di cabang/site
+                    tujuan MR, bukan GA Head Office. Siapa GA yang bertugas
+                    tetap ditentukan manual (lewat jalur approval &quot;Receiver&quot;
+                    atau tombol &quot;Terima Barang&quot;), sistem tidak
+                    membatasi berdasarkan lokasi.
+                  </p>
+                </div>
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">Vendor Site</p>
+                  <p className="text-xs text-muted-foreground">
+                    Barang dikirim vendor langsung ke site -{" "}
+                    <strong>tidak ada proses terima GA</strong>. Begitu PO
+                    lunas dibayar, tombol &quot;Konfirmasi Terima Barang&quot;
+                    muncul untuk <strong>Requester</strong> (bukan GA) di
+                    halaman detail PO - requester sendiri yang isi checklist
+                    qty diterima, lalu bisa langsung upload bukti penerimaan tanpa
+                    menunggu &quot;dikirim ke requester&quot; (karena memang
+                    tidak ada langkah itu untuk vendor Site).
+                  </p>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* ====================================================== */}
           {/* PERAN & TANGGUNG JAWAB */}
           {/* ====================================================== */}
           <AccordionItem value="item-3">
@@ -522,7 +588,7 @@ export default function DokumentasiPage() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Semua karyawan. Bertanggung jawab membuat MR, mengisi estimasi
                   harga item dengan benar, dan melakukan konfirmasi penerimaan
-                  (upload BAST) saat barang tiba.
+                  (upload bukti penerimaan) saat barang tiba.
                 </p>
               </div>
               <div>
@@ -660,16 +726,16 @@ export default function DokumentasiPage() {
 
               <h5 className="font-semibold">
                 T: Saya (Requester) tidak bisa menemukan tombol untuk upload
-                BAST.
+                bukti penerimaan barang.
               </h5>
               <p className="text-sm text-muted-foreground -mt-2">
                 J: Pastikan barang untuk item tersebut sudah di-checklist
                 diterima oleh Receiver/GA (status item MR sudah{" "}
-                <Badge variant="secondary">Pending BAST</Badge>). Jika status
-                PO masih &quot;Pending Approval&quot;/&quot;Pending
+                <Badge variant="secondary">Pending Terima User</Badge>). Jika
+                status PO masih &quot;Pending Approval&quot;/&quot;Pending
                 Payment&quot;/&quot;Pending Receive&quot;, artinya barangnya
                 belum diterima. Hanya Requester asli yang membuat MR yang
-                dapat mengunggah BAST.
+                dapat mengunggah bukti penerimaan.
               </p>
 
               <h5 className="font-semibold">
@@ -764,37 +830,37 @@ export default function DokumentasiPage() {
                 }
               >
                 Sebagian/semua item MR sudah masuk PO tapi belum semua item
-                selesai diterima &amp; di-BAST.
+                selesai diterima &amp; dikonfirmasi diterima user.
               </StatusRow>
               <StatusRow
                 icon={PackageCheck}
                 badge={
-                  <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-200">
+                  <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-200 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-800">
                     Pending Receive
                   </Badge>
                 }
               >
                 Semua item MR ini sudah punya PO yang meng-cover penuh
                 qty-nya (belum tentu barangnya sudah diterima), tapi belum
-                ada satupun item yang di-BAST.
+                ada satupun item yang dikonfirmasi diterima user.
               </StatusRow>
               <StatusRow
                 icon={PackageCheck}
                 badge={
-                  <Badge className="bg-amber-100 text-amber-800 border border-amber-200">
+                  <Badge className="bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800">
                     Partial Receive
                   </Badge>
                 }
               >
-                Sebagian item MR sudah di-BAST (statusnya sudah
-                &quot;Completed&quot;), tapi belum semua.
+                Sebagian item MR sudah dikonfirmasi diterima user (statusnya
+                sudah &quot;Completed&quot;), tapi belum semua.
               </StatusRow>
               <StatusRow
                 icon={CheckCheck}
                 badge={<Badge variant="outline">Full Received</Badge>}
               >
                 Semua item di MR ini statusnya sudah &quot;Completed&quot;
-                (sudah di-BAST semua) - siklus MR selesai.
+                (sudah dikonfirmasi diterima user semua) - siklus MR selesai.
               </StatusRow>
               <StatusRow
                 icon={FileX}
@@ -802,6 +868,59 @@ export default function DokumentasiPage() {
               >
                 Ditolak oleh GA saat validasi, atau oleh salah satu approver
                 di jalur persetujuan.
+              </StatusRow>
+            </div>
+          </div>
+
+          {/* ---------------- PRIORITAS MR ---------------- */}
+          <div>
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Prioritas MR (P0-P4)
+            </h4>
+            <p className="text-xs text-muted-foreground mb-2">
+              Requester memilih <strong>Prioritas</strong> langsung saat buat
+              MR (atau saat perbaiki & submit ulang MR yang &quot;On
+              Hold&quot;) - &quot;Due Date&quot; (Target Pemakaian) otomatis
+              diisi sistem dari prioritas yang dipilih (pakai batas hari
+              maksimal tiap tier di bawah), bukan sebaliknya.
+            </p>
+            <div className="space-y-3">
+              <StatusRow
+                icon={AlertCircle}
+                badge={<Badge className="bg-red-600 text-white">P0</Badge>}
+              >
+                Emergency - paling mendesak. Due date otomatis diset 2 hari
+                dari sekarang.
+              </StatusRow>
+              <StatusRow
+                icon={AlertCircle}
+                badge={
+                  <Badge className="bg-orange-500 text-white">P1</Badge>
+                }
+              >
+                High. Due date otomatis diset 10 hari dari sekarang.
+              </StatusRow>
+              <StatusRow
+                icon={AlertCircle}
+                badge={
+                  <Badge className="bg-yellow-500 text-white">P2</Badge>
+                }
+              >
+                Medium. Due date otomatis diset 15 hari dari sekarang.
+              </StatusRow>
+              <StatusRow
+                icon={AlertCircle}
+                badge={<Badge className="bg-green-600 text-white">P3</Badge>}
+              >
+                Low. Due date otomatis diset 25 hari dari sekarang.
+              </StatusRow>
+              <StatusRow
+                icon={AlertCircle}
+                badge={<Badge className="bg-gray-500 text-white">P4</Badge>}
+              >
+                Umum - paling tidak mendesak. Due date otomatis diset 30 hari
+                dari sekarang. Juga jadi nilai default kalau Prioritas belum
+                dipilih.
               </StatusRow>
             </div>
           </div>
@@ -828,7 +947,7 @@ export default function DokumentasiPage() {
               <StatusRow
                 icon={FileBox}
                 badge={
-                  <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+                  <Badge className="bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800">
                     Processing (Proses PO)
                   </Badge>
                 }
@@ -840,27 +959,27 @@ export default function DokumentasiPage() {
               </StatusRow>
               <StatusRow
                 icon={PackageCheck}
-                badge={<Badge variant="secondary">Pending BAST</Badge>}
+                badge={<Badge variant="secondary">Pending Terima User</Badge>}
               >
                 Barang sudah dicek fisik &amp; qty-nya sesuai oleh Receiver/GA
                 (PO-nya sudah &quot;Full Received&quot;) - tinggal menunggu
-                Requester upload bukti BAST.
+                Requester upload bukti penerimaan.
               </StatusRow>
               <StatusRow
                 icon={CheckCheck}
                 badge={
-                  <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    Completed (BAST Selesai)
+                  <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-800">
+                    Completed (Barang Diterima User)
                   </Badge>
                 }
               >
-                Requester sudah upload bukti BAST untuk item ini - dipakai
-                untuk kebutuhan laporan.
+                Requester sudah upload bukti penerimaan untuk item ini -
+                dipakai untuk kebutuhan laporan.
               </StatusRow>
               <StatusRow
                 icon={FileX}
                 badge={
-                  <Badge className="bg-red-50 text-red-700 border border-red-200">
+                  <Badge className="bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800">
                     Cancelled (Dibatalkan)
                   </Badge>
                 }
@@ -871,7 +990,7 @@ export default function DokumentasiPage() {
               <StatusRow
                 icon={FileX}
                 badge={
-                  <Badge className="bg-yellow-50 text-yellow-700 border border-yellow-200">
+                  <Badge className="bg-yellow-50 text-yellow-700 border border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800">
                     Replaced (Diganti)
                   </Badge>
                 }
@@ -950,20 +1069,21 @@ export default function DokumentasiPage() {
             </div>
           </div>
 
-          {/* ---------------- CATATAN BAST ---------------- */}
+          {/* ---------------- CATATAN BUKTI PENERIMAAN ---------------- */}
           <div className="border-t pt-4">
             <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-2">
-              <Printer className="h-4 w-4" /> Soal BAST
+              <Printer className="h-4 w-4" /> Soal Bukti Penerimaan Barang
             </h4>
             <p className="text-xs text-muted-foreground">
-              BAST (Berita Acara Serah Terima) itu <strong>bukan</strong>{" "}
-              status PO - itu dokumen bukti yang di-upload{" "}
-              <strong>Requester</strong> (bukan Receiver) per item, setelah
-              item tersebut berstatus &quot;Pending BAST&quot;. Upload BAST
-              cuma menandai item MR jadi &quot;Completed&quot; untuk
-              kebutuhan laporan - <strong>tidak lagi mengubah status PO</strong>{" "}
-              (status akhir PO cukup berhenti di &quot;Full Received&quot;
-              begitu Receiver selesai checklist).
+              Bukti Penerimaan Barang (dulu disebut BAST/Berita Acara Serah
+              Terima) itu <strong>bukan</strong> status PO - itu dokumen bukti
+              yang di-upload <strong>Requester</strong> (bukan Receiver) per
+              item, setelah item tersebut berstatus &quot;Pending Terima
+              User&quot;. Upload bukti penerimaan cuma menandai item MR jadi
+              &quot;Completed&quot; (Barang Diterima User) untuk kebutuhan
+              laporan - <strong>tidak lagi mengubah status PO</strong> (status
+              akhir PO cukup berhenti di &quot;Full Received&quot; begitu
+              Receiver selesai checklist).
             </p>
           </div>
         </div>

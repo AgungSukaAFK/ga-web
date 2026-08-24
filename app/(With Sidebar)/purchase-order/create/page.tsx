@@ -34,6 +34,7 @@ import {
   generatePoCode,
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
+import { logActivity } from "@/services/logService";
 import {
   uploadAttachmentVps,
   removeAttachmentVps,
@@ -203,6 +204,7 @@ function VendorSearchCombobox({
       alamat: vendor.alamat || "",
       contact_person: vendor.pic_contact_person || "",
       email: vendor.email || "",
+      tipe_vendor: vendor.tipe_vendor,
     };
     setPoForm((prev: any) => ({
       ...prev,
@@ -214,51 +216,61 @@ function VendorSearchCombobox({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between truncate"
-          title={poForm.vendor_details?.nama_vendor}
-        >
-          {poForm.vendor_details?.nama_vendor ||
-            "Cari Nama atau Kode Vendor..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Ketik untuk mencari vendor..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-          />
-          <CommandList>
-            {results.length === 0 && searchQuery.length > 0 && (
-              <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
-            )}
-            <CommandGroup>
-              {results.map((vendor) => (
-                <CommandItem
-                  key={vendor.id}
-                  value={String(vendor.id)}
-                  onSelect={() => handleSelect(vendor)}
-                >
-                  <div className="flex flex-col w-full text-left">
-                    <span className="font-semibold">{vendor.nama_vendor}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {vendor.kode_vendor}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <div className="space-y-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between truncate"
+            title={poForm.vendor_details?.nama_vendor}
+          >
+            {poForm.vendor_details?.nama_vendor ||
+              "Cari Nama atau Kode Vendor..."}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[400px] p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Ketik untuk mencari vendor..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+            />
+            <CommandList>
+              {results.length === 0 && searchQuery.length > 0 && (
+                <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+              )}
+              <CommandGroup>
+                {results.map((vendor) => (
+                  <CommandItem
+                    key={vendor.id}
+                    value={String(vendor.id)}
+                    onSelect={() => handleSelect(vendor)}
+                  >
+                    <div className="flex flex-col w-full text-left">
+                      <span className="font-semibold">
+                        {vendor.nama_vendor}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {vendor.kode_vendor}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {poForm.vendor_details && !poForm.vendor_details.tipe_vendor && (
+        <p className="text-xs font-medium text-red-600 dark:text-red-400">
+          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site) - lengkapi
+          dulu di Manajemen Vendor sebelum PO ini bisa diajukan.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -337,7 +349,14 @@ function CreatePOPageContent() {
   // Upload States
   const [isUploadingPO, setIsUploadingPO] = useState(false);
   const [isUploadingFinance, setIsUploadingFinance] = useState(false);
-  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false);
+  const [isUploadingPurchasing, setIsUploadingPurchasing] = useState(false);
+  // Jenis lampiran yang mau diupload ke "Lampiran Purchasing" - wajib
+  // dipilih dulu (Quotation/Invoice) sebelum file bisa diunggah, supaya
+  // sistem bisa deteksi PO mana yang sudah/belum ada Invoice-nya secara
+  // spesifik (bukan cuma Quotation).
+  const [purchasingAttachmentType, setPurchasingAttachmentType] = useState<
+    "quotation" | "invoice" | ""
+  >("");
 
   // Payment Term Logic
   const [paymentTermType, setPaymentTermType] = useState("Termin");
@@ -761,8 +780,24 @@ function CreatePOPageContent() {
       toast.error("Vendor Utama wajib dipilih.");
       return;
     }
+    if (!poForm.vendor_details.tipe_vendor) {
+      toast.error(
+        "Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site). Lengkapi dulu di Manajemen Vendor sebelum PO bisa diajukan.",
+      );
+      return;
+    }
     if (poForm.items.length === 0) {
       toast.error("Pilih minimal satu item.");
+      return;
+    }
+    if (
+      !poForm.attachments?.some(
+        (a) => a.type === "invoice" || a.type === "quotation",
+      )
+    ) {
+      toast.error(
+        "Lampiran Purchasing wajib diunggah (Quotation atau Invoice) sebelum membuat PO.",
+      );
       return;
     }
     if (!mrData) {
@@ -790,6 +825,30 @@ function CreatePOPageContent() {
         kodePO: poForm.kode_po,
         poId: newPo.id,
       });
+
+      await logActivity(
+        currentUser.id,
+        "CREATE_PO",
+        "purchase_order",
+        String(newPo.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} membuat Purchase Order ${newPo.kode_po}`,
+        {
+          mr_id: mrIdToSubmit,
+          company_code: userProfile?.company || "GMI",
+          total_items: poForm.items.length,
+        },
+      );
+      if (mrIdToSubmit) {
+        await logActivity(
+          currentUser.id,
+          "CREATE_PO",
+          "material_request",
+          String(mrIdToSubmit),
+          `${userProfile?.nama || currentUser.email || "Unknown"} membuat Purchase Order ${newPo.kode_po} untuk MR ini`,
+          { po_id: newPo.id, kode_po: newPo.kode_po },
+        );
+      }
+
       toast.success("PO berhasil diajukan!");
       router.push("/purchase-order");
     } catch (err: any) {
@@ -801,7 +860,7 @@ function CreatePOPageContent() {
 
   const handleAttachmentUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "po" | "finance" | "invoice",
+    type: "po" | "finance" | "invoice" | "quotation",
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -819,7 +878,7 @@ function CreatePOPageContent() {
         ? setIsUploadingPO
         : type === "finance"
           ? setIsUploadingFinance
-          : setIsUploadingInvoice;
+          : setIsUploadingPurchasing;
     setIsLoading(true);
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
     try {
@@ -844,6 +903,20 @@ function CreatePOPageContent() {
       setIsLoading(false);
       e.target.value = "";
     }
+  };
+
+  // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
+  // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah,
+  // supaya tiap file yang masuk selalu jelas taggingnya.
+  const handlePurchasingAttachmentUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!purchasingAttachmentType) {
+      toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
+      e.target.value = "";
+      return;
+    }
+    handleAttachmentUpload(e, purchasingAttachmentType);
   };
 
   const removeAttachment = (index: number) => {
@@ -920,8 +993,10 @@ function CreatePOPageContent() {
     poForm.attachments?.filter((a) => !a.type || a.type === "po") || [];
   const financeAttachments =
     poForm.attachments?.filter((a) => a.type === "finance") || [];
-  const invoiceAttachments =
-    poForm.attachments?.filter((a) => a.type === "invoice") || [];
+  const purchasingAttachments =
+    poForm.attachments?.filter(
+      (a) => a.type === "invoice" || a.type === "quotation",
+    ) || [];
 
   return (
     <>
@@ -1611,20 +1686,48 @@ function CreatePOPageContent() {
             </div>
             <hr />
             <div>
-              <Label>Lampiran Invoice</Label>
-              <Input
-                type="file"
-                onChange={(e) => handleAttachmentUpload(e, "invoice")}
-                disabled={isUploadingInvoice}
-                className="mt-1"
-              />
+              <Label>Lampiran Purchasing (wajib salah satu)</Label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                Minimal 1 lampiran (Quotation atau Invoice) wajib diunggah
+                sebelum PO bisa dibuat. Pilih jenisnya dulu, baru unggah
+                filenya.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Select
+                  value={purchasingAttachmentType}
+                  onValueChange={(v) =>
+                    setPurchasingAttachmentType(v as "quotation" | "invoice")
+                  }
+                >
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue placeholder="Jenis lampiran" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="quotation">Quotation</SelectItem>
+                    <SelectItem value="invoice">Invoice</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="file"
+                  onChange={handlePurchasingAttachmentUpload}
+                  disabled={isUploadingPurchasing}
+                  className="flex-1"
+                />
+              </div>
               <ul className="space-y-1 mt-2">
-                {invoiceAttachments.map((att, i) => (
+                {purchasingAttachments.map((att, i) => (
                   <li
                     key={i}
-                    className="flex justify-between text-xs bg-muted p-1 rounded items-center"
+                    className="flex justify-between text-xs bg-muted p-1 rounded items-center gap-2"
                   >
-                    <span className="truncate max-w-[150px]">{att.name}</span>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {att.type === "invoice" ? "Invoice" : "Quotation"}
+                      </Badge>
+                      <span className="truncate max-w-[150px]">
+                        {att.name}
+                      </span>
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon"

@@ -109,8 +109,8 @@ export default function TentangAppPage() {
                 menggunakan master data barang.
               </li>
               <li>
-                <strong>Konfirmasi BAST:</strong> Siklus ditutup saat requester
-                asli mengunggah BAST sebagai bukti penerimaan barang, yang
+                <strong>Konfirmasi Penerimaan Barang:</strong> Siklus ditutup
+                saat requester asli mengunggah bukti penerimaan barang, yang
                 secara otomatis menyelesaikan MR dan PO terkait.
               </li>
             </ol>
@@ -136,7 +136,8 @@ export default function TentangAppPage() {
             <h3>4. Sentralisasi Data</h3>
             <p>
               Semua dokumen, mulai dari permintaan item, lampiran pendukung,
-              template approval, hingga BAST, tersimpan di satu tempat. Ini
+              template approval, hingga bukti penerimaan barang, tersimpan di
+              satu tempat. Ini
               memudahkan pelacakan, audit, dan pembuatan laporan di masa depan.
             </p>
           </div>

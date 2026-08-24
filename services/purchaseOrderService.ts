@@ -729,20 +729,79 @@ export const deriveReceiveDrivenStatus = (
 };
 
 /**
+ * Payload tambahan buat stempel "umur PO" (full_received_at) - dipanggil di
+ * SEMUA titik yang nulis status PO hasil deriveReceiveDrivenStatus (di sini
+ * & purchase-order/[id]/page.tsx), biar konsisten. Cuma nyetel field itu pas
+ * transisi PERTAMA kali ke Full Received - lihat formatAge di lib/utils.ts.
+ */
+export const getFullReceivedStamp = (
+  oldStatus: string | null | undefined,
+  newStatus: string,
+): { full_received_at?: string } =>
+  newStatus === PO_STATUS_FULL_RECEIVED && oldStatus !== PO_STATUS_FULL_RECEIVED
+    ? { full_received_at: new Date().toISOString() }
+    : {};
+
+// Total qty yang SUDAH diterima GA per part_number, dijumlah dari
+// `receive_record` semua PO (selain Rejected & selain `excludePoId`) yang
+// terhubung ke MR ini. Dipakai submitReceiveRecord buat nentuin item MR
+// "Diterima GA" berdasarkan qty GABUNGAN dari SEMUA PO-nya - bukan cuma qty
+// di 1 PO - soalnya 1 item MR bisa dipecah ke >1 PO (mirror pola yang sama
+// dgn fetchPoQtyBreakdownForMr, cuma versi qty yang SUDAH diterima, bukan
+// qty yang di-PO-kan).
+export const fetchReceivedQtyByPartNumber = async (
+  mrId: number,
+  excludePoId?: number,
+): Promise<Record<string, number>> => {
+  let query = supabase
+    .from("purchase_orders")
+    .select("id, receive_record")
+    .eq("mr_id", mrId)
+    .neq("status", "Rejected");
+  if (excludePoId) query = query.neq("id", excludePoId);
+
+  const { data, error } = await query;
+  if (error || !data) return {};
+
+  const totals: Record<string, number> = {};
+  for (const po of data) {
+    const record = po.receive_record as ReceiveRecord | null;
+    if (!record?.items) continue;
+    for (const item of record.items) {
+      if (!item.part_number) continue;
+      totals[item.part_number] =
+        (totals[item.part_number] || 0) + (item.received_qty || 0);
+    }
+  }
+  return totals;
+};
+
+/**
  * Submit/edit checklist penerimaan barang (Receiver) - dipakai baik dari
  * step approval "Receiver" maupun tombol GA Receive manual (disatukan,
  * lihat po-receive-record-setup.sql). Menimpa `receive_record` PO ini
  * (bukan log bertumpuk - "sampai terpenuhi" berarti diedit di tempat),
- * menandai item MR yang qty-nya cocok "Pending BAST" dan yang tidak cocok
- * "Processing", lalu set status PO lewat deriveReceiveDrivenStatus.
+ * menandai item MR "Diterima GA" kalau qty gabungan dari SEMUA PO terkait
+ * (bukan cuma PO ini) udah cukup, kalau belum tetap "Processing", lalu set
+ * status PO lewat deriveReceiveDrivenStatus.
  */
 export const submitReceiveRecord = async (
-  po: Pick<PurchaseOrderDetail, "id" | "mr_id" | "items" | "approvals">,
+  po: Pick<
+    PurchaseOrderDetail,
+    "id" | "mr_id" | "items" | "approvals" | "vendor_details" | "status"
+  >,
   userId: string,
   userName: string,
   receivedQtyByPartNumber: Record<string, number>,
 ): Promise<ReceiveRecord> => {
   if (!po.mr_id) throw new Error("PO ini tidak terhubung ke MR.");
+
+  // Vendor tipe Site kirim langsung ke site tanpa lewat GA - jadi begitu
+  // requester sendiri yang konfirmasi terima (checklist ini), item yang
+  // qty-nya sudah penuh langsung "On Delivery" (siap di-BAST), TIDAK
+  // singgah di "Diterima GA" dulu (yang nunggu GA klik "Kirim ke Requester"
+  // - langkah itu gak relevan buat vendor Site karena gak ada GA di tengah).
+  const isSiteVendor = po.vendor_details?.tipe_vendor === "Site";
 
   const items: ReceiveRecordItem[] = (po.items || [])
     .filter((item) => !!item.part_number)
@@ -769,6 +828,15 @@ export const submitReceiveRecord = async (
     .single();
   const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
 
+  // Qty yang sudah diterima dari PO LAIN (belum termasuk submission ini,
+  // yang baru ke-save ke DB di akhir fungsi) - dipakai buat cek qty
+  // gabungan lintas PO, bukan cuma qty di PO ini (lihat 1 item MR bisa
+  // dipecah ke >1 PO).
+  const receivedFromOtherPos = await fetchReceivedQtyByPartNumber(
+    po.mr_id,
+    po.id,
+  );
+
   for (const item of items) {
     const order = orders.find((o) => o.part_number === item.part_number);
     // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
@@ -776,22 +844,45 @@ export const submitReceiveRecord = async (
     // "PO Created" di sini cuma backward-compat buat data lama yang belum
     // sempat dimigrasikan ke "Processing" (lihat migrate-legacy-mr-po.mjs) -
     // item baru tidak akan pernah ditulis dengan status ini lagi.
+    // "Dikirim Vendor" WAJIB ada di sini - itu status normal item begitu
+    // Payment Validator approve (lihat markItemsShippedByVendor,
+    // purchase-order/[id]/page.tsx), yaitu PERSIS status item saat checklist
+    // receive ini disubmit pertama kali. Kalau ketinggalan, item-nya
+    // di-skip terus (guard ini nolak), jadi klik "Terima Barang" jadi
+    // no-op - status item gak pernah pindah ke "Diterima GA"/"On Delivery".
     if (
       (order?.status as string | undefined) !== "PO Created" &&
+      order?.status !== MR_ITEM_STATUSES.SHIPPED_BY_VENDOR &&
       order?.status !== MR_ITEM_STATUSES.PROCESSING &&
+      order?.status !== MR_ITEM_STATUSES.DITERIMA_GA &&
       order?.status !== MR_ITEM_STATUSES.PENDING_BAST
     ) {
       continue;
     }
+    // Qty total yg diminta di item MR-nya (bukan cuma qty di PO ini) -
+    // dibandingin ke qty gabungan yg sudah diterima dari SEMUA PO terkait,
+    // termasuk submission ini.
+    const totalRequestedQty = Number(order?.qty) || item.ordered_qty;
+    const cumulativeReceivedQty =
+      (receivedFromOtherPos[item.part_number] || 0) + item.received_qty;
+    const isItemFullyReceived = cumulativeReceivedQty >= totalRequestedQty;
     try {
       await updateMrItemStatus(
         po.mr_id,
         item.part_number,
         {
-          status:
-            item.received_qty === item.ordered_qty
-              ? MR_ITEM_STATUSES.PENDING_BAST
-              : MR_ITEM_STATUSES.PROCESSING,
+          // "Diterima GA" - GA baru terima dari vendor (qty GABUNGAN dari
+          // semua PO terkait sudah cukup), BELUM dikirim ke requester (beda
+          // momen dgn dulu yg langsung "Pending BAST"). Kalau item ini
+          // dipecah ke >1 PO dan baru sebagian yg datang, status TETAP
+          // "Processing" sampai semua PO-nya selesai diterima. Baru pindah
+          // ke "On Delivery" saat GA klik "Kirim ke Requester" (lihat
+          // sendItemsToRequester, services/mrService.ts).
+          status: isItemFullyReceived
+            ? isSiteVendor
+              ? MR_ITEM_STATUSES.ON_DELIVERY
+              : MR_ITEM_STATUSES.DITERIMA_GA
+            : MR_ITEM_STATUSES.PROCESSING,
           level: "Open 5",
         },
         userId,
@@ -823,7 +914,11 @@ export const submitReceiveRecord = async (
 
   const { error: poError } = await supabase
     .from("purchase_orders")
-    .update({ receive_record: receiveRecord, status: newStatus })
+    .update({
+      receive_record: receiveRecord,
+      status: newStatus,
+      ...getFullReceivedStamp(po.status, newStatus),
+    })
     .eq("id", po.id);
   if (poError) throw poError;
 

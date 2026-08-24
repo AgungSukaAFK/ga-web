@@ -22,7 +22,6 @@ import {
   Loader2,
   Trash2,
   Edit as EditIcon,
-  Calendar as CalendarIcon,
   Building2,
   AlertTriangle,
   ExternalLink,
@@ -36,12 +35,6 @@ import {
   DialogTitle,
   DialogHeader,
 } from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -50,7 +43,7 @@ import {
   uploadAttachment,
   removeAttachment,
   createMaterialRequest,
-  calculatePriority, // <--- UPDATE: Import logic hitung prioritas
+  getDueDateFromPriority,
   findActiveDuplicateMrs,
   type DuplicateMrInfo,
 } from "@/services/mrService";
@@ -61,6 +54,7 @@ import { formatCurrency, cn } from "@/lib/utils";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { format } from "date-fns";
 import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
+import { logActivity } from "@/services/logService";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
@@ -90,6 +84,18 @@ const dataLokasi: ComboboxData = [
   { label: "Site BGE", value: "Site BGE" },
 ];
 
+const PRIORITY_OPTIONS: {
+  value: "P0" | "P1" | "P2" | "P3" | "P4";
+  label: string;
+  days: string;
+}[] = [
+  { value: "P0", label: "Emergency", days: "Maks. 2 hari" },
+  { value: "P1", label: "High", days: "Maks. 10 hari" },
+  { value: "P2", label: "Medium", days: "Maks. 15 hari" },
+  { value: "P3", label: "Low", days: "Maks. 25 hari" },
+  { value: "P4", label: "Umum", days: "30 hari" },
+];
+
 export default function BuatMRPage() {
   const router = useRouter();
 
@@ -108,7 +114,7 @@ export default function BuatMRPage() {
       cost_center_id: null,
       tujuan_site: "",
       created_at: new Date(),
-      due_date: undefined,
+      due_date: getDueDateFromPriority("P4"),
       orders: [],
       approvals: [],
       attachments: [],
@@ -121,19 +127,14 @@ export default function BuatMRPage() {
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
-  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
 
   const [isLourdes, setIsLourdes] = useState(false);
   const [userProfile, setUserProfile] = useState<{
+    nama: string;
     department: string;
     lokasi: string;
     company: string;
   } | null>(null);
-
-  // --- LOGIC REVISI: Hitung Prioritas untuk Preview ---
-  const priorityPreview = formCreateMR.due_date
-    ? calculatePriority(formCreateMR.due_date)
-    : null;
 
   const getPriorityColor = (p: string) => {
     switch (p) {
@@ -149,7 +150,20 @@ export default function BuatMRPage() {
         return "bg-gray-500";
     }
   };
-  // ----------------------------------------------------
+
+  // Due date sekarang DIURUNKAN dari prioritas yang dipilih requester
+  // (bukan sebaliknya) - pakai batas hari MAKSIMAL tiap tier
+  // (getDueDateFromPriority, services/mrService.ts) supaya hasil
+  // calculatePriority atas due_date itu nanti balik lagi ke tier yang sama
+  // persis pas MR-nya dibuat di server (createMaterialRequest selalu
+  // hitung ulang prioritas dari due_date).
+  const handleSelectPriority = (priority: "P0" | "P1" | "P2" | "P3" | "P4") => {
+    setFormCreateMR((prev) => ({
+      ...prev,
+      prioritas: priority,
+      due_date: getDueDateFromPriority(priority),
+    }));
+  };
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -162,6 +176,7 @@ export default function BuatMRPage() {
           profile.company
         ) {
           setUserProfile({
+            nama: profile.nama || "",
             department: profile.department,
             lokasi: profile.lokasi,
             company: profile.company,
@@ -525,13 +540,30 @@ export default function BuatMRPage() {
         cost_estimation: Number(payload.cost_estimation),
         cost_center_id: null,
         level: "OPEN 1",
-        prioritas: priorityPreview || "P4",
+        prioritas: payload.prioritas || "P4",
       };
 
       const { id: mrId } = await createMaterialRequest(
         finalPayload as any,
         user.id,
         company_code,
+      );
+
+      await logActivity(
+        user.id,
+        "CREATE_MR",
+        "material_request",
+        String(mrId),
+        `Requester ${userProfile?.nama || "Unknown"} membuat MR ${freshKodeMr} dengan ${finalPayload.orders.length} barang. Estimasi biaya: ${formatCurrency(finalPayload.cost_estimation)}`,
+        {
+          kode_mr: freshKodeMr,
+          company_code,
+          department: finalPayload.department,
+          tujuan_site: finalPayload.tujuan_site,
+          kategori: finalPayload.kategori,
+          total_items: finalPayload.orders.length,
+          cost_estimation: finalPayload.cost_estimation,
+        },
       );
 
       // Notify all GA members that a new MR needs validation
@@ -615,7 +647,7 @@ export default function BuatMRPage() {
       !formCreateMR.company_code
     ) {
       setAjukanAlert(
-        "Semua data utama (Kategori, Due Date, Remarks, Tujuan) wajib diisi.",
+        "Semua data utama (Kategori, Prioritas, Remarks, Tujuan) wajib diisi.",
       );
       return;
     }
@@ -745,53 +777,47 @@ export default function BuatMRPage() {
           </div>
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <div className="flex justify-between items-center">
-              <Label>Due Date (Target Pemakaian)</Label>
-              {/* UPDATE: Tampilkan Preview Priority */}
-              {priorityPreview && (
-                <Badge className={getPriorityColor(priorityPreview)}>
-                  {priorityPreview}
-                </Badge>
-              )}
+            <Label>Prioritas</Label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {PRIORITY_OPTIONS.map((opt) => {
+                const selected = formCreateMR.prioritas === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleSelectPriority(opt.value)}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
+                      selected
+                        ? cn(
+                            getPriorityColor(opt.value),
+                            "text-white border-transparent",
+                          )
+                        : "border-input hover:bg-muted",
+                    )}
+                  >
+                    <span className="text-xs font-bold">{opt.value}</span>
+                    <span className="text-[9px] leading-tight">
+                      {opt.label}
+                    </span>
+                    <span className="text-[9px] leading-tight opacity-80">
+                      {opt.days}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <Popover
-              open={isDatePopoverOpen}
-              onOpenChange={setIsDatePopoverOpen}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !formCreateMR.due_date && "text-muted-foreground",
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formCreateMR.due_date ? (
-                    format(formCreateMR.due_date, "dd MMMM yyyy")
-                  ) : (
-                    <span>Pilih tanggal...</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={formCreateMR.due_date}
-                  onSelect={(date) => {
-                    setFormCreateMR((prev) => ({ ...prev, due_date: date }));
-                    setIsDatePopoverOpen(false);
-                  }}
-                  disabled={(date) => date < new Date()}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            {priorityPreview && (
-              <p className="text-[10px] text-muted-foreground">
-                *Prioritas {priorityPreview} ditentukan otomatis.
+            {formCreateMR.due_date && (
+              <p className="text-xs text-muted-foreground">
+                Target Pemakaian:{" "}
+                <span className="font-medium text-foreground">
+                  {format(formCreateMR.due_date, "dd MMMM yyyy")}
+                </span>
               </p>
             )}
+            <p className="text-[10px] text-muted-foreground">
+              *Due date otomatis ditentukan dari prioritas yang dipilih.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">

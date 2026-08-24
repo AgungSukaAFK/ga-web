@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { User } from "@supabase/supabase-js";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Terminal } from "lucide-react";
+import { Loader2, Terminal, Eye, EyeOff, KeyRound } from "lucide-react";
 import { Combobox } from "@/components/combobox";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,15 @@ export default function Dashboard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateSuccess, setUpdateSuccess] = useState<boolean>(false);
+
+  // --- Ubah Password ---
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
   const router = useRouter();
 
   useEffect(() => {
@@ -187,6 +196,54 @@ export default function Dashboard() {
     }
     setUpdateError(null);
     setUpdateSuccess(false);
+  };
+
+  // Ubah password sendiri - verifikasi password saat ini dulu (sign-in
+  // ulang) sebelum updateUser, supaya orang yang session-nya "nyangkut"
+  // di device lain tidak bisa ganti password tanpa tahu password lama.
+  const handleChangePassword = async () => {
+    if (!user?.email) return;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error("Semua kolom password wajib diisi.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("Password baru minimal 6 karakter.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Konfirmasi password baru tidak cocok.");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    const supabase = createClient();
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+      if (signInError) {
+        toast.error("Password saat ini salah.");
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) throw updateError;
+
+      toast.success("Password berhasil diubah.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      toast.error("Gagal mengubah password", { description: error.message });
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   if (loading) {
@@ -338,8 +395,95 @@ export default function Dashboard() {
           )}
         </div>
       </Content>
-      {/* Kolom kanan: Pengaturan Tema + Notifikasi ditumpuk agar mengisi ruang kosong */}
+      {/* Kolom kanan: Ubah Password + Pengaturan Tema + Notifikasi ditumpuk agar mengisi ruang kosong */}
       <div className="col-span-12 flex flex-col gap-4 md:gap-6 lg:col-span-6">
+        <Content size="lg">
+          <div className="flex items-center gap-2 mb-4">
+            <KeyRound className="h-4 w-4" />
+            <Label className="text-base font-bold">Ubah Password</Label>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <Label className="mb-2 block font-medium">
+                Password Saat Ini
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label className="mb-2 block font-medium">Password Baru</Label>
+              <div className="relative">
+                <Input
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showNewPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label className="mb-2 block font-medium">
+                Konfirmasi Password Baru
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showNewPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                  className="pr-10"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleChangePassword}
+                disabled={isChangingPassword}
+              >
+                {isChangingPassword ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  "Simpan Password"
+                )}
+              </Button>
+            </div>
+          </div>
+        </Content>
         <Content size="lg">
           {/* --- REVISI: Tambahkan AccentThemeSwitcher --- */}
           <div className="flex flex-wrap items-center justify-between gap-3">
