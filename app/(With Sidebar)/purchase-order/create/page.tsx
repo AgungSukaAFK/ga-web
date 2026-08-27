@@ -288,14 +288,16 @@ const InfoItem = ({
 }) => (
   <div
     className={
-      isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2 items-start"
+      isBlock
+        ? "flex flex-col gap-1"
+        : "grid grid-cols-[max-content_1fr] gap-x-3 items-start"
     }
   >
-    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2 mt-0.5">
+    <dt className="text-sm text-muted-foreground flex items-center gap-2 mt-0.5 whitespace-nowrap">
       <Icon className="h-4 w-4 flex-shrink-0" />
       {label}
     </dt>
-    <dd className="text-sm font-semibold col-span-2 break-words">{value}</dd>
+    <dd className="text-sm font-semibold break-words">{value}</dd>
   </div>
 );
 

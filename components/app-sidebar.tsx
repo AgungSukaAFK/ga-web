@@ -43,6 +43,10 @@ import {
   ClipboardList,
   Workflow,
   KeyRound,
+  Receipt,
+  BadgeCheck,
+  FileText,
+  FileCheck2,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -278,37 +282,59 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pettyCashItems = React.useMemo(() => {
     const pcNav = [
       {
-        title: "Pengajuan Saya",
-        url: "/petty-cash",
+        title: "Barang Petty Cash",
+        url: "/petty-cash/barang",
+        icon: Boxes,
+      },
+      {
+        title: "Template Approval",
+        url: "/petty-cash/template-approval",
+        icon: Workflow,
+      },
+      {
+        title: "Template Pengajuan",
+        url: "/petty-cash/template-pengajuan",
+        icon: FileSignature,
+      },
+      {
+        title: "Input Pengajuan",
+        url: "/petty-cash/input-pengajuan",
+        icon: PlusCircle,
+      },
+      {
+        title: "Approval Pengajuan",
+        url: "/petty-cash/approval-pengajuan",
+        icon: CheckCheck,
+      },
+      {
+        title: "Pengajuan Voucher",
+        url: "/petty-cash/pengajuan-voucher",
+        icon: Receipt,
+      },
+      {
+        title: "Approval Voucher",
+        url: "/petty-cash/approval-voucher",
+        icon: BadgeCheck,
+      },
+      {
+        title: "Claim Voucher",
+        url: "/petty-cash/claim-voucher",
         icon: Wallet,
       },
       {
-        title: "Buat Pengajuan",
-        url: "/petty-cash/buat",
-        icon: PlusCircle,
+        title: "Deklarasi",
+        url: "/petty-cash/deklarasi",
+        icon: FileText,
+      },
+      {
+        title: "Approval Deklarasi",
+        url: "/petty-cash/approval-deklarasi",
+        icon: FileCheck2,
       },
     ];
 
-    if (
-      profile?.role === "approver" ||
-      profile?.role === "admin" ||
-      profile?.department === "Finance" ||
-      isGADepartment(profile?.department)
-    ) {
-      pcNav.push({
-        title: "Manajemen PC",
-        url: "/petty-cash/management",
-        icon: FileSignature,
-      });
-      pcNav.push({
-        title: "Template Approval PC",
-        url: "/petty-cash/templates",
-        icon: Users,
-      });
-    }
-
     return markActive(pcNav);
-  }, [profile, markActive]);
+  }, [markActive]);
 
   return (
     <Sidebar collapsible="icon" {...props}>

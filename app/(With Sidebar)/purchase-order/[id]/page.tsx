@@ -183,6 +183,31 @@ const COMPANY_DETAILS = {
   },
 };
 
+// Tunggu logo benar-benar selesai di-decode browser sebelum window.print()
+// dipanggil - preload di mount cuma menjamin BYTE-nya sudah di-cache, bukan
+// berarti <img> yang baru di-mount di dokumen cetak sudah selesai decode +
+// paint (itu proses async terpisah). Kalau window.print() kepanggil duluan,
+// logo bisa nge-print blank/kosong. img.decode() resolve begitu bitmap-nya
+// beneran siap ditampilkan, jadi jauh lebih pasti dibanding nebak jumlah
+// frame (requestAnimationFrame) yang cukup.
+async function waitForLogoReady(src: string) {
+  try {
+    const img = new window.Image();
+    img.src = src;
+    if (img.decode) {
+      await img.decode();
+    } else if (!img.complete) {
+      await new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    }
+  } catch {
+    // Gagal decode (mis. src rusak) - biarkan window.print() tetap jalan,
+    // lebih baik cetak tanpa logo daripada macet total.
+  }
+}
+
 const InfoItem = ({
   icon: Icon,
   label,
@@ -1531,17 +1556,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     if (!printCompany) return;
-    // Tunggu 2 frame (double rAF) sebelum window.print() - kasih browser
-    // kesempatan beneran repaint DOM dengan logo/company info yang baru
-    // (React commit != browser sudah paint), biar gak ke-print state lama.
-    const raf1 = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
+    let cancelled = false;
+    let raf1 = 0;
+    // Tunggu logo selesai decode, lalu 2 frame (double rAF) sebelum
+    // window.print() - kasih browser kesempatan beneran repaint DOM dengan
+    // logo/company info yang baru (React commit != browser sudah paint),
+    // biar gak ke-print state lama / logo blank.
+    waitForLogoReady(COMPANY_DETAILS[printCompany].logo).then(() => {
+      if (cancelled) return;
+      raf1 = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) window.print();
+        });
       });
     });
     const reset = () => setPrintCompany(null);
     window.addEventListener("afterprint", reset, { once: true });
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf1);
       window.removeEventListener("afterprint", reset);
     };
@@ -1563,10 +1595,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   }, [isPrintingReceive]);
 
   useEffect(() => {
-    if (!isPrintingBast) return;
-    const raf1 = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
+    if (!isPrintingBast || !bastPrintCompany) return;
+    let cancelled = false;
+    let raf1 = 0;
+    waitForLogoReady(COMPANY_DETAILS[bastPrintCompany].logo).then(() => {
+      if (cancelled) return;
+      raf1 = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) window.print();
+        });
       });
     });
     const reset = () => {
@@ -1575,10 +1612,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     };
     window.addEventListener("afterprint", reset, { once: true });
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf1);
       window.removeEventListener("afterprint", reset);
     };
-  }, [isPrintingBast]);
+  }, [isPrintingBast, bastPrintCompany]);
 
   if (loading) return <DetailPOSkeleton />;
 
@@ -1658,8 +1696,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   return (
     <>
-      <Content>
-        <div className="col-span-12 grid grid-cols-12 gap-6 no-print">
+      <Content className="no-print">
+        <div className="col-span-12 grid grid-cols-12 gap-6">
           <div className="col-span-12">
             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
               <div>
@@ -3479,12 +3517,12 @@ const PrintablePO = ({
   const renderHeader = () => (
     <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
       <div className="flex items-center gap-6 w-2/3">
-        <div className="w-[120px] relative flex-shrink-0 flex items-center">
+        <div className="w-[120px] h-[70px] relative flex-shrink-0 flex items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={companyInfo.logo}
             alt="Logo"
-            className="object-contain max-w-full max-h-full object-left"
+            className="w-full h-full object-contain object-left"
           />
         </div>
         <div>
@@ -3950,12 +3988,12 @@ const PrintableBAST = ({
   const renderHeader = () => (
     <header className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
       <div className="flex items-center gap-4 w-2/3">
-        <div className="w-[100px] relative flex-shrink-0 flex items-center">
+        <div className="w-[100px] h-[60px] relative flex-shrink-0 flex items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={companyInfo.logo}
             alt="Logo"
-            className="object-contain max-w-full max-h-full object-left"
+            className="w-full h-full object-contain object-left"
           />
         </div>
         <div>
