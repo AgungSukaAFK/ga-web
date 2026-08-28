@@ -129,7 +129,6 @@ import {
   MR_ITEM_STATUS_COLOR_DEFAULT,
   MR_ITEM_STATUS_LABELS,
   APPROVAL_TYPE_PAYMENT_APPROVAL,
-  APPROVAL_TYPE_PAYMENT_VALIDATOR,
   APPROVAL_TYPE_RECEIVER,
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
@@ -140,6 +139,7 @@ import {
   MR_ITEM_STATUSES,
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
+  VENDOR_TIPE_LABELS,
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
@@ -478,6 +478,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         contact: "N/A",
         email: "N/A",
         code: "",
+        tipeVendor: "",
       };
 
     return {
@@ -486,6 +487,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       contact: details.contact_person || details.cp || details.contact || "N/A",
       email: details.email || "N/A",
       code: details.kode_vendor || "",
+      tipeVendor: details.tipe_vendor || "",
     };
   };
 
@@ -788,9 +790,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // tidak digantung status/turn approval tertentu (mis. buat benerin salah
   // input belakangan).
   const isPaymentValidatorForThisPO = po?.approvals?.some(
-    (a) =>
-      a.type === APPROVAL_TYPE_PAYMENT_VALIDATOR &&
-      a.userid === currentUser?.id,
+    (a) => isPaymentValidatorApproval(a) && a.userid === currentUser?.id,
   );
   const showEditDpBpButton =
     isDpBpPaymentTerm(po?.payment_term) &&
@@ -863,8 +863,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         bp_paid: bpChecked,
       };
 
-      const pvIndex = (po.approvals || []).findIndex(
-        (a) => a.type === APPROVAL_TYPE_PAYMENT_VALIDATOR,
+      const pvIndex = (po.approvals || []).findIndex((a) =>
+        isPaymentValidatorApproval(a),
       );
       const pvApproval = pvIndex !== -1 ? po.approvals![pvIndex] : null;
       const requiresFullPayment = po.dp_bp_shipping_type !== "ship_after_dp";
@@ -1185,12 +1185,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       if (decision === "rejected") {
         newPoStatus = "Rejected";
       } else if (decision === "approved") {
-        const justApprovedType = updatedApprovals[myApprovalIndex].type;
+        const justApprovedApproval = updatedApprovals[myApprovalIndex];
+        const justApprovedType = justApprovedApproval.type;
         const isLastApproval = updatedApprovals.every(
           (app: Approval) => app.status === "approved",
         );
 
-        if (justApprovedType === APPROVAL_TYPE_PAYMENT_VALIDATOR) {
+        if (isPaymentValidatorApproval(justApprovedApproval)) {
           paymentValidatorJustApproved = true;
           // Status berikutnya tergantung apakah step Receiver di template
           // ini sudah lebih dulu jalan (Termin/DP&BP-setelah-DP) atau belum
@@ -1945,6 +1946,20 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                         </span>
                       )}
                     </div>
+                  }
+                />
+                <InfoItem
+                  icon={Building2}
+                  label="Tipe Vendor"
+                  value={
+                    vendorData.tipeVendor ? (
+                      <Badge variant="outline" className="w-fit">
+                        {VENDOR_TIPE_LABELS[vendorData.tipeVendor] ||
+                          vendorData.tipeVendor}
+                      </Badge>
+                    ) : (
+                      "N/A"
+                    )
                   }
                 />
                 <InfoItem

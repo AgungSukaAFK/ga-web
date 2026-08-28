@@ -23,7 +23,7 @@ import {
 import {
   PAYMENT_VALIDATOR_USER_ID,
   MR_ITEM_STATUSES,
-  APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  isPaymentValidatorApproval,
   getApprovedReceiverStep,
   isPoPaid,
   PO_STATUS_PENDING_RECEIVE,
@@ -902,8 +902,8 @@ export const submitReceiveRecord = async (
   await recalculateMrStatus(po.mr_id);
   await recalculateMrLevel(po.mr_id);
 
-  const hasPaymentValidatorStep = (po.approvals || []).some(
-    (a) => a.type === APPROVAL_TYPE_PAYMENT_VALIDATOR,
+  const hasPaymentValidatorStep = (po.approvals || []).some((a) =>
+    isPaymentValidatorApproval(a),
   );
   const newStatus = deriveReceiveDrivenStatus(
     po.approvals,
