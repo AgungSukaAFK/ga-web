@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
-import { uploadAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { isGADepartment } from "@/lib/constants/departments";
 import { useState, useEffect } from "react";
@@ -353,9 +353,7 @@ export default function PettyCashDetailPage() {
       const fileName = `settlement-${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `petty-cash/${fileName}`;
 
-      const uploadFormData = new FormData();
-      uploadFormData.append("file", file);
-      const result = await uploadAttachmentVps(uploadFormData, filePath);
+      const result = await uploadAttachmentDirect(file, filePath);
       if (!result.success) throw new Error(result.message);
 
       setSettlementAttachments((prev) => [

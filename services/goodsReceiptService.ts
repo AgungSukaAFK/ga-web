@@ -10,7 +10,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { normalizeMrOrders, uploadBastForMrItem } from "./mrService";
-import { uploadAttachmentPublic } from "./storageService";
 import { Attachment, GoodsReceipt, GoodsReceiptItem, Order } from "@/type";
 import { MR_ITEM_STATUSES } from "@/type/enum";
 
@@ -323,6 +322,22 @@ export async function submitGoodsReceipt(
     return { success: false, message: "Data item tidak valid." };
   }
 
+  // Foto tiap item di-upload LANGSUNG dari browser ke storage VPS SEBELUM
+  // submit ini dipanggil (lihat app/goods-receipt/[token]/page.tsx +
+  // createSignedUploadUrlPublic) - bytes foto tidak lewat body Server Action
+  // ini sama sekali, cuma URL hasil upload yang dikirim lewat `photos_json`.
+  // Ini WAJIB karena Vercel Serverless Functions punya hard limit body
+  // request 4.5MB yang tidak bisa dinaikkan - kalau beberapa foto item
+  // digabung jadi satu FormData besar (pola lama), gampang kelewat limit itu.
+  const photosJson = formData.get("photos_json");
+  if (!photosJson) return { success: false, message: "Data foto tidak lengkap." };
+  let submittedPhotos: Record<string, { url: string; name: string }>;
+  try {
+    submittedPhotos = JSON.parse(String(photosJson));
+  } catch {
+    return { success: false, message: "Data foto tidak valid." };
+  }
+
   const eligiblePartNumbers = new Set(
     eligibleOrders.map((o) => o.part_number as string),
   );
@@ -331,7 +346,7 @@ export async function submitGoodsReceipt(
     if (!match || !Number.isFinite(match.qty_received) || match.qty_received < 0) {
       return { success: false, message: `Qty untuk item ${pn} belum diisi dengan benar.` };
     }
-    if (!(formData.get(`photo_${pn}`) instanceof File)) {
+    if (!submittedPhotos[pn]?.url) {
       return { success: false, message: `Foto untuk item ${pn} wajib diunggah.` };
     }
   }
@@ -339,23 +354,12 @@ export async function submitGoodsReceipt(
   const goodsReceiptItems: GoodsReceiptItem[] = [];
   for (const item of submittedItems) {
     if (!eligiblePartNumbers.has(item.part_number)) continue;
-    const photoFile = formData.get(`photo_${item.part_number}`);
-    if (!(photoFile instanceof File)) continue;
+    const photo = submittedPhotos[item.part_number];
+    if (!photo?.url) continue;
 
-    const singlePhotoFormData = new FormData();
-    singlePhotoFormData.append("file", photoFile);
-    const safeKode = po.kode_po.replace(/\//g, "-");
-    const path = `${safeKode}/goods-receipt/${item.part_number}/${Date.now()}_${photoFile.name}`;
-    const uploadResult = await uploadAttachmentPublic(singlePhotoFormData, path);
-    if (!uploadResult.success) {
-      return {
-        success: false,
-        message: `Gagal upload foto item ${item.part_number}: ${uploadResult.message}`,
-      };
-    }
     const photoAttachment: Attachment = {
-      name: photoFile.name,
-      url: uploadResult.url,
+      name: photo.name,
+      url: photo.url,
       type: "bast",
     };
 

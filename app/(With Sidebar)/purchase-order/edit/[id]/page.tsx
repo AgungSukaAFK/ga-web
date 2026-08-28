@@ -54,10 +54,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { logActivity } from "@/services/logService";
-import {
-  uploadAttachmentVps,
-  removeAttachmentVps,
-} from "@/services/storageService";
+import { removeAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
   resolveAttachmentUrl,
   getAttachmentSizeError,
@@ -699,9 +697,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadResult = await uploadAttachmentVps(formData, filePath);
+      const uploadResult = await uploadAttachmentDirect(file, filePath);
 
       if (!uploadResult.success) {
         toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {

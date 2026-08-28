@@ -3,8 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { createVpsStorageClient, VPS_STORAGE_BUCKET } from "@/lib/supabase/storage-vps";
 
-type UploadResult =
-  | { success: true; url: string }
+type SignedUploadResult =
+  | { success: true; path: string; token: string; bucket: string; publicUrl: string }
   | { success: false; message: string };
 
 // Path attachment sering dibangun dari data bebas-input user (part_number,
@@ -16,60 +16,73 @@ function sanitizeStorageKey(path: string): string {
   return path.replace(/["'<>:\\|?*\x00-\x1F]/g, "-");
 }
 
-// Semua lampiran BARU disimpan di storage VPS (project lama sudah penuh kapasitasnya).
-// Auth tetap diverifikasi lewat project Supabase Cloud yang lama.
-export async function uploadAttachmentVps(
-  formData: FormData,
+// Bikin signed upload URL - file-nya SENDIRI tidak lewat sini (cuma path
+// string), lalu di-upload LANGSUNG dari browser ke storage VPS (lihat
+// lib/uploadDirect.ts). Ini WAJIB dipakai untuk semua upload attachment
+// (bukan kirim file lewat body Server Action) karena Vercel Serverless
+// Functions punya hard limit body request 4.5MB yang TIDAK BISA dinaikkan
+// lewat bodySizeLimit di next.config.ts - kalau file (mis. PDF 6MB) dikirim
+// lewat body Server Action, Vercel nolak duluan sebelum request nyampe ke
+// kode kita, munculnya sebagai error generik "unexpected response" di
+// client. Signed URL upload route around limit itu sepenuhnya.
+export async function createSignedUploadUrl(
   path: string
-): Promise<UploadResult> {
+): Promise<SignedUploadResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Unauthorized" };
 
-  const file = formData.get("file") as File | null;
-  if (!file) return { success: false, message: "File tidak ditemukan" };
-
   const vps = createVpsStorageClient();
+  const safePath = sanitizeStorageKey(path);
   const { data, error } = await vps.storage
     .from(VPS_STORAGE_BUCKET)
-    .upload(sanitizeStorageKey(path), file);
+    .createSignedUploadUrl(safePath);
   if (error) return { success: false, message: error.message };
 
   const { data: pub } = vps.storage
     .from(VPS_STORAGE_BUCKET)
     .getPublicUrl(data.path);
-  return { success: true, url: pub.publicUrl };
+  return {
+    success: true,
+    path: data.path,
+    token: data.token,
+    bucket: VPS_STORAGE_BUCKET,
+    publicUrl: pub.publicUrl,
+  };
 }
 
-// Sama seperti uploadAttachmentVps, TAPI tanpa gate auth.getUser() - dipakai
+// Sama seperti createSignedUploadUrl, TAPI tanpa gate auth.getUser() - dipakai
 // khusus dari alur konfirmasi goods-receipt publik (scan QR, lihat
 // services/goodsReceiptService.ts) yang jalan tanpa sesi Supabase browser
 // (bisa anonim + kode global, bukan login). Otorisasinya sudah dicek di
 // lapisan atas (verifyGoodsReceiptCode) sebelum fungsi ini dipanggil - JANGAN
 // dipakai di alur lain yang butuh proteksi login.
-export async function uploadAttachmentPublic(
-  formData: FormData,
+export async function createSignedUploadUrlPublic(
   path: string
-): Promise<UploadResult> {
-  const file = formData.get("file") as File | null;
-  if (!file) return { success: false, message: "File tidak ditemukan" };
-
+): Promise<SignedUploadResult> {
   const vps = createVpsStorageClient();
+  const safePath = sanitizeStorageKey(path);
   const { data, error } = await vps.storage
     .from(VPS_STORAGE_BUCKET)
-    .upload(sanitizeStorageKey(path), file);
+    .createSignedUploadUrl(safePath);
   if (error) return { success: false, message: error.message };
 
   const { data: pub } = vps.storage
     .from(VPS_STORAGE_BUCKET)
     .getPublicUrl(data.path);
-  return { success: true, url: pub.publicUrl };
+  return {
+    success: true,
+    path: data.path,
+    token: data.token,
+    bucket: VPS_STORAGE_BUCKET,
+    publicUrl: pub.publicUrl,
+  };
 }
 
-// url = full public URL hasil uploadAttachmentVps. Best-effort, sama seperti
-// perilaku hapus lampiran lama (tidak memblok UI kalau gagal).
+// url = full public URL hasil upload (lihat lib/uploadDirect.ts). Best-effort,
+// sama seperti perilaku hapus lampiran lama (tidak memblok UI kalau gagal).
 export async function removeAttachmentVps(
   url: string
 ): Promise<{ success: boolean; message?: string }> {

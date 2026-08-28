@@ -87,7 +87,7 @@ import {
   uploadBastForMrItem,
   removeBastForMrItem,
 } from "@/services/mrService";
-import { uploadAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { logActivity } from "@/services/logService";
 import {
   resolveAttachmentUrl,
@@ -668,9 +668,7 @@ export default function MrManagementClient() {
       for (let i = 0; i < bastFiles.length; i++) {
         const file = bastFiles[i];
         const filePath = `${selectedMr.kode_mr.replace(/\//g, "-")}/bast/${pathSegment}/${Date.now()}_${file.name}`;
-        const formData = new FormData();
-        formData.append("file", file);
-        const result = await uploadAttachmentVps(formData, filePath);
+        const result = await uploadAttachmentDirect(file, filePath);
         if (!result.success) throw new Error(result.message);
         uploadedAttachments.push({
           name: file.name,

@@ -5,10 +5,8 @@
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import {
-  uploadAttachmentVps,
-  removeAttachmentVps,
-} from "@/services/storageService";
+import { removeAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
   resolveAttachmentUrl,
   getAttachmentSizeError,
@@ -542,10 +540,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         const filePath = `${mr.kode_mr.replace(/\//g, "-")}/${Date.now()}_${
           file.name
         }`;
-        const formData = new FormData();
-        formData.append("file", file);
         try {
-          const result = await uploadAttachmentVps(formData, filePath);
+          const result = await uploadAttachmentDirect(file, filePath);
           if (!result.success) return { error: result.message };
           return { data: { url: result.url, name: file.name }, error: null };
         } catch (err) {

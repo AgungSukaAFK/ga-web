@@ -35,10 +35,8 @@ import {
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
 import { logActivity } from "@/services/logService";
-import {
-  uploadAttachmentVps,
-  removeAttachmentVps,
-} from "@/services/storageService";
+import { removeAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { isMarketplaceVendor } from "@/type/enum";
 import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
@@ -884,9 +882,7 @@ function CreatePOPageContent() {
     setIsLoading(true);
     const filePath = `po/${poForm.kode_po}/${type}/${Date.now()}_${file.name}`;
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const result = await uploadAttachmentVps(formData, filePath);
+      const result = await uploadAttachmentDirect(file, filePath);
       if (!result.success) {
         toast.error("Gagal upload", { description: result.message });
       } else {
