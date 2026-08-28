@@ -1057,6 +1057,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         return;
       }
 
+      // File sudah tersimpan di storage begitu sampai sini - kegagalan
+      // SETELAH titik ini (simpan metadata ke DB) bukan berarti upload-nya
+      // gagal, jadi ditangani & dikasih pesan terpisah (lihat di bawah),
+      // BUKAN ditimpakan ke catch generik "Gagal mengunggah file" supaya
+      // user tidak mengira filenya hilang lalu upload ulang jadi duplikat.
       const newAttachment: Attachment = {
         name: file.name,
         url: uploadResult.url,
@@ -1069,7 +1074,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         .update({ attachments: updatedAttachments })
         .eq("id", po.id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        toast.error("File terunggah, tapi gagal menyimpan info lampiran", {
+          id: toastId,
+          description: `${updateError.message} - muat ulang halaman untuk memastikan lampiran tersimpan.`,
+        });
+        return;
+      }
+
+      // Update state lokal langsung (bukan fetchPoData() yang fetch ulang
+      // SELURUH data PO) supaya lampiran langsung muncul tanpa gantung ke
+      // request tambahan yang berat & rawan gangguan jaringan sesaat.
+      setPo((prev) =>
+        prev ? { ...prev, attachments: updatedAttachments } : prev,
+      );
+      toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
+        id: toastId,
+      });
 
       if (currentUser) {
         await logActivity(
@@ -1086,11 +1107,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           { po_id: po.id, attachment_type: type, file_name: file.name },
         );
       }
-
-      toast.success(`Lampiran ${type.toUpperCase()} berhasil diunggah!`, {
-        id: toastId,
-      });
-      await fetchPoData();
     } catch (err: any) {
       toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
         id: toastId,
