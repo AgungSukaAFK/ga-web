@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { MaterialRequest, Order, Attachment, Profile, DeliveryType } from "@/type";
-import { uploadAttachmentVps, removeAttachmentVps } from "./storageService";
+import { removeAttachmentVps } from "./storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
@@ -140,9 +141,7 @@ export const uploadAttachment = async (
   kode_mr: string,
 ): Promise<Attachment> => {
   const filePath = `${kode_mr.replace(/\//g, "-")}/${Date.now()}_${file.name}`;
-  const formData = new FormData();
-  formData.append("file", file);
-  const result = await uploadAttachmentVps(formData, filePath);
+  const result = await uploadAttachmentDirect(file, filePath);
   if (!result.success) throw new Error(result.message);
   return { url: result.url, name: file.name };
 };

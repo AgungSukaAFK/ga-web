@@ -5,7 +5,7 @@
 import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { uploadAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
   resolveAttachmentUrl,
   getAttachmentSizeError,
@@ -621,9 +621,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       for (let i = 0; i < deliveryFiles.length; i++) {
         const file = deliveryFiles[i];
         const filePath = `${kodeMr}/delivery/${pathSegment}/${Date.now()}_${file.name}`;
-        const formData = new FormData();
-        formData.append("file", file);
-        const result = await uploadAttachmentVps(formData, filePath);
+        const result = await uploadAttachmentDirect(file, filePath);
         if (!result.success) throw new Error(result.message);
         uploadedAttachments.push({
           name: file.name,
@@ -1045,9 +1043,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     );
     try {
       const filePath = `po/${po.kode_po}/${type}/${Date.now()}_${file.name}`;
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadResult = await uploadAttachmentVps(formData, filePath);
+      const uploadResult = await uploadAttachmentDirect(file, filePath);
 
       if (!uploadResult.success) {
         toast.error(`Gagal mengunggah file ${type.toUpperCase()}`, {
@@ -1151,9 +1147,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         return;
       }
       const filePath = `po/${po.kode_po}/finance/${Date.now()}_${proofFile.name}`;
-      const formData = new FormData();
-      formData.append("file", proofFile);
-      const uploadResult = await uploadAttachmentVps(formData, filePath);
+      const uploadResult = await uploadAttachmentDirect(proofFile, filePath);
       if (!uploadResult.success) {
         toast.error("Gagal mengunggah bukti pembayaran", {
           description: uploadResult.message,

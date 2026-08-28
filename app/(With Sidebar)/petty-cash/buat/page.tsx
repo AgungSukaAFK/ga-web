@@ -22,7 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import { uploadAttachmentVps } from "@/services/storageService";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -117,9 +117,7 @@ export default function CreatePettyCashPage() {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `petty-cash/${fileName}`;
 
-      const uploadFormData = new FormData();
-      uploadFormData.append("file", file);
-      const result = await uploadAttachmentVps(uploadFormData, filePath);
+      const result = await uploadAttachmentDirect(file, filePath);
       if (!result.success) throw new Error(result.message);
 
       setFormData((prev) => ({

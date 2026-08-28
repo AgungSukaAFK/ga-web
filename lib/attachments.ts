@@ -9,9 +9,11 @@ export function resolveAttachmentUrl(url: string): string {
   return `${OLD_CLOUD_BUCKET_BASE}/${url}`;
 }
 
-// Batas ukuran lampiran (PO/MR/BAST/dll). Harus <= bodySizeLimit Server Action
-// di next.config.ts, dengan margin untuk overhead multipart.
-export const MAX_ATTACHMENT_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
+// Batas ukuran lampiran (PO/MR/BAST/dll) - murni batas bisnis/UX, bukan lagi
+// terikat limit Server Action Vercel (upload lewat signed URL langsung ke
+// storage VPS, lihat lib/uploadDirect.ts, jadi file tidak lewat body Server
+// Action sama sekali).
+export const MAX_ATTACHMENT_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
 
 export function formatFileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

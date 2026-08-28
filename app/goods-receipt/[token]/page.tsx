@@ -10,6 +10,7 @@ import {
   GoodsReceiptView,
 } from "@/services/goodsReceiptService";
 import { getAttachmentSizeError } from "@/lib/attachments";
+import { uploadAttachmentDirectPublic } from "@/lib/uploadDirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -146,6 +147,26 @@ export default function GoodsReceiptPage() {
     if (!view || !isFormComplete) return;
     setSubmitting(true);
     try {
+      // Foto di-upload LANGSUNG dari browser ke storage VPS dulu (bukan
+      // dikirim lewat body server action bareng data lain) - Vercel
+      // Serverless Functions punya hard limit body request 4.5MB yang gampang
+      // kelewat kalau beberapa foto item digabung jadi satu request.
+      const safeKode = view.kode_po.replace(/\//g, "-");
+      const photos: Record<string, { url: string; name: string }> = {};
+      for (const item of view.items) {
+        const photo = itemInputs[item.part_number].photo;
+        if (!photo) continue;
+        const path = `${safeKode}/goods-receipt/${item.part_number}/${Date.now()}_${photo.name}`;
+        const uploadResult = await uploadAttachmentDirectPublic(photo, path);
+        if (!uploadResult.success) {
+          toast.error(`Gagal mengunggah foto item ${item.part_number}`, {
+            description: uploadResult.message,
+          });
+          return;
+        }
+        photos[item.part_number] = { url: uploadResult.url, name: photo.name };
+      }
+
       const formData = new FormData();
       formData.append(
         "items_json",
@@ -156,10 +177,7 @@ export default function GoodsReceiptPage() {
           })),
         ),
       );
-      for (const item of view.items) {
-        const photo = itemInputs[item.part_number].photo;
-        if (photo) formData.append(`photo_${item.part_number}`, photo);
-      }
+      formData.append("photos_json", JSON.stringify(photos));
       if (!sessionNama) {
         formData.append("receiver_name", nameInput.trim());
         formData.append("code", codeInput.trim());
