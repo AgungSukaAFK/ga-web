@@ -1188,9 +1188,20 @@ export interface DuplicateMrInfo {
   matched_items: DuplicateMrItem[];
 }
 
+// Status "final" MR - dikecualikan dari deteksi duplikat karena barangnya
+// sudah tidak lagi diproses. "Full Received" adalah status final saat ini
+// (lihat PO_STATUS_FULL_RECEIVED & recalculateMrStatus); "Completed" status
+// lama yang mungkin masih nempel di data lawas.
+const DUPLICATE_CHECK_EXCLUDED_STATUSES = [
+  "Completed",
+  PO_STATUS_FULL_RECEIVED,
+  "Rejected",
+];
+
 /**
- * Mencari MR yang masih aktif (status BUKAN 'Completed' / 'Rejected') dari
- * company & departemen yang sama, yang memiliki barang sama dengan order MR baru.
+ * Mencari MR yang masih aktif (status di luar
+ * DUPLICATE_CHECK_EXCLUDED_STATUSES) dari company & departemen yang sama,
+ * yang memiliki barang sama dengan order MR baru.
  * Pencocokan barang: utamakan barang_id, fallback ke part_number.
  * Bisa mengembalikan lebih dari satu MR.
  */
@@ -1222,7 +1233,11 @@ export const findActiveDuplicateMrs = async (
     )
     .eq("company_code", companyCode)
     .eq("department", department)
-    .not("status", "in", "(Completed,Rejected)")
+    .not(
+      "status",
+      "in",
+      `(${DUPLICATE_CHECK_EXCLUDED_STATUSES.map((s) => `"${s}"`).join(",")})`,
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
