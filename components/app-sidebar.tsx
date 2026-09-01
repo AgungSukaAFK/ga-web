@@ -358,8 +358,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
         <NavMain items={mainNavItems} />
 
-        {/* MUNCULKAN KEMBALI MENU PETTY CASH */}
-        <NavMain label="Petty Cash" items={pettyCashItems} />
+        {/* MENU PETTY CASH DISEMBUNYIKAN SEMENTARA */}
+        {/* <NavMain label="Petty Cash" items={pettyCashItems} /> */}
 
         <NavMain label="About" items={markActive(data.navSecondary)} />
       </SidebarContent>
