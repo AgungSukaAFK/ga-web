@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import InputPengajuanClient from "./InputPengajuanClient";
 
 export default function InputPengajuanPage() {
-  return <ComingSoon title="Input Pengajuan" />;
+  return <InputPengajuanClient />;
 }

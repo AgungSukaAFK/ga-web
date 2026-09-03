@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import PengajuanVoucherClient from "./PengajuanVoucherClient";
 
 export default function PengajuanVoucherPage() {
-  return <ComingSoon title="Pengajuan Voucher" />;
+  return <PengajuanVoucherClient />;
 }

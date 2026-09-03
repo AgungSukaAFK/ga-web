@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import ClaimVoucherClient from "./ClaimVoucherClient";
 
 export default function ClaimVoucherPage() {
-  return <ComingSoon title="Claim Voucher" />;
+  return <ClaimVoucherClient />;
 }

@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import PcApprovalTemplateClient from "./PcApprovalTemplateClient";
 
 export default function TemplateApprovalPage() {
-  return <ComingSoon title="Template Approval" />;
+  return <PcApprovalTemplateClient />;
 }

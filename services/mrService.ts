@@ -503,6 +503,115 @@ export const sendItemsToRequester = async (
   return { success: true };
 };
 
+// Edit info pengiriman yang sudah dikirim (GA approver, selama barangnya
+// masih berstatus "On Delivery" - belum dikonfirmasi diterima requester).
+// Dipanggil dari dialog yang sama dengan sendItemsToRequester, jadi selain
+// qty/info kirim, daftar barangnya sendiri juga bisa diubah:
+//  - `selectedItems`: barang yang tetap/baru masuk pengiriman ini - qty &
+//    info kirimnya ditulis ulang. Barang yang BARU ditambah (sebelumnya
+//    "Diterima GA", belum pernah dikirim) ikut ditandai "On Delivery".
+//  - `removedPartNumbers`: barang yang dikeluarkan dari pengiriman ini -
+//    dikembalikan ke "Diterima GA" (delivery_info dihapus), sama seperti
+//    pola revert di removeBastForMrItem saat bukti dicabut.
+// `sent_at`/`sent_by` (pengiriman pertama kali) dipertahankan apa adanya utk
+// barang yang sudah ada di grup ini sebelumnya - hanya `edited_at`/`edited_by`
+// yang diisi, supaya jejak pengiriman awal tidak hilang.
+export const editItemsDeliveryToRequester = async (
+  mrId: number,
+  originalSentAt: string,
+  selectedItems: { partNumber: string; qtySent: number }[],
+  removedPartNumbers: string[],
+  delivery: {
+    delivery_type: DeliveryType;
+    courier?: string;
+    tracking_number?: string;
+    note?: string;
+    newAttachments: Attachment[];
+  },
+  userId: string,
+) => {
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk edit info pengiriman.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  const editedAt = new Date().toISOString();
+
+  for (const { partNumber, qtySent } of selectedItems) {
+    const itemIndex = currentOrders.findIndex(
+      (item) => item.part_number && item.part_number === partNumber,
+    );
+    if (itemIndex === -1) continue;
+
+    const itemToUpdate = { ...currentOrders[itemIndex] };
+    const wasInGroup = itemToUpdate.delivery_info?.sent_at === originalSentAt;
+    // Barang lain yang lagi "On Delivery" tapi bukan bagian pengiriman yang
+    // sedang diedit (grup lain) - jangan ikut disentuh.
+    if (itemToUpdate.status === "On Delivery" && !wasInGroup) continue;
+    if (itemToUpdate.status !== "On Delivery" && itemToUpdate.status !== "Diterima GA")
+      continue;
+
+    const existingAttachments = wasInGroup
+      ? itemToUpdate.delivery_info?.attachments ?? []
+      : [];
+    itemToUpdate.status = "On Delivery";
+    itemToUpdate.delivery_info = {
+      delivery_type: delivery.delivery_type,
+      courier: delivery.courier,
+      tracking_number: delivery.tracking_number,
+      note: delivery.note,
+      qty_sent: qtySent,
+      attachments: [...existingAttachments, ...delivery.newAttachments],
+      sent_at: wasInGroup ? itemToUpdate.delivery_info.sent_at : editedAt,
+      sent_by: wasInGroup ? itemToUpdate.delivery_info.sent_by : userId,
+      edited_at: editedAt,
+      edited_by: userId,
+    };
+    itemToUpdate.updated_by = userId;
+    itemToUpdate.updated_at = editedAt;
+    currentOrders[itemIndex] = itemToUpdate;
+  }
+
+  for (const partNumber of removedPartNumbers) {
+    const itemIndex = currentOrders.findIndex(
+      (item) => item.part_number && item.part_number === partNumber,
+    );
+    if (itemIndex === -1) continue;
+
+    const itemToUpdate = { ...currentOrders[itemIndex] };
+    if (
+      itemToUpdate.status !== "On Delivery" ||
+      itemToUpdate.delivery_info?.sent_at !== originalSentAt
+    )
+      continue;
+
+    itemToUpdate.status = "Diterima GA";
+    delete itemToUpdate.delivery_info;
+    itemToUpdate.updated_by = userId;
+    itemToUpdate.updated_at = editedAt;
+    currentOrders[itemIndex] = itemToUpdate;
+  }
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error("Gagal simpan perubahan info pengiriman: " + updateError.message);
+
+  await recalculateMrStatus(mrId);
+  await recalculateMrLevel(mrId);
+
+  return { success: true };
+};
+
 // Hapus satu lampiran BAST dari item MR (kebalikan dari uploadBastForMrItem).
 // `bast_attachments` per-item adalah SATU-SATUNYA sumber data BAST di
 // seluruh app (list item MR, MR Management, tabel referensi barang di PO,
