@@ -90,6 +90,7 @@ import {
   recalculateMrLevel,
   removeBastForMrItem,
   sendItemsToRequester,
+  editItemsDeliveryToRequester,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
 import { logActivity } from "@/services/logService";
@@ -342,6 +343,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [deliveryNote, setDeliveryNote] = useState("");
   const [deliveryFiles, setDeliveryFiles] = useState<FileList | null>(null);
   const [sendingDelivery, setSendingDelivery] = useState(false);
+  // Mode edit dari dialog yang sama - dipicu dari tombol "Edit" di Detail
+  // Pengiriman (GA approver, selama barangnya masih "On Delivery").
+  // `editingDeliverySentAt` menandai grup pengiriman (barang-barang dgn
+  // delivery_info.sent_at yang sama) yang lagi diedit.
+  const [isEditingDelivery, setIsEditingDelivery] = useState(false);
+  const [editingDeliverySentAt, setEditingDeliverySentAt] = useState<
+    string | null
+  >(null);
 
   // Peta barang_id -> is_asset utk badge Aset/Barang di tabel "Referensi
   // Barang dari MR" (item PO sendiri sudah punya is_asset langsung).
@@ -504,6 +513,28 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       item.status === MR_ITEM_STATUSES.DITERIMA_GA && isMrItemInPO(item),
   );
 
+  // Barang-barang yang satu grup pengiriman dengan `editingDeliverySentAt`
+  // (masih "On Delivery", belum dikonfirmasi diterima requester) - dipakai
+  // pas dialog "Kirim ke Requester" lagi mode edit, supaya barang yang sudah
+  // ada di pengiriman ini ikut muncul di daftar (bisa di-uncheck/dikeluarkan),
+  // bukan cuma barang yang belum pernah dikirim.
+  const editingGroupItems = isEditingDelivery
+    ? (po?.material_requests?.orders || []).filter(
+        (item: Order) =>
+          item.status === MR_ITEM_STATUSES.ON_DELIVERY &&
+          item.delivery_info?.sent_at === editingDeliverySentAt &&
+          isMrItemInPO(item),
+      )
+    : [];
+
+  // Daftar barang yang ditampilkan di dialog "Kirim ke Requester" - mode
+  // kirim baru cuma barang eligible ("Diterima GA"), mode edit ditambah
+  // barang yang sudah ada di grup pengiriman yang sedang diedit (2 set ini
+  // saling lepas karena beda status, jadi aman digabung tanpa dedup).
+  const deliverDialogItems = isEditingDelivery
+    ? [...editingGroupItems, ...deliverEligibleItems]
+    : deliverEligibleItems;
+
   // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected) - GA/
   // Purchasing perlu bisa cetak & tempel BAST ke paket SEBELUM barang
   // dikirim (QR di dalamnya baru berarti setelah discan pas barang sampai),
@@ -526,6 +557,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
 
   const handleOpenDeliverDialog = () => {
+    setIsEditingDelivery(false);
+    setEditingDeliverySentAt(null);
     setSelectedPartNumbersForDelivery(new Set());
     setDeliveryQtyByPartNumber(
       Object.fromEntries(
@@ -540,6 +573,43 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setDeliveryTrackingNumber("");
     setDeliveryNote("");
     setDeliveryFiles(null);
+    setIsDeliverDialogOpen(true);
+  };
+
+  // Buka dialog "Kirim ke Requester" dalam mode edit, pre-filled dari grup
+  // pengiriman milik `item` (barang lain dengan delivery_info.sent_at yang
+  // sama) - dipanggil dari tombol "Edit" di Detail Pengiriman.
+  const handleOpenEditDeliverDialog = (item: Order) => {
+    const sentAt = item.delivery_info?.sent_at;
+    if (!sentAt) return;
+    const group = (po?.material_requests?.orders || []).filter(
+      (o: Order) =>
+        o.status === MR_ITEM_STATUSES.ON_DELIVERY &&
+        o.delivery_info?.sent_at === sentAt &&
+        isMrItemInPO(o),
+    );
+    if (group.length === 0) return;
+
+    setIsEditingDelivery(true);
+    setEditingDeliverySentAt(sentAt);
+    setSelectedPartNumbersForDelivery(
+      new Set(group.map((o) => o.part_number as string)),
+    );
+    setDeliveryQtyByPartNumber(
+      Object.fromEntries(
+        group.map((o) => [
+          o.part_number as string,
+          String(o.delivery_info?.qty_sent ?? o.qty),
+        ]),
+      ),
+    );
+    const info = group[0].delivery_info!;
+    setDeliveryType(info.delivery_type);
+    setDeliveryCourier(info.courier || "");
+    setDeliveryTrackingNumber(info.tracking_number || "");
+    setDeliveryNote(info.note || "");
+    setDeliveryFiles(null);
+    setDeliveryDetailItem(null);
     setIsDeliverDialogOpen(true);
   };
 
@@ -576,7 +646,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       toast.error("Sesi tidak valid, silakan muat ulang halaman");
       return;
     }
-    const selectedItems = deliverEligibleItems.filter(
+    const selectedItems = deliverDialogItems.filter(
       (item) =>
         item.part_number &&
         selectedPartNumbersForDelivery.has(item.part_number),
@@ -596,15 +666,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         return;
       }
     }
-    if (!deliveryFiles || deliveryFiles.length === 0) {
+    // Mode kirim baru: bukti pengiriman wajib. Mode edit: lampiran lama
+    // sudah ada, upload baru sifatnya opsional (tambahan).
+    if (
+      !isEditingDelivery &&
+      (!deliveryFiles || deliveryFiles.length === 0)
+    ) {
       toast.error("Lampirkan bukti pengiriman terlebih dahulu");
       return;
     }
-    for (const file of deliveryFiles) {
-      const sizeError = getAttachmentSizeError(file);
-      if (sizeError) {
-        toast.error("Ukuran file terlalu besar", { description: sizeError });
-        return;
+    if (deliveryFiles) {
+      for (const file of deliveryFiles) {
+        const sizeError = getAttachmentSizeError(file);
+        if (sizeError) {
+          toast.error("Ukuran file terlalu besar", { description: sizeError });
+          return;
+        }
       }
     }
 
@@ -618,62 +695,130 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           ? selectedItems[0].part_number
           : "multi-item";
       const uploadedAttachments: Attachment[] = [];
-      for (let i = 0; i < deliveryFiles.length; i++) {
-        const file = deliveryFiles[i];
-        const filePath = `${kodeMr}/delivery/${pathSegment}/${Date.now()}_${file.name}`;
-        const result = await uploadAttachmentDirect(file, filePath);
-        if (!result.success) throw new Error(result.message);
-        uploadedAttachments.push({
-          name: file.name,
-          url: result.url,
-          type: "delivery",
-        });
+      if (deliveryFiles) {
+        for (let i = 0; i < deliveryFiles.length; i++) {
+          const file = deliveryFiles[i];
+          const filePath = `${kodeMr}/delivery/${pathSegment}/${Date.now()}_${file.name}`;
+          const result = await uploadAttachmentDirect(file, filePath);
+          if (!result.success) throw new Error(result.message);
+          uploadedAttachments.push({
+            name: file.name,
+            url: result.url,
+            type: "delivery",
+          });
+        }
       }
 
-      await sendItemsToRequester(
-        po.mr_id,
-        selectedItems.map((item) => ({
-          partNumber: item.part_number as string,
-          qtySent: Number(deliveryQtyByPartNumber[item.part_number as string]),
-        })),
-        {
-          delivery_type: deliveryType,
-          courier: deliveryCourier.trim() || undefined,
-          tracking_number: deliveryTrackingNumber.trim() || undefined,
-          note: deliveryNote.trim() || undefined,
-          attachments: uploadedAttachments,
-        },
-        currentUser.id,
-      );
+      const partNumbers = selectedItems.map((item) => item.part_number);
 
-      await logActivity(
-        currentUser.id,
-        "SEND_TO_REQUESTER",
-        "purchase_order",
-        String(po.id),
-        `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
-        {
-          delivery_type: deliveryType,
-          courier: deliveryCourier.trim() || null,
-          tracking_number: deliveryTrackingNumber.trim() || null,
-          part_numbers: selectedItems.map((item) => item.part_number),
-        },
-      );
-      await logMrActivity(
-        "SEND_TO_REQUESTER",
-        `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
-        { po_id: po.id, part_numbers: selectedItems.map((item) => item.part_number) },
-      );
+      if (isEditingDelivery && editingDeliverySentAt) {
+        const removedPartNumbers = editingGroupItems
+          .filter(
+            (o) =>
+              o.part_number &&
+              !selectedPartNumbersForDelivery.has(o.part_number),
+          )
+          .map((o) => o.part_number as string);
 
-      toast.success(
-        `${selectedItems.length} barang ditandai dalam pengiriman ke requester`,
-      );
+        await editItemsDeliveryToRequester(
+          po.mr_id,
+          editingDeliverySentAt,
+          selectedItems.map((item) => ({
+            partNumber: item.part_number as string,
+            qtySent: Number(
+              deliveryQtyByPartNumber[item.part_number as string],
+            ),
+          })),
+          removedPartNumbers,
+          {
+            delivery_type: deliveryType,
+            courier: deliveryCourier.trim() || undefined,
+            tracking_number: deliveryTrackingNumber.trim() || undefined,
+            note: deliveryNote.trim() || undefined,
+            newAttachments: uploadedAttachments,
+          },
+          currentUser.id,
+        );
+
+        await logActivity(
+          currentUser.id,
+          "EDIT_DELIVERY_TO_REQUESTER",
+          "purchase_order",
+          String(po.id),
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengedit info pengiriman ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+          {
+            delivery_type: deliveryType,
+            courier: deliveryCourier.trim() || null,
+            tracking_number: deliveryTrackingNumber.trim() || null,
+            part_numbers: partNumbers,
+            removed_part_numbers: removedPartNumbers,
+          },
+        );
+        await logMrActivity(
+          "EDIT_DELIVERY_TO_REQUESTER",
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengedit info pengiriman ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+          {
+            po_id: po.id,
+            part_numbers: partNumbers,
+            removed_part_numbers: removedPartNumbers,
+          },
+        );
+
+        toast.success("Info pengiriman berhasil diperbarui");
+      } else {
+        await sendItemsToRequester(
+          po.mr_id,
+          selectedItems.map((item) => ({
+            partNumber: item.part_number as string,
+            qtySent: Number(
+              deliveryQtyByPartNumber[item.part_number as string],
+            ),
+          })),
+          {
+            delivery_type: deliveryType,
+            courier: deliveryCourier.trim() || undefined,
+            tracking_number: deliveryTrackingNumber.trim() || undefined,
+            note: deliveryNote.trim() || undefined,
+            attachments: uploadedAttachments,
+          },
+          currentUser.id,
+        );
+
+        await logActivity(
+          currentUser.id,
+          "SEND_TO_REQUESTER",
+          "purchase_order",
+          String(po.id),
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+          {
+            delivery_type: deliveryType,
+            courier: deliveryCourier.trim() || null,
+            tracking_number: deliveryTrackingNumber.trim() || null,
+            part_numbers: partNumbers,
+          },
+        );
+        await logMrActivity(
+          "SEND_TO_REQUESTER",
+          `${userProfile?.nama || currentUser.email || "Unknown"} mengirim ${selectedItems.length} barang dari PO ${po.kode_po} ke requester`,
+          { po_id: po.id, part_numbers: partNumbers },
+        );
+
+        toast.success(
+          `${selectedItems.length} barang ditandai dalam pengiriman ke requester`,
+        );
+      }
+
       setIsDeliverDialogOpen(false);
+      setIsEditingDelivery(false);
+      setEditingDeliverySentAt(null);
       await fetchPoData();
     } catch (err: any) {
-      toast.error("Gagal kirim barang ke requester", {
-        description: getUploadErrorMessage(err),
-      });
+      toast.error(
+        isEditingDelivery
+          ? "Gagal edit info pengiriman"
+          : "Gagal kirim barang ke requester",
+        { description: getUploadErrorMessage(err) },
+      );
     } finally {
       setSendingDelivery(false);
     }
@@ -2994,6 +3139,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     )}
                   </p>
                 </div>
+                {deliveryDetailItem.delivery_info.edited_at && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Terakhir Diedit
+                    </p>
+                    <p className="font-medium">
+                      {formatDateWithTime(
+                        deliveryDetailItem.delivery_info.edited_at,
+                      )}
+                    </p>
+                  </div>
+                )}
                 {deliveryDetailItem.delivery_info.note && (
                   <div>
                     <p className="text-xs text-muted-foreground">Catatan</p>
@@ -3034,6 +3191,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               >
                 Tutup
               </Button>
+              {isGA &&
+                deliveryDetailItem?.status === MR_ITEM_STATUSES.ON_DELIVERY && (
+                  <Button
+                    onClick={() =>
+                      handleOpenEditDeliverDialog(deliveryDetailItem)
+                    }
+                  >
+                    <EditIcon className="mr-2 h-4 w-4" /> Edit
+                  </Button>
+                )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -3314,15 +3481,30 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           isSubmitting={actionLoading}
         />
 
-        {/* --- KIRIM KE REQUESTER (GA kirim barang "Diterima GA") --- */}
-        <Dialog open={isDeliverDialogOpen} onOpenChange={setIsDeliverDialogOpen}>
+        {/* --- KIRIM KE REQUESTER (GA kirim barang "Diterima GA") - dialog
+            yang sama dipakai buat edit info pengiriman barang yang statusnya
+            masih "On Delivery" (lihat isEditingDelivery/deliverDialogItems) --- */}
+        <Dialog
+          open={isDeliverDialogOpen}
+          onOpenChange={(open) => {
+            setIsDeliverDialogOpen(open);
+            if (!open) {
+              setIsEditingDelivery(false);
+              setEditingDeliverySentAt(null);
+            }
+          }}
+        >
           <DialogContent className="max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Kirim Barang ke Requester</DialogTitle>
+              <DialogTitle>
+                {isEditingDelivery
+                  ? "Edit Info Pengiriman"
+                  : "Kirim Barang ke Requester"}
+              </DialogTitle>
               <DialogDescription>
-                Barang yang dicentang akan ditandai &quot;Dalam
-                Pengiriman&quot; ke requester. Bukti pengiriman wajib
-                dilampirkan.
+                {isEditingDelivery
+                  ? 'Ubah qty, info pengiriman, atau daftar barang pada pengiriman ini. Uncheck barang untuk mengeluarkannya dari pengiriman ini (dikembalikan ke "Diterima GA").'
+                  : 'Barang yang dicentang akan ditandai "Dalam Pengiriman" ke requester. Bukti pengiriman wajib dilampirkan.'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
@@ -3331,12 +3513,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   Barang ({selectedPartNumbersForDelivery.size} dipilih)
                 </Label>
                 <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
-                  {deliverEligibleItems.length === 0 ? (
+                  {deliverDialogItems.length === 0 ? (
                     <div className="p-3 text-sm text-muted-foreground">
                       Tidak ada barang berstatus &quot;Diterima GA&quot;.
                     </div>
                   ) : (
-                    deliverEligibleItems.map((item) => {
+                    deliverDialogItems.map((item) => {
                       const partNumber = item.part_number as string;
                       const checked =
                         selectedPartNumbersForDelivery.has(partNumber);
@@ -3418,7 +3600,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 </div>
                 <div>
                   <Label htmlFor="delivery-file">
-                    Bukti Pengiriman (wajib)
+                    {isEditingDelivery
+                      ? "Tambah Bukti Pengiriman (opsional)"
+                      : "Bukti Pengiriman (wajib)"}
                   </Label>
                   <Input
                     id="delivery-file"
@@ -3444,7 +3628,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={() => setIsDeliverDialogOpen(false)}
+                onClick={() => {
+                  setIsDeliverDialogOpen(false);
+                  setIsEditingDelivery(false);
+                  setEditingDeliverySentAt(null);
+                }}
                 disabled={sendingDelivery}
               >
                 Batal
@@ -3458,7 +3646,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 {sendingDelivery && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Kirim
+                {isEditingDelivery ? "Simpan Perubahan" : "Kirim"}
               </Button>
             </DialogFooter>
           </DialogContent>

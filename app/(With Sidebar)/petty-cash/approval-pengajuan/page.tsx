@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import ApprovalPengajuanClient from "./ApprovalPengajuanClient";
 
 export default function ApprovalPengajuanPage() {
-  return <ComingSoon title="Approval Pengajuan" />;
+  return <ApprovalPengajuanClient />;
 }

@@ -58,6 +58,11 @@ export interface DeliveryInfo {
   attachments: Attachment[]; // Bukti kirim (foto/surat jalan), wajib min. 1
   sent_at: string;
   sent_by: string; // User ID GA yang kirim
+  // Diisi kalau info pengiriman ini pernah diedit ulang (GA approver, selama
+  // status barang masih "On Delivery") - sent_at/sent_by TETAP dipertahankan
+  // sebagai catatan pengiriman awal, ini cuma jejak edit terakhir.
+  edited_at?: string;
+  edited_by?: string;
 }
 
 export type MrItemLevel =
@@ -318,6 +323,29 @@ export interface Barang {
   is_asset: boolean;
   last_purchase_price?: number | null;
   link?: string | null;
+}
+
+// Katalog barang KHUSUS Petty Cash - tabel `petty_cash_barang`, terpisah total
+// dari `barang` (katalog MR/PO utama, lihat interface Barang di atas). Hanya
+// admin/departemen GA yang boleh menambah/ubah/hapus (lihat
+// supabase/petty-cash-barang-setup.sql & isGADepartment).
+export interface PettyCashBarang {
+  id: number;
+  part_number: string | null;
+  part_name: string;
+  category: string | null;
+  uom: string | null;
+  vendor: string | null;
+  last_purchase_price: number | null;
+  link: string | null;
+  description: string | null;
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  // Relasi opsional saat di-join (lihat fetchPettyCashBarang)
+  created_by_profile?: { nama: string | null } | null;
+  updated_by_profile?: { nama: string | null } | null;
 }
 
 export interface GaStock {
@@ -617,4 +645,116 @@ export interface PettyCashPayload {
 export interface PettyCashSettlementPayload {
   actual_amount: number;
   settlement_attachments: Attachment[];
+}
+
+// ==========================================
+// INPUT PENGAJUAN PETTY CASH (BARU, item-based, terpisah dari
+// PettyCashRequest lump-sum di atas) - tabel `petty_cash_pengajuan`. Bagian
+// dari rangkaian Pengajuan -> Approval Pengajuan -> Pengajuan Voucher ->
+// Approval Voucher -> Claim Voucher -> Deklarasi -> Approval Deklarasi.
+// ==========================================
+
+// Tahap approval yang bisa dipilih untuk sebuah Template Approval Petty Cash
+// (lihat PcApprovalTemplate, services/pcApprovalTemplateService.ts) - satu
+// template cuma berlaku untuk SATU tahap di rangkaian di atas. Baru
+// "Approval Pengajuan" yang sudah dipakai (Input Pengajuan) - "Approval
+// Voucher"/"Approval Deklarasi" disiapkan tipenya duluan supaya templatenya
+// bisa dibuat sebelum alur Voucher/Deklarasi-nya sendiri jadi.
+export type PcApprovalType =
+  | "Approval Pengajuan"
+  | "Approval Voucher"
+  | "Approval Deklarasi";
+
+export interface PettyCashPengajuanItem {
+  // null = barang manual (tidak ada di katalog petty_cash_barang), lihat
+  // PettyCashItemSearchCombobox.tsx.
+  barang_id: number | null;
+  part_name: string;
+  category: string | null;
+  uom: string | null;
+  qty: number;
+  unit_price: number;
+  subtotal: number;
+  note: string | null;
+}
+
+// Approver di jalur persetujuan pengajuan - diisi otomatis dari Template
+// Approval Petty Cash yang auto-terapkan sesuai departemen (lihat
+// resolvePcAutoTemplate di services/pcApprovalTemplateService.ts). Sengaja
+// didefinisikan ulang di sini (bukan import PcApprover dari service) supaya
+// layer type/ tidak balik bergantung ke services/.
+export interface PettyCashPengajuanApprover {
+  userid: string;
+  nama: string;
+  department: string;
+  role: string;
+  status: "pending" | "approved" | "rejected";
+  processed_at?: string | null;
+}
+
+export interface PettyCashPengajuan {
+  id: number;
+  kode_pengajuan: string;
+  user_id: string;
+  company_code: string;
+  department: string;
+  cost_center_id: number | null;
+  needed_date: string | Date;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  total_amount: number;
+  attachments: Attachment[];
+  status: string;
+  approvals: PettyCashPengajuanApprover[];
+  discussions: any[];
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain)
+  users_with_profiles?: { nama: string; email?: string } | null;
+  cost_centers?: { name: string; current_budget: number } | null;
+  // Voucher yang sudah dibuat dari Pengajuan ini (kalau ada) - dipakai utk
+  // filter "belum di-voucher-kan" (lihat fetchApprovedPengajuanForVoucher,
+  // services/pettyCashVoucherService.ts). Satu Pengajuan cuma boleh punya
+  // SATU Voucher (unique pengajuan_id di DB), jadi arraynya panjang 0 atau 1.
+  petty_cash_voucher?: { id: number }[] | null;
+}
+
+// ==========================================
+// PENGAJUAN VOUCHER PETTY CASH - tabel `petty_cash_voucher`. Satu Voucher =
+// SNAPSHOT persis dari satu PettyCashPengajuan yang sudah berstatus
+// "Approved" (item/qty/harga/catatan/lampiran di-copy apa adanya, tidak bisa
+// diubah requester) - lihat createVoucherFromPengajuan,
+// services/pettyCashVoucherService.ts. Jalur approval-nya sendiri terpisah
+// dari jalur approval Pengajuan-nya (auto-terapkan dari Template Approval
+// dengan approval_type "Approval Voucher").
+// ==========================================
+
+export interface PettyCashVoucher {
+  id: number;
+  kode_voucher: string;
+  pengajuan_id: number;
+  user_id: string;
+  company_code: string;
+  department: string;
+  cost_center_id: number | null;
+  needed_date: string | Date;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  total_amount: number;
+  attachments: Attachment[];
+  status: string;
+  approvals: PettyCashPengajuanApprover[];
+  discussions: any[];
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain)
+  users_with_profiles?: { nama: string; email?: string } | null;
+  cost_centers?: { name: string; current_budget: number } | null;
+  petty_cash_pengajuan?: { kode_pengajuan: string } | null;
 }

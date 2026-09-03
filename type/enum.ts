@@ -1,6 +1,6 @@
 // type/enum.ts
 
-import { Approval } from "@/type";
+import { Approval, PcApprovalType } from "@/type";
 
 export const LIMIT_OPTIONS = [10, 25, 50, 100, 1000, 10000];
 
@@ -416,4 +416,129 @@ export const PETTY_CASH_STATUS_COLORS: Record<string, string> = {
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
 };
 export const PETTY_CASH_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Kategori untuk katalog Barang Petty Cash (lihat petty_cash_barang &
+// PettyCashBarangClient.tsx) - beda dari kategori barang MR/PO utama.
+export const PETTY_CASH_BARANG_KATEGORI_OPTIONS = [
+  "Kebutuhan Dapur",
+  "Rutin Bulanan",
+  "Operasional",
+  "Sewa",
+  "BBM",
+  "E-Tol",
+  "Maintenance Building",
+  "Maintenance Kendaraan",
+] as const;
+
+// Daftar satuan (UoM) umum - dipakai combobox search di form Barang Petty
+// Cash. Sengaja generik (bukan cuma barang fisik) karena kategori seperti
+// "Sewa"/"Rutin Bulanan" butuh satuan waktu (Jam/Bulan/Tahun), bukan cuma
+// satuan kemasan/berat/volume.
+export const UOM_OPTIONS = [
+  "Pcs",
+  "Unit",
+  "Set",
+  "Pack",
+  "Box",
+  "Dus",
+  "Lusin",
+  "Kodi",
+  "Rim",
+  "Roll",
+  "Lembar",
+  "Pasang",
+  "Botol",
+  "Galon",
+  "Kaleng",
+  "Sak",
+  "Karung",
+  "Paket",
+  "Gram",
+  "Kg",
+  "Ton",
+  "Ml",
+  "Liter",
+  "Cm",
+  "Meter",
+  "Km",
+  "M2",
+  "Menit",
+  "Jam",
+  "Hari",
+  "Minggu",
+  "Bulan",
+  "Tahun",
+  "Trip",
+  "Orang",
+] as const;
+
+// Status "Input Pengajuan" Petty Cash (petty_cash_pengajuan, item-based) -
+// text bebas di DB (bukan check constraint), daftar di sini akan bertambah
+// seiring tahap Pengajuan Voucher/Claim Voucher/Deklarasi dibangun.
+export const PC_PENGAJUAN_STATUS_OPTIONS = [
+  "In Approval",
+  "Approved",
+  "Rejected",
+] as const;
+
+export const PC_PENGAJUAN_STATUS_COLORS: Record<string, string> = {
+  "In Approval":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Approved:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Rejected:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+};
+export const PC_PENGAJUAN_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Status Pengajuan Voucher Petty Cash (petty_cash_voucher) - mirip
+// PC_PENGAJUAN_STATUS_OPTIONS tapi ada tahap tambahan "Permintaan Klaim"
+// (requester ajukan klaim pencairan begitu Voucher-nya "Approved", lihat
+// submitVoucherClaim di services/pettyCashVoucherService.ts) yang tidak
+// dipunyai Pengajuan - makanya dipisah, bukan reuse PC_PENGAJUAN_STATUS_*.
+export const PC_VOUCHER_STATUS_OPTIONS = [
+  "In Approval",
+  "Approved",
+  "Permintaan Klaim",
+  "Rejected",
+] as const;
+
+export const PC_VOUCHER_STATUS_COLORS: Record<string, string> = {
+  "In Approval":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Approved:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  "Permintaan Klaim":
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  Rejected:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+};
+export const PC_VOUCHER_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Tipe approval Template Approval Petty Cash - lihat komentar PcApprovalType
+// di type/index.ts untuk urutan tahapannya. Dipakai sebagai field wajib di
+// PcApprovalTemplate (services/pcApprovalTemplateService.ts) supaya tiap
+// template eksplisit menandakan untuk tahap apa dia dipakai.
+export const PC_APPROVAL_TYPE_PENGAJUAN: PcApprovalType = "Approval Pengajuan";
+export const PC_APPROVAL_TYPE_VOUCHER: PcApprovalType = "Approval Voucher";
+export const PC_APPROVAL_TYPE_DEKLARASI: PcApprovalType = "Approval Deklarasi";
+
+export const PC_APPROVAL_TYPE_OPTIONS: PcApprovalType[] = [
+  PC_APPROVAL_TYPE_PENGAJUAN,
+  PC_APPROVAL_TYPE_VOUCHER,
+  PC_APPROVAL_TYPE_DEKLARASI,
+];
+
+export const PC_APPROVAL_TYPE_COLORS: Record<string, string> = {
+  [PC_APPROVAL_TYPE_PENGAJUAN]:
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  [PC_APPROVAL_TYPE_VOUCHER]:
+    "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
+  [PC_APPROVAL_TYPE_DEKLARASI]:
+    "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/40 dark:text-teal-300 dark:border-teal-800",
+};
+export const PC_APPROVAL_TYPE_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";

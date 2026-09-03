@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import ApprovalVoucherClient from "./ApprovalVoucherClient";
 
 export default function ApprovalVoucherPage() {
-  return <ComingSoon title="Approval Voucher" />;
+  return <ApprovalVoucherClient />;
 }
