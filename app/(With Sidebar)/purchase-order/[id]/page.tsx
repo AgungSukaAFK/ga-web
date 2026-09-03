@@ -535,6 +535,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     ? [...editingGroupItems, ...deliverEligibleItems]
     : deliverEligibleItems;
 
+  // Qty per part number di PO ini - referensi "Qty PO" di dialog "Kirim ke
+  // Requester", sama pola dengan kolom "Qty PO" di ReceiveGoodsDialog, biar
+  // GA bisa bandingin qty yang mau dikirim vs qty yang tercantum di PO.
+  const poQtyByPartNumber = Object.fromEntries(
+    (po?.items || []).map((i) => [i.part_number, i.qty]),
+  );
+
   // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected) - GA/
   // Purchasing perlu bisa cetak & tempel BAST ke paket SEBELUM barang
   // dikirim (QR di dalamnya baru berarti setelah discan pas barang sampai),
@@ -916,17 +923,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
   // Tombol "Terima Barang" manual - dipakai kalau template PO ini tidak
   // punya step approval "Receiver" (atau receiver-nya mau delegasikan ke GA).
-  // Muncul begitu status sudah "Pending Receive" (mulai) atau "Partial
-  // Receive" (edit checklist sampai sesuai). Begitu "Full Received", tombol
-  // ini hilang, diganti tombol cetak riwayat. Untuk vendor Site, yang boleh
-  // klik ini requester-nya sendiri (bukan GA) - lihat isSiteVendorPO di atas.
+  // Selalu muncul dari "Pending Receive" dan seterusnya - termasuk "Full
+  // Received", supaya checklist-nya tetap bisa dibuka/diedit lagi kapan pun
+  // (mis. koreksi qty yang salah input). submitReceiveRecord aman dipanggil
+  // ulang dari status apapun (deriveReceiveDrivenStatus & guard status item
+  // MR di dalamnya sudah idempoten - item yang sudah lanjut ke "On
+  // Delivery"/"Completed" otomatis dilewati, tidak ke-downgrade). Untuk
+  // vendor Site, yang boleh klik ini requester-nya sendiri (bukan GA) -
+  // lihat isSiteVendorPO di atas.
   const canManuallyReceiveGoods =
     userProfile?.role === "admin" ||
     (isSiteVendorPO ? isMrRequesterForThisPO : isGA);
   const showManualReceiveButton =
     canManuallyReceiveGoods &&
     (po?.status === PO_STATUS_PENDING_RECEIVE ||
-      po?.status === PO_STATUS_PARTIAL_RECEIVE);
+      po?.status === PO_STATUS_PARTIAL_RECEIVE ||
+      po?.status === PO_STATUS_FULL_RECEIVED);
+  // "Sudah pernah diterima" ditentukan dari ada/tidaknya receive_record (bukan
+  // cuma status Partial Receive) - supaya begitu Full Received juga kebaca
+  // sebagai "sudah pernah diterima" dan tombolnya jadi label edit.
+  const hasReceiveRecord = !!po?.receive_record;
 
   // PO dp&bp - orang yang megang step Payment Validator di PO ini (atau
   // admin) selalu bisa buka dialog buat edit dp_paid/bp_paid, kapan pun,
@@ -1913,8 +1929,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     disabled={actionLoading}
                   >
                     <PackageCheck className="mr-2 h-4 w-4" />
-                    {po.status === PO_STATUS_PARTIAL_RECEIVE
-                      ? "Edit Penerimaan Barang"
+                    {hasReceiveRecord
+                      ? isSiteVendorPO
+                        ? "Edit Penerimaan Barang"
+                        : "Edit Terima GA"
                       : isSiteVendorPO
                         ? "Konfirmasi Terima Barang"
                         : "Terima Barang"}
@@ -3518,41 +3536,58 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       Tidak ada barang berstatus &quot;Diterima GA&quot;.
                     </div>
                   ) : (
-                    deliverDialogItems.map((item) => {
-                      const partNumber = item.part_number as string;
-                      const checked =
-                        selectedPartNumbersForDelivery.has(partNumber);
-                      return (
-                        <div
-                          key={partNumber}
-                          className="flex items-center gap-2 p-2 text-sm"
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={() =>
-                              toggleDeliveryItemSelection(partNumber)
-                            }
-                          />
-                          <span className="flex-1">{item.name}</span>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={deliveryQtyByPartNumber[partNumber] ?? ""}
-                            onChange={(e) =>
-                              setDeliveryQtyByPartNumber((prev) => ({
-                                ...prev,
-                                [partNumber]: e.target.value,
-                              }))
-                            }
-                            className="h-8 w-24"
-                            disabled={!checked}
-                          />
-                          <span className="text-xs text-muted-foreground w-10">
-                            {item.uom}
-                          </span>
-                        </div>
-                      );
-                    })
+                    <>
+                      <div className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted/40">
+                        <span className="w-4 shrink-0" />
+                        <span className="flex-1">Nama Barang</span>
+                        <span className="w-16 shrink-0 text-right">
+                          Qty PO
+                        </span>
+                        <span className="w-24 shrink-0 text-right pr-1">
+                          Qty Kirim
+                        </span>
+                        <span className="w-10 shrink-0" />
+                      </div>
+                      {deliverDialogItems.map((item) => {
+                        const partNumber = item.part_number as string;
+                        const checked =
+                          selectedPartNumbersForDelivery.has(partNumber);
+                        const poQty = poQtyByPartNumber[partNumber];
+                        return (
+                          <div
+                            key={partNumber}
+                            className="flex items-center gap-2 p-2 text-sm"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() =>
+                                toggleDeliveryItemSelection(partNumber)
+                              }
+                            />
+                            <span className="flex-1">{item.name}</span>
+                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+                              {poQty ?? "-"}
+                            </span>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={deliveryQtyByPartNumber[partNumber] ?? ""}
+                              onChange={(e) =>
+                                setDeliveryQtyByPartNumber((prev) => ({
+                                  ...prev,
+                                  [partNumber]: e.target.value,
+                                }))
+                              }
+                              className="h-8 w-24"
+                              disabled={!checked}
+                            />
+                            <span className="text-xs text-muted-foreground w-10">
+                              {item.uom}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </>
                   )}
                 </div>
               </div>
