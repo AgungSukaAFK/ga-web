@@ -4396,7 +4396,7 @@ const PrintableBAST = ({
       </div>
       <div className="text-center w-1/3">
         <p className="text-xs font-semibold uppercase text-gray-600 mb-10">
-          Receiver
+          GA / Receiver
         </p>
         <p className="text-xs border-t border-gray-400 pt-1">
           {goodsReceipt?.receiver_name || "-"}
