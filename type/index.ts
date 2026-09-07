@@ -597,6 +597,20 @@ export type MrItemStatus =
 // KEBUTUHAN MODUL PETTY CASH (STANDALONE)
 // ==========================================
 
+// Rekening bank tersimpan milik user (privat, lihat
+// supabase/petty-cash-reimbursement-bank-account-setup.sql) - dikelola dari
+// halaman Profile, dipilih (atau quick-add) saat membuat pengajuan Petty
+// Cash tipe "Reimbursement".
+export interface BankAccount {
+  id: number;
+  user_id: string;
+  bank_name: string;
+  account_number: string;
+  account_holder_name: string;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
 export type PettyCashType = "Reimbursement" | "Cash Advance";
 
 export type PettyCashStatus =
@@ -626,6 +640,12 @@ export interface PettyCashRequest {
   created_at: string | Date;
   updated_at: string | Date;
 
+  // Snapshot rekening tujuan - cuma keisi utk type "Reimbursement" (lihat
+  // supabase/petty-cash-reimbursement-bank-account-setup.sql)
+  bank_name: string | null;
+  bank_account_number: string | null;
+  bank_account_holder_name: string | null;
+
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
   cost_centers?: { name: string; current_budget: number } | null;
@@ -640,6 +660,10 @@ export interface PettyCashPayload {
   purpose: string;
   needed_date: string;
   attachments: Attachment[];
+  // Cuma dikirim saat type "Reimbursement" (lihat buat/page.tsx)
+  bank_name?: string;
+  bank_account_number?: string;
+  bank_account_holder_name?: string;
 }
 
 export interface PettyCashSettlementPayload {

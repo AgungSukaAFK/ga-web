@@ -598,6 +598,23 @@ export default function PettyCashDetailPage() {
                   </span>
                   <p className="text-sm whitespace-pre-wrap">{pc.purpose}</p>
                 </div>
+                {pc.type === "Reimbursement" && pc.bank_name && (
+                  <>
+                    <Separator className="print:bg-slate-300" />
+                    <div>
+                      <span className="text-muted-foreground text-xs font-medium flex items-center gap-1 mb-1">
+                        <Banknote className="h-3.5 w-3.5" />
+                        Rekening Tujuan Transfer
+                      </span>
+                      <p className="text-sm font-semibold">
+                        {pc.bank_name} - {pc.bank_account_number}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        a.n. {pc.bank_account_holder_name}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* LAMPIRAN AWAL (Sembunyikan saat print) */}

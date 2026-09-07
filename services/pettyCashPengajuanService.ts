@@ -209,7 +209,7 @@ export const fetchPengajuanById = async (
 ): Promise<PettyCashPengajuan> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, users_with_profiles!user_id(nama, email)")
+    .select("*, users_with_profiles:profiles!user_id(nama, email)")
     .eq("id", id)
     .single();
 
@@ -229,9 +229,12 @@ export const fetchPengajuanApprovalQueue = async (
 ): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, users_with_profiles!user_id(nama, email)")
+    .select("*, users_with_profiles:profiles!user_id(nama, email)")
     .eq("status", "In Approval")
-    .contains("approvals", [{ userid: userId, status: "pending" }])
+    .contains(
+      "approvals",
+      JSON.stringify([{ userid: userId, status: "pending" }]),
+    )
     .order("created_at", { ascending: true });
 
   if (error) throw error;

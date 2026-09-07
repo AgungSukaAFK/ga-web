@@ -214,7 +214,7 @@ export const fetchVoucherById = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
     )
     .eq("id", id)
     .single();
@@ -328,10 +328,13 @@ export const fetchVoucherApprovalQueue = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
     )
     .eq("status", "In Approval")
-    .contains("approvals", [{ userid: userId, status: "pending" }])
+    .contains(
+      "approvals",
+      JSON.stringify([{ userid: userId, status: "pending" }]),
+    )
     .order("created_at", { ascending: true });
 
   if (error) throw error;

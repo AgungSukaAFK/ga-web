@@ -28,9 +28,11 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { createPettyCash } from "@/services/pettyCashService";
-import { PettyCashType } from "@/type";
+import { PettyCashType, BankAccount } from "@/type";
 import { PETTY_CASH_TYPE_OPTIONS } from "@/type/enum";
 import { notifyGAOnPCSubmit } from "@/lib/notifications/client";
+import { fetchMyBankAccounts } from "@/services/bankAccountService";
+import { BankAccountDialog } from "@/components/bank-account-form-dialog";
 import {
   Loader2,
   Save,
@@ -39,6 +41,8 @@ import {
   ReceiptText,
   Info,
   UserCircle,
+  Landmark,
+  Plus,
 } from "lucide-react";
 
 export default function CreatePettyCashPage() {
@@ -54,6 +58,7 @@ export default function CreatePettyCashPage() {
     department: string;
     nama: string;
   } | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // State Form (Cost Center dihilangkan, diset null nanti)
   const [formData, setFormData] = useState({
@@ -64,6 +69,13 @@ export default function CreatePettyCashPage() {
     attachments: [] as { url: string; name: string }[],
   });
 
+  // State Rekening Bank (khusus tipe Reimbursement)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<
+    number | null
+  >(null);
+  const [isBankDialogOpen, setIsBankDialogOpen] = useState(false);
+
   // Fetch Profile
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -72,6 +84,7 @@ export default function CreatePettyCashPage() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) throw new Error("User tidak terautentikasi.");
+        setUserId(user.id);
 
         const { data: userProfile, error: profileError } = await supabase
           .from("profiles")
@@ -81,12 +94,20 @@ export default function CreatePettyCashPage() {
 
         if (profileError) throw profileError;
         setProfile(userProfile);
+
+        const accounts = await fetchMyBankAccounts(user.id);
+        setBankAccounts(accounts);
       } catch (error: any) {
         toast.error("Gagal memuat data awal", { description: error.message });
       }
     };
     fetchInitialData();
   }, []);
+
+  const handleBankAccountSaved = (account: BankAccount) => {
+    setBankAccounts((prev) => [...prev, account]);
+    setSelectedBankAccountId(account.id);
+  };
 
   // Handler Input Currency (Format langsung di kotak input)
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,6 +181,14 @@ export default function CreatePettyCashPage() {
       );
     }
 
+    const selectedBankAccount =
+      formData.type === "Reimbursement"
+        ? bankAccounts.find((a) => a.id === selectedBankAccountId)
+        : null;
+    if (formData.type === "Reimbursement" && !selectedBankAccount) {
+      return toast.error("Rekening tujuan transfer wajib dipilih.");
+    }
+
     setLoading(true);
     try {
       const {
@@ -177,6 +206,11 @@ export default function CreatePettyCashPage() {
           purpose: formData.purpose,
           needed_date: formData.needed_date,
           attachments: formData.attachments,
+          ...(selectedBankAccount && {
+            bank_name: selectedBankAccount.bank_name,
+            bank_account_number: selectedBankAccount.account_number,
+            bank_account_holder_name: selectedBankAccount.account_holder_name,
+          }),
         },
         user.id,
       );
@@ -365,6 +399,54 @@ export default function CreatePettyCashPage() {
                   </div>
                 )}
               </div>
+
+              {formData.type === "Reimbursement" && (
+                <div className="space-y-2 pt-2">
+                  <Label>
+                    Rekening Tujuan Transfer{" "}
+                    <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <Select
+                      value={
+                        selectedBankAccountId
+                          ? String(selectedBankAccountId)
+                          : undefined
+                      }
+                      onValueChange={(val) =>
+                        setSelectedBankAccountId(Number(val))
+                      }
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Pilih rekening..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {bankAccounts.map((account) => (
+                          <SelectItem key={account.id} value={String(account.id)}>
+                            {account.bank_name} - {account.account_number} a.n.{" "}
+                            {account.account_holder_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsBankDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Tambah Rekening
+                    </Button>
+                  </div>
+                  {bankAccounts.length === 0 && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Landmark className="h-3 w-3" />
+                      Belum ada rekening tersimpan - klik &ldquo;Tambah
+                      Rekening&rdquo; untuk menambahkan.
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -450,6 +532,13 @@ export default function CreatePettyCashPage() {
           </Card>
         </div>
       </div>
+      <BankAccountDialog
+        open={isBankDialogOpen}
+        onOpenChange={setIsBankDialogOpen}
+        onSaved={handleBankAccountSaved}
+        initialData={null}
+        userId={userId || ""}
+      />
     </Content>
   );
 }
