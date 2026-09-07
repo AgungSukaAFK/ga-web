@@ -8,7 +8,17 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { User } from "@supabase/supabase-js";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Terminal, Eye, EyeOff, KeyRound } from "lucide-react";
+import {
+  Loader2,
+  Terminal,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Landmark,
+  Plus,
+  Edit,
+  Trash2,
+} from "lucide-react";
 import { Combobox } from "@/components/combobox";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Label } from "@/components/ui/label";
@@ -17,6 +27,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
 import { NotificationSettings } from "@/components/notification-settings";
+import { BankAccount } from "@/type";
+import { fetchMyBankAccounts, deleteBankAccount } from "@/services/bankAccountService";
+import { BankAccountDialog } from "@/components/bank-account-form-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 // REVISI: Tambahkan nrp dan company ke tipe Profile
 type Profile = {
@@ -53,6 +67,12 @@ export default function Dashboard() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // --- Rekening Bank ---
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [isBankDialogOpen, setIsBankDialogOpen] = useState(false);
+  const [selectedBankAccount, setSelectedBankAccount] =
+    useState<BankAccount | null>(null);
 
   const router = useRouter();
 
@@ -114,6 +134,9 @@ export default function Dashboard() {
         const fetchedProfile = profileRes as Profile;
         setProfile(fetchedProfile);
         setFormData(fetchedProfile); // Inisialisasi form dengan semua data
+
+        const accounts = await fetchMyBankAccounts(user.id);
+        setBankAccounts(accounts);
       } catch (err: any) {
         console.error("An unexpected error occurred:", err);
         toast.error("Gagal memuat data profil", { description: err.message });
@@ -243,6 +266,34 @@ export default function Dashboard() {
       toast.error("Gagal mengubah password", { description: error.message });
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleOpenAddBank = () => {
+    setSelectedBankAccount(null);
+    setIsBankDialogOpen(true);
+  };
+
+  const handleOpenEditBank = (account: BankAccount) => {
+    setSelectedBankAccount(account);
+    setIsBankDialogOpen(true);
+  };
+
+  const handleBankSaved = (account: BankAccount) => {
+    setBankAccounts((prev) =>
+      prev.some((a) => a.id === account.id)
+        ? prev.map((a) => (a.id === account.id ? account : a))
+        : [...prev, account],
+    );
+  };
+
+  const handleDeleteBank = async (id: number) => {
+    try {
+      await deleteBankAccount(id);
+      setBankAccounts((prev) => prev.filter((a) => a.id !== id));
+      toast.success("Rekening berhasil dihapus.");
+    } catch (err: any) {
+      toast.error("Gagal menghapus rekening", { description: err.message });
     }
   };
 
@@ -498,7 +549,67 @@ export default function Dashboard() {
         <Content size="lg">
           <NotificationSettings />
         </Content>
+        <Content size="lg">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Landmark className="h-4 w-4" />
+              <Label className="text-base font-bold">Rekening Bank</Label>
+            </div>
+            <Button size="sm" onClick={handleOpenAddBank}>
+              <Plus className="mr-2 h-4 w-4" /> Tambah Rekening
+            </Button>
+          </div>
+          {bankAccounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada rekening tersimpan. Rekening dibutuhkan saat membuat
+              pengajuan Petty Cash tipe Reimbursement.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {bankAccounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between gap-3 p-3 border border-border rounded-md"
+                >
+                  <div className="text-sm min-w-0">
+                    <p className="font-semibold truncate">
+                      {account.bank_name} - {account.account_number}
+                    </p>
+                    <p className="text-muted-foreground text-xs truncate">
+                      a.n. {account.account_holder_name}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenEditBank(account)}
+                    >
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                    <ConfirmDialog
+                      title={`Hapus Rekening: ${account.bank_name}`}
+                      description="Apakah Anda yakin ingin menghapus rekening ini? Tindakan ini tidak dapat dibatalkan."
+                      onConfirm={() => handleDeleteBank(account.id)}
+                    >
+                      <Button variant="destructive" size="sm">
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </ConfirmDialog>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Content>
       </div>
+      <BankAccountDialog
+        open={isBankDialogOpen}
+        onOpenChange={setIsBankDialogOpen}
+        onSaved={handleBankSaved}
+        initialData={selectedBankAccount}
+        userId={user?.id || ""}
+      />
     </>
   );
 }
