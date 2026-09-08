@@ -47,6 +47,7 @@ export type DeliveryType =
   | "Kurir/Ekspedisi Eksternal"
   | "Kendaraan Internal GA"
   | "Diambil Langsung Requester"
+  | "Dikirim ke KM 10"
   | "Lainnya";
 
 export interface DeliveryInfo {
@@ -55,7 +56,11 @@ export interface DeliveryInfo {
   tracking_number?: string; // No. resi
   note?: string;
   qty_sent: number;
-  attachments: Attachment[]; // Bukti kirim (foto/surat jalan), wajib min. 1
+  // Bukti kirim (foto/surat jalan) - wajib min. 1, KECUALI delivery_type
+  // "Dikirim ke KM 10" (lihat handleSendToRequester di
+  // purchase-order/[id]/page.tsx - untuk tipe ini ekspedisi/resi/bukti
+  // sengaja dikosongkan & tidak wajib).
+  attachments: Attachment[];
   sent_at: string;
   sent_by: string; // User ID GA yang kirim
   // Diisi kalau info pengiriman ini pernah diedit ulang (GA approver, selama
