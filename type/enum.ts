@@ -429,6 +429,9 @@ export const PETTY_CASH_BARANG_KATEGORI_OPTIONS = [
   "E-Tol",
   "Maintenance Building",
   "Maintenance Kendaraan",
+  "ATK",
+  "Ongkos Kirim",
+  "Kebutuhan Kantor",
 ] as const;
 
 // Daftar satuan (UoM) umum - dipakai combobox search di form Barang Petty

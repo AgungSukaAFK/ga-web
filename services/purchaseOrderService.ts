@@ -425,11 +425,32 @@ export const createPurchaseOrder = async (
     is_asset: !!poData.is_asset,
   };
 
+  // FIX BUG DUPLIKAT NOMOR: payload.kode_po di titik ini masih cuma PREVIEW
+  // dari generatePoCode (dihitung read-then-write, bisa bentrok kalau ada
+  // user LAIN dari lokasi berbeda submit bersamaan - lihat
+  // supabase/document-number-counters-setup.sql). Nomor FINAL yang benar-
+  // benar dipakai direbut atomic di sini lewat next_document_number() (row
+  // lock Postgres) SEBELUM insert pertama, supaya tidak pernah collide walau
+  // segmen lokasinya beda.
+  const currentYear = new Date().getFullYear();
+  const claimNextPoNumber = async () => {
+    const { data: seq, error: seqError } = await supabase.rpc(
+      "next_document_number",
+      { p_doc_type: "PO", p_company_code: company_code, p_year: currentYear },
+    );
+    if (seqError) throw seqError;
+    const parts = payload.kode_po.split("/");
+    parts[parts.length - 1] = String(seq);
+    payload.kode_po = parts.join("/");
+  };
+  await claimNextPoNumber();
+
   let newPo;
   let attempts = 0;
   const maxAttempts = 5;
 
-  // FIX 2: Mekanisme Auto-Retry (Race Condition)
+  // FIX 2: Mekanisme Auto-Retry (jaring pengaman langka - insert normalnya
+  // sudah dijamin unik lewat next_document_number di atas)
   while (attempts < maxAttempts) {
     const { data, error } = await supabase
       .from("purchase_orders")
@@ -447,23 +468,7 @@ export const createPurchaseOrder = async (
           );
         }
 
-        // Ambil nomor urut PO terbaru untuk dire-generate
-        const { data: latestPo } = await supabase
-          .from("purchase_orders")
-          .select("kode_po")
-          .eq("company_code", company_code)
-          .gte("created_at", `${new Date().getFullYear()}-01-01T00:00:00Z`)
-          .order("id", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (latestPo) {
-          const parts = latestPo.kode_po.split("/");
-          const lastNum = parseInt(parts[parts.length - 1] || "0", 10);
-          const currentParts = payload.kode_po.split("/");
-          currentParts[currentParts.length - 1] = (lastNum + 1).toString();
-          payload.kode_po = currentParts.join("/");
-        }
+        await claimNextPoNumber();
         continue;
       }
       throw error;
