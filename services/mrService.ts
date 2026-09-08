@@ -227,7 +227,28 @@ export const createMaterialRequest = async (
     discussions: [],
   };
 
-  // FIX 3: Mekanisme Auto-Retry (Race Condition)
+  // FIX BUG DUPLIKAT NOMOR: nomor urut di payload.kode_mr di titik ini
+  // masih cuma PREVIEW dari generateMRCode (dihitung read-then-write, bisa
+  // bentrok kalau ada user LAIN dari departemen/lokasi berbeda submit
+  // bersamaan - lihat supabase/document-number-counters-setup.sql). Nomor
+  // FINAL yang benar-benar dipakai direbut atomic di sini lewat fungsi
+  // next_document_number() (row lock Postgres) SEBELUM insert pertama,
+  // supaya tidak pernah collide walau segmen departemen/lokasinya beda.
+  const currentYear = new Date().getFullYear();
+  const claimNextMrNumber = async () => {
+    const { data: seq, error: seqError } = await supabase.rpc(
+      "next_document_number",
+      { p_doc_type: "MR", p_company_code: company_code, p_year: currentYear },
+    );
+    if (seqError) throw seqError;
+    const parts = payload.kode_mr.split("/");
+    parts[parts.length - 1] = String(seq);
+    payload.kode_mr = parts.join("/");
+  };
+  await claimNextMrNumber();
+
+  // FIX 3: Mekanisme Auto-Retry (jaring pengaman langka - insert normalnya
+  // sudah dijamin unik lewat next_document_number di atas)
   let attempts = 0;
   const maxAttempts = 5;
 
@@ -248,24 +269,7 @@ export const createMaterialRequest = async (
           );
         }
 
-        // Scan semua MR tahun ini untuk cari MAX seq (sama seperti getLatestSeq di convertMrCompany)
-        const currentYear = new Date().getFullYear();
-        const { data: allMrs } = await supabase
-          .from("material_requests")
-          .select("kode_mr")
-          .eq("company_code", company_code)
-          .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
-          .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`);
-
-        let maxSeq = 0;
-        for (const mr of allMrs ?? []) {
-          const seq = parseInt(mr.kode_mr.split("/").pop() ?? "0", 10);
-          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
-        }
-
-        const currentParts = payload.kode_mr.split("/");
-        currentParts[currentParts.length - 1] = (maxSeq + 1).toString();
-        payload.kode_mr = currentParts.join("/");
+        await claimNextMrNumber();
         continue; // Ulangi proses insert dengan kode baru
       }
 
