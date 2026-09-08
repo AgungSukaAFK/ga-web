@@ -278,63 +278,86 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return markActive(baseNav);
   }, [profile, markActive, unreadCount]);
 
-  // MENU PETTY CASH
+  // MENU PETTY CASH - tiap item disaring sesuai hak akses halamannya
+  // masing-masing, meniru gate yang SUDAH ADA di halaman/RLS terkait (bukan
+  // aturan baru): Barang & Template = admin/GA (sama seperti
+  // PettyCashBarangClient.tsx canModify & PcApprovalTemplateClient.tsx),
+  // approval-approval = role "approver" (sama seperti "Approval &
+  // Validation" MR/PO di atas), sisanya self-service jadi terbuka utk semua.
   const pettyCashItems = React.useMemo(() => {
+    const isAdmin = profile?.role === "admin";
+    const isGA = isGADepartment(profile?.department);
+    const isApprover = profile?.role === "approver";
+    const canManagePc = isAdmin || isGA;
+    const canApprovePc = isAdmin || isApprover;
+
     const pcNav = [
       {
         title: "Barang Petty Cash",
         url: "/petty-cash/barang",
         icon: Boxes,
+        visible: canManagePc,
       },
       {
         title: "Template Approval",
         url: "/petty-cash/template-approval",
         icon: Workflow,
+        visible: canManagePc,
       },
       {
         title: "Template Pengajuan",
         url: "/petty-cash/template-pengajuan",
         icon: FileSignature,
+        visible: canManagePc,
       },
       {
         title: "Input Pengajuan",
         url: "/petty-cash/input-pengajuan",
         icon: PlusCircle,
+        visible: true,
       },
       {
         title: "Approval Pengajuan",
         url: "/petty-cash/approval-pengajuan",
         icon: CheckCheck,
+        visible: canApprovePc,
       },
       {
         title: "Pengajuan Voucher",
         url: "/petty-cash/pengajuan-voucher",
         icon: Receipt,
+        visible: true,
       },
       {
         title: "Approval Voucher",
         url: "/petty-cash/approval-voucher",
         icon: BadgeCheck,
+        visible: canApprovePc,
       },
       {
         title: "Claim Voucher",
         url: "/petty-cash/claim-voucher",
         icon: Wallet,
+        visible: true,
       },
       {
         title: "Deklarasi",
         url: "/petty-cash/deklarasi",
         icon: FileText,
+        visible: true,
       },
       {
         title: "Approval Deklarasi",
         url: "/petty-cash/approval-deklarasi",
         icon: FileCheck2,
+        visible: canApprovePc,
       },
     ];
 
-    return markActive(pcNav);
-  }, [markActive]);
+    return markActive(
+      pcNav.filter((item) => item.visible).map(({ visible, ...rest }) => rest),
+    );
+  }, [profile, markActive]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
