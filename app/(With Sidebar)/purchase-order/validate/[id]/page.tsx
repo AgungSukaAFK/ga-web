@@ -11,9 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PurchaseOrderDetail, Approval, User } from "@/type";
+import { PurchaseOrderDetail, Approval, User, Attachment } from "@/type";
 import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
+import { resolveAttachmentUrl } from "@/lib/attachments";
 import { logActivity } from "@/services/logService";
 import {
   AlertTriangle,
@@ -34,6 +35,8 @@ import {
   Building2,
   Link as LinkIcon,
   Wallet,
+  Paperclip,
+  ExternalLink,
 } from "lucide-react";
 import {
   Table,
@@ -526,6 +529,28 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
               </TableBody>
             </Table>
           </div>
+        </Content>
+
+        <Content title="Lampiran" size="sm">
+          {(po.attachments || []).length > 0 ? (
+            <ul className="space-y-2">
+              {(po.attachments as Attachment[]).map((file, index) => (
+                <li key={index}>
+                  <Link
+                    href={resolveAttachmentUrl(file.url)}
+                    target="_blank"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    <span>{file.name}</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
+          )}
         </Content>
 
         {po.material_requests && (
