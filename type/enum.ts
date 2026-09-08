@@ -346,6 +346,7 @@ export const DELIVERY_TYPE_OPTIONS = [
   "Kurir/Ekspedisi Eksternal",
   "Kendaraan Internal GA",
   "Diambil Langsung Requester",
+  "Dikirim ke KM 10",
   "Lainnya",
 ] as const;
 

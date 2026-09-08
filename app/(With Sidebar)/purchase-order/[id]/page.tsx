@@ -674,8 +674,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       }
     }
     // Mode kirim baru: bukti pengiriman wajib. Mode edit: lampiran lama
-    // sudah ada, upload baru sifatnya opsional (tambahan).
+    // sudah ada, upload baru sifatnya opsional (tambahan). Kecuali tipe
+    // "Dikirim ke KM 10" - ekspedisi/resi/bukti pengiriman sengaja
+    // dikosongkan & tidak wajib sama sekali untuk tipe ini.
     if (
+      deliveryType !== "Dikirim ke KM 10" &&
       !isEditingDelivery &&
       (!deliveryFiles || deliveryFiles.length === 0)
     ) {
@@ -3597,7 +3600,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <Label htmlFor="delivery-type">Jenis Pengiriman</Label>
                   <Select
                     value={deliveryType}
-                    onValueChange={(v) => setDeliveryType(v as DeliveryType)}
+                    onValueChange={(v) => {
+                      setDeliveryType(v as DeliveryType);
+                      // Tipe "Dikirim ke KM 10" sengaja tidak butuh
+                      // ekspedisi/resi/bukti pengiriman - kosongkan supaya
+                      // tidak ada nilai basi ikut tersimpan kalau
+                      // sebelumnya sempat diisi di tipe lain.
+                      if (v === "Dikirim ke KM 10") {
+                        setDeliveryCourier("");
+                        setDeliveryTrackingNumber("");
+                        setDeliveryFiles(null);
+                      }
+                    }}
                   >
                     <SelectTrigger id="delivery-type" className="mt-2">
                       <SelectValue />
@@ -3611,42 +3625,48 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label htmlFor="delivery-courier">
-                    Ekspedisi
-                    {deliveryType === "Kurir/Ekspedisi Eksternal" && " *"}
-                  </Label>
-                  <Input
-                    id="delivery-courier"
-                    value={deliveryCourier}
-                    onChange={(e) => setDeliveryCourier(e.target.value)}
-                    placeholder="mis. JNE, J&T, Gojek"
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="delivery-resi">No. Resi</Label>
-                  <Input
-                    id="delivery-resi"
-                    value={deliveryTrackingNumber}
-                    onChange={(e) => setDeliveryTrackingNumber(e.target.value)}
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="delivery-file">
-                    {isEditingDelivery
-                      ? "Tambah Bukti Pengiriman (opsional)"
-                      : "Bukti Pengiriman (wajib)"}
-                  </Label>
-                  <Input
-                    id="delivery-file"
-                    type="file"
-                    multiple
-                    onChange={(e) => setDeliveryFiles(e.target.files)}
-                    className="mt-2"
-                  />
-                </div>
+                {deliveryType !== "Dikirim ke KM 10" && (
+                  <>
+                    <div>
+                      <Label htmlFor="delivery-courier">
+                        Ekspedisi
+                        {deliveryType === "Kurir/Ekspedisi Eksternal" && " *"}
+                      </Label>
+                      <Input
+                        id="delivery-courier"
+                        value={deliveryCourier}
+                        onChange={(e) => setDeliveryCourier(e.target.value)}
+                        placeholder="mis. JNE, J&T, Gojek"
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="delivery-resi">No. Resi</Label>
+                      <Input
+                        id="delivery-resi"
+                        value={deliveryTrackingNumber}
+                        onChange={(e) =>
+                          setDeliveryTrackingNumber(e.target.value)
+                        }
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="delivery-file">
+                        {isEditingDelivery
+                          ? "Tambah Bukti Pengiriman (opsional)"
+                          : "Bukti Pengiriman (wajib)"}
+                      </Label>
+                      <Input
+                        id="delivery-file"
+                        type="file"
+                        multiple
+                        onChange={(e) => setDeliveryFiles(e.target.files)}
+                        className="mt-2"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div>
