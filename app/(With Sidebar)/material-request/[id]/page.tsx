@@ -56,6 +56,7 @@ import {
   Clock,
   XCircle,
   AlertCircle, // <--- Added Icon
+  PackageCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,7 +71,9 @@ import {
   Profile,
   Attachment,
   MrItemStatus,
+  GaStock,
 } from "@/type";
+import { isGADepartment } from "@/lib/constants/departments";
 import {
   formatCurrency,
   formatDateFriendly,
@@ -130,7 +133,12 @@ import {
   removeManualPoLink,
   setItemPaymentIssue,
   getDueDateFromPriority,
+  addStockFulfillment,
 } from "@/services/mrService";
+import {
+  fetchGaStockForBarang,
+  decrementGaStock,
+} from "@/services/gaStockService";
 import {
   fetchPoQtyBreakdownForMr,
   fetchPosForMr,
@@ -251,6 +259,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     note: "",
   });
   const [savingItemStatus, setSavingItemStatus] = useState(false);
+
+  // --- STATE: KIRIM PAKAI STOK GA (penuhi item tanpa PO) ---
+  const [isUseStockOpen, setIsUseStockOpen] = useState(false);
+  const [selectedItemForStock, setSelectedItemForStock] =
+    useState<Order | null>(null);
+  const [selectedItemIndexForStock, setSelectedItemIndexForStock] = useState<
+    number | null
+  >(null);
+  const [stockForItem, setStockForItem] = useState<GaStock | null>(null);
+  const [loadingStockForItem, setLoadingStockForItem] = useState(false);
+  const [useStockQty, setUseStockQty] = useState("");
+  const [savingStockUsage, setSavingStockUsage] = useState(false);
 
   // --- STATE: LINK MANUAL KE PO (barang disubstitusi pas beli) ---
   const [posForMr, setPosForMr] = useState<
@@ -380,6 +400,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     userProfile?.department === "Purchasing" ||
     userProfile?.department === "Procurement" ||
     userProfile?.role === "admin";
+
+  // Gate fitur "Kirim pakai Stok GA" - pola sama persis dgn privilege GA di
+  // tempat lain (mis. halaman /stok-ga sendiri).
+  const isGA =
+    isGADepartment(userProfile?.department) || userProfile?.role === "admin";
 
   // Toggle-nya nempel di dialog "Kelola Status & PO Barang", yang tombol
   // pembukanya sendiri sudah dibatasi ke isPurchasing (lihat pencil icon di
@@ -673,6 +698,135 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.error("Gagal update status", { description: err.message });
     } finally {
       setSavingItemStatus(false);
+    }
+  };
+
+  // --- KIRIM PAKAI STOK GA (penuhi item MR "Open 2" tanpa PO) ---
+  // Sisa qty yang masih perlu "dipenuhi" (dari PO ATAU dari Stok GA) -
+  // gabungan poBreakdown (qty sudah ke-cover PO) dengan stock_fulfillments
+  // (qty sudah dipenuhi dari Stok GA). Dipakai baik utk nentuin tombol
+  // "Kirim pakai Stok GA" muncul/tidak, maupun batas maksimal qty di dialog.
+  const getItemRemainingQty = (item: Order): number => {
+    const poQty = item.part_number
+      ? (poBreakdown[item.part_number] || []).reduce(
+          (sum, entry) => sum + (entry.qty || 0),
+          0,
+        )
+      : 0;
+    const stockQty = (item.stock_fulfillments || []).reduce(
+      (sum, entry) => sum + (entry.qty || 0),
+      0,
+    );
+    return Math.max(0, Number(item.qty) - poQty - stockQty);
+  };
+
+  const handleOpenUseStockDialog = async (item: Order, index: number) => {
+    if (!item.barang_id || !mr?.company_code) return;
+    setSelectedItemForStock(item);
+    setSelectedItemIndexForStock(index);
+    setUseStockQty("");
+    setStockForItem(null);
+    setIsUseStockOpen(true);
+    setLoadingStockForItem(true);
+    try {
+      const stock = await fetchGaStockForBarang(
+        item.barang_id,
+        mr.company_code,
+      );
+      setStockForItem(stock);
+    } catch (err: any) {
+      toast.error("Gagal memuat stok GA", { description: err.message });
+    } finally {
+      setLoadingStockForItem(false);
+    }
+  };
+
+  const handleSaveStockUsage = async () => {
+    if (
+      !mr?.id ||
+      !selectedItemForStock ||
+      selectedItemIndexForStock === null ||
+      !stockForItem ||
+      !currentUser
+    )
+      return;
+
+    const remainingQty = getItemRemainingQty(selectedItemForStock);
+    const maxQty = Math.min(stockForItem.quantity, remainingQty);
+    const qty = Number(useStockQty);
+
+    if (!qty || qty <= 0) {
+      toast.error("Isi qty yang dipakai");
+      return;
+    }
+    if (qty > maxQty) {
+      toast.error(`Qty maksimal ${maxQty} ${selectedItemForStock.uom}`);
+      return;
+    }
+
+    setSavingStockUsage(true);
+    try {
+      // Kurangi stok GA atomic DULU - kalau gagal (stok kepakai user lain
+      // barusan), batalkan, jangan lanjut tulis apapun ke item MR.
+      await decrementGaStock(stockForItem.id, qty);
+
+      await addStockFulfillment(
+        mrId,
+        selectedItemForStock.part_number,
+        {
+          ga_stock_id: stockForItem.id,
+          qty,
+          fulfilled_at: new Date().toISOString(),
+          fulfilled_by: currentUser.id,
+        },
+        currentUser.id,
+        selectedItemIndexForStock,
+      );
+
+      const closedNow = remainingQty - qty <= 0;
+      if (closedNow) {
+        // Qty terpenuhi penuh (PO + Stok GA) - langsung selesai, skip
+        // approval/info pengiriman/BAST sepenuhnya sesuai desain fitur ini.
+        await updateMrItemStatus(
+          mrId,
+          selectedItemForStock.part_number,
+          { status: "Completed", level: "Close" },
+          currentUser.id,
+          selectedItemIndexForStock,
+        );
+      }
+      // Item LAIN di MR yang sama yang belum "linked" (belum ada PO/stok yg
+      // menutupi) TIDAK ikut berubah - recalculateMrStatus cuma menaikkan
+      // status keseluruhan MR kalau SEMUA item sudah linked.
+      await recalculateMrStatus(mrId);
+
+      await logActivity(
+        currentUser.id,
+        "USE_GA_STOCK",
+        "material_request",
+        String(mrId),
+        `${userProfile?.nama || "Unknown"} memenuhi ${qty} ${selectedItemForStock.uom} barang "${selectedItemForStock.name}" (${selectedItemForStock.part_number || "-"}) pada MR ${mr.kode_mr} pakai Stok GA${closedNow ? " - item selesai" : ""}`,
+        {
+          part_number: selectedItemForStock.part_number,
+          ga_stock_id: stockForItem.id,
+          qty,
+          closed: closedNow,
+        },
+      );
+
+      toast.success(
+        closedNow
+          ? "Barang berhasil dipenuhi dari Stok GA - item selesai"
+          : `${qty} ${selectedItemForStock.uom} dipenuhi dari Stok GA, sisa ${remainingQty - qty} ${selectedItemForStock.uom} masih perlu PO`,
+      );
+
+      setIsUseStockOpen(false);
+      await fetchMrData();
+      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+    } catch (err: any) {
+      toast.error("Gagal memakai Stok GA", { description: err.message });
+    } finally {
+      setSavingStockUsage(false);
     }
   };
 
@@ -1936,6 +2090,24 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                   <Pencil className="h-3 w-3" />
                                 </Button>
                               )}
+                              {isGA &&
+                                item.level === "Open 2" &&
+                                item.barang_id &&
+                                item.status !== "Cancelled" &&
+                                item.status !== "Replaced" &&
+                                getItemRemainingQty(item) > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() =>
+                                      handleOpenUseStockDialog(item, index)
+                                    }
+                                    title="Kirim pakai Stok GA"
+                                  >
+                                    <PackageCheck className="h-3 w-3" />
+                                  </Button>
+                                )}
                             </div>
 
                             {(() => {
@@ -1979,6 +2151,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                 </div>
                               );
                             })()}
+
+                            {item.stock_fulfillments &&
+                              item.stock_fulfillments.length > 0 && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-sm flex items-center gap-1 w-fit">
+                                  <PackageCheck className="w-3 h-3" />
+                                  {item.stock_fulfillments.reduce(
+                                    (sum, e) => sum + (e.qty || 0),
+                                    0,
+                                  )}{" "}
+                                  {item.uom} dari Stok GA
+                                </span>
+                              )}
 
                             {/* Info kirim dari GA - bandingin sama bukti
                                 BAST sebelum upload */}
@@ -2777,6 +2961,95 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Simpan Perubahan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Kirim pakai Stok GA - penuhi item "Open 2" langsung dari
+          ga_stocks tanpa PO/approval/info pengiriman/BAST. */}
+      <Dialog open={isUseStockOpen} onOpenChange={setIsUseStockOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kirim pakai Stok GA</DialogTitle>
+            <DialogDescription>
+              Penuhi <strong>{selectedItemForStock?.name}</strong> langsung
+              dari Stok GA - tidak perlu PO, approval, atau info pengiriman.
+              Qty yang dipakai langsung dianggap selesai.
+            </DialogDescription>
+          </DialogHeader>
+          {loadingStockForItem ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !stockForItem || stockForItem.quantity <= 0 ? (
+            <p className="text-sm text-muted-foreground py-4">
+              Tidak ada Stok GA untuk barang ini di perusahaan {mr?.company_code}.
+            </p>
+          ) : (
+            selectedItemForStock && (
+              <div className="space-y-4 py-2">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground text-xs">
+                      Stok Tersedia
+                    </p>
+                    <p className="font-semibold">
+                      {stockForItem.quantity} {selectedItemForStock.uom}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs">
+                      Sisa Qty Dibutuhkan
+                    </p>
+                    <p className="font-semibold">
+                      {getItemRemainingQty(selectedItemForStock)}{" "}
+                      {selectedItemForStock.uom}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="use-stock-qty">
+                    Qty yang Dipakai <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="use-stock-qty"
+                    type="number"
+                    min={1}
+                    max={Math.min(
+                      stockForItem.quantity,
+                      getItemRemainingQty(selectedItemForStock),
+                    )}
+                    value={useStockQty}
+                    onChange={(e) => setUseStockQty(e.target.value)}
+                    className="mt-2"
+                    disabled={savingStockUsage}
+                  />
+                </div>
+              </div>
+            )
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsUseStockOpen(false)}
+              disabled={savingStockUsage}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleSaveStockUsage}
+              disabled={
+                savingStockUsage ||
+                loadingStockForItem ||
+                !stockForItem ||
+                stockForItem.quantity <= 0
+              }
+            >
+              {savingStockUsage && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Kirim
             </Button>
           </DialogFooter>
         </DialogContent>

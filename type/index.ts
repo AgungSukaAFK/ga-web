@@ -41,6 +41,18 @@ export interface Order {
   // Diisi GA saat kirim barang ke requester (status "On Delivery") - dipakai
   // buat bandingin apa yg dikirim GA vs apa yg diterima requester (BAST).
   delivery_info?: DeliveryInfo;
+  // Qty item ini yang dipenuhi langsung dari Stok GA (ga_stocks), bukan lewat
+  // PO - lihat addStockFulfillment (services/mrService.ts). Kalau qty di
+  // sini + qty ter-PO (fetchPoQtyBreakdownForMr) sudah >= qty diminta, item
+  // langsung status "Completed"/level "Close" (skip approval/pengiriman/BAST
+  // sepenuhnya - lihat handler "Kirim pakai Stok GA" di
+  // material-request/[id]/page.tsx).
+  stock_fulfillments?: {
+    ga_stock_id: number;
+    qty: number;
+    fulfilled_at: string;
+    fulfilled_by: string;
+  }[];
 }
 
 export type DeliveryType =

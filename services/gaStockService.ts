@@ -119,3 +119,42 @@ export const deleteGaStock = async (id: number) => {
   const { error } = await supabase.from("ga_stocks").delete().eq("id", id);
   if (error) throw error;
 };
+
+/**
+ * Ambil satu baris Stok GA untuk kombinasi barang+perusahaan tertentu -
+ * dipakai fitur "Kirim pakai Stok GA" di detail MR. `barang_id`+`company_code`
+ * unique di ga_stocks (lihat createGaStock), jadi hasilnya selalu 0 atau 1
+ * baris.
+ */
+export const fetchGaStockForBarang = async (
+  barangId: number,
+  companyCode: string,
+): Promise<GaStock | null> => {
+  const { data, error } = await supabase
+    .from("ga_stocks")
+    .select(STOCK_SELECT)
+    .eq("barang_id", barangId)
+    .eq("company_code", companyCode)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as GaStock | null;
+};
+
+/**
+ * Kurangi quantity Stok GA secara atomic lewat fungsi Postgres
+ * decrement_ga_stock() (row lock saat UPDATE) - MENGGANTI pola
+ * read-then-subtract-then-write yang rawan race condition kalau 2 user
+ * pakai stok yang sama bersamaan. Lempar error kalau stok tidak cukup.
+ */
+export const decrementGaStock = async (
+  id: number,
+  qty: number,
+): Promise<number> => {
+  const { data, error } = await supabase.rpc("decrement_ga_stock", {
+    p_id: id,
+    p_qty: qty,
+  });
+  if (error) throw error;
+  return data as number;
+};
