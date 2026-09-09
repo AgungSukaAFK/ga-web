@@ -936,7 +936,9 @@ function CreatePOPageContent() {
 
   // Qty yang masih tersisa & belum ke-cover PO manapun utk item MR ini
   // (qty MR dikurangi qty kumulatif dari semua PO yang sudah nyantol,
-  // termasuk link manual).
+  // termasuk link manual, DAN qty yang sudah dipenuhi langsung dari Stok GA
+  // - lihat addStockFulfillment/services/mrService.ts - supaya Purchasing
+  // tidak diminta bikin PO utk qty yang sudah selesai dari stok).
   const getRemainingQty = (order: any): number => {
     const covered = order.part_number
       ? (poBreakdown[order.part_number] || []).reduce(
@@ -944,7 +946,11 @@ function CreatePOPageContent() {
           0,
         )
       : 0;
-    return Math.max(0, Number(order.qty) - covered);
+    const fromStock = (order.stock_fulfillments || []).reduce(
+      (sum: number, e: { qty: number }) => sum + (e.qty || 0),
+      0,
+    );
+    return Math.max(0, Number(order.qty) - covered - fromStock);
   };
 
   const isOrderSelectable = (order: any): boolean => getRemainingQty(order) > 0;

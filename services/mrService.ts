@@ -700,6 +700,76 @@ export const removeBastForMrItem = async (
 // ulang status item (pending/processing, + level Open 3A kalau qty sudah
 // penuh) dari qty kumulatif terbaru (lihat fetchPoQtyBreakdownForMr) lalu
 // panggil updateMrItemStatus.
+// Catat qty item MR yang dipenuhi langsung dari Stok GA (bukan lewat PO) -
+// mirror persis addManualPoLink di bawah, cuma target field-nya
+// stock_fulfillments. Caller (material-request/[id]/page.tsx) yang
+// menentukan apakah setelah ini item sudah fully covered dan perlu
+// dipanggilkan updateMrItemStatus({status:"Completed", level:"Close"}) -
+// fungsi ini murni append record, tidak mengubah status/level.
+export const addStockFulfillment = async (
+  mrId: number,
+  partNumber: string | null | undefined,
+  entry: {
+    ga_stock_id: number;
+    qty: number;
+    fulfilled_at: string;
+    fulfilled_by: string;
+  },
+  userId: string,
+  fallbackIndex?: number,
+) => {
+  const supabase = createClient();
+
+  const { data: mr, error: fetchError } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+
+  if (fetchError || !mr) {
+    throw new Error("Gagal mengambil data MR untuk catat pemakaian stok GA.");
+  }
+
+  const currentOrders = mr.orders as any[];
+  let itemIndex = partNumber
+    ? currentOrders.findIndex(
+        (item) => item.part_number && item.part_number === partNumber,
+      )
+    : -1;
+  if (
+    itemIndex === -1 &&
+    fallbackIndex !== undefined &&
+    currentOrders[fallbackIndex]
+  ) {
+    itemIndex = fallbackIndex;
+  }
+  if (itemIndex === -1) {
+    throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  const itemToUpdate = { ...currentOrders[itemIndex] };
+  const existingFulfillments = Array.isArray(itemToUpdate.stock_fulfillments)
+    ? itemToUpdate.stock_fulfillments
+    : [];
+  itemToUpdate.stock_fulfillments = [...existingFulfillments, entry];
+  itemToUpdate.updated_by = userId;
+  itemToUpdate.updated_at = new Date().toISOString();
+
+  currentOrders[itemIndex] = itemToUpdate;
+
+  const { error: updateError } = await supabase
+    .from("material_requests")
+    .update({ orders: currentOrders })
+    .eq("id", mrId);
+
+  if (updateError)
+    throw new Error(
+      "Gagal simpan pemakaian stok GA: " + updateError.message,
+    );
+
+  return { success: true };
+};
+
 export const addManualPoLink = async (
   mrId: number,
   partNumber: string,
