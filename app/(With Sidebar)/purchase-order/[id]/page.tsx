@@ -102,6 +102,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
+import { NoteWithLinks } from "@/components/note-with-links";
 import {
   Dialog,
   DialogContent,
@@ -2181,6 +2182,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                             {item.name}
                             <AssetGoodsBadge isAsset={item.is_asset} />
                           </div>
+                          {item.description && (
+                            <div className="text-xs text-muted-foreground mt-1 italic font-normal">
+                              &quot;<NoteWithLinks text={item.description} />
+                              &quot;
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {item.part_number}
@@ -2245,11 +2252,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                     <AssetGoodsBadge isAsset={mrItemIsAsset} />
                                     <ItemLevelBadge level={mrItem.level} />
                                   </div>
+                                  {mrItem.note && (
+                                    <div className="text-xs text-muted-foreground mt-1 italic">
+                                      &quot;<NoteWithLinks text={mrItem.note} />
+                                      &quot;
+                                    </div>
+                                  )}
                                   {mrItem.status_note && (
                                     <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
                                       <FileText className="w-3 h-3 mt-0.5" />
                                       <span className="italic">
-                                        {mrItem.status_note}
+                                        <NoteWithLinks text={mrItem.status_note} />
                                       </span>
                                     </div>
                                   )}
@@ -3176,7 +3189,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <div>
                     <p className="text-xs text-muted-foreground">Catatan</p>
                     <p className="italic">
-                      &quot;{deliveryDetailItem.delivery_info.note}&quot;
+                      &quot;
+                      <NoteWithLinks text={deliveryDetailItem.delivery_info.note} />
+                      &quot;
                     </p>
                   </div>
                 )}

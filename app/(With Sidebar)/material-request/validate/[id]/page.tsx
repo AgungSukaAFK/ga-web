@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NoteWithLinks } from "@/components/note-with-links";
 import { toast } from "sonner";
 import {
   MaterialRequest,
@@ -708,6 +709,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                 <TableHead>Qty</TableHead>
                 <TableHead className="text-right">Estimasi Harga</TableHead>
                 <TableHead className="text-right">Total Estimasi</TableHead>
+                <TableHead>Catatan</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -722,6 +724,9 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                   </TableCell>
                   <TableCell className="text-right font-medium">
                     {formatCurrency(Number(item.qty) * item.estimasi_harga)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground italic max-w-[220px]">
+                    {item.note ? <NoteWithLinks text={item.note} /> : "-"}
                   </TableCell>
                 </TableRow>
               ))}

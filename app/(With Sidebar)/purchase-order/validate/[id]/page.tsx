@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { NoteWithLinks } from "@/components/note-with-links";
 import { PurchaseOrderDetail, Approval, User, Attachment } from "@/type";
 import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
@@ -511,6 +512,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
                   <TableHead>Nama</TableHead>
                   <TableHead>Qty</TableHead>
                   <TableHead>Harga</TableHead>
+                  <TableHead>Catatan</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -524,6 +526,13 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
                       {item.qty} {item.uom}
                     </TableCell>
                     <TableCell>{formatCurrency(item.price)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground italic max-w-[220px]">
+                      {item.description ? (
+                        <NoteWithLinks text={item.description} />
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

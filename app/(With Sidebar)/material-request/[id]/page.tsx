@@ -151,6 +151,7 @@ import {
 } from "@/lib/notifications/client";
 import { logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
+import { NoteWithLinks } from "@/components/note-with-links";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -1979,13 +1980,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               )}
                               {item.note && (
                                 <div className="text-xs text-muted-foreground mt-1 italic">
-                                  &quot;{item.note}&quot;
+                                  &quot;<NoteWithLinks text={item.note} />&quot;
                                 </div>
                               )}
                               {item.status_note && (
                                 <div className="text-xs text-amber-600 mt-1 italic flex items-start gap-1">
                                   <Info className="w-3 h-3 mt-0.5" />
-                                  {item.status_note}
+                                  <NoteWithLinks text={item.status_note} />
                                 </div>
                               )}
                             </div>
@@ -2639,7 +2640,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 <div>
                   <p className="text-xs text-muted-foreground">Catatan</p>
                   <p className="italic">
-                    &quot;{deliveryDetailItem.delivery_info.note}&quot;
+                    &quot;
+                    <NoteWithLinks text={deliveryDetailItem.delivery_info.note} />
+                    &quot;
                   </p>
                 </div>
               )}
