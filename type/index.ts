@@ -97,11 +97,17 @@ export interface Attachment {
   type?: "po" | "finance" | "bast" | "invoice" | "quotation" | "delivery";
 }
 
+export interface DiscussionMention {
+  id: string;
+  nama: string;
+}
+
 export interface Discussion {
   user_id: string;
   user_name: string;
   message: string;
   timestamp: string;
+  mentions?: DiscussionMention[];
 }
 
 export interface Profile {

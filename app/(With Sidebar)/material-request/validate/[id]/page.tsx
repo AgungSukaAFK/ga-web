@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { DiscussionSection } from "../../[id]/discussion-component";
 import { toast } from "sonner";
 import {
   MaterialRequest,
@@ -998,6 +999,13 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             </Button>
           </div>
         </Content>
+      </div>
+
+      <div className="col-span-12">
+        <DiscussionSection
+          mrId={String(mr.id)}
+          initialDiscussions={mr.discussions as Discussion[]}
+        />
       </div>
 
       {/* Dialog Info Level (Sama seperti halaman Edit) */}

@@ -12,7 +12,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { NoteWithLinks } from "@/components/note-with-links";
-import { PurchaseOrderDetail, Approval, User, Attachment } from "@/type";
+import { DiscussionSection } from "../../../material-request/[id]/discussion-component";
+import {
+  PurchaseOrderDetail,
+  Approval,
+  User,
+  Attachment,
+  Discussion,
+} from "@/type";
 import { APPROVAL_TYPE_OPTIONS } from "@/type/enum";
 import { formatCurrency, formatDateFriendly, cn } from "@/lib/utils";
 import { resolveAttachmentUrl } from "@/lib/attachments";
@@ -756,6 +763,22 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
             </Button>
           </div>
         </Content>
+      </div>
+
+      <div className="col-span-12">
+        {po.material_requests ? (
+          <DiscussionSection
+            mrId={String(po.material_requests.id)}
+            initialDiscussions={po.material_requests.discussions as Discussion[]}
+          />
+        ) : (
+          <Content title="Diskusi">
+            <p className="text-sm text-muted-foreground text-center">
+              Diskusi hanya tersedia untuk PO yang terhubung ke Material
+              Request.
+            </p>
+          </Content>
+        )}
       </div>
     </>
   );
