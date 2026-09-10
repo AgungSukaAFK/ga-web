@@ -3,15 +3,17 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Discussion } from "@/type";
+import { Discussion, DiscussionMention } from "@/type";
 import { logActivity } from "@/services/logService";
+import { sendNotification } from "@/lib/notifications/client";
+import { MentionTextarea } from "@/components/mention-textarea";
+import { MessageWithMentions } from "@/components/message-with-mentions";
 
 interface DiscussionSectionProps {
   mrId: string;
@@ -24,6 +26,9 @@ export function DiscussionSection({
 }: DiscussionSectionProps) {
   const [discussions, setDiscussions] = useState(initialDiscussions);
   const [newMessage, setNewMessage] = useState("");
+  const [pendingMentions, setPendingMentions] = useState<DiscussionMention[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
   const router = useRouter();
@@ -47,11 +52,20 @@ export function DiscussionSection({
         .single();
       const userName = profile?.nama || user.email || "Unknown User";
 
+      // Hanya notifikasi/simpan mention yang tag-nya masih ada di pesan final
+      // (kalau user hapus "@Nama"-nya lagi sebelum kirim, ga usah dinotif).
+      const finalMentions = pendingMentions.filter(
+        (m, index, arr) =>
+          newMessage.includes(`@${m.nama}`) &&
+          arr.findIndex((x) => x.id === m.id) === index,
+      );
+
       const newDiscussionEntry: Discussion = {
         user_id: user.id,
         user_name: userName,
         message: newMessage,
         timestamp: new Date().toISOString(),
+        ...(finalMentions.length > 0 ? { mentions: finalMentions } : {}),
       };
 
       const updatedDiscussions = [...discussions, newDiscussionEntry];
@@ -72,8 +86,26 @@ export function DiscussionSection({
         { message: newMessage },
       );
 
+      await Promise.all(
+        finalMentions
+          .filter((m) => m.id !== user.id)
+          .map((m) =>
+            sendNotification({
+              userId: m.id,
+              actorId: user.id,
+              type: "mention",
+              title: "Anda di-tag dalam diskusi",
+              message: `${userName} men-tag Anda dalam diskusi MR.`,
+              link: `/material-request/${mrId}`,
+              resourceId: String(mrId),
+              resourceType: "material_request",
+            }),
+          ),
+      );
+
       setDiscussions(updatedDiscussions);
       setNewMessage("");
+      setPendingMentions([]);
       toast.success("Pesan berhasil terkirim!");
       router.refresh();
     } catch (error: any) {
@@ -107,7 +139,10 @@ export function DiscussionSection({
                       </p>
                     </div>
                     <p className="text-sm mt-1 whitespace-pre-wrap">
-                      {chat.message}
+                      <MessageWithMentions
+                        text={chat.message}
+                        mentions={chat.mentions}
+                      />
                     </p>
                   </div>
                 </div>
@@ -118,20 +153,31 @@ export function DiscussionSection({
               </p>
             )}
           </div>
-          <form
-            onSubmit={handleSubmit}
-            className="flex items-start gap-3 pt-4 border-t"
-          >
-            <Textarea
-              placeholder="Tulis pesan Anda di sini..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              rows={2}
-              disabled={loading}
-            />
-            <Button type="submit" size="icon" disabled={loading}>
-              <Send className="h-4 w-4" />
-            </Button>
+          <form onSubmit={handleSubmit} className="pt-4 border-t space-y-1.5">
+            <div className="flex items-start gap-3">
+              <MentionTextarea
+                placeholder="Tulis pesan Anda di sini..."
+                value={newMessage}
+                onValueChange={setNewMessage}
+                onMentionAdd={(mention) =>
+                  setPendingMentions((prev) =>
+                    prev.some((m) => m.id === mention.id)
+                      ? prev
+                      : [...prev, mention],
+                  )
+                }
+                rows={2}
+                disabled={loading}
+              />
+              <Button type="submit" size="icon" disabled={loading}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tips: ketik <span className="font-medium">@</span> lalu nama
+              user untuk mention/tag - orang yang ditag akan mendapat
+              notifikasi.
+            </p>
           </form>
         </div>
       </CardContent>

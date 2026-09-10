@@ -5,8 +5,41 @@ import {
   SignInWithPasswordCredentials,
   SignUpWithPasswordCredentials,
 } from "@supabase/supabase-js";
+import { User } from "@/type";
 
 const supabase = createClient();
+
+/**
+ * Cari user aktif untuk fitur tag/mention (@) di kolom diskusi.
+ * Bisa dicari lewat nama, email, atau role - dibatasi 10 hasil biar ringan.
+ */
+export const searchUsersForMention = async (
+  query: string,
+): Promise<User[]> => {
+  // Buang karakter yang bisa merusak syntax filter .or() Supabase.
+  const q = query.trim().replace(/[,()"%]/g, "");
+
+  let request = supabase
+    .from("profiles")
+    .select("id, nama, email, role, department")
+    .eq("is_active", true)
+    .order("nama", { ascending: true })
+    .limit(10);
+
+  if (q) {
+    request = request.or(
+      `nama.ilike."%${q}%",email.ilike."%${q}%",role.ilike."%${q}%"`,
+    );
+  }
+
+  const { data, error } = await request;
+
+  if (error) {
+    console.error("Error searching users for mention:", error);
+    return [];
+  }
+  return (data as User[]) ?? [];
+};
 
 /**
  * Fungsi utama untuk login.
