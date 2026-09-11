@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
-import { differenceInCalendarDays, isValid, parse } from "date-fns";
+import { differenceInCalendarDays, isValid, parse, formatDistanceToNow } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { twMerge } from "tailwind-merge";
 import { Approval } from "@/type";
 
@@ -235,6 +236,14 @@ export const formatAge = (
   const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
 
   return `${days} Hari ${hours} Jam`;
+};
+
+// "5 menit yang lalu", "2 hari yang lalu", dst.
+export const formatRelativeTime = (date: string | Date): string => {
+  return formatDistanceToNow(new Date(date), {
+    addSuffix: true,
+    locale: localeId,
+  });
 };
 
 // Helper untuk mendapatkan warna badge berdasarkan prioritas (Opsional)

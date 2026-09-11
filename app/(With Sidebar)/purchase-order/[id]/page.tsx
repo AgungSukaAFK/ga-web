@@ -103,6 +103,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { FollowupApprovalButton } from "@/components/followup-approval-button";
 import {
   Dialog,
   DialogContent,
@@ -505,7 +506,30 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     if (!po?.items) return false;
     // Strict Part Number check
     if (!mrItem.part_number) return false;
-    return po.items.some((poItem) => poItem.part_number === mrItem.part_number);
+    if (po.items.some((poItem) => poItem.part_number === mrItem.part_number)) {
+      return true;
+    }
+    // Item ini pernah "Konversi Barang" (lihat mr-management/edit/[id]/page.tsx)
+    // dan PO ini sengaja TIDAK ikut dikonversi - masih pakai part_number lama.
+    const oldPartNumbers = (mrItem.conversion_history || [])
+      .map((h: any) => h.from_part_number)
+      .filter(Boolean);
+    return po.items.some((poItem) => oldPartNumbers.includes(poItem.part_number));
+  };
+
+  // Item PO ini pakai part_number yang SUDAH di-"Konversi Barang" di MR
+  // (lihat mr-management/edit/[id]/page.tsx), tapi PO ini sengaja tidak ikut
+  // dikonversi - dipakai buat nampilin catatan di tabel item PO supaya jelas
+  // kenapa nama/part number-nya beda dari yang sekarang tampil di MR.
+  const getConversionNoteForPoItem = (partNumber: string) => {
+    for (const order of (po?.material_requests?.orders || []) as Order[]) {
+      for (const record of order.conversion_history || []) {
+        if (record.from_part_number === partNumber) {
+          return record;
+        }
+      }
+    }
+    return null;
   };
 
   // Barang yg sudah "Diterima GA" lewat PO ini, belum dikirim ke requester.
@@ -2188,6 +2212,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                               &quot;
                             </div>
                           )}
+                          {(() => {
+                            const conversionNote = item.part_number
+                              ? getConversionNoteForPoItem(item.part_number)
+                              : null;
+                            return (
+                              conversionNote && (
+                                <div className="text-xs text-amber-600 mt-1 flex items-start gap-1 font-normal">
+                                  <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                  <span>
+                                    Item ini terhubung ke MR saat barang masih
+                                    bernama &quot;{conversionNote.from_name}
+                                    &quot; ({conversionNote.from_part_number}).
+                                    Di MR, item ini sekarang sudah dikonversi
+                                    ke &quot;{conversionNote.to_name}&quot; (
+                                    {conversionNote.to_part_number}).
+                                  </span>
+                                </div>
+                              )
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {item.part_number}
@@ -2530,12 +2574,35 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                               </p>
                             )}
                         </div>
-                        {getApprovalStatusBadge(
-                          approver.status as
-                            | "approved"
-                            | "rejected"
-                            | "pending",
-                        )}
+                        <div className="flex flex-col items-end gap-2">
+                          {getApprovalStatusBadge(
+                            approver.status as
+                              | "approved"
+                              | "rejected"
+                              | "pending",
+                          )}
+                          {isMyTurn &&
+                            approver.status === "pending" &&
+                            currentUser?.id !== approver.userid && (
+                              <FollowupApprovalButton
+                                resourceType="purchase_order"
+                                resourceId={po.id}
+                                kode={po.kode_po}
+                                approverId={approver.userid}
+                                approverName={approver.nama}
+                                followups={po.followup_requests || []}
+                                currentUserId={currentUser?.id || ""}
+                                currentUserName={
+                                  userProfile?.nama ||
+                                  currentUser?.email ||
+                                  "User"
+                                }
+                                onUpdated={(updated) =>
+                                  setPo({ ...po, followup_requests: updated })
+                                }
+                              />
+                            )}
+                        </div>
                       </li>
                     );
                   })}

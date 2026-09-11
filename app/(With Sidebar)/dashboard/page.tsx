@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ChevronRight as ArrowRightIcon,
   Bell,
+  BellRing,
   Clock,
 } from "lucide-react";
 import {
@@ -57,11 +58,15 @@ import {
   fetchMrScore,
   fetchPoScore,
 } from "@/services/dashboardService";
+import {
+  fetchMyFollowupSummary,
+  FollowupSummaryItem,
+} from "@/services/approvalService";
 import { MR_ITEM_STATUSES } from "@/type/enum";
 import { Profile } from "@/type";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatDateFriendly } from "@/lib/utils";
+import { cn, formatDateFriendly, formatRelativeTime } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -182,6 +187,9 @@ export default function Dashboard() {
   const [pipeline, setPipeline] = useState<ItemStatusPipeline | null>(null);
   const [latestMRs, setLatestMRs] = useState<LatestMR[]>([]);
   const [actionItems, setActionItems] = useState<ActionItemGroup[]>([]);
+  const [followupSummary, setFollowupSummary] = useState<
+    FollowupSummaryItem[]
+  >([]);
   const [mrScore, setMrScore] = useState<ScoreResult | null>(null);
   const [poScore, setPoScore] = useState<ScoreResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,6 +279,7 @@ export default function Dashboard() {
           actionData,
           mrScoreData,
           poScoreData,
+          followupData,
         ] = await Promise.all([
           fetchDashboardStats(companyCode, startDate, endDate),
           fetchDailyMrPoTrend(companyCode, startDate, endDate),
@@ -280,6 +289,7 @@ export default function Dashboard() {
           user ? fetchMyActionItems(user.id, userProfile) : Promise.resolve([]),
           fetchMrScore(companyCode, dateRange),
           fetchPoScore(companyCode, dateRange),
+          user ? fetchMyFollowupSummary(user.id) : Promise.resolve([]),
         ]);
 
         setStats(statsData);
@@ -290,6 +300,7 @@ export default function Dashboard() {
         setMrScore(mrScoreData);
         setPoScore(poScoreData);
         setActionItems(actionData);
+        setFollowupSummary(followupData);
       } catch (error: any) {
         toast.error("Gagal memuat data dashboard", {
           description: error.message,
@@ -356,6 +367,43 @@ export default function Dashboard() {
           </div>
         </Content>
       </div>
+
+      {/* --- Panel Follow-up Approval (urgent) --- */}
+      {!loading && followupSummary.length > 0 && (
+        <div className="col-span-12">
+          <Content
+            title="Permintaan Follow-up Approval"
+            description="Dokumen ini sedang ditunggu - mohon segera diproses."
+            className="border-red-300 dark:border-red-900/60"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {followupSummary.map((item) => (
+                <Link
+                  key={`${item.type}-${item.id}`}
+                  href={item.href}
+                  className="flex items-center justify-between gap-2 rounded-md border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 p-3 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 animate-pulse">
+                      <BellRing className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {item.type === "mr" ? "MR" : "PO"} {item.kode}
+                      </p>
+                      <p className="text-xs text-red-700 dark:text-red-400 truncate">
+                        {item.count}x diminta follow-up - terakhir{" "}
+                        {formatRelativeTime(item.lastRequestedAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRightIcon className="h-4 w-4 text-red-700 dark:text-red-400 flex-shrink-0" />
+                </Link>
+              ))}
+            </div>
+          </Content>
+        </div>
+      )}
 
       {/* --- Panel Aksi Diperlukan --- */}
       {!loading && actionItems.length > 0 && (

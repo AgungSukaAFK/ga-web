@@ -6,6 +6,7 @@ import {
   ApprovedMaterialRequest,
   Barang,
   MaterialRequest,
+  MrConversionRecord,
   PurchaseOrderDetail,
   PurchaseOrderPayload,
   PurchaseOrderListItem,
@@ -380,6 +381,34 @@ export const fetchPoQtyBreakdownForMr = async (
     }
   }
 
+  // Item yang pernah "Konversi Barang" (lihat mr-management/edit/[id]/page.tsx)
+  // bisa punya PO lama yang SENGAJA tidak ikut dikonversi - PO itu masih
+  // pakai part_number LAMA. Supaya qty-nya tetap ke-hitung sebagai bagian
+  // dari item ini (bukan hilang), gabungkan entry di bawah part_number lama
+  // ke bucket part_number SEKARANG.
+  for (const order of orders) {
+    if (!order.part_number || !Array.isArray(order.conversion_history)) {
+      continue;
+    }
+    for (const record of order.conversion_history as MrConversionRecord[]) {
+      const oldPn = record.from_part_number;
+      if (!oldPn || oldPn === order.part_number) continue;
+      const oldEntries = breakdown[oldPn];
+      if (!oldEntries || oldEntries.length === 0) continue;
+      if (!breakdown[order.part_number]) breakdown[order.part_number] = [];
+      for (const entry of oldEntries) {
+        if (
+          breakdown[order.part_number].some(
+            (e) => e.kode_po === entry.kode_po,
+          )
+        ) {
+          continue;
+        }
+        breakdown[order.part_number].push(entry);
+      }
+    }
+  }
+
   return breakdown;
 };
 
@@ -396,6 +425,76 @@ export const fetchPosForMr = async (
 
   if (error || !data) return [];
   return data;
+};
+
+export interface PoForConversion {
+  id: number;
+  kode_po: string;
+  status: string;
+  items: POItem[];
+  receive_record: ReceiveRecord | null;
+  discount: number | null;
+  postage: number | null;
+  tax: number | null;
+  tax_included: boolean | null;
+  ppn_rate: number | null;
+  pph_rate: number | null;
+  total_price: number;
+}
+
+// Cari PO (punya MR ini, selain Rejected) yang item-nya masih pakai
+// `partNumber` yang diberikan - dipakai fitur "Konversi Barang" di
+// mr-management/edit/[id]/page.tsx utk menemukan PO mana saja yang perlu
+// ditawarkan ikut dikonversi atau tetap pakai identitas lama.
+export const fetchPosForMrItemPartNumber = async (
+  mrId: number,
+  partNumber: string,
+): Promise<PoForConversion[]> => {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select(
+      "id, kode_po, status, items, receive_record, discount, postage, tax, tax_included, ppn_rate, pph_rate, total_price",
+    )
+    .eq("mr_id", mrId)
+    .neq("status", "Rejected");
+
+  if (error || !data) return [];
+
+  return (data as PoForConversion[]).filter((po) =>
+    (po.items || []).some((item) => item.part_number === partNumber),
+  );
+};
+
+// Hitung ulang tax/pph/total_price PO dari `items` (dipakai setelah item-nya
+// diubah harga lewat fitur "Konversi Barang") - mirror rumus di
+// purchase-order/edit/[id]/page.tsx (subtotal -> DPP -> PPN -> PPH -> grand
+// total). `ppn_rate` null berarti mode tax manual (nominal `tax` dibiarkan
+// apa adanya, tidak dihitung ulang dari persentase).
+export const recomputePoFinancials = (
+  po: Pick<
+    PoForConversion,
+    "items" | "discount" | "postage" | "tax" | "tax_included" | "ppn_rate" | "pph_rate"
+  >,
+): { tax: number; pph_amount: number; total_price: number } => {
+  const subtotal = po.items.reduce(
+    (acc, item) => acc + item.qty * item.price,
+    0,
+  );
+  const taxableAmount = Math.max(0, subtotal - (po.discount || 0));
+
+  let tax: number;
+  if (po.tax_included) {
+    tax = 0;
+  } else if (po.ppn_rate != null) {
+    tax = taxableAmount * (po.ppn_rate / 100);
+  } else {
+    tax = po.tax || 0;
+  }
+
+  const pphAmount = (taxableAmount * (po.pph_rate || 0)) / 100;
+  const totalPrice = taxableAmount - pphAmount + tax + (po.postage || 0);
+
+  return { tax, pph_amount: pphAmount, total_price: totalPrice };
 };
 
 export const createPurchaseOrder = async (
@@ -765,7 +864,10 @@ export const fetchReceivedQtyByPartNumber = async (
     .neq("status", "Rejected");
   if (excludePoId) query = query.neq("id", excludePoId);
 
-  const { data, error } = await query;
+  const [{ data, error }, mrResult] = await Promise.all([
+    query,
+    supabase.from("material_requests").select("orders").eq("id", mrId).single(),
+  ]);
   if (error || !data) return {};
 
   const totals: Record<string, number> = {};
@@ -776,6 +878,23 @@ export const fetchReceivedQtyByPartNumber = async (
       if (!item.part_number) continue;
       totals[item.part_number] =
         (totals[item.part_number] || 0) + (item.received_qty || 0);
+    }
+  }
+
+  // Sama seperti fetchPoQtyBreakdownForMr: gabungkan qty yang sudah diterima
+  // di bawah part_number LAMA (PO yang sengaja tidak ikut "Konversi Barang")
+  // ke bucket part_number SEKARANG, supaya perhitungan "sudah diterima
+  // semua?" tetap benar walau identitas item berubah di tengah jalan.
+  const orders = (mrResult.data?.orders as any[]) || [];
+  for (const order of orders) {
+    if (!order.part_number || !Array.isArray(order.conversion_history)) {
+      continue;
+    }
+    for (const record of order.conversion_history as MrConversionRecord[]) {
+      const oldPn = record.from_part_number;
+      if (!oldPn || oldPn === order.part_number) continue;
+      if (totals[oldPn] === undefined) continue;
+      totals[order.part_number] = (totals[order.part_number] || 0) + totals[oldPn];
     }
   }
   return totals;
