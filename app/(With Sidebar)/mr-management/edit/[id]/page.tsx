@@ -49,7 +49,16 @@ import {
   Order,
   Profile,
   Attachment,
+  Barang,
+  MrConversionRecord,
+  POItem,
 } from "@/type";
+import { BarangSearchCombobox } from "../../../purchase-order/BarangSearchCombobox";
+import {
+  fetchPosForMrItemPartNumber,
+  recomputePoFinancials,
+  PoForConversion,
+} from "@/services/purchaseOrderService";
 import {
   formatCurrency,
   formatDateFriendly,
@@ -70,6 +79,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -91,15 +112,6 @@ import { logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 
 // --- Data Konstanta Lokal ---
-const dataUoM: ComboboxData = [
-  { label: "Pcs", value: "Pcs" },
-  { label: "Unit", value: "Unit" },
-  { label: "Set", value: "Set" },
-  { label: "Box", value: "Box" },
-  { label: "Rim", value: "Rim" },
-  { label: "Roll", value: "Roll" },
-];
-
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
   { label: "Replace Item", value: "Replace Item" },
@@ -438,6 +450,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     estimasi_harga: 0,
     url: "",
     note: "",
+    barang_id: null,
+    part_number: "",
   });
 
   const handleOpenAddItemDialog = () => {
@@ -449,6 +463,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       estimasi_harga: 0,
       url: "",
       note: "",
+      barang_id: null,
+      part_number: "",
     });
     setOpenItemDialog(true);
   };
@@ -460,13 +476,42 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     setOpenItemDialog(true);
   };
 
+  // Isi nama/part number/UoM/harga dari barang master yang dipilih - item MR
+  // WAJIB terhubung ke database barang (barang_id), konsisten dengan alur
+  // tambah item waktu buat MR (material-request/buat/page.tsx).
+  const handleSelectBarang = (barang: Barang) => {
+    setOrderItem((prev) => ({
+      ...prev,
+      name: barang.part_name || prev.name,
+      part_number: barang.part_number,
+      uom: barang.uom || "Pcs",
+      barang_id: barang.id,
+      estimasi_harga: barang.last_purchase_price || prev.estimasi_harga,
+    }));
+  };
+
+  // Barang yang sama sudah ada di daftar item lain (selain item yang sedang
+  // diedit) - cegah duplikat, arahkan user edit qty item yang sudah ada saja.
+  const isDuplicateItem =
+    !!orderItem.barang_id &&
+    !!mr &&
+    mr.orders.some(
+      (o, i) => o.barang_id === orderItem.barang_id && i !== editingItemIndex,
+    );
+
   const handleSaveOrUpdateItem = () => {
-    if (
-      !orderItem.name.trim() ||
-      !orderItem.qty.trim() ||
-      !orderItem.uom.trim()
-    ) {
-      toast.error("Nama item, quantity, dan UoM harus diisi.");
+    if (!orderItem.barang_id || !orderItem.name) {
+      toast.error("Wajib memilih barang dari database.");
+      return;
+    }
+    if (isDuplicateItem) {
+      toast.error(
+        "Barang ini sudah ada di daftar. Edit item yang sudah ada, jangan tambah duplikat.",
+      );
+      return;
+    }
+    if (!orderItem.qty.trim() || Number(orderItem.qty) <= 0) {
+      toast.error("Quantity harus lebih dari 0.");
       return;
     }
     if (!mr) return;
@@ -489,6 +534,295 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const removeItem = (index: number) => {
     if (!mr) return;
     setMr({ ...mr, orders: mr.orders.filter((_, i) => i !== index) });
+  };
+
+  // --- Konversi Barang ---
+  // Beda dari add/edit/remove item di atas (yang cuma nge-stage perubahan di
+  // state lokal, baru kepersist saat klik "Simpan Perubahan") - konversi
+  // langsung commit ke database begitu dikonfirmasi (sama seperti
+  // handleConvertCompany di atas), karena bisa ikut mengubah PO lain di luar
+  // MR ini juga.
+  const [convertItemIndex, setConvertItemIndex] = useState<number | null>(
+    null,
+  );
+  const [convertNewBarang, setConvertNewBarang] = useState<Barang | null>(
+    null,
+  );
+  const [convertLinkedPos, setConvertLinkedPos] = useState<PoForConversion[]>(
+    [],
+  );
+  const [convertLoadingPos, setConvertLoadingPos] = useState(false);
+  const [convertSelectedPoIds, setConvertSelectedPoIds] = useState<
+    Set<number>
+  >(new Set());
+  const [convertSubmitting, setConvertSubmitting] = useState(false);
+  const [isPriceConfirmOpen, setIsPriceConfirmOpen] = useState(false);
+  const [pendingPriceMismatches, setPendingPriceMismatches] = useState<
+    { po: PoForConversion; item: POItem }[]
+  >([]);
+  const [historyViewIndex, setHistoryViewIndex] = useState<number | null>(
+    null,
+  );
+
+  const isConvertBarangDialogOpen = convertItemIndex !== null;
+
+  const handleOpenConvertDialog = (index: number) => {
+    setConvertItemIndex(index);
+    setConvertNewBarang(null);
+    setConvertLinkedPos([]);
+    setConvertSelectedPoIds(new Set());
+  };
+
+  const handleCloseConvertDialog = () => {
+    setConvertItemIndex(null);
+    setConvertNewBarang(null);
+    setConvertLinkedPos([]);
+    setConvertSelectedPoIds(new Set());
+  };
+
+  const handleSelectConvertBarang = async (barang: Barang) => {
+    if (!mr || convertItemIndex === null) return;
+    const currentItem = mr.orders[convertItemIndex];
+    if (barang.id === currentItem.barang_id) {
+      toast.error("Barang yang dipilih sama dengan barang saat ini.");
+      return;
+    }
+    setConvertNewBarang(barang);
+    setConvertSelectedPoIds(new Set());
+
+    if (!currentItem.part_number) {
+      setConvertLinkedPos([]);
+      return;
+    }
+    setConvertLoadingPos(true);
+    try {
+      const pos = await fetchPosForMrItemPartNumber(
+        Number(mr.id),
+        currentItem.part_number,
+      );
+      setConvertLinkedPos(pos);
+      // Default: semua PO yang ditemukan dicentang utk ikut dikonversi.
+      setConvertSelectedPoIds(new Set(pos.map((p) => p.id)));
+    } catch (err: any) {
+      toast.error("Gagal mengecek PO terkait", { description: err.message });
+    } finally {
+      setConvertLoadingPos(false);
+    }
+  };
+
+  const toggleConvertPo = (id: number) => {
+    setConvertSelectedPoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const executeConversion = async (applyPriceUpdate: boolean) => {
+    if (!mr || !currentUser || convertItemIndex === null || !convertNewBarang)
+      return;
+    const currentItem = mr.orders[convertItemIndex];
+    setConvertSubmitting(true);
+    const toastId = toast.loading("Mengkonversi barang...");
+    try {
+      const actorName = userProfile?.nama || currentUser.email || "Admin";
+      // PO yang dicentang = ikut dikonversi; yang tidak dicentang = tetap
+      // pakai identitas lama (dicatat di riwayat konversi).
+      const selectedPos = convertLinkedPos.filter((p) =>
+        convertSelectedPoIds.has(p.id),
+      );
+      const keptPos = convertLinkedPos.filter(
+        (p) => !convertSelectedPoIds.has(p.id),
+      );
+
+      // 1. Update PO(s) yang ikut dikonversi - part_number/nama/uom item-nya
+      //    diganti ke identitas baru, receive_record (kalau ada) disamakan
+      //    juga, lalu tax/pph/total_price dihitung ulang.
+      for (const po of selectedPos) {
+        const newPrice =
+          applyPriceUpdate && convertNewBarang.last_purchase_price
+            ? convertNewBarang.last_purchase_price
+            : undefined;
+
+        const items: POItem[] = po.items.map((item) =>
+          item.part_number === currentItem.part_number
+            ? {
+                ...item,
+                barang_id: convertNewBarang.id,
+                part_number: convertNewBarang.part_number,
+                name: convertNewBarang.part_name || item.name,
+                uom: convertNewBarang.uom || item.uom,
+                price: newPrice ?? item.price,
+                total_price: (newPrice ?? item.price) * item.qty,
+              }
+            : item,
+        );
+
+        const receiveRecord = po.receive_record
+          ? {
+              ...po.receive_record,
+              items: po.receive_record.items.map((ri) =>
+                ri.part_number === currentItem.part_number
+                  ? {
+                      ...ri,
+                      part_number: convertNewBarang.part_number,
+                      part_name: convertNewBarang.part_name || ri.part_name,
+                    }
+                  : ri,
+              ),
+            }
+          : po.receive_record;
+
+        const financials = recomputePoFinancials({ ...po, items });
+
+        const { error: poError } = await supabase
+          .from("purchase_orders")
+          .update({
+            items,
+            receive_record: receiveRecord,
+            tax: financials.tax,
+            pph_amount: financials.pph_amount,
+            total_price: financials.total_price,
+          })
+          .eq("id", po.id);
+        if (poError) throw poError;
+
+        await logActivity(
+          currentUser.id,
+          "CONVERT_PO_ITEM_BARANG",
+          "purchase_order",
+          String(po.id),
+          `Admin ${actorName} mengkonversi item "${currentItem.name}" (${
+            currentItem.part_number || "-"
+          }) menjadi "${convertNewBarang.part_name}" (${
+            convertNewBarang.part_number
+          }) pada PO ${po.kode_po}, mengikuti konversi barang di MR ${mr.kode_mr}.`,
+          {
+            mr_id: mr.id,
+            old_barang_id: currentItem.barang_id,
+            old_part_number: currentItem.part_number,
+            new_barang_id: convertNewBarang.id,
+            new_part_number: convertNewBarang.part_number,
+            price_updated: applyPriceUpdate,
+          },
+        );
+      }
+
+      // 2. Update item di MR + catat riwayat konversinya.
+      const conversionRecord: MrConversionRecord = {
+        from_barang_id: currentItem.barang_id ?? null,
+        from_part_number: currentItem.part_number ?? null,
+        from_name: currentItem.name,
+        to_barang_id: convertNewBarang.id,
+        to_part_number: convertNewBarang.part_number,
+        to_name: convertNewBarang.part_name || currentItem.name,
+        converted_at: new Date().toISOString(),
+        converted_by: currentUser.id,
+        converted_by_name: actorName,
+        converted_po_kode: selectedPos.map((p) => p.kode_po),
+        kept_old_po_kode: keptPos.map((p) => p.kode_po),
+      };
+
+      const updatedOrders = [...mr.orders];
+      updatedOrders[convertItemIndex] = {
+        ...currentItem,
+        name: convertNewBarang.part_name || currentItem.name,
+        part_number: convertNewBarang.part_number,
+        uom: convertNewBarang.uom || currentItem.uom,
+        barang_id: convertNewBarang.id,
+        estimasi_harga:
+          convertNewBarang.last_purchase_price || currentItem.estimasi_harga,
+        conversion_history: [
+          ...(currentItem.conversion_history || []),
+          conversionRecord,
+        ],
+      };
+
+      const { error: mrError } = await supabase
+        .from("material_requests")
+        .update({ orders: updatedOrders })
+        .eq("id", mr.id);
+      if (mrError) throw mrError;
+
+      await logActivity(
+        currentUser.id,
+        "CONVERT_MR_ITEM_BARANG",
+        "material_request",
+        String(mr.id),
+        `Admin ${actorName} mengkonversi item "${currentItem.name}" (${
+          currentItem.part_number || "-"
+        }) menjadi "${convertNewBarang.part_name}" (${
+          convertNewBarang.part_number
+        }) pada MR ${mr.kode_mr}.${
+          selectedPos.length > 0
+            ? ` PO ikut dikonversi: ${selectedPos
+                .map((p) => p.kode_po)
+                .join(", ")}.`
+            : ""
+        }${
+          keptPos.length > 0
+            ? ` PO tetap pakai identitas lama: ${keptPos
+                .map((p) => p.kode_po)
+                .join(", ")}.`
+            : ""
+        }`,
+        {
+          old_barang_id: currentItem.barang_id,
+          old_part_number: currentItem.part_number,
+          new_barang_id: convertNewBarang.id,
+          new_part_number: convertNewBarang.part_number,
+          converted_po_kode: selectedPos.map((p) => p.kode_po),
+          kept_old_po_kode: keptPos.map((p) => p.kode_po),
+        },
+      );
+
+      toast.success("Barang berhasil dikonversi.", { id: toastId });
+      handleCloseConvertDialog();
+      setIsPriceConfirmOpen(false);
+      setPendingPriceMismatches([]);
+      await fetchMrData();
+    } catch (err: any) {
+      toast.error("Gagal mengkonversi barang", {
+        id: toastId,
+        description: err.message,
+      });
+    } finally {
+      setConvertSubmitting(false);
+    }
+  };
+
+  const handleConfirmConvert = () => {
+    if (!convertNewBarang || convertItemIndex === null || !mr) return;
+    const currentItem = mr.orders[convertItemIndex];
+    // PO yang dicentang = ikut dikonversi; sisanya tetap pakai identitas lama.
+    const selectedPos = convertLinkedPos.filter((p) =>
+      convertSelectedPoIds.has(p.id),
+    );
+
+    const mismatches = selectedPos
+      .map((po) => {
+        const item = po.items.find(
+          (i) => i.part_number === currentItem.part_number,
+        );
+        if (
+          item &&
+          convertNewBarang.last_purchase_price &&
+          item.price !== convertNewBarang.last_purchase_price
+        ) {
+          return { po, item };
+        }
+        return null;
+      })
+      .filter((x): x is { po: PoForConversion; item: POItem } => !!x);
+
+    if (mismatches.length > 0) {
+      setPendingPriceMismatches(mismatches);
+      setIsPriceConfirmOpen(true);
+      return;
+    }
+
+    executeConversion(false);
   };
 
   const handleItemChange = (index: number, field: string, value: any) => {
@@ -949,6 +1283,19 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                             ) : (
                               <span className="font-medium">{item.name}</span>
                             )}
+                            {(item.conversion_history || []).length > 0 && (
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="sm"
+                                className="h-auto p-0 text-xs mt-0.5 block"
+                                onClick={() => setHistoryViewIndex(index)}
+                              >
+                                <ArrowLeftRight className="h-3 w-3 mr-1 inline" />
+                                Cek riwayat konversi (
+                                {item.conversion_history!.length}x)
+                              </Button>
+                            )}
                           </TableCell>
                           <TableCell>
                             {isEditing ? (
@@ -1047,14 +1394,26 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                           </TableCell>
                           {isEditing && (
                             <TableCell>
-                              <Button
-                                variant="destructive"
-                                size="icon"
-                                onClick={() => removeItem(index)}
-                                disabled={actionLoading}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  title="Konversi Barang"
+                                  onClick={() => handleOpenConvertDialog(index)}
+                                  disabled={actionLoading}
+                                >
+                                  <ArrowLeftRight className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="icon"
+                                  title="Hapus Item"
+                                  onClick={() => removeItem(index)}
+                                  disabled={actionLoading}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -1184,23 +1543,22 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemNameDlg" className="text-right">
-                Nama Item
-              </Label>
-              <Input
-                id="itemNameDlg"
-                className="col-span-3"
-                value={orderItem.name}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, name: e.target.value })
-                }
-              />
+            <div className="space-y-2">
+              <Label className="text-right">Cari Barang (Wajib)</Label>
+              <BarangSearchCombobox onSelect={handleSelectBarang} />
+              {orderItem.name && (
+                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                  Terpilih: <strong>{orderItem.name}</strong> (
+                  {orderItem.part_number})
+                </div>
+              )}
+              {isDuplicateItem && (
+                <p className="text-xs text-destructive mt-1">
+                  Barang ini sudah ada di daftar item. Edit item yang sudah
+                  ada kalau mau ubah quantity-nya, jangan ditambah lagi.
+                </p>
+              )}
             </div>
-            {/* ... (Sisa form item sama seperti sebelumnya) ... */}
-            {/* Saya skip detail form item di sini untuk menghemat space, 
-                silakan copy dari kode lama jika perlu, atau minta saya tulis ulang full jika mau.
-                Bagian ini tidak berubah logicnya. */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="itemQtyDlg" className="text-right">
                 Quantity
@@ -1219,13 +1577,13 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               <Label htmlFor="itemUomDlg" className="text-right">
                 UoM
               </Label>
-              <div className="col-span-3">
-                <Combobox
-                  data={dataUoM}
-                  onChange={(v) => setOrderItem({ ...orderItem, uom: v })}
-                  defaultValue={orderItem.uom}
-                />
-              </div>
+              <Input
+                id="itemUomDlg"
+                className="col-span-3 bg-muted"
+                value={orderItem.uom}
+                readOnly
+                disabled
+              />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="estimasi_harga" className="text-right">
@@ -1244,6 +1602,236 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           <DialogFooter>
             <Button onClick={handleSaveOrUpdateItem}>
               {editingItemIndex !== null ? "Simpan Perubahan" : "Tambah"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Konversi Barang */}
+      <Dialog
+        open={isConvertBarangDialogOpen}
+        onOpenChange={(open) => !open && handleCloseConvertDialog()}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Konversi Barang</DialogTitle>
+            <DialogDescription>
+              Ganti data barang item ini berdasarkan database barang.
+            </DialogDescription>
+          </DialogHeader>
+          {convertItemIndex !== null && mr && (
+            <div className="space-y-4 py-2">
+              <div className="p-2 rounded border bg-muted text-sm">
+                Item saat ini:{" "}
+                <strong>{mr.orders[convertItemIndex].name}</strong>{" "}
+                {mr.orders[convertItemIndex].part_number &&
+                  `(${mr.orders[convertItemIndex].part_number})`}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Cari Barang Pengganti</Label>
+                <BarangSearchCombobox onSelect={handleSelectConvertBarang} />
+                {convertNewBarang && (
+                  <div className="text-xs text-muted-foreground p-2 bg-muted rounded border">
+                    Terpilih: <strong>{convertNewBarang.part_name}</strong> (
+                    {convertNewBarang.part_number})
+                  </div>
+                )}
+              </div>
+
+              {convertNewBarang && convertLoadingPos && (
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Mengecek PO
+                  yang terhubung...
+                </p>
+              )}
+
+              {convertNewBarang &&
+                !convertLoadingPos &&
+                convertLinkedPos.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Item ini belum punya PO yang terhubung - MR akan langsung
+                    diperbarui begitu dikonfirmasi.
+                  </p>
+                )}
+
+              {convertNewBarang &&
+                !convertLoadingPos &&
+                convertLinkedPos.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm">
+                      Item ini sudah terhubung ke {convertLinkedPos.length} PO.
+                      Centang PO yang ikut dikonversi ke barang baru - PO yang
+                      TIDAK dicentang tetap pakai data barang lama (dicatat
+                      sebagai riwayat, qty-nya tetap dihitung sebagai bagian
+                      dari item ini).
+                    </p>
+                    <div className="border rounded-md divide-y">
+                      {convertLinkedPos.map((po) => {
+                        const isSafeToKeep = po.status === "Full Received";
+                        const isSelected = convertSelectedPoIds.has(po.id);
+                        return (
+                          <div key={po.id} className="p-2 space-y-1">
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleConvertPo(po.id)}
+                              />
+                              <span className="font-medium">
+                                {po.kode_po}
+                              </span>
+                              <Badge variant="outline" className="text-xs">
+                                {po.status}
+                              </Badge>
+                            </label>
+                            {!isSelected && (
+                              <div
+                                className={cn(
+                                  "text-xs flex items-start gap-1 pl-6",
+                                  isSafeToKeep
+                                    ? "text-muted-foreground"
+                                    : "text-amber-600",
+                                )}
+                              >
+                                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                {isSafeToKeep ? (
+                                  <span>
+                                    Aman dibiarkan tidak dicentang - PO ini
+                                    sudah Full Received, tidak ada proses
+                                    lanjutan lagi.
+                                  </span>
+                                ) : (
+                                  <span>
+                                    PO ini masih berstatus &quot;{po.status}
+                                    &quot; (belum Full Received) - kalau item
+                                    ini dibiarkan pakai identitas lama, proses
+                                    lanjutan di PO ini (mis. update penerimaan
+                                    barang) mungkin tidak otomatis tersinkron
+                                    ke MR. Supaya aman: centang PO ini juga
+                                    untuk ikut dikonversi, atau tunggu sampai
+                                    PO ini berstatus &quot;Full Received&quot;
+                                    dulu baru biarkan tidak dicentang.
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCloseConvertDialog}
+              disabled={convertSubmitting}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleConfirmConvert}
+              disabled={!convertNewBarang || convertLoadingPos || convertSubmitting}
+            >
+              {convertSubmitting && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Konversi Sekarang
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Alert konfirmasi kalau harga barang baru beda dari harga di PO */}
+      <AlertDialog open={isPriceConfirmOpen} onOpenChange={setIsPriceConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Harga Barang Berbeda</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Harga barang baru (
+                  {formatCurrency(convertNewBarang?.last_purchase_price || 0)}
+                  ) berbeda dari harga saat ini di PO berikut:
+                </p>
+                <ul className="text-sm list-disc pl-5">
+                  {pendingPriceMismatches.map(({ po, item }) => (
+                    <li key={po.id}>
+                      {po.kode_po}: {formatCurrency(item.price)} →{" "}
+                      {formatCurrency(
+                        convertNewBarang?.last_purchase_price || 0,
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p>Update harga di PO tersebut juga?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={convertSubmitting}
+              onClick={() => executeConversion(false)}
+            >
+              Tidak, Harga Tetap
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={convertSubmitting}
+              onClick={() => executeConversion(true)}
+            >
+              Ya, Update Harga Juga
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog Riwayat Konversi */}
+      <Dialog
+        open={historyViewIndex !== null}
+        onOpenChange={(open) => !open && setHistoryViewIndex(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Riwayat Konversi Barang</DialogTitle>
+          </DialogHeader>
+          {historyViewIndex !== null && mr && (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {(mr.orders[historyViewIndex].conversion_history || [])
+                .slice()
+                .reverse()
+                .map((h, i) => (
+                  <div
+                    key={i}
+                    className="border rounded-md p-3 text-sm space-y-1"
+                  >
+                    <div>
+                      <strong>{h.from_name}</strong> ({h.from_part_number || "-"}
+                      ) → <strong>{h.to_name}</strong> ({h.to_part_number})
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      oleh {h.converted_by_name} -{" "}
+                      {formatDateWithTime(h.converted_at)}
+                    </div>
+                    {h.converted_po_kode.length > 0 && (
+                      <div className="text-xs">
+                        PO ikut dikonversi: {h.converted_po_kode.join(", ")}
+                      </div>
+                    )}
+                    {h.kept_old_po_kode.length > 0 && (
+                      <div className="text-xs text-amber-600">
+                        PO tetap identitas lama:{" "}
+                        {h.kept_old_po_kode.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryViewIndex(null)}>
+              Tutup
             </Button>
           </DialogFooter>
         </DialogContent>

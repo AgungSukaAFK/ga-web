@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   Bell,
+  BellRing,
   CheckCheck,
   MessageSquare,
   CheckCircle2,
@@ -40,6 +41,12 @@ const NotifIcon = ({ type }: { type: Notification["type"] }) => {
     return (
       <div className="mt-1 rounded-full p-2 bg-green-100 text-green-600">
         <CheckCircle2 className="h-4 w-4" />
+      </div>
+    );
+  if (type === "mr_followup_requested" || type === "po_followup_requested")
+    return (
+      <div className="mt-1 rounded-full p-2 bg-red-100 text-red-600">
+        <BellRing className="h-4 w-4" />
       </div>
     );
   return (

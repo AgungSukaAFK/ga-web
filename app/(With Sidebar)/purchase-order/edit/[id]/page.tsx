@@ -258,6 +258,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   // Dialog States
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [isViewItemOpen, setIsViewItemOpen] = useState(false);
   const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
 
@@ -534,7 +535,9 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- Handlers Baru: Add, Replace, View ---
-  const handleAddManualItem = () => {
+  // Item baru WAJIB dipilih dari database barang (konsisten dengan halaman
+  // buat MR/PO) - tidak lagi ada opsi tambah item manual/blank.
+  const handleAddItemFromDB = (barang: Barang) => {
     if (!poForm) return;
     setPoForm((prev) =>
       prev
@@ -543,20 +546,22 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             items: [
               ...prev.items,
               {
-                barang_id: 0,
-                part_number: "",
-                name: "",
+                barang_id: barang.id,
+                part_number: barang.part_number,
+                name: barang.part_name || "",
                 qty: 1,
-                uom: "Pcs",
-                price: 0,
-                total_price: 0,
+                uom: barang.uom || "Pcs",
+                price: barang.last_purchase_price || 0,
+                total_price: barang.last_purchase_price || 0,
                 vendor_name: "",
+                is_asset: barang.is_asset,
               },
             ],
           }
         : null,
     );
-    toast.info("Item baru ditambahkan.");
+    setIsAddItemDialogOpen(false);
+    toast.success("Barang ditambahkan ke PO.");
   };
 
   const removeItem = (index: number) => {
@@ -939,7 +944,11 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
         <Content
           title="Detail Item Pesanan (PO)"
           cardAction={
-            <Button variant="outline" size="sm" onClick={handleAddManualItem}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddItemDialogOpen(true)}
+            >
               <Plus className="mr-2 h-4 w-4" /> Tambah Item
             </Button>
           }
@@ -1655,6 +1664,29 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             <Button
               variant="outline"
               onClick={() => setIsReplaceDialogOpen(false)}
+            >
+              Batal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG TAMBAH ITEM (wajib dari database barang) --- */}
+      <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Item ke PO</DialogTitle>
+            <DialogDescription>
+              Cari dan pilih barang dari database master.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <BarangSearchCombobox onSelect={handleAddItemFromDB} />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddItemDialogOpen(false)}
             >
               Batal
             </Button>

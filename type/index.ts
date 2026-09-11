@@ -53,6 +53,31 @@ export interface Order {
     fulfilled_at: string;
     fulfilled_by: string;
   }[];
+  // Riwayat "Konversi Barang" (lihat mr-management/edit/[id]/page.tsx) - tiap
+  // kali barang_id/part_number item ini diganti ke barang master lain. PO
+  // yang dipilih ikut dikonversi langsung diubah part_number-nya (jadi otomatis
+  // match ke identitas baru); PO yang TIDAK ikut dikonversi tetap pakai
+  // identitas lama selamanya - dicatat di sini supaya qty gabungan
+  // (fetchPoQtyBreakdownForMr/fetchReceivedQtyByPartNumber) tetap bisa
+  // menjumlahkan qty dari identitas lama + baru sebagai 1 item yang sama.
+  conversion_history?: MrConversionRecord[];
+}
+
+export interface MrConversionRecord {
+  from_barang_id: number | null;
+  from_part_number: string | null;
+  from_name: string;
+  to_barang_id: number;
+  to_part_number: string;
+  to_name: string;
+  converted_at: string;
+  converted_by: string;
+  converted_by_name: string;
+  // Kode PO yang item-nya IKUT diubah ke identitas baru saat konversi ini.
+  converted_po_kode: string[];
+  // Kode PO yang TETAP pakai identitas lama (part_number lama) - qty di sini
+  // masih dihitung sebagai bagian dari item ini lewat riwayat ini.
+  kept_old_po_kode: string[];
 }
 
 export type DeliveryType =
@@ -102,6 +127,19 @@ export interface DiscussionMention {
   nama: string;
 }
 
+// Permintaan "follow-up" ke approver yang lagi jadi penentu (blocking) di
+// jalur approval MR/PO - cuma nudge/notifikasi, TIDAK mengubah status
+// approval itu sendiri. Disimpan sebagai array (bukan ditimpa) supaya
+// riwayat siapa-minta-kapan tetap ada, dan dashboard bisa hitung berapa kali
+// approver tsb sudah di-follow-up untuk dokumen ini.
+export interface FollowupRequest {
+  approver_id: string;
+  approver_name: string;
+  requested_by: string;
+  requested_by_name: string;
+  requested_at: string;
+}
+
 export interface Discussion {
   user_id: string;
   user_name: string;
@@ -140,6 +178,7 @@ export interface MaterialRequest {
   approvals: Approval[];
   attachments: Attachment[];
   discussions: Discussion[];
+  followup_requests?: FollowupRequest[];
   company_code: string;
   tujuan_site: string;
   cost_center_id: number | null;
@@ -206,6 +245,7 @@ export interface PurchaseOrderPayload {
   notes: string;
   attachments?: Attachment[];
   approvals?: Approval[];
+  followup_requests?: FollowupRequest[];
   repeated_from_po_id?: number | null; // fitur ini sudah ditinggalkan
   pph_type?: string | null;
   pph_rate?: number | null;
@@ -479,6 +519,7 @@ export interface PurchaseOrder {
   notes: string | null;
   attachments: Attachment[] | null;
   approvals: Approval[] | null;
+  followup_requests?: FollowupRequest[] | null;
   created_at: string;
   updated_at: string;
 
@@ -575,7 +616,9 @@ export type NotificationType =
   | "pc_routed"
   | "pc_approved_step"
   | "pc_fully_approved"
-  | "pc_rejected";
+  | "pc_rejected"
+  | "mr_followup_requested"
+  | "po_followup_requested";
 export interface Notification {
   id: string;
   created_at: string;

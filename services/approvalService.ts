@@ -1,7 +1,7 @@
 // src/services/approvalService.ts
 
 import { createClient } from "@/lib/supabase/client";
-import { Approval, MaterialRequest, PurchaseOrder } from "@/type";
+import { Approval, FollowupRequest, MaterialRequest, PurchaseOrder } from "@/type";
 import {
   normalizeMrOrders,
   updateMrItemStatus,
@@ -177,6 +177,115 @@ export const fetchPosReadyForGaReceive = async (): Promise<PurchaseOrder[]> => {
     throw error;
   }
   return (data || []) as PurchaseOrder[];
+};
+
+export interface FollowupSummaryItem {
+  id: number | string;
+  kode: string;
+  type: "mr" | "po";
+  href: string;
+  count: number;
+  lastRequestedAt: string;
+}
+
+/**
+ * Ringkasan follow-up approval yang MASIH AKTIF untuk user ini (sebagai
+ * approver yang di-tag) - dikelompokkan per dokumen (1 baris per MR/PO,
+ * bukan 1 baris per klik follow-up). Reuse fetchMyPendingMrApprovals/
+ * fetchMyPendingPoApprovals supaya begitu approver-nya sudah approve/reject,
+ * dokumennya otomatis hilang dari sini (dia sudah tidak lagi "pending" utk
+ * user ini) tanpa perlu logic tambahan.
+ */
+export const fetchMyFollowupSummary = async (
+  userId: string,
+): Promise<FollowupSummaryItem[]> => {
+  const [mrs, pos] = await Promise.all([
+    fetchMyPendingMrApprovals(userId),
+    fetchMyPendingPoApprovals(userId),
+  ]);
+
+  const summary: FollowupSummaryItem[] = [];
+
+  const latest = (entries: { requested_at: string }[]) =>
+    entries.reduce((a, b) =>
+      new Date(a.requested_at) > new Date(b.requested_at) ? a : b,
+    ).requested_at;
+
+  for (const mr of mrs) {
+    const mine = (mr.followup_requests || []).filter(
+      (f) => f.approver_id === userId,
+    );
+    if (mine.length === 0) continue;
+    summary.push({
+      id: mr.id,
+      kode: mr.kode_mr,
+      type: "mr",
+      href: `/material-request/${mr.id}`,
+      count: mine.length,
+      lastRequestedAt: latest(mine),
+    });
+  }
+
+  for (const po of pos) {
+    const mine = (po.followup_requests || []).filter(
+      (f) => f.approver_id === userId,
+    );
+    if (mine.length === 0) continue;
+    summary.push({
+      id: po.id,
+      kode: po.kode_po,
+      type: "po",
+      href: `/purchase-order/${po.id}`,
+      count: mine.length,
+      lastRequestedAt: latest(mine),
+    });
+  }
+
+  // Yang paling baru di-follow-up ditaruh di atas (paling mendesak).
+  summary.sort(
+    (a, b) =>
+      new Date(b.lastRequestedAt).getTime() -
+      new Date(a.lastRequestedAt).getTime(),
+  );
+
+  return summary;
+};
+
+/**
+ * Catat 1 permintaan follow-up baru ke approver yang lagi jadi penentu
+ * (blocking) di jalur approval MR/PO ini - append ke array yang sudah ada
+ * (bukan ditimpa), supaya riwayatnya tetap ada untuk dashboard & dialog
+ * konfirmasi "sudah pernah follow-up X yang lalu".
+ */
+export const requestApprovalFollowup = async (params: {
+  table: "material_requests" | "purchase_orders";
+  resourceId: number | string;
+  currentFollowups: FollowupRequest[];
+  approverId: string;
+  approverName: string;
+  requestedBy: string;
+  requestedByName: string;
+}): Promise<FollowupRequest[]> => {
+  const entry: FollowupRequest = {
+    approver_id: params.approverId,
+    approver_name: params.approverName,
+    requested_by: params.requestedBy,
+    requested_by_name: params.requestedByName,
+    requested_at: new Date().toISOString(),
+  };
+  const updated = [...params.currentFollowups, entry];
+
+  const { error } = await supabase
+    .from(params.table)
+    .update({ followup_requests: updated })
+    .eq("id", params.resourceId);
+
+  if (error) {
+    console.error("Error requesting approval follow-up:", error);
+    throw error;
+  }
+
+  return updated;
 };
 
 export const processMrApproval = async (

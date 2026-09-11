@@ -72,7 +72,9 @@ import {
   Attachment,
   MrItemStatus,
   GaStock,
+  Barang,
 } from "@/type";
+import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { isGADepartment } from "@/lib/constants/departments";
 import {
   formatCurrency,
@@ -152,6 +154,7 @@ import {
 import { logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { FollowupApprovalButton } from "@/components/followup-approval-button";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -176,15 +179,6 @@ const dataLokasi: ComboboxData = [
   { label: "Site DIZA", value: "Site DIZA" },
   { label: "Site PIK", value: "Site PIK" },
   { label: "Site BGE", value: "Site BGE" },
-];
-
-const dataUoM: ComboboxData = [
-  { label: "Pcs", value: "Pcs" },
-  { label: "Unit", value: "Unit" },
-  { label: "Set", value: "Set" },
-  { label: "Box", value: "Box" },
-  { label: "Rim", value: "Rim" },
-  { label: "Roll", value: "Roll" },
 ];
 
 const PRIORITY_OPTIONS: {
@@ -1206,6 +1200,29 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     setOpenItemDialog(true);
   };
 
+  // Isi nama/part number/UoM/harga dari barang master yang dipilih - item
+  // baru WAJIB terhubung ke database barang (barang_id), konsisten dengan
+  // alur tambah item waktu buat MR (material-request/buat/page.tsx).
+  const handleSelectBarang = (barang: Barang) => {
+    setOrderItem((prev) => ({
+      ...prev,
+      name: barang.part_name || prev.name,
+      part_number: barang.part_number,
+      uom: barang.uom || "Pcs",
+      barang_id: barang.id,
+      estimasi_harga: barang.last_purchase_price || prev.estimasi_harga,
+    }));
+  };
+
+  // Barang yang sama sudah ada di daftar item lain (selain item yang sedang
+  // diedit) - cegah duplikat.
+  const isDuplicateItem =
+    !!orderItem.barang_id &&
+    !!mr &&
+    mr.orders.some(
+      (o, i) => o.barang_id === orderItem.barang_id && i !== editingIndex,
+    );
+
   const handleSaveOrUpdateItem = () => {
     if (
       !orderItem.name?.trim() ||
@@ -1213,6 +1230,20 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       !orderItem.uom?.trim()
     ) {
       toast.error("Nama item, quantity, dan UoM harus diisi.");
+      return;
+    }
+    // Item BARU wajib dipilih dari database barang. Item lama (legacy, dari
+    // sebelum aturan ini ada) tetap boleh disimpan tanpa barang_id supaya
+    // edit qty/harga item lama tidak terblokir - tapi combobox di atas tetap
+    // tersedia untuk menghubungkannya kalau mau.
+    if (editingIndex === null && !orderItem.barang_id) {
+      toast.error("Wajib memilih barang dari database.");
+      return;
+    }
+    if (isDuplicateItem) {
+      toast.error(
+        "Barang ini sudah ada di daftar. Edit item yang sudah ada, jangan tambah duplikat.",
+      );
       return;
     }
     if (!mr) return;
@@ -2297,9 +2328,33 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                           </p>
                         )}
                     </div>
-                    {getApprovalStatusBadge(
-                      approver.status as "approved" | "rejected" | "pending",
-                    )}
+                    <div className="flex flex-col items-end gap-2">
+                      {getApprovalStatusBadge(
+                        approver.status as
+                          | "approved"
+                          | "rejected"
+                          | "pending",
+                      )}
+                      {isMyTurn &&
+                        approver.status === "pending" &&
+                        currentUser?.id !== approver.userid && (
+                          <FollowupApprovalButton
+                            resourceType="material_request"
+                            resourceId={mr.id}
+                            kode={mr.kode_mr}
+                            approverId={approver.userid}
+                            approverName={approver.nama}
+                            followups={mr.followup_requests || []}
+                            currentUserId={currentUser?.id || ""}
+                            currentUserName={
+                              userProfile?.nama || currentUser?.email || "User"
+                            }
+                            onUpdated={(updated) =>
+                              setMr({ ...mr, followup_requests: updated })
+                            }
+                          />
+                        )}
+                    </div>
                   </li>
                 );
               })}
@@ -2449,45 +2504,29 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemNameDlg" className="text-right">
-                Nama Item
+            <div className="space-y-2">
+              <Label className="text-right">
+                Cari Barang {editingIndex === null && "(Wajib)"}
               </Label>
-              <Input
-                id="itemNameDlg"
-                className="col-span-3"
-                value={orderItem.name}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, name: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemPnDlg" className="text-right">
-                Part Number
-              </Label>
-              <Input
-                id="itemPnDlg"
-                className="col-span-3"
-                value={orderItem.part_number || ""}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, part_number: e.target.value })
-                }
-                placeholder="(Opsional)"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="itemUomDlg" className="text-right">
-                UoM
-              </Label>
-              <div className="col-span-3">
-                <Combobox
-                  data={dataUoM}
-                  onChange={(v) => setOrderItem({ ...orderItem, uom: v })}
-                  defaultValue={orderItem.uom}
-                  placeholder="Pilih UoM..."
-                />
-              </div>
+              <BarangSearchCombobox onSelect={handleSelectBarang} />
+              {orderItem.name && (
+                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                  Terpilih: <strong>{orderItem.name}</strong>
+                  {orderItem.part_number && ` (${orderItem.part_number})`}
+                </div>
+              )}
+              {isDuplicateItem && (
+                <p className="text-xs text-destructive mt-1">
+                  Barang ini sudah ada di daftar item. Edit item yang sudah
+                  ada, jangan tambah duplikat.
+                </p>
+              )}
+              {editingIndex !== null && !orderItem.barang_id && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Item lama ini belum terhubung ke database barang. Cari &amp;
+                  pilih di atas untuk menghubungkannya (opsional).
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="itemQtyDlg" className="text-right">
@@ -2500,6 +2539,19 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 value={orderItem.qty}
                 onChange={(e) =>
                   setOrderItem({ ...orderItem, qty: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="itemUomDlg" className="text-right">
+                UoM
+              </Label>
+              <Input
+                id="itemUomDlg"
+                className="col-span-3"
+                value={orderItem.uom}
+                onChange={(e) =>
+                  setOrderItem({ ...orderItem, uom: e.target.value })
                 }
               />
             </div>

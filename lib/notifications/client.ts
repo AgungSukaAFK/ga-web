@@ -35,6 +35,8 @@ export type NotificationEventType =
   | "pc_approved_step"
   | "pc_fully_approved"
   | "pc_rejected"
+  | "mr_followup_requested"
+  | "po_followup_requested"
   | "info";
 
 export type NotificationResourceType =
@@ -484,6 +486,42 @@ export async function notifyOnPOApproval({
       });
     }
   }
+}
+
+/**
+ * Kirim nudge "Follow-up Approval" ke approver yang sedang jadi penentu
+ * (blocking) di jalur approval MR/PO ini. Cuma notifikasi - tidak mengubah
+ * status approval apapun. Bisa dipicu oleh siapa saja (requester, GA, user
+ * lain yang buka halaman detailnya).
+ */
+export async function notifyOnApprovalFollowup({
+  actorId,
+  actorName,
+  approverId,
+  kode,
+  resourceId,
+  resourceType,
+}: {
+  actorId: string;
+  actorName: string;
+  approverId: string;
+  kode: string;
+  resourceId: string | number;
+  resourceType: "material_request" | "purchase_order";
+}): Promise<void> {
+  const isMR = resourceType === "material_request";
+  await sendNotification({
+    userId: approverId,
+    actorId,
+    type: isMR ? "mr_followup_requested" : "po_followup_requested",
+    title: "Follow-up Approval Diminta",
+    message: `${actorName} meminta Anda segera memproses approval ${isMR ? "MR" : "PO"} ${kode}.`,
+    link: isMR
+      ? `/material-request/${resourceId}`
+      : `/purchase-order/${resourceId}`,
+    resourceId: String(resourceId),
+    resourceType,
+  });
 }
 
 /**
