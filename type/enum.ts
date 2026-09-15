@@ -522,6 +522,26 @@ export const PC_VOUCHER_STATUS_COLORS: Record<string, string> = {
 export const PC_VOUCHER_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
+// Status Deklarasi Petty Cash (petty_cash_deklarasi) - sama bentuknya dengan
+// PC_PENGAJUAN_STATUS_OPTIONS (tidak ada tahap "Permintaan Klaim" seperti
+// Voucher, karena Deklarasi sendiri sudah tahap SETELAH klaim diajukan).
+export const PC_DEKLARASI_STATUS_OPTIONS = [
+  "In Approval",
+  "Approved",
+  "Rejected",
+] as const;
+
+export const PC_DEKLARASI_STATUS_COLORS: Record<string, string> = {
+  "In Approval":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Approved:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Rejected:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+};
+export const PC_DEKLARASI_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
 // Tipe approval Template Approval Petty Cash - lihat komentar PcApprovalType
 // di type/index.ts untuk urutan tahapannya. Dipakai sebagai field wajib di
 // PcApprovalTemplate (services/pcApprovalTemplateService.ts) supaya tiap
