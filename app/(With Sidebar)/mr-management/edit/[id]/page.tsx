@@ -36,6 +36,7 @@ import {
   Loader2,
   LinkIcon,
   ArrowLeftRight,
+  UserCog,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,7 +53,9 @@ import {
   Barang,
   MrConversionRecord,
   POItem,
+  User,
 } from "@/type";
+import { ApproverSearchAdd } from "@/components/approver-search-add";
 import { BarangSearchCombobox } from "../../../purchase-order/BarangSearchCombobox";
 import {
   fetchPosForMrItemPartNumber,
@@ -190,6 +193,9 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   // State UI Dialog/Popover
   const [isLevelInfoOpen, setIsLevelInfoOpen] = useState(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+  const [substituteApproverIndex, setSubstituteApproverIndex] = useState<
+    number | null
+  >(null);
 
   const supabase = createClient();
 
@@ -429,6 +435,35 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     setMr({ ...mr, approvals: updatedApprovals });
     toast.info(
       `Status approval ${updatedApprovals[index].nama} diubah: ${oldStatus} -> ${newStatus}`,
+    );
+  };
+
+  // Substitusi approver hanya boleh selama status approval masih "pending".
+  // Approver yang sudah approve/reject tidak boleh diganti agar riwayat
+  // keputusannya tetap utuh.
+  const handleSubstituteApprover = (index: number, user: User) => {
+    if (!mr) return;
+    const target = mr.approvals[index];
+    if (!target || target.status !== "pending") {
+      toast.error("Approver yang sudah diproses tidak bisa disubstitusi.");
+      return;
+    }
+
+    const updatedApprovals = [...mr.approvals];
+    const oldNama = updatedApprovals[index].nama;
+    updatedApprovals[index] = {
+      ...updatedApprovals[index],
+      userid: user.id,
+      nama: user.nama || "",
+      email: user.email || "",
+      role: user.role || "",
+      department: user.department || "",
+    };
+
+    setMr({ ...mr, approvals: updatedApprovals });
+    setSubstituteApproverIndex(null);
+    toast.info(
+      `Approver diganti: ${oldNama} -> ${updatedApprovals[index].nama}`,
     );
   };
 
@@ -1491,30 +1526,44 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                           {approver.type}
                         </p>
                       </div>
-                      <Select
-                        value={approver.status}
-                        onValueChange={(newStatus) =>
-                          handleApprovalStatusChange(
-                            index,
-                            newStatus as Approval["status"],
-                          )
-                        }
-                      >
-                        <SelectTrigger className="w-[120px] capitalize">
-                          <SelectValue placeholder="Status..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APPROVAL_STATUS_OPTIONS.map((opt) => (
-                            <SelectItem
-                              key={opt}
-                              value={opt}
-                              className="capitalize"
-                            >
-                              {opt}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        {approver.status === "pending" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 flex-shrink-0"
+                            title="Ganti Approver"
+                            onClick={() => setSubstituteApproverIndex(index)}
+                          >
+                            <UserCog className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Select
+                          value={approver.status}
+                          onValueChange={(newStatus) =>
+                            handleApprovalStatusChange(
+                              index,
+                              newStatus as Approval["status"],
+                            )
+                          }
+                        >
+                          <SelectTrigger className="w-[120px] capitalize">
+                            <SelectValue placeholder="Status..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {APPROVAL_STATUS_OPTIONS.map((opt) => (
+                              <SelectItem
+                                key={opt}
+                                value={opt}
+                                className="capitalize"
+                              >
+                                {opt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1532,6 +1581,38 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             </div>
           </div>
       </div>
+
+      <Dialog
+        open={substituteApproverIndex !== null}
+        onOpenChange={(open) => !open && setSubstituteApproverIndex(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ganti Approver</DialogTitle>
+            <DialogDescription>
+              {substituteApproverIndex !== null &&
+                mr.approvals[substituteApproverIndex] && (
+                  <>
+                    Cari &amp; pilih approver pengganti untuk menggantikan{" "}
+                    <span className="font-semibold">
+                      {mr.approvals[substituteApproverIndex].nama}
+                    </span>{" "}
+                    ({mr.approvals[substituteApproverIndex].type}). Substitusi
+                    hanya bisa dilakukan selama status approval masih{" "}
+                    <b>pending</b>.
+                  </>
+                )}
+            </DialogDescription>
+          </DialogHeader>
+          <ApproverSearchAdd
+            onAdd={(user) => {
+              if (substituteApproverIndex !== null) {
+                handleSubstituteApprover(substituteApproverIndex, user);
+              }
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
         <DialogContent>

@@ -922,9 +922,14 @@ export const submitReceiveRecord = async (
 
   // Vendor tipe Site kirim langsung ke site tanpa lewat GA - jadi begitu
   // requester sendiri yang konfirmasi terima (checklist ini), item yang
-  // qty-nya sudah penuh langsung "On Delivery" (siap di-BAST), TIDAK
+  // qty-nya sudah penuh langsung "Pending BAST" (siap di-BAST), TIDAK
   // singgah di "Diterima GA" dulu (yang nunggu GA klik "Kirim ke Requester"
   // - langkah itu gak relevan buat vendor Site karena gak ada GA di tengah).
+  // BUKAN "On Delivery" - barang sudah fisik ada di requester saat checklist
+  // ini disubmit, jadi labelnya jangan "Dalam Pengiriman" (kebalikan dari
+  // fakta), dan lagipula "On Delivery" tanpa `delivery_info` (yang cuma
+  // diisi GA lewat sendItemsToRequester) bikin dialog "Detail Pengiriman"
+  // nongol kosong.
   const isSiteVendor = po.vendor_details?.tipe_vendor === "Site";
 
   const items: ReceiveRecordItem[] = (po.items || [])
@@ -996,15 +1001,15 @@ export const submitReceiveRecord = async (
         item.part_number,
         {
           // "Diterima GA" - GA baru terima dari vendor (qty GABUNGAN dari
-          // semua PO terkait sudah cukup), BELUM dikirim ke requester (beda
-          // momen dgn dulu yg langsung "Pending BAST"). Kalau item ini
-          // dipecah ke >1 PO dan baru sebagian yg datang, status TETAP
-          // "Processing" sampai semua PO-nya selesai diterima. Baru pindah
-          // ke "On Delivery" saat GA klik "Kirim ke Requester" (lihat
-          // sendItemsToRequester, services/mrService.ts).
+          // semua PO terkait sudah cukup), BELUM dikirim ke requester. Kalau
+          // item ini dipecah ke >1 PO dan baru sebagian yg datang, status
+          // TETAP "Processing" sampai semua PO-nya selesai diterima. Baru
+          // pindah ke "On Delivery" saat GA klik "Kirim ke Requester" (lihat
+          // sendItemsToRequester, services/mrService.ts) - vendor Site loncat
+          // langsung ke "Pending BAST" karena gak ada leg pengiriman GA itu.
           status: isItemFullyReceived
             ? isSiteVendor
-              ? MR_ITEM_STATUSES.ON_DELIVERY
+              ? MR_ITEM_STATUSES.PENDING_BAST
               : MR_ITEM_STATUSES.DITERIMA_GA
             : MR_ITEM_STATUSES.PROCESSING,
           level: "Open 5",

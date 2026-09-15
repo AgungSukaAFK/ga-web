@@ -847,4 +847,59 @@ export interface PettyCashVoucher {
   users_with_profiles?: { nama: string; email?: string } | null;
   cost_centers?: { name: string; current_budget: number } | null;
   petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+  // Deklarasi yang sudah dibuat dari Voucher ini (kalau ada) - dipakai utk
+  // filter "belum dideklarasikan" (lihat fetchClaimedVouchersForDeklarasi,
+  // services/pettyCashDeklarasiService.ts). Satu Voucher cuma boleh punya
+  // SATU Deklarasi (unique voucher_id di DB), jadi arraynya panjang 0 atau 1.
+  petty_cash_deklarasi?: { id: number }[] | null;
+}
+
+// ==========================================
+// DEKLARASI PETTY CASH - tabel `petty_cash_deklarasi`. Tahap SETELAH sebuah
+// Voucher diajukan klaim pencairannya ("Permintaan Klaim", lihat
+// submitVoucherClaim, services/pettyCashVoucherService.ts). Requester
+// melaporkan pemakaian RIIL dana yang sudah dicairkan - lihat
+// createDeklarasiFromVoucher, services/pettyCashDeklarasiService.ts. Satu
+// Voucher cuma boleh dipakai untuk SATU Deklarasi (unique voucher_id di DB,
+// lihat supabase/petty-cash-deklarasi-setup.sql).
+//
+// BEDA dari Voucher (snapshot APA ADANYA dari Pengajuan): item Deklarasi
+// disalin dari Voucher asalnya TAPI qty/unit_price/note per baris BOLEH
+// disesuaikan requester ke pemakaian riil (struk asli kadang beda dari
+// rencana) - part_name/uom/category/barang_id tetap ikut baris asalnya
+// (tidak bisa tambah/hapus baris baru di Deklarasi).
+//
+// Jalur approval Deklarasi TERPISAH dari jalur approval Voucher-nya -
+// diambil dari Template Approval ber-approval_type "Approval Deklarasi"
+// (lihat resolvePcAutoTemplate, services/pcApprovalTemplateService.ts).
+// ==========================================
+
+export interface PettyCashDeklarasi {
+  id: number;
+  kode_deklarasi: string;
+  voucher_id: number;
+  user_id: string;
+  company_code: string;
+  department: string;
+  cost_center_id: number | null;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  total_amount: number;
+  attachments: Attachment[];
+  status: string;
+  approvals: PettyCashPengajuanApprover[];
+  discussions: any[];
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain)
+  users_with_profiles?: { nama: string; email?: string } | null;
+  cost_centers?: { name: string; current_budget: number } | null;
+  petty_cash_voucher?: {
+    kode_voucher: string;
+    total_amount: number;
+    petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+  } | null;
 }

@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
+import DeklarasiClient from "./DeklarasiClient";
 
 export default function DeklarasiPage() {
-  return <ComingSoon title="Deklarasi" />;
+  return <DeklarasiClient />;
 }
