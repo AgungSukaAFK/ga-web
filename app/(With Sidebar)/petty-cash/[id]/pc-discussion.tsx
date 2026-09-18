@@ -9,23 +9,29 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Discussion, DiscussionAttachment } from "@/type";
+import { MessageAttachmentToolbar } from "@/components/message-attachment-toolbar";
+import { DiscussionAttachmentView } from "@/components/discussion-attachment-view";
 
 export function PcDiscussionSection({
   pcId,
   initialDiscussions,
 }: {
   pcId: number;
-  initialDiscussions: any[];
+  initialDiscussions: Discussion[];
 }) {
   const [discussions, setDiscussions] = useState(initialDiscussions || []);
   const [newMessage, setNewMessage] = useState("");
+  const [pendingAttachment, setPendingAttachment] =
+    useState<DiscussionAttachment | null>(null);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
+  const submitMessage = async (attachmentOverride?: DiscussionAttachment) => {
+    const message = attachmentOverride ? "" : newMessage;
+    const attachment = attachmentOverride ?? pendingAttachment ?? undefined;
+    if (!message.trim() && !attachment) return;
     setLoading(true);
 
     try {
@@ -40,11 +46,12 @@ export function PcDiscussionSection({
         .eq("id", user.id)
         .single();
 
-      const newEntry = {
+      const newEntry: Discussion = {
         user_id: user.id,
         user_name: profile?.nama || user.email || "Unknown User",
-        message: newMessage,
+        message,
         timestamp: new Date().toISOString(),
+        ...(attachment ? { attachment } : {}),
       };
 
       const updatedDiscussions = [...discussions, newEntry];
@@ -58,6 +65,7 @@ export function PcDiscussionSection({
 
       setDiscussions(updatedDiscussions);
       setNewMessage("");
+      if (!attachmentOverride) setPendingAttachment(null);
       toast.success("Pesan terkirim!");
       router.refresh();
     } catch (error: any) {
@@ -65,6 +73,15 @@ export function PcDiscussionSection({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitMessage();
+  };
+
+  const handleSendSticker = (emoji: string) => {
+    submitMessage({ type: "sticker", emoji });
   };
 
   return (
@@ -90,9 +107,14 @@ export function PcDiscussionSection({
                         {new Date(chat.timestamp).toLocaleString("id-ID")}
                       </p>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">
-                      {chat.message}
-                    </p>
+                    {chat.message && (
+                      <p className="text-sm whitespace-pre-wrap">
+                        {chat.message}
+                      </p>
+                    )}
+                    {chat.attachment && (
+                      <DiscussionAttachmentView attachment={chat.attachment} />
+                    )}
                   </div>
                 </div>
               ))
@@ -102,17 +124,41 @@ export function PcDiscussionSection({
               </p>
             )}
           </div>
-          <form onSubmit={handleSubmit} className="flex gap-2 pt-4 border-t">
-            <Textarea
-              placeholder="Tulis catatan atau alasan di sini..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              rows={2}
-              disabled={loading}
-            />
-            <Button type="submit" size="icon" disabled={loading}>
-              <Send className="h-4 w-4" />
-            </Button>
+          <form onSubmit={handleSubmit} className="pt-4 border-t space-y-1.5">
+            <div className="flex items-start gap-2">
+              <Textarea
+                placeholder="Tulis catatan atau alasan di sini..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submitMessage();
+                  }
+                }}
+                rows={2}
+                disabled={loading}
+              />
+              <MessageAttachmentToolbar
+                pathPrefix={`discussions/petty-cash/${pcId}`}
+                pendingAttachment={pendingAttachment}
+                onPendingAttachmentChange={setPendingAttachment}
+                onSendSticker={handleSendSticker}
+                disabled={loading}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={
+                  loading || (newMessage.trim() === "" && !pendingAttachment)
+                }
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Enter untuk kirim, Shift+Enter untuk baris baru.
+            </p>
           </form>
         </div>
       </CardContent>

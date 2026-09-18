@@ -852,13 +852,17 @@ export default function BuatMRPage() {
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Remarks (Tujuan & Latar Belakang)</Label>
             <Textarea
-              placeholder="Jelaskan tujuan..."
+              placeholder="Contoh: Laptop lama rusak layar, dibutuhkan untuk kerja harian tim IT..."
               value={formCreateMR.remarks}
               rows={4}
               onChange={(e) =>
                 setFormCreateMR({ ...formCreateMR, remarks: e.target.value })
               }
             />
+            <p className="text-xs text-muted-foreground">
+              Isi jelas & detail (alasan, kondisi saat ini, urgensi) - remarks
+              yang lengkap mempercepat keputusan approver.
+            </p>
           </div>
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Estimasi Biaya (Otomatis)</Label>

@@ -42,6 +42,7 @@ interface MentionTextareaProps {
   value: string;
   onValueChange: (value: string) => void;
   onMentionAdd: (mention: DiscussionMention) => void;
+  onSubmit?: () => void;
   placeholder?: string;
   rows?: number;
   disabled?: boolean;
@@ -52,6 +53,7 @@ export function MentionTextarea({
   value,
   onValueChange,
   onMentionAdd,
+  onSubmit,
   placeholder,
   rows = 2,
   disabled,
@@ -122,7 +124,14 @@ export function MentionTextarea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!open) return;
+    if (!open) {
+      // Enter = kirim, Shift+Enter = baris baru (behavior chat pada umumnya).
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onSubmit?.();
+      }
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlightedIndex((i) =>
