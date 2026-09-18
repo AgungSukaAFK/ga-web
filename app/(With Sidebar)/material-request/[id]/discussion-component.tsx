@@ -9,11 +9,13 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Discussion, DiscussionMention } from "@/type";
+import { Discussion, DiscussionAttachment, DiscussionMention } from "@/type";
 import { logActivity } from "@/services/logService";
 import { sendNotification } from "@/lib/notifications/client";
 import { MentionTextarea } from "@/components/mention-textarea";
 import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MessageAttachmentToolbar } from "@/components/message-attachment-toolbar";
+import { DiscussionAttachmentView } from "@/components/discussion-attachment-view";
 
 interface DiscussionSectionProps {
   mrId: string;
@@ -29,13 +31,16 @@ export function DiscussionSection({
   const [pendingMentions, setPendingMentions] = useState<DiscussionMention[]>(
     [],
   );
+  const [pendingAttachment, setPendingAttachment] =
+    useState<DiscussionAttachment | null>(null);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newMessage.trim() === "") return;
+  const submitMessage = async (attachmentOverride?: DiscussionAttachment) => {
+    const message = attachmentOverride ? "" : newMessage;
+    const attachment = attachmentOverride ?? pendingAttachment ?? undefined;
+    if (message.trim() === "" && !attachment) return;
 
     setLoading(true);
 
@@ -56,16 +61,17 @@ export function DiscussionSection({
       // (kalau user hapus "@Nama"-nya lagi sebelum kirim, ga usah dinotif).
       const finalMentions = pendingMentions.filter(
         (m, index, arr) =>
-          newMessage.includes(`@${m.nama}`) &&
+          message.includes(`@${m.nama}`) &&
           arr.findIndex((x) => x.id === m.id) === index,
       );
 
       const newDiscussionEntry: Discussion = {
         user_id: user.id,
         user_name: userName,
-        message: newMessage,
+        message,
         timestamp: new Date().toISOString(),
         ...(finalMentions.length > 0 ? { mentions: finalMentions } : {}),
+        ...(attachment ? { attachment } : {}),
       };
 
       const updatedDiscussions = [...discussions, newDiscussionEntry];
@@ -83,7 +89,7 @@ export function DiscussionSection({
         "material_request",
         String(mrId),
         `${userName} menambahkan pesan diskusi pada MR ini.`,
-        { message: newMessage },
+        { message },
       );
 
       await Promise.all(
@@ -106,6 +112,7 @@ export function DiscussionSection({
       setDiscussions(updatedDiscussions);
       setNewMessage("");
       setPendingMentions([]);
+      if (!attachmentOverride) setPendingAttachment(null);
       toast.success("Pesan berhasil terkirim!");
       router.refresh();
     } catch (error: any) {
@@ -113,6 +120,15 @@ export function DiscussionSection({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitMessage();
+  };
+
+  const handleSendSticker = (emoji: string) => {
+    submitMessage({ type: "sticker", emoji });
   };
 
   return (
@@ -138,12 +154,17 @@ export function DiscussionSection({
                         {new Date(chat.timestamp).toLocaleString("id-ID")}
                       </p>
                     </div>
-                    <p className="text-sm mt-1 whitespace-pre-wrap">
-                      <MessageWithMentions
-                        text={chat.message}
-                        mentions={chat.mentions}
-                      />
-                    </p>
+                    {chat.message && (
+                      <p className="text-sm mt-1 whitespace-pre-wrap">
+                        <MessageWithMentions
+                          text={chat.message}
+                          mentions={chat.mentions}
+                        />
+                      </p>
+                    )}
+                    {chat.attachment && (
+                      <DiscussionAttachmentView attachment={chat.attachment} />
+                    )}
                   </div>
                 </div>
               ))
@@ -166,17 +187,31 @@ export function DiscussionSection({
                       : [...prev, mention],
                   )
                 }
+                onSubmit={() => submitMessage()}
                 rows={2}
                 disabled={loading}
               />
-              <Button type="submit" size="icon" disabled={loading}>
+              <MessageAttachmentToolbar
+                pathPrefix={`discussions/material-request/${mrId}`}
+                pendingAttachment={pendingAttachment}
+                onPendingAttachmentChange={setPendingAttachment}
+                onSendSticker={handleSendSticker}
+                disabled={loading}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={
+                  loading || (newMessage.trim() === "" && !pendingAttachment)
+                }
+              >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               Tips: ketik <span className="font-medium">@</span> lalu nama
               user untuk mention/tag - orang yang ditag akan mendapat
-              notifikasi.
+              notifikasi. Enter untuk kirim, Shift+Enter untuk baris baru.
             </p>
           </form>
         </div>

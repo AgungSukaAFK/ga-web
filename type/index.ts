@@ -140,12 +140,18 @@ export interface FollowupRequest {
   requested_at: string;
 }
 
+export type DiscussionAttachment =
+  | { type: "image"; url: string; name?: string }
+  | { type: "gif"; url: string }
+  | { type: "sticker"; emoji: string };
+
 export interface Discussion {
   user_id: string;
   user_name: string;
   message: string;
   timestamp: string;
   mentions?: DiscussionMention[];
+  attachment?: DiscussionAttachment;
 }
 
 export interface Profile {
