@@ -43,6 +43,7 @@ interface MentionTextareaProps {
   onValueChange: (value: string) => void;
   onMentionAdd: (mention: DiscussionMention) => void;
   onSubmit?: () => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   rows?: number;
   disabled?: boolean;
@@ -54,6 +55,7 @@ export function MentionTextarea({
   onValueChange,
   onMentionAdd,
   onSubmit,
+  onPaste,
   placeholder,
   rows = 2,
   disabled,
@@ -166,6 +168,7 @@ export function MentionTextarea({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           onBlur={() => {
             // Delay dikit biar klik di item popup sempat kehandle duluan.
             setTimeout(closeMentionPopup, 150);

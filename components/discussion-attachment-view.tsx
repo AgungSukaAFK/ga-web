@@ -14,7 +14,7 @@ export function DiscussionAttachmentView({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={attachment.url}
-        alt={attachment.type === "image" ? attachment.name || "Gambar" : "GIF"}
+        alt={attachment.name || "Gambar"}
         className="mt-2 max-h-64 max-w-full rounded-md border object-contain"
       />
     </a>

@@ -1,5 +1,5 @@
-import { Fragment } from "react";
 import { DiscussionMention } from "@/type";
+import { NoteWithLinks } from "@/components/note-with-links";
 
 // Escape karakter regex spesial biar nama user aman dipakai sebagai literal
 // pattern (nama bisa mengandung ".", "(", dll).
@@ -14,7 +14,7 @@ export function MessageWithMentions({
   text: string;
   mentions?: DiscussionMention[];
 }) {
-  if (!mentions || mentions.length === 0) return <>{text}</>;
+  if (!mentions || mentions.length === 0) return <NoteWithLinks text={text} />;
 
   // Nama terpanjang duluan biar "Budi Santoso" ga kepotong jadi "Budi" doang.
   const tokens = [...mentions]
@@ -22,7 +22,7 @@ export function MessageWithMentions({
     .map((m) => `@${m.nama}`);
 
   const uniqueTokens = Array.from(new Set(tokens));
-  if (uniqueTokens.length === 0) return <>{text}</>;
+  if (uniqueTokens.length === 0) return <NoteWithLinks text={text} />;
 
   const regex = new RegExp(
     `(${uniqueTokens.map(escapeRegex).join("|")})`,
@@ -41,7 +41,7 @@ export function MessageWithMentions({
             {part}
           </span>
         ) : (
-          <Fragment key={i}>{part}</Fragment>
+          <NoteWithLinks key={i} text={part} />
         ),
       )}
     </>
