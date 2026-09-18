@@ -142,7 +142,6 @@ export interface FollowupRequest {
 
 export type DiscussionAttachment =
   | { type: "image"; url: string; name?: string }
-  | { type: "gif"; url: string }
   | { type: "sticker"; emoji: string };
 
 export interface Discussion {

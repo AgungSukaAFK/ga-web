@@ -16,6 +16,8 @@ import { MentionTextarea } from "@/components/mention-textarea";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MessageAttachmentToolbar } from "@/components/message-attachment-toolbar";
 import { DiscussionAttachmentView } from "@/components/discussion-attachment-view";
+import { useImageAttachmentUpload } from "@/hooks/use-image-attachment-upload";
+import { cn } from "@/lib/utils";
 
 interface DiscussionSectionProps {
   mrId: string;
@@ -33,9 +35,19 @@ export function DiscussionSection({
   );
   const [pendingAttachment, setPendingAttachment] =
     useState<DiscussionAttachment | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
   const router = useRouter();
+
+  const { uploading, uploadFile } = useImageAttachmentUpload(
+    `discussions/material-request/${mrId}`,
+  );
+
+  const handleUploadFile = async (file: File) => {
+    const attachment = await uploadFile(file);
+    if (attachment) setPendingAttachment(attachment);
+  };
 
   const submitMessage = async (attachmentOverride?: DiscussionAttachment) => {
     const message = attachmentOverride ? "" : newMessage;
@@ -175,9 +187,28 @@ export function DiscussionSection({
             )}
           </div>
           <form onSubmit={handleSubmit} className="pt-4 border-t space-y-1.5">
-            <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                "flex flex-col gap-2 rounded-md sm:flex-row sm:items-start",
+                isDraggingOver &&
+                  "outline-2 outline-dashed outline-primary/60 outline-offset-4",
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingOver(true);
+              }}
+              onDragLeave={() => setIsDraggingOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingOver(false);
+                const file = Array.from(e.dataTransfer.files).find((f) =>
+                  f.type.startsWith("image/"),
+                );
+                if (file) handleUploadFile(file);
+              }}
+            >
               <MentionTextarea
-                placeholder="Tulis pesan Anda di sini..."
+                placeholder="Tulis pesan Anda di sini... (bisa drag & drop atau paste gambar)"
                 value={newMessage}
                 onValueChange={setNewMessage}
                 onMentionAdd={(mention) =>
@@ -188,25 +219,41 @@ export function DiscussionSection({
                   )
                 }
                 onSubmit={() => submitMessage()}
+                onPaste={(e) => {
+                  const item = Array.from(e.clipboardData.items).find((i) =>
+                    i.type.startsWith("image/"),
+                  );
+                  const file = item?.getAsFile();
+                  if (file) {
+                    e.preventDefault();
+                    handleUploadFile(file);
+                  }
+                }}
                 rows={2}
-                disabled={loading}
+                disabled={loading || uploading}
+                className="sm:min-w-0 sm:flex-1"
               />
-              <MessageAttachmentToolbar
-                pathPrefix={`discussions/material-request/${mrId}`}
-                pendingAttachment={pendingAttachment}
-                onPendingAttachmentChange={setPendingAttachment}
-                onSendSticker={handleSendSticker}
-                disabled={loading}
-              />
-              <Button
-                type="submit"
-                size="icon"
-                disabled={
-                  loading || (newMessage.trim() === "" && !pendingAttachment)
-                }
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center justify-between gap-2 sm:contents">
+                <MessageAttachmentToolbar
+                  pendingAttachment={pendingAttachment}
+                  onPendingAttachmentChange={setPendingAttachment}
+                  onSendSticker={handleSendSticker}
+                  uploading={uploading}
+                  onUploadFile={handleUploadFile}
+                  disabled={loading}
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={
+                    loading ||
+                    uploading ||
+                    (newMessage.trim() === "" && !pendingAttachment)
+                  }
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               Tips: ketik <span className="font-medium">@</span> lalu nama
