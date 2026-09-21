@@ -1637,9 +1637,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       (po.status !== "Pending Approval" &&
         po.status !== "Pending Payment" &&
         po.status !== PO_STATUS_PENDING_RECEIVE &&
-        po.status !== PO_STATUS_PARTIAL_RECEIVE)
+        po.status !== PO_STATUS_PARTIAL_RECEIVE &&
+        po.status !== PO_STATUS_FULL_RECEIVED)
     )
       return null;
+    // myApprovalIndex hanya nemu row approval yang masih "pending" milik
+    // currentUser - jadi kalau po.status sudah kelewat maju (mis. GA pakai
+    // tombol "Terima Barang" manual di luar gilirannya sehingga status
+    // langsung Full Received padahal masih ada approval lain yang belum
+    // approve), approver itu tetap harus bisa lihat & pencet tombol ini.
     if (myApprovalIndex === -1) return null;
     if (!isMyTurnForApproval)
       return (
