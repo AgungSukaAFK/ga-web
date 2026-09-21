@@ -121,6 +121,8 @@ import {
   MR_ITEM_STATUS_COLOR_DEFAULT,
   MR_ITEM_STATUS_LABELS,
   MR_ITEM_BAST_ELIGIBLE_STATUSES,
+  PO_REF_STATUS_COLORS,
+  PO_REF_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
@@ -2158,14 +2160,27 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                     {linkedPos.map((entry, idx) => (
                                       <Link
                                         key={idx}
-                                        href={`/purchase-order?search=${encodeURIComponent(
-                                          entry.kode_po,
-                                        )}`}
-                                        className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-sm hover:underline flex items-center gap-1"
+                                        href={
+                                          entry.po_id
+                                            ? `/purchase-order/${entry.po_id}`
+                                            : `/purchase-order?search=${encodeURIComponent(
+                                                entry.kode_po,
+                                              )}`
+                                        }
                                         target="_blank"
+                                        rel="noopener noreferrer"
                                       >
-                                        <LinkIcon className="w-3 h-3" />
-                                        {entry.kode_po} ({entry.qty})
+                                        <Badge
+                                          variant="outline"
+                                          className={cn(
+                                            "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
+                                            PO_REF_STATUS_COLORS[
+                                              entry.po_status
+                                            ] || PO_REF_STATUS_COLOR_DEFAULT,
+                                          )}
+                                        >
+                                          {entry.kode_po} ({entry.qty})
+                                        </Badge>
                                       </Link>
                                     ))}
                                   </div>
