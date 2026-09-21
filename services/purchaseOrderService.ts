@@ -308,6 +308,7 @@ export const generatePoCode = async (
 
 export interface PoQtyBreakdownEntry {
   kode_po: string;
+  po_id?: number;
   po_status: string;
   qty: number;
   is_manual?: boolean;
@@ -329,7 +330,7 @@ export const fetchPoQtyBreakdownForMr = async (
   const [posResult, mrResult] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("kode_po, status, items")
+      .select("id, kode_po, status, items")
       .eq("mr_id", mrId)
       .neq("status", "Rejected"),
     supabase
@@ -343,6 +344,7 @@ export const fetchPoQtyBreakdownForMr = async (
   if (error || !data) return {};
 
   const poStatusByCode = new Map(data.map((po) => [po.kode_po, po.status]));
+  const poIdByCode = new Map(data.map((po) => [po.kode_po, po.id]));
 
   const breakdown: Record<string, PoQtyBreakdownEntry[]> = {};
   for (const po of data) {
@@ -352,6 +354,7 @@ export const fetchPoQtyBreakdownForMr = async (
       if (!breakdown[item.part_number]) breakdown[item.part_number] = [];
       breakdown[item.part_number].push({
         kode_po: po.kode_po,
+        po_id: po.id,
         po_status: po.status,
         qty: item.qty,
       });
@@ -374,6 +377,7 @@ export const fetchPoQtyBreakdownForMr = async (
       }
       breakdown[order.part_number].push({
         kode_po: link.kode_po,
+        po_id: poIdByCode.get(link.kode_po),
         po_status: poStatusByCode.get(link.kode_po) || "—",
         qty: link.qty,
         is_manual: true,
