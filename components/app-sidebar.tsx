@@ -47,6 +47,7 @@ import {
   BadgeCheck,
   FileText,
   FileCheck2,
+  ShieldAlert,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -357,6 +358,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         url: "/petty-cash/approval-deklarasi",
         icon: FileCheck2,
         visible: canApprovePc,
+      },
+      {
+        title: "Management Petty Cash",
+        url: "/petty-cash/management",
+        icon: ShieldAlert,
+        visible: isAdmin,
       },
     ];
 

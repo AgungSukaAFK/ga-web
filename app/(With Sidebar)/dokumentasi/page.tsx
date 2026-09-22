@@ -14,11 +14,14 @@ import { Badge } from "@/components/ui/badge";
 import { MR_LEVELS } from "@/type/enum";
 import {
   AlertCircle,
+  Banknote,
   BookOpen,
   Check,
   CheckCheck,
+  CheckCircle2,
   ChevronsUpDown,
   CircleDollarSign,
+  Clock,
   Edit,
   FileBox,
   FileCheck,
@@ -34,6 +37,7 @@ import {
   PackageCheck,
   Printer,
   Send,
+  ShieldAlert,
   Truck,
   Users,
   Wallet,
@@ -676,6 +680,159 @@ export default function DokumentasiPage() {
           {/* ====================================================== */}
           {/* FAQ */}
           {/* ====================================================== */}
+          {/* ====================================================== */}
+          {/* ALUR PROSES PETTY CASH (KAS KECIL) */}
+          {/* ====================================================== */}
+          <AccordionItem value="item-petty-cash">
+            <AccordionTrigger className="text-xl font-semibold">
+              <div className="flex items-center gap-3">
+                <Banknote className="h-5 w-5" />
+                Alur Proses Petty Cash (Kas Kecil)
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Satu kebutuhan Petty Cash berjalan lewat{" "}
+                <strong>3 dokumen terpisah</strong> secara berurutan -{" "}
+                <strong>Pengajuan → Voucher → Deklarasi</strong> - dan{" "}
+                <strong>masing-masing punya jalur approval sendiri</strong>{" "}
+                (diambil otomatis dari Template Approval Petty Cash sesuai
+                departemen Anda, bukan divalidasi manual GA). Kalau
+                departemen Anda belum punya Template Approval untuk salah
+                satu tahap, submission di tahap itu akan ditolak sistem -
+                hubungi GA/Admin untuk mengaturnya dulu di menu &quot;Template
+                Approval&quot;.
+              </p>
+
+              <div className="space-y-3">
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    1. Input Pengajuan
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Requester memilih barang dari katalog Petty Cash (atau
+                    tambah manual), isi tanggal dibutuhkan &amp; lampiran
+                    opsional, lalu submit. Status jadi{" "}
+                    <Badge variant="secondary">In Approval</Badge> dan jalur
+                    approval-nya diambil otomatis dari Template Approval
+                    &quot;Approval Pengajuan&quot;. Menu:{" "}
+                    <strong>Input Pengajuan</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    2. Approval Pengajuan
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Approver di jalurnya (mis. Dept Head → Finance) approve
+                    berurutan satu per satu. Approver terakhir setuju →
+                    status <Badge className="bg-green-600 text-white">
+                      Approved
+                    </Badge>
+                    . Kalau ada yang menolak → langsung{" "}
+                    <Badge variant="destructive">Rejected</Badge> (alasan
+                    dicatat, tidak lanjut ke approver berikutnya). Menu:{" "}
+                    <strong>Approval Pengajuan</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    3. Pengajuan Voucher
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Begitu Pengajuan <Badge className="bg-green-600 text-white">
+                      Approved
+                    </Badge>
+                    , requester membuat Voucher darinya - item/qty/harga
+                    di-<em>snapshot</em> apa adanya (tidak bisa diedit lagi).
+                    Voucher dapat jalur approval BARU &amp; TERPISAH dari
+                    Template &quot;Approval Voucher&quot;. Satu Pengajuan
+                    cuma bisa dibuatkan 1 Voucher. Menu:{" "}
+                    <strong>Pengajuan Voucher</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    4. Approval Voucher
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Approver menyetujui Voucher lewat jalurnya sendiri (bukan
+                    lanjutan approval Pengajuan). Approver terakhir setuju →
+                    Voucher jadi{" "}
+                    <Badge className="bg-green-600 text-white">Approved</Badge>{" "}
+                    - tandanya dana sudah boleh dicairkan Finance/GA. Menu:{" "}
+                    <strong>Approval Voucher</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    5. Klaim Voucher
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Setelah dana benar-benar diterima (cair) dari Finance/GA,
+                    requester menandai Voucher-nya sebagai diklaim - status
+                    berubah jadi{" "}
+                    <Badge className="bg-blue-600 text-white">
+                      Permintaan Klaim
+                    </Badge>
+                    . Tidak ada approval di titik ini, murni penanda &quot;dana
+                    sudah di tangan saya&quot;. Menu:{" "}
+                    <strong>Claim Voucher</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    6. Deklarasi
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Requester WAJIB melaporkan pemakaian riil dana yang sudah
+                    dicairkan - qty/harga/catatan per baris boleh disesuaikan
+                    ke struk asli (nama barang/UoM tetap ikut Voucher
+                    asalnya), plus upload bukti struk. Satu Voucher cuma
+                    bisa dibuatkan 1 Deklarasi. Submit → dapat jalur approval
+                    sendiri dari Template &quot;Approval Deklarasi&quot;.
+                    Menu: <strong>Deklarasi</strong>.
+                  </p>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <p className="font-semibold text-sm mb-1">
+                    7. Approval Deklarasi
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Approver terakhir menyetujui pemakaian riil ini → status
+                    Deklarasi jadi{" "}
+                    <Badge className="bg-green-600 text-white">Approved</Badge>{" "}
+                    - siklus Petty Cash untuk Pengajuan ini{" "}
+                    <strong>SELESAI</strong>. Kalau ditolak, requester perlu
+                    koordinasi manual dengan Finance/GA (belum ada alur
+                    revisi otomatis). Menu:{" "}
+                    <strong>Approval Deklarasi</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border rounded-md p-3 bg-muted/30">
+                <p className="font-semibold text-sm mb-1 flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4" /> Kalau ada dokumen yang
+                  nyangkut
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Admin bisa membenahi status &amp; jalur approval dokumen
+                  Petty Cash apa pun (Pengajuan/Voucher/Deklarasi) lewat menu{" "}
+                  <strong>Management Petty Cash</strong> - dipakai untuk
+                  kasus seperti approver resign/salah pencet, tanpa harus
+                  membatalkan dan mengulang dari awal.
+                </p>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
           <AccordionItem value="item-4">
             <AccordionTrigger className="text-xl font-semibold">
               <div className="flex items-center gap-3">
@@ -1065,6 +1222,53 @@ export default function DokumentasiPage() {
                 badge={<Badge variant="destructive">Rejected</Badge>}
               >
                 Ditolak oleh salah satu approver di jalur persetujuan PO.
+              </StatusRow>
+            </div>
+          </div>
+
+          {/* ---------------- STATUS PETTY CASH ---------------- */}
+          <div>
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Status Petty Cash (Pengajuan/Voucher/Deklarasi)
+            </h4>
+            <div className="space-y-3">
+              <StatusRow
+                icon={Clock}
+                badge={<Badge variant="secondary">In Approval</Badge>}
+              >
+                Sedang dalam antrian persetujuan berjenjang sesuai Template
+                Approval departemen - berlaku di ketiga tahap (Pengajuan,
+                Voucher, Deklarasi).
+              </StatusRow>
+              <StatusRow
+                icon={CheckCircle2}
+                badge={
+                  <Badge className="bg-green-600 text-white">Approved</Badge>
+                }
+              >
+                Disetujui penuh oleh semua approver di jalurnya. Untuk
+                Pengajuan berarti siap dibuatkan Voucher, untuk Voucher
+                berarti dana siap dicairkan, untuk Deklarasi berarti siklus
+                dokumen tersebut selesai.
+              </StatusRow>
+              <StatusRow
+                icon={Banknote}
+                badge={
+                  <Badge className="bg-blue-600 text-white">
+                    Permintaan Klaim
+                  </Badge>
+                }
+              >
+                Khusus Voucher - requester sudah menerima pencairan dana dan
+                menandainya lewat menu &quot;Claim Voucher&quot;, menunggu
+                dilaporkan pemakaian riilnya lewat Deklarasi.
+              </StatusRow>
+              <StatusRow
+                icon={FileX}
+                badge={<Badge variant="destructive">Rejected</Badge>}
+              >
+                Ditolak salah satu approver di jalur tahap tersebut - alasan
+                penolakan dicatat di riwayat diskusi dokumen.
               </StatusRow>
             </div>
           </div>

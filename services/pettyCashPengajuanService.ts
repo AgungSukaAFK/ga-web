@@ -7,7 +7,11 @@
 // dari auth.uid() (lihat supabase/petty-cash-pengajuan-setup.sql).
 
 import { createClient } from "@/lib/supabase/client";
-import { PettyCashPengajuan, PettyCashPengajuanItem } from "@/type";
+import {
+  PettyCashPengajuan,
+  PettyCashPengajuanApprover,
+  PettyCashPengajuanItem,
+} from "@/type";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
   advanceApproval,
@@ -202,6 +206,44 @@ export const fetchMyPengajuan = async (
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashPengajuan[];
+};
+
+/**
+ * Semua Pengajuan lintas user/departemen - dipakai halaman Management Petty
+ * Cash (admin only, lihat petty_cash_pengajuan_update_admin di
+ * supabase/petty-cash-admin-management-setup.sql). Beda dari fetchMyPengajuan
+ * yang difilter `user_id`.
+ */
+export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
+  const { data, error } = await supabase
+    .from("petty_cash_pengajuan")
+    .select("*, users_with_profiles:profiles!user_id(nama, email)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as PettyCashPengajuan[];
+};
+
+/**
+ * Override status & approvals sebuah Pengajuan apa pun - hanya bisa
+ * dieksekusi user dengan role admin (dijamin di level RLS oleh
+ * petty_cash_pengajuan_update_admin, bukan cuma di client). Dipakai halaman
+ * Management Petty Cash untuk membenahi dokumen yang nyangkut (mis. approver
+ * resign, salah pencet, dsb) tanpa harus lewat alur approve/reject normal.
+ */
+export const adminUpdatePengajuan = async (
+  id: number,
+  patch: {
+    status?: string;
+    approvals?: PettyCashPengajuanApprover[];
+  },
+): Promise<void> => {
+  const { error } = await supabase
+    .from("petty_cash_pengajuan")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
 };
 
 export const fetchPengajuanById = async (

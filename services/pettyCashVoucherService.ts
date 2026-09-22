@@ -16,7 +16,11 @@
 // dari auth.uid() (lihat supabase/petty-cash-voucher-setup.sql).
 
 import { createClient } from "@/lib/supabase/client";
-import { PettyCashPengajuan, PettyCashVoucher } from "@/type";
+import {
+  PettyCashPengajuan,
+  PettyCashPengajuanApprover,
+  PettyCashVoucher,
+} from "@/type";
 import { PC_APPROVAL_TYPE_VOUCHER } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
@@ -204,6 +208,43 @@ export const submitVoucherClaim = async (
     })
     .eq("id", voucher.id)
     .eq("status", "Approved");
+
+  if (error) throw error;
+};
+
+/**
+ * Semua Voucher lintas user/departemen - dipakai halaman Management Petty
+ * Cash (admin only, lihat petty_cash_voucher_update_admin di
+ * supabase/petty-cash-admin-management-setup.sql).
+ */
+export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
+  const { data, error } = await supabase
+    .from("petty_cash_voucher")
+    .select(
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as PettyCashVoucher[];
+};
+
+/**
+ * Override status & approvals sebuah Voucher apa pun - admin only (dijamin
+ * di RLS, lihat komentar adminUpdatePengajuan,
+ * services/pettyCashPengajuanService.ts untuk alasan yang sama).
+ */
+export const adminUpdateVoucher = async (
+  id: number,
+  patch: {
+    status?: string;
+    approvals?: PettyCashPengajuanApprover[];
+  },
+): Promise<void> => {
+  const { error } = await supabase
+    .from("petty_cash_voucher")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
 
   if (error) throw error;
 };
