@@ -1,4 +1,11 @@
 // src/app/(With Sidebar)/petty-cash/page.tsx
+//
+// "Pengajuan Saya" - daftar Input Pengajuan Petty Cash (tabel
+// `petty_cash_pengajuan`, alur item-based BARU) milik user yang sedang
+// login. Sebelumnya halaman ini menampilkan tabel `petty_cash_requests`
+// (alur lama lump-sum) yang sudah tidak dipakai/di-link dari sidebar mana
+// pun, sehingga pengajuan yang dibuat lewat /petty-cash/input-pengajuan
+// (yang redirect ke sini) tampak "hilang" walau datanya tersimpan di DB.
 
 "use client";
 
@@ -22,12 +29,13 @@ import {
 } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { fetchMyPettyCash } from "@/services/pettyCashService";
-import { PettyCashRequest } from "@/type";
+import { fetchMyPengajuan } from "@/services/pettyCashPengajuanService";
+import { PettyCashPengajuan } from "@/type";
 import {
-  PETTY_CASH_STATUS_COLORS,
-  PETTY_CASH_STATUS_COLOR_DEFAULT,
+  PC_PENGAJUAN_STATUS_COLORS,
+  PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
+import { formatCurrency } from "@/lib/utils";
 import {
   Loader2,
   RefreshCcw,
@@ -36,37 +44,29 @@ import {
   Wallet,
   CalendarDays,
   ReceiptText,
+  CheckCircle2,
+  XCircle,
+  Clock,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 
-const formatRupiah = (angka: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(angka);
-};
-
-const formatDate = (dateStr: string | Date) => {
-  return new Date(dateStr).toLocaleDateString("id-ID", {
+const formatDate = (dateStr: string | Date) =>
+  new Date(dateStr).toLocaleDateString("id-ID", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-};
 
-export default function MyPettyCashPage() {
+export default function MyPettyCashPengajuanPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [requests, setRequests] = useState<PettyCashRequest[]>([]);
+  const [pengajuan, setPengajuan] = useState<PettyCashPengajuan[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // State untuk Dialog Detail
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedPC, setSelectedPC] = useState<PettyCashRequest | null>(null);
+  const [selected, setSelected] = useState<PettyCashPengajuan | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -76,8 +76,8 @@ export default function MyPettyCashPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User tidak terautentikasi.");
 
-      const data = await fetchMyPettyCash(user.id);
-      setRequests(data);
+      const data = await fetchMyPengajuan(user.id);
+      setPengajuan(data);
     } catch (error: any) {
       toast.error("Gagal memuat data Petty Cash", {
         description: error.message,
@@ -91,14 +91,14 @@ export default function MyPettyCashPage() {
     loadData();
   }, []);
 
-  const handleViewDetails = (pc: PettyCashRequest) => {
-    setSelectedPC(pc);
+  const handleViewDetails = (pj: PettyCashPengajuan) => {
+    setSelected(pj);
     setIsDialogOpen(true);
   };
 
   const getStatusBadge = (status: string) => {
     const colorClass =
-      PETTY_CASH_STATUS_COLORS[status] || PETTY_CASH_STATUS_COLOR_DEFAULT;
+      PC_PENGAJUAN_STATUS_COLORS[status] || PC_PENGAJUAN_STATUS_COLOR_DEFAULT;
     return (
       <Badge className={`${colorClass} whitespace-nowrap`}>{status}</Badge>
     );
@@ -107,8 +107,8 @@ export default function MyPettyCashPage() {
   return (
     <>
       <Content
-        title="Petty Cash Saya"
-        description="Kelola dan pantau status pengajuan dana kas kecil Anda."
+        title="Pengajuan Petty Cash Saya"
+        description="Kelola dan pantau status Input Pengajuan Petty Cash Anda."
         cardAction={
           <div className="flex items-center gap-2">
             <Button
@@ -122,25 +122,29 @@ export default function MyPettyCashPage() {
               />
               Refresh
             </Button>
-            <Button size="sm" onClick={() => router.push("/petty-cash/buat")}>
+            <Button
+              size="sm"
+              onClick={() => router.push("/petty-cash/input-pengajuan")}
+            >
               <PlusCircle className="h-4 w-4 mr-1" />
-              Buat Pengajuan
+              Input Pengajuan
             </Button>
           </div>
         }
       >
-        {/* REVISI 1: overflow-x-auto pada wrapper agar responsif di layar kecil */}
         <div className="rounded-md border overflow-x-auto">
-          {/* REVISI 2: Set min-w-[950px] agar tabel tidak menyusut di bawah batas wajarnya */}
-          <Table className="min-w-[950px] table-fixed">
+          <Table className="min-w-[900px] table-fixed">
             <TableHeader>
               <TableRow>
-                {/* Lebar kolom dibuat statis (absolut) agar saling mengunci */}
                 <TableHead className="w-[110px]">Tanggal</TableHead>
-                <TableHead className="w-[170px]">Kode PC</TableHead>
-                <TableHead className="w-[150px]">Tipe</TableHead>
-                <TableHead className="w-[220px]">Tujuan / Keterangan</TableHead>
-                <TableHead className="w-[130px] text-right">Nominal</TableHead>
+                <TableHead className="w-[190px]">Kode Pengajuan</TableHead>
+                <TableHead className="w-[140px]">Departemen</TableHead>
+                <TableHead className="w-[90px] text-center">
+                  Jml Barang
+                </TableHead>
+                <TableHead className="w-[140px] text-right">
+                  Total Pengajuan
+                </TableHead>
                 <TableHead className="w-[140px]">Status</TableHead>
                 <TableHead className="w-[70px] text-center">Aksi</TableHead>
               </TableRow>
@@ -155,65 +159,45 @@ export default function MyPettyCashPage() {
                     </span>
                   </TableCell>
                 </TableRow>
-              ) : requests.length === 0 ? (
+              ) : pengajuan.length === 0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={7}
-                    className="text-center h-32 text-muted-foreground flex-col items-center justify-center"
+                    className="text-center h-32 text-muted-foreground"
                   >
                     <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
                     Belum ada pengajuan Petty Cash.
                   </TableCell>
                 </TableRow>
               ) : (
-                requests.map((pc) => (
+                pengajuan.map((pj) => (
                   <TableRow
-                    key={pc.id}
+                    key={pj.id}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => handleViewDetails(pc)}
+                    onClick={() => handleViewDetails(pj)}
                   >
                     <TableCell
                       className="whitespace-nowrap text-sm truncate"
-                      title={formatDate(pc.created_at)}
+                      title={formatDate(pj.created_at)}
                     >
-                      {formatDate(pc.created_at)}
+                      {formatDate(pj.created_at)}
                     </TableCell>
                     <TableCell
-                      className="font-semibold text-sm truncate"
-                      title={pc.kode_pc}
+                      className="font-semibold text-sm truncate text-primary"
+                      title={pj.kode_pengajuan}
                     >
-                      <Link
-                        href={`/petty-cash/${pc.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-primary hover:underline"
-                      >
-                        {pc.kode_pc}
-                      </Link>
+                      {pj.kode_pengajuan}
                     </TableCell>
-                    <TableCell className="truncate text-sm" title={pc.type}>
-                      {pc.type}
+                    <TableCell className="truncate text-sm" title={pj.department}>
+                      {pj.department}
                     </TableCell>
-                    <TableCell>
-                      {/* REVISI 3: Wrapper kolom deskripsi dikunci ketat */}
-                      <div className="flex flex-col overflow-hidden max-w-[220px]">
-                        <span
-                          className="truncate text-sm font-medium"
-                          title={pc.purpose}
-                        >
-                          {pc.purpose}
-                        </span>
-                        <span
-                          className="text-xs text-muted-foreground truncate mt-0.5"
-                          title={`Cost Center: ${pc.cost_centers?.name || "Belum ditentukan"}`}
-                        >
-                          CC: {pc.cost_centers?.name || "-"}
-                        </span>
-                      </div>
+                    <TableCell className="text-center text-sm">
+                      {pj.items?.length ?? 0}
                     </TableCell>
                     <TableCell className="text-right font-semibold text-sm">
-                      {formatRupiah(pc.amount)}
+                      {formatCurrency(pj.total_amount)}
                     </TableCell>
-                    <TableCell>{getStatusBadge(pc.status)}</TableCell>
+                    <TableCell>{getStatusBadge(pj.status)}</TableCell>
                     <TableCell className="text-center">
                       <Button
                         variant="ghost"
@@ -221,7 +205,7 @@ export default function MyPettyCashPage() {
                         className="h-7 w-7 text-muted-foreground hover:text-primary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleViewDetails(pc);
+                          handleViewDetails(pj);
                         }}
                       >
                         <Eye className="h-4 w-4" />
@@ -235,102 +219,165 @@ export default function MyPettyCashPage() {
         </div>
       </Content>
 
-      {/* DIALOG POPUP DETAIL (Disempurnakan layout scroll-nya) */}
+      {/* DIALOG DETAIL PENGAJUAN */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 bg-background z-10">
-            <DialogTitle className="flex items-center gap-2 text-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
               <ReceiptText className="h-5 w-5 text-primary" />
-              Detail Pengajuan
+              {selected?.kode_pengajuan}
             </DialogTitle>
-            <DialogDescription className="font-medium text-primary">
-              {selectedPC?.kode_pc}{" "}
-              <span className="text-muted-foreground font-normal">
-                • {selectedPC && formatDate(selectedPC.created_at)}
-              </span>
+            <DialogDescription>
+              {selected?.department} -{" "}
+              {selected && (
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="h-3 w-3" />
+                  Dibutuhkan {formatDate(selected.needed_date)}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
-          {selectedPC && (
-            <div className="px-6 pb-6 pt-2 overflow-y-auto space-y-5">
-              <div className="grid grid-cols-2 gap-4 text-sm bg-muted/30 p-4 rounded-lg border mt-2">
-                <div className="space-y-1">
-                  <span className="text-muted-foreground block text-xs font-medium">
-                    Tipe Pengajuan
-                  </span>
-                  <span
-                    className="font-semibold block truncate"
-                    title={selectedPC.type}
-                  >
-                    {selectedPC.type}
-                  </span>
+          {selected && (
+            <div className="space-y-4">
+              <div>{getStatusBadge(selected.status)}</div>
+
+              {selected.notes && (
+                <div className="text-sm bg-muted/50 rounded-md p-3 border">
+                  {selected.notes}
                 </div>
-                <div className="space-y-1">
-                  <span className="text-muted-foreground block text-xs font-medium">
-                    Status
-                  </span>
-                  <span>{getStatusBadge(selectedPC.status)}</span>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-muted-foreground block text-xs font-medium">
-                    Tgl Dibutuhkan
-                  </span>
-                  <span className="flex items-center gap-1 font-medium truncate">
-                    <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />
-                    {formatDate(selectedPC.needed_date)}
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-muted-foreground block text-xs font-medium">
-                    Cost Center
-                  </span>
-                  <span
-                    className="font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded w-fit block truncate max-w-full"
-                    title={selectedPC.cost_centers?.name || ""}
-                  >
-                    {selectedPC.cost_centers?.name || "Menunggu GA"}
-                  </span>
+              )}
+
+              <div className="overflow-x-auto rounded-md border">
+                <Table className="min-w-[500px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama Barang</TableHead>
+                      <TableHead className="w-[70px]">Qty</TableHead>
+                      <TableHead className="w-[110px] text-right">
+                        Harga Satuan
+                      </TableHead>
+                      <TableHead className="w-[120px] text-right">
+                        Subtotal
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selected.items.map((it, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <div className="font-medium">{it.part_name}</div>
+                          {it.note && (
+                            <div className="text-xs text-muted-foreground">
+                              {it.note}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {it.qty} {it.uom || ""}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(it.unit_price)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(it.subtotal)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex justify-end">
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">
+                    Total Pengajuan
+                  </p>
+                  <p className="text-xl font-bold text-primary">
+                    {formatCurrency(selected.total_amount)}
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-primary/10 border border-primary/20 p-4 rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-medium text-primary block mb-1">
-                    Nominal Pengajuan
-                  </span>
-                  <span className="text-2xl font-bold text-primary">
-                    {formatRupiah(selectedPC.amount)}
-                  </span>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Jalur Approval
+                </p>
+                <div className="space-y-1">
+                  {selected.approvals.map((app, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between text-sm border rounded-md px-3 py-1.5"
+                    >
+                      <span>
+                        {i + 1}. {app.nama}{" "}
+                        <span className="text-xs text-muted-foreground">
+                          ({app.department})
+                        </span>
+                      </span>
+                      {app.status === "approved" ? (
+                        <Badge className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800">
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Approved
+                        </Badge>
+                      ) : app.status === "rejected" ? (
+                        <Badge variant="destructive">
+                          <XCircle className="h-3 w-3 mr-1" /> Rejected
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">
+                          <Clock className="h-3 w-3 mr-1" /> Pending
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                {selectedPC.actual_amount !== null && (
-                  <div className="text-right">
-                    <span className="text-xs font-medium text-muted-foreground block mb-1">
-                      Pemakaian Riil
-                    </span>
-                    <span className="text-lg font-bold text-foreground">
-                      {formatRupiah(selectedPC.actual_amount)}
-                    </span>
+              </div>
+
+              {selected.attachments?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Lampiran
+                  </p>
+                  <div className="grid gap-2">
+                    {selected.attachments.map((file, i) => (
+                      <a
+                        key={i}
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-primary hover:underline p-2 border rounded-md bg-background truncate block"
+                      >
+                        {file.name}
+                      </a>
+                    ))}
                   </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground block text-xs font-medium">
-                  Keterangan / Tujuan
-                </span>
-                <div className="p-3 bg-muted/50 rounded-md text-sm whitespace-pre-wrap break-words border text-foreground">
-                  {selectedPC.purpose}
                 </div>
-              </div>
+              )}
 
-              <div className="pt-2">
-                <Button
-                  className="w-full"
-                  onClick={() => router.push(`/petty-cash/${selectedPC.id}`)}
-                >
-                  Lihat Dokumen Penuh & Approval
-                </Button>
-              </div>
+              {selected.discussions?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Catatan
+                  </p>
+                  <div className="space-y-2">
+                    {selected.discussions.map((d: any, i: number) => (
+                      <div
+                        key={i}
+                        className="text-sm bg-muted/50 rounded-md p-3 border"
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-semibold text-xs">
+                            {d.user_name}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(d.timestamp).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap">{d.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

@@ -293,6 +293,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
     const pcNav = [
       {
+        title: "Pengajuan Saya",
+        url: "/petty-cash",
+        icon: ClipboardList,
+        visible: true,
+      },
+      {
         title: "Barang Petty Cash",
         url: "/petty-cash/barang",
         icon: Boxes,
