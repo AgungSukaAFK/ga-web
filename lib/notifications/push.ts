@@ -67,6 +67,32 @@ export async function subscribeToPush(userId: string): Promise<void> {
     );
   }
 
+  // Di iOS, Push API HANYA aktif kalau situs berjalan sebagai installed
+  // home-screen app - selama masih tab Safari biasa, requestPermission()
+  // di bawah akan SELALU resolve "denied" diam-diam tanpa dialog apa pun.
+  // Deteksi ini DULUAN supaya pesannya jelas ("belum di-install", bukan
+  // "ditolak" yang menyesatkan - user bisa kira browser-nya yang salah).
+  const isIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  const isStandalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone ===
+      true;
+  if (isIOS && !isStandalone) {
+    throw new Error(
+      "Di iPhone, notifikasi cuma bisa aktif kalau web ini sudah di-install ke Home Screen. Install dulu lewat tombol Install di atas, buka dari ikonnya, baru aktifkan Notifikasi HP.",
+    );
+  }
+
+  // Kalau user PERNAH menolak sebelumnya, browser tidak akan munculkan
+  // dialog izin lagi - requestPermission() di bawah bakal langsung resolve
+  // "denied" lagi tanpa prompt. Tangkap kondisi ini duluan biar pesannya
+  // instruktif (arahkan ke pengaturan situs), bukan sekadar "ditolak".
+  if (Notification.permission === "denied") {
+    throw new Error(
+      "Notifikasi diblokir di browser ini. Buka pengaturan situs (ikon gembok/info di address bar) > Notifications > Allow, lalu coba lagi.",
+    );
+  }
+
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     throw new Error("Izin notifikasi ditolak.");
