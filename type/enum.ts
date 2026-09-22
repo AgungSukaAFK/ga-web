@@ -542,6 +542,12 @@ export const PC_DEKLARASI_STATUS_COLORS: Record<string, string> = {
 export const PC_DEKLARASI_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
+// COA (company) yang boleh ditandai ke barang Petty Cash / baris item
+// pengajuan - lihat PettyCashBarang.coa & PettyCashPengajuanItem.coa di
+// type/index.ts. "LOURDES" SENGAJA tidak masuk di sini - Lourdes bukan COA,
+// tapi company yang bisa melihat & memilih di antara GMI/GIS per baris.
+export const PC_COA_OPTIONS = ["GMI", "GIS"] as const;
+
 // Tipe approval Template Approval Petty Cash - lihat komentar PcApprovalType
 // di type/index.ts untuk urutan tahapannya. Dipakai sebagai field wajib di
 // PcApprovalTemplate (services/pcApprovalTemplateService.ts) supaya tiap

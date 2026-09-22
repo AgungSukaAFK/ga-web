@@ -44,6 +44,7 @@ import {
   PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
   PC_PENGAJUAN_STATUS_OPTIONS,
 } from "@/type/enum";
+import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { formatCurrency } from "@/lib/utils";
 import {
   Loader2,
@@ -53,12 +54,11 @@ import {
   Wallet,
   CalendarDays,
   ReceiptText,
-  CheckCircle2,
-  XCircle,
-  Clock,
   Search,
+  ExternalLink,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 
 const formatDate = (dateStr: string | Date) =>
@@ -273,11 +273,22 @@ export default function MyPettyCashPengajuanPage() {
 
       {/* DIALOG DETAIL PENGAJUAN */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ReceiptText className="h-5 w-5 text-primary" />
-              {selected?.kode_pengajuan}
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <ReceiptText className="h-5 w-5 text-primary" />
+                {selected?.kode_pengajuan}
+              </span>
+              {selected && (
+                <Link
+                  href={`/petty-cash/pengajuan/${selected.id}`}
+                  target="_blank"
+                  className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
+                >
+                  Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
             </DialogTitle>
             <DialogDescription>
               {selected?.department} -{" "}
@@ -293,143 +304,23 @@ export default function MyPettyCashPengajuanPage() {
           {selected && (
             <div className="space-y-4">
               <div>{getStatusBadge(selected.status)}</div>
-
-              {selected.notes && (
-                <div className="text-sm bg-muted/50 rounded-md p-3 border">
-                  {selected.notes}
-                </div>
-              )}
-
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[500px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama Barang</TableHead>
-                      <TableHead className="w-[70px]">Qty</TableHead>
-                      <TableHead className="w-[110px] text-right">
-                        Harga Satuan
-                      </TableHead>
-                      <TableHead className="w-[120px] text-right">
-                        Subtotal
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selected.items.map((it, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <div className="font-medium">{it.part_name}</div>
-                          {it.note && (
-                            <div className="text-xs text-muted-foreground">
-                              {it.note}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {it.qty} {it.uom || ""}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(it.unit_price)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(it.subtotal)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">
-                    Total Pengajuan
-                  </p>
-                  <p className="text-xl font-bold text-primary">
-                    {formatCurrency(selected.total_amount)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Jalur Approval
-                </p>
-                <div className="space-y-1">
-                  {selected.approvals.map((app, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between text-sm border rounded-md px-3 py-1.5"
-                    >
-                      <span>
-                        {i + 1}. {app.nama}{" "}
-                        <span className="text-xs text-muted-foreground">
-                          ({app.department})
-                        </span>
-                      </span>
-                      {app.status === "approved" ? (
-                        <Badge className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800">
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Approved
-                        </Badge>
-                      ) : app.status === "rejected" ? (
-                        <Badge variant="destructive">
-                          <XCircle className="h-3 w-3 mr-1" /> Rejected
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          <Clock className="h-3 w-3 mr-1" /> Pending
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {selected.attachments?.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Lampiran
-                  </p>
-                  <div className="grid gap-2">
-                    {selected.attachments.map((file, i) => (
-                      <a
-                        key={i}
-                        href={file.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline p-2 border rounded-md bg-background truncate block"
-                      >
-                        {file.name}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selected.discussions?.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Catatan
-                  </p>
-                  <div className="space-y-2">
-                    {selected.discussions.map((d: any, i: number) => (
-                      <div
-                        key={i}
-                        className="text-sm bg-muted/50 rounded-md p-3 border"
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-xs">
-                            {d.user_name}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {new Date(d.timestamp).toLocaleString("id-ID")}
-                          </span>
-                        </div>
-                        <p className="whitespace-pre-wrap">{d.message}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <PcDocumentInfoPanel
+                requesterName={selected.users_with_profiles?.nama}
+                requesterEmail={selected.users_with_profiles?.email}
+                department={selected.department}
+                companyCode={selected.company_code}
+                site={selected.site}
+                costCenterName={selected.cost_centers?.name}
+                neededDate={selected.needed_date}
+                weekOfMonth={selected.week_of_month}
+                notes={selected.notes}
+                items={selected.items}
+                totalAmount={selected.total_amount}
+                attachments={selected.attachments}
+                approvals={selected.approvals}
+                discussions={selected.discussions}
+                revisions={selected.revisions}
+              />
             </div>
           )}
         </DialogContent>

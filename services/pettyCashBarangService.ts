@@ -55,6 +55,7 @@ export type PettyCashBarangFormInput = Pick<
   | "last_purchase_price"
   | "link"
   | "description"
+  | "coa"
 >;
 
 export const createPettyCashBarang = async (
@@ -102,13 +103,20 @@ export const deletePettyCashBarang = async (id: number) => {
 // Dipakai combobox pencarian barang di form Input Pengajuan (lihat
 // PettyCashItemSearchCombobox.tsx) - ringan, tanpa join profil pembuat/
 // pengubah yang tidak relevan buat requester biasa milih barang.
+//
+// `coaFilter` membatasi hasil ke barang yang COA-nya memuat company itu -
+// dipakai utk requester non-Lourdes (cuma boleh lihat barang company
+// sendiri, lihat komentar PettyCashBarang.coa di type/index.ts). Lourdes
+// (atau kalau dipanggil dari halaman kelola katalog) kirim null/undefined
+// supaya tidak difilter sama sekali.
 export const searchPettyCashBarang = async (
   query: string,
+  coaFilter?: "GMI" | "GIS" | null,
 ): Promise<PettyCashBarang[]> => {
   let dbQuery = supabase
     .from("petty_cash_barang")
     .select(
-      "id, part_number, part_name, category, uom, vendor, last_purchase_price, link, description, created_at, created_by, updated_at, updated_by",
+      "id, part_number, part_name, category, uom, vendor, last_purchase_price, link, description, coa, created_at, created_by, updated_at, updated_by",
     )
     .order("part_name", { ascending: true })
     .limit(10);
@@ -118,6 +126,10 @@ export const searchPettyCashBarang = async (
     dbQuery = dbQuery.or(
       `part_name.ilike.${search},part_number.ilike.${search},category.ilike.${search}`,
     );
+  }
+
+  if (coaFilter) {
+    dbQuery = dbQuery.contains("coa", [coaFilter]);
   }
 
   const { data, error } = await dbQuery;

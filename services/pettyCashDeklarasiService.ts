@@ -29,6 +29,7 @@ import { PC_APPROVAL_TYPE_DEKLARASI } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
   advanceApproval,
+  buildEditAndApproveUpdate,
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
@@ -162,6 +163,26 @@ export const fetchMyDeklarasi = async (
 };
 
 /**
+ * Satu Deklarasi by id - dipakai halaman detail + cetak
+ * (petty-cash/deklarasi/[id]/page.tsx), sama pola dengan fetchPengajuanById/
+ * fetchVoucherById di service sebelahnya.
+ */
+export const fetchDeklarasiById = async (
+  id: number,
+): Promise<PettyCashDeklarasi> => {
+  const { data, error } = await supabase
+    .from("petty_cash_deklarasi")
+    .select(
+      `*, users_with_profiles:profiles!user_id(nama, email), ${VOUCHER_WITH_PENGAJUAN}`,
+    )
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data as unknown as PettyCashDeklarasi;
+};
+
+/**
  * Semua Deklarasi lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_deklarasi_update_admin di
  * supabase/petty-cash-admin-management-setup.sql).
@@ -203,6 +224,10 @@ export interface CreateDeklarasiPayload {
   company_code: string;
   department: string;
   cost_center_id: number | null;
+  // Disalin dari Voucher asalnya - lihat komentar week_of_month/site di
+  // PettyCashDeklarasi (type/index.ts).
+  week_of_month: number | null;
+  site: string | null;
   notes: string;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -249,6 +274,8 @@ export const createDeklarasiFromVoucher = async (
       company_code: payload.company_code,
       department: payload.department,
       cost_center_id: payload.cost_center_id,
+      week_of_month: payload.week_of_month,
+      site: payload.site,
       notes: payload.notes,
       items: payload.items,
       total_amount: payload.total_amount,
@@ -256,6 +283,7 @@ export const createDeklarasiFromVoucher = async (
       status: "In Approval",
       approvals: template.approval_path,
       discussions: [],
+      revisions: [],
     };
 
     const { data, error } = await supabase
@@ -362,6 +390,52 @@ export const rejectDeklarasiStep = async (
       status: "Rejected",
       approvals: updatedApprovals,
       discussions: [...(deklarasi.discussions || []), newDiscussion],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", deklarasi.id);
+
+  if (error) throw error;
+};
+
+export interface EditDeklarasiEdits {
+  // Deklarasi tidak punya needed_date sendiri (lihat komentar di
+  // PettyCashDeklarasi, type/index.ts) - week_of_month/site tetap ikut
+  // dokumen (disalin dari Voucher), tidak diedit lewat sini.
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit & Setujui" - approver Deklarasi mengedit item/catatan/lampiran
+ * SEKALIGUS approve step dia sendiri. Sama pola dengan
+ * editAndApprovePengajuanStep (pettyCashPengajuanService.ts) - lihat
+ * komentar di sana.
+ */
+export const editAndApproveDeklarasiStep = async (
+  deklarasi: Pick<
+    PettyCashDeklarasi,
+    "id" | "approvals" | "revisions" | "notes" | "items" | "attachments"
+  >,
+  userId: string,
+  userName: string,
+  edits: EditDeklarasiEdits,
+): Promise<void> => {
+  const result = buildEditAndApproveUpdate(deklarasi, userId, userName);
+  if (!result) throw new Error("Bukan giliran Anda untuk approve dokumen ini.");
+
+  const totalAmount = edits.items.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const { error } = await supabase
+    .from("petty_cash_deklarasi")
+    .update({
+      status: result.status,
+      approvals: result.approvals,
+      revisions: result.revisions,
+      notes: edits.notes,
+      items: edits.items,
+      attachments: edits.attachments,
+      total_amount: totalAmount,
       updated_at: new Date().toISOString(),
     })
     .eq("id", deklarasi.id);

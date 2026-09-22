@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Notification as AppNotification } from "@/type";
-import { unlockAudio, playSound } from "@/lib/notifications/sound";
+import { unlockAudio, playSound, playCustomSound } from "@/lib/notifications/sound";
 import { loadNotifSettings } from "@/lib/notifications/settings";
 
 type NotificationContextType = {
@@ -227,9 +227,15 @@ export function NotificationProvider({
             // tapi tidak ada alert (sound/browser/toast).
             if (!settings.enabled) return;
 
-            // Sound
+            // Sound (ringtone custom disimpan lokal di IndexedDB, lihat
+            // lib/notifications/custom-sound-db.ts - beda jalur dari preset
+            // sintesis di bawahnya)
             if (settings.sound) {
-              playSound(settings.soundType, settings.volume);
+              if (settings.soundType === "custom") {
+                playCustomSound(settings.volume);
+              } else {
+                playSound(settings.soundType, settings.volume);
+              }
             }
 
             // Browser notification (OS-level)

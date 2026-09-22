@@ -407,6 +407,13 @@ export interface PettyCashBarang {
   last_purchase_price: number | null;
   link: string | null;
   description: string | null;
+  // COA (company) barang ini boleh dipakai - "GMI", "GIS", atau keduanya.
+  // Dipakai buat filter katalog saat submit Input Pengajuan (lihat
+  // searchPettyCashBarang, services/pettyCashBarangService.ts) - user non-
+  // Lourdes cuma lihat barang yang coa-nya memuat company dia sendiri.
+  // Halaman kelola katalog (Barang Petty Cash) TIDAK difilter oleh ini -
+  // GA/Admin selalu lihat semua barang apa pun company mereka.
+  coa: ("GMI" | "GIS")[];
   created_at: string;
   created_by: string | null;
   updated_at: string;
@@ -771,6 +778,30 @@ export interface PettyCashPengajuanItem {
   unit_price: number;
   subtotal: number;
   note: string | null;
+  // COA (company) baris ini dibebankan ke - WAJIB diisi tepat SATU nilai
+  // saat submit meski barang katalognya berlaku utk GMI & GIS sekaligus
+  // (lihat PcItemsEditor, components/petty-cash/). null cuma utk baris
+  // lama dari sebelum field ini ada (data legacy, pre-fitur COA).
+  coa: "GMI" | "GIS" | null;
+}
+
+// Satu entri riwayat revisi - ditulis SEBELUM approver menerapkan
+// "Edit & Setujui" (lihat buildEditAndApproveUpdate, lib/pcApprovalFlow.ts):
+// snapshot ini adalah nilai field-field yang BISA diedit approver PERSIS
+// sebelum diedit, jadi revisions[0] selalu representasi versi asli dokumen
+// kalau belum pernah direvisi sama sekali. `needed_date`/`week_of_month`
+// cuma relevan utk Pengajuan & Voucher (Deklarasi tidak punya needed_date).
+export interface PcDocumentRevision {
+  revised_by: string;
+  revised_by_name: string;
+  revised_at: string;
+  snapshot: {
+    needed_date?: string | Date;
+    week_of_month?: number | null;
+    notes: string | null;
+    items: PettyCashPengajuanItem[];
+    attachments: Attachment[];
+  };
 }
 
 // Approver di jalur persetujuan pengajuan - diisi otomatis dari Template
@@ -795,6 +826,16 @@ export interface PettyCashPengajuan {
   department: string;
   cost_center_id: number | null;
   needed_date: string | Date;
+  // Minggu ke berapa di bulan berjalan dana ini dibutuhkan (1-based, lihat
+  // lib/weekOfMonth.ts) - cuma bisa minggu ini atau minggu depan dlm bulan
+  // yg sama, tidak boleh minggu yg sudah lewat (divalidasi di form Input
+  // Pengajuan). Null utk baris lama dari sebelum field ini ada.
+  week_of_month: number | null;
+  // Snapshot `profiles.lokasi` requester PAS submit (sama seperti
+  // department/company yang juga di-snapshot, bukan di-join live) - supaya
+  // histori dokumen tidak berubah kalau requester pindah site belakangan.
+  // Null utk baris lama dari sebelum field ini ada.
+  site: string | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -802,6 +843,9 @@ export interface PettyCashPengajuan {
   status: string;
   approvals: PettyCashPengajuanApprover[];
   discussions: any[];
+  // Riwayat versi sebelum tiap "Edit & Setujui" approver (lihat
+  // PcDocumentRevision di atas) - kosong kalau belum pernah direvisi.
+  revisions: PcDocumentRevision[];
   created_at: string | Date;
   created_by: string | null;
   updated_at: string | Date;
@@ -836,6 +880,12 @@ export interface PettyCashVoucher {
   department: string;
   cost_center_id: number | null;
   needed_date: string | Date;
+  // Disalin dari Pengajuan asalnya saat Voucher dibuat (lihat
+  // createVoucherFromPengajuan) - informasional, cuma bisa berubah lewat
+  // "Edit & Setujui" approver Voucher. Lihat komentar sama di
+  // PettyCashPengajuan.
+  week_of_month: number | null;
+  site: string | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -843,6 +893,7 @@ export interface PettyCashVoucher {
   status: string;
   approvals: PettyCashPengajuanApprover[];
   discussions: any[];
+  revisions: PcDocumentRevision[];
   created_at: string | Date;
   created_by: string | null;
   updated_at: string | Date;
@@ -887,6 +938,12 @@ export interface PettyCashDeklarasi {
   company_code: string;
   department: string;
   cost_center_id: number | null;
+  // Disalin dari Voucher asalnya (yang disalin dari Pengajuan) - lihat
+  // komentar sama di PettyCashVoucher. Deklarasi tidak punya needed_date
+  // sendiri (bukan alur "kapan dibutuhkan" lagi, tahap ini laporan
+  // pemakaian riil).
+  week_of_month: number | null;
+  site: string | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -894,6 +951,7 @@ export interface PettyCashDeklarasi {
   status: string;
   approvals: PettyCashPengajuanApprover[];
   discussions: any[];
+  revisions: PcDocumentRevision[];
   created_at: string | Date;
   created_by: string | null;
   updated_at: string | Date;

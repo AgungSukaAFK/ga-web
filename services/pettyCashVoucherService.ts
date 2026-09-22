@@ -17,14 +17,17 @@
 
 import { createClient } from "@/lib/supabase/client";
 import {
+  Attachment,
   PettyCashPengajuan,
   PettyCashPengajuanApprover,
+  PettyCashPengajuanItem,
   PettyCashVoucher,
 } from "@/type";
 import { PC_APPROVAL_TYPE_VOUCHER } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
   advanceApproval,
+  buildEditAndApproveUpdate,
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
@@ -279,6 +282,8 @@ export const createVoucherFromPengajuan = async (
     | "department"
     | "cost_center_id"
     | "needed_date"
+    | "week_of_month"
+    | "site"
     | "notes"
     | "items"
     | "total_amount"
@@ -312,6 +317,8 @@ export const createVoucherFromPengajuan = async (
       department: pengajuan.department,
       cost_center_id: pengajuan.cost_center_id,
       needed_date: pengajuan.needed_date,
+      week_of_month: pengajuan.week_of_month,
+      site: pengajuan.site,
       notes: pengajuan.notes,
       items: pengajuan.items,
       total_amount: pengajuan.total_amount,
@@ -319,6 +326,7 @@ export const createVoucherFromPengajuan = async (
       status: "In Approval",
       approvals: template.approval_path,
       discussions: [],
+      revisions: [],
     };
 
     const { data, error } = await supabase
@@ -425,6 +433,60 @@ export const rejectVoucherStep = async (
       status: "Rejected",
       approvals: updatedApprovals,
       discussions: [...(voucher.discussions || []), newDiscussion],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucher.id);
+
+  if (error) throw error;
+};
+
+export interface EditVoucherEdits {
+  needed_date: string;
+  week_of_month: number | null;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit & Setujui" - approver Voucher mengedit seluruh field yang bisa
+ * diedit SEKALIGUS approve step dia sendiri. Sama pola dengan
+ * editAndApprovePengajuanStep (pettyCashPengajuanService.ts) - lihat
+ * komentar di sana.
+ */
+export const editAndApproveVoucherStep = async (
+  voucher: Pick<
+    PettyCashVoucher,
+    | "id"
+    | "approvals"
+    | "revisions"
+    | "needed_date"
+    | "week_of_month"
+    | "notes"
+    | "items"
+    | "attachments"
+  >,
+  userId: string,
+  userName: string,
+  edits: EditVoucherEdits,
+): Promise<void> => {
+  const result = buildEditAndApproveUpdate(voucher, userId, userName);
+  if (!result) throw new Error("Bukan giliran Anda untuk approve dokumen ini.");
+
+  const totalAmount = edits.items.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const { error } = await supabase
+    .from("petty_cash_voucher")
+    .update({
+      status: result.status,
+      approvals: result.approvals,
+      revisions: result.revisions,
+      needed_date: edits.needed_date,
+      week_of_month: edits.week_of_month,
+      notes: edits.notes,
+      items: edits.items,
+      attachments: edits.attachments,
+      total_amount: totalAmount,
       updated_at: new Date().toISOString(),
     })
     .eq("id", voucher.id);

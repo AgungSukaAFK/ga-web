@@ -44,12 +44,14 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import Link from "next/link";
 import {
   PettyCashPengajuan,
   PettyCashPengajuanApprover,
   PettyCashVoucher,
   PettyCashDeklarasi,
 } from "@/type";
+import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import {
   PC_PENGAJUAN_STATUS_OPTIONS,
   PC_PENGAJUAN_STATUS_COLORS,
@@ -96,6 +98,35 @@ const getKode = (stage: StageKey, row: AnyDoc): string => {
   if (stage === "pengajuan") return (row as PettyCashPengajuan).kode_pengajuan;
   if (stage === "voucher") return (row as PettyCashVoucher).kode_voucher;
   return (row as PettyCashDeklarasi).kode_deklarasi;
+};
+
+// Deklarasi tidak punya needed_date (lihat komentar di type/index.ts) -
+// dipakai membedakan apa PcDocumentInfoPanel/tautan detail perlu
+// menampilkan tanggal/minggu dibutuhkan atau tidak.
+const showsNeededDate = (stage: StageKey) => stage !== "deklarasi";
+
+const getNeededDate = (stage: StageKey, row: AnyDoc) =>
+  stage === "pengajuan"
+    ? (row as PettyCashPengajuan).needed_date
+    : stage === "voucher"
+      ? (row as PettyCashVoucher).needed_date
+      : null;
+
+// Kode dokumen asal (rantai Pengajuan -> Voucher -> Deklarasi) - dipakai
+// nunjukin konteks di dialog detail, sesuai relasi yang di-join
+// fetchAllVouchers/fetchAllDeklarasi (lihat services/pettyCash*Service.ts).
+const getSourceLabel = (stage: StageKey, row: AnyDoc): string | null => {
+  if (stage === "voucher") {
+    const kode = (row as PettyCashVoucher).petty_cash_pengajuan?.kode_pengajuan;
+    return kode ? `Dari Pengajuan ${kode}` : null;
+  }
+  if (stage === "deklarasi") {
+    const voucher = (row as PettyCashDeklarasi).petty_cash_voucher;
+    if (!voucher) return null;
+    const pengajuanKode = voucher.petty_cash_pengajuan?.kode_pengajuan;
+    return `Dari Voucher ${voucher.kode_voucher}${pengajuanKode ? ` (Pengajuan ${pengajuanKode})` : ""}`;
+  }
+  return null;
 };
 
 const STAGE_CONFIG: Record<
@@ -379,74 +410,51 @@ export default function PettyCashManagementClient({
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
       >
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {selected && getKode(stage, selected)}
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>{selected && getKode(stage, selected)}</span>
+              {selected && (
+                <Link
+                  href={`/petty-cash/${stage}/${selected.id}`}
+                  target="_blank"
+                  className="text-xs font-normal text-primary hover:underline"
+                >
+                  Detail Lengkap / Cetak
+                </Link>
+              )}
             </DialogTitle>
             <DialogDescription>
               Diajukan oleh {selected?.users_with_profiles?.nama || "-"} (
               {selected?.department})
+              {selected && getSourceLabel(stage, selected)
+                ? ` - ${getSourceLabel(stage, selected)}`
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
           {selected && (
             <div className="space-y-4">
-              {selected.notes && (
-                <div className="text-sm bg-muted/50 rounded-md p-3 border">
-                  {selected.notes}
-                </div>
-              )}
+              <PcDocumentInfoPanel
+                requesterName={selected.users_with_profiles?.nama}
+                requesterEmail={selected.users_with_profiles?.email}
+                department={selected.department}
+                companyCode={selected.company_code}
+                site={(selected as any).site}
+                costCenterName={selected.cost_centers?.name}
+                neededDate={getNeededDate(stage, selected)}
+                weekOfMonth={(selected as any).week_of_month}
+                showNeededDate={showsNeededDate(stage)}
+                notes={selected.notes}
+                items={selected.items}
+                totalAmount={selected.total_amount}
+                attachments={selected.attachments}
+                approvals={selected.approvals}
+                discussions={selected.discussions}
+                revisions={(selected as any).revisions}
+              />
 
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[500px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama Barang</TableHead>
-                      <TableHead className="w-[70px]">Qty</TableHead>
-                      <TableHead className="w-[110px] text-right">
-                        Harga Satuan
-                      </TableHead>
-                      <TableHead className="w-[120px] text-right">
-                        Subtotal
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selected.items.map((it, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <div className="font-medium">{it.part_name}</div>
-                          {it.note && (
-                            <div className="text-xs text-muted-foreground">
-                              {it.note}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {it.qty} {it.uom || ""}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(it.unit_price)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(it.subtotal)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Total</p>
-                  <p className="text-xl font-bold text-primary">
-                    {formatCurrency(selected.total_amount)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
+              <div className="space-y-2 border-t pt-4">
                 <p className="text-xs font-medium text-muted-foreground">
                   Status Dokumen (override)
                 </p>
