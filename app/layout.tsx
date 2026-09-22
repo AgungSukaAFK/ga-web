@@ -13,6 +13,18 @@ export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: "Garuda Procure",
   description: "Sistem Manajemen MR & PO - PT. Garuda Mart Indonesia",
+  // manifest + icons dibutuhkan supaya "Add to Home Screen" di HP jalan
+  // (syarat Web Push tetap masuk walau browser ditutup, terutama di
+  // iOS/Safari - lihat lib/notifications/push.ts).
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
+};
+
+export const viewport = {
+  themeColor: "#0f172a",
 };
 
 const geistSans = Geist({

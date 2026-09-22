@@ -98,6 +98,56 @@ async function dispatchNotifications(rows: NotificationRow[]): Promise<void> {
   } catch (err) {
     console.error("[Notification] Failed to dispatch notifications:", err);
   }
+
+  dispatchPushChannel(rows);
+}
+
+/**
+ * Channel: Web Push (lihat lib/notifications/push.ts &
+ * app/api/push/send/route.ts) - bikin notifikasi tetap masuk ke HP walau
+ * browser/tab penerima sudah ditutup, beda dari in-app di atas yang cuma
+ * kebaca kalau tab-nya lagi kebuka. Fire-and-forget lewat API route server
+ * (VAPID private key wajib di server, tidak boleh di browser) -
+ * grouped per (title, message, link) yang sama supaya notifikasi broadcast
+ * ke banyak user (mis. sendNotifications) cukup 1 request, bukan N request.
+ * Gagal di sini TIDAK BOLEH mengganggu notifikasi in-app yang sudah berhasil
+ * di atas - makanya cuma di-log, tidak di-throw.
+ */
+function dispatchPushChannel(rows: NotificationRow[]): void {
+  const groups = new Map<
+    string,
+    { userIds: string[]; title: string; message: string; link: string }
+  >();
+
+  for (const row of rows) {
+    const key = `${row.title}|||${row.message}|||${row.link}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.userIds.push(row.user_id);
+    } else {
+      groups.set(key, {
+        userIds: [row.user_id],
+        title: row.title,
+        message: row.message,
+        link: row.link,
+      });
+    }
+  }
+
+  for (const group of groups.values()) {
+    fetch("/api/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userIds: group.userIds,
+        title: group.title,
+        body: group.message,
+        url: group.link,
+      }),
+    }).catch((err) => {
+      console.error("[Notification] Push channel failed:", err);
+    });
+  }
 }
 
 /**
