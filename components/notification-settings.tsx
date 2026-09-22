@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,10 +10,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bell, Volume2, Play } from "lucide-react";
+import { Bell, Volume2, Play, Smartphone, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 import { useNotifSettings } from "@/lib/notifications/settings";
 import { SOUND_PRESETS, playSound, unlockAudio } from "@/lib/notifications/sound";
+import {
+  getPushSubscriptionStatus,
+  subscribeToPush,
+  unsubscribeFromPush,
+  type PushSubscriptionStatus,
+} from "@/lib/notifications/push";
 
 // Switch sederhana (proyek belum punya komponen Switch).
 function Toggle({
@@ -71,6 +80,42 @@ function Row({
 
 export function NotificationSettings() {
   const { settings, update } = useNotifSettings();
+
+  const [pushStatus, setPushStatus] = useState<PushSubscriptionStatus | "loading">(
+    "loading",
+  );
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    getPushSubscriptionStatus().then(setPushStatus);
+  }, []);
+
+  const handlePushToggle = async (v: boolean) => {
+    setPushBusy(true);
+    try {
+      if (v) {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("Sesi login berakhir, silakan login ulang.");
+
+        await subscribeToPush(user.id);
+        setPushStatus("subscribed");
+        toast.success("Notifikasi HP diaktifkan untuk perangkat ini.");
+      } else {
+        await unsubscribeFromPush();
+        setPushStatus("unsubscribed");
+        toast.success("Notifikasi HP dimatikan untuk perangkat ini.");
+      }
+    } catch (error: any) {
+      toast.error("Gagal mengubah Notifikasi HP", {
+        description: error.message,
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const handlePreview = () => {
     unlockAudio();
@@ -188,6 +233,31 @@ export function NotificationSettings() {
             onChange={handleBrowserToggle}
             disabled={!settings.enabled}
           />
+        </Row>
+      </div>
+
+      <div className="space-y-3 rounded-lg border p-4">
+        <div className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4" />
+          <p className="text-sm font-bold">Notifikasi HP</p>
+        </div>
+        <Row
+          title="Aktifkan di perangkat ini"
+          description={
+            pushStatus === "unsupported"
+              ? 'Tidak didukung di browser ini. Di iPhone: buka lewat Safari, "Add to Home Screen" dulu, baru aktifkan dari ikonnya.'
+              : "Tetap masuk walau browser/tab sudah ditutup - beda dari notifikasi browser biasa di atas."
+          }
+        >
+          {pushBusy || pushStatus === "loading" ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : (
+            <Toggle
+              checked={pushStatus === "subscribed"}
+              onChange={handlePushToggle}
+              disabled={pushStatus === "unsupported"}
+            />
+          )}
         </Row>
       </div>
     </div>
