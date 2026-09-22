@@ -10,7 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bell, Volume2, Play, Smartphone, Loader2 } from "lucide-react";
+import {
+  Bell,
+  Volume2,
+  Play,
+  Smartphone,
+  Loader2,
+  Download,
+  CheckCircle2,
+  Share,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -22,6 +31,7 @@ import {
   unsubscribeFromPush,
   type PushSubscriptionStatus,
 } from "@/lib/notifications/push";
+import { useInstallPrompt } from "@/lib/pwa/use-install-prompt";
 
 // Switch sederhana (proyek belum punya komponen Switch).
 function Toggle({
@@ -80,6 +90,7 @@ function Row({
 
 export function NotificationSettings() {
   const { settings, update } = useNotifSettings();
+  const { canInstall, isStandalone, isIOS, promptInstall } = useInstallPrompt();
 
   const [pushStatus, setPushStatus] = useState<PushSubscriptionStatus | "loading">(
     "loading",
@@ -89,6 +100,11 @@ export function NotificationSettings() {
   useEffect(() => {
     getPushSubscriptionStatus().then(setPushStatus);
   }, []);
+
+  const handleInstall = async () => {
+    const accepted = await promptInstall();
+    if (accepted) toast.success("Aplikasi berhasil di-install.");
+  };
 
   const handlePushToggle = async (v: boolean) => {
     setPushBusy(true);
@@ -235,6 +251,46 @@ export function NotificationSettings() {
           />
         </Row>
       </div>
+
+      {!isStandalone && (
+        <div className="space-y-3 rounded-lg border p-4">
+          <div className="flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            <p className="text-sm font-bold">Install Aplikasi</p>
+          </div>
+          {canInstall ? (
+            <Row
+              title="MR-PO GA LOURDES"
+              description="Install ke HP/laptop supaya bisa dibuka dari ikon sendiri, layar penuh tanpa address bar - dan notifikasi HP bisa diaktifkan."
+            >
+              <Button type="button" size="sm" onClick={handleInstall}>
+                <Download className="mr-1.5 h-4 w-4" />
+                Install
+              </Button>
+            </Row>
+          ) : isIOS ? (
+            <p className="text-xs text-muted-foreground">
+              Buka lewat <strong>Safari</strong>, ketuk tombol{" "}
+              <Share className="inline h-3.5 w-3.5 -mt-0.5" /> Share di bar
+              bawah, lalu pilih <strong>&quot;Add to Home Screen&quot;</strong>.
+              Ini wajib dilakukan dulu di iPhone sebelum Notifikasi HP bisa
+              diaktifkan.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Buka menu browser (⋮ atau ikon install di address bar) lalu
+              pilih &quot;Install app&quot; / &quot;Add to Home screen&quot;.
+            </p>
+          )}
+        </div>
+      )}
+
+      {isStandalone && (
+        <div className="flex items-center gap-2 rounded-lg border p-3 text-xs text-muted-foreground">
+          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+          Aplikasi sudah ter-install di perangkat ini.
+        </div>
+      )}
 
       <div className="space-y-3 rounded-lg border p-4">
         <div className="flex items-center gap-2">
