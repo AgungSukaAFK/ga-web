@@ -1,7 +1,10 @@
-// src/app/(With Sidebar)/petty-cash/input-pengajuan/PettyCashItemSearchCombobox.tsx
+// src/components/petty-cash/PettyCashItemSearchCombobox.tsx
 //
 // Mirip BarangSearchCombobox.tsx (purchase-order/) tapi nyari dari katalog
-// petty_cash_barang, bukan barang MR/PO utama.
+// petty_cash_barang, bukan barang MR/PO utama. Dipindah dari
+// petty-cash/input-pengajuan/ ke sini karena sekarang dipakai bareng oleh
+// PcItemsEditor (dipakai juga oleh dialog "Edit & Setujui" approver, bukan
+// cuma form Input Pengajuan).
 
 "use client";
 
@@ -28,10 +31,15 @@ import { formatCurrency } from "@/lib/utils";
 
 interface PettyCashItemSearchComboboxProps {
   onSelect: (barang: PettyCashBarang) => void;
+  // Batasi hasil pencarian ke barang yang COA-nya memuat company ini - null/
+  // undefined = tidak difilter (dipakai utk akun Lourdes, lihat komentar
+  // PettyCashBarang.coa di type/index.ts).
+  coaFilter?: "GMI" | "GIS" | null;
 }
 
 export function PettyCashItemSearchCombobox({
   onSelect,
+  coaFilter,
 }: PettyCashItemSearchComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -39,10 +47,10 @@ export function PettyCashItemSearchCombobox({
 
   React.useEffect(() => {
     const handler = setTimeout(() => {
-      searchPettyCashBarang(searchQuery).then(setResults);
+      searchPettyCashBarang(searchQuery, coaFilter).then(setResults);
     }, 300);
     return () => clearTimeout(handler);
-  }, [searchQuery]);
+  }, [searchQuery, coaFilter]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

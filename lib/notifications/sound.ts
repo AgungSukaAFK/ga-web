@@ -11,7 +11,18 @@
  *   1. Tambahkan id di SoundPresetId
  *   2. Daftarkan label di SOUND_PRESETS
  *   3. Tambahkan case-nya di playSound()
+ *
+ * RINGTONE CUSTOM ("custom"): BEDA dari preset di atas - bukan disintesis,
+ * tapi file audio asli (upload/rekaman) yang disimpan user sendiri di
+ * IndexedDB device ini (lihat custom-sound-db.ts & components/
+ * custom-ringtone-settings.tsx). Sengaja TIDAK masuk switch playSound() di
+ * bawah (itu untuk preset sintesis yang playbacknya sinkron) - pemutarannya
+ * lewat playCustomSound() sendiri (async, baca Blob dari IndexedDB dulu).
+ * Pemanggil (NotificationProvider, notification-settings.tsx) yang
+ * menentukan mana yang dipanggil berdasarkan settings.soundType === "custom".
  */
+
+import { getCustomSoundUrl } from "./custom-sound-db";
 
 // Satu AudioContext bersama. Browser memblokir audio sampai "di-unlock"
 // lewat gesture user (klik/keydown). unlockAudio() dipanggil dari gesture itu.
@@ -37,7 +48,8 @@ export type SoundPresetId =
   | "chime"
   | "marimba"
   | "ding"
-  | "pop";
+  | "pop"
+  | "custom";
 
 export const SOUND_PRESETS: { id: SoundPresetId; label: string }[] = [
   { id: "tritone", label: "Tri-tone (premium)" },
@@ -191,5 +203,25 @@ export function playSound(preset: SoundPresetId, volume = 0.6) {
     }
   } catch {
     // Non-kritis — abaikan error audio
+  }
+}
+
+/**
+ * Mainkan ringtone custom (file audio asli, bukan sintesis) yang tersimpan
+ * di IndexedDB device ini. Return `false` kalau belum ada ringtone custom
+ * tersimpan (pemanggil bisa fallback ke preset lain / kasih tahu user).
+ */
+export async function playCustomSound(volume = 0.6): Promise<boolean> {
+  try {
+    const url = await getCustomSoundUrl();
+    if (!url) return false;
+
+    const audio = new Audio(url);
+    audio.volume = Math.max(0, Math.min(1, volume));
+    await audio.play();
+    return true;
+  } catch {
+    // Non-kritis — abaikan error audio (mis. autoplay diblokir)
+    return false;
   }
 }

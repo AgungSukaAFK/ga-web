@@ -4,6 +4,7 @@
 
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Select,
@@ -49,6 +51,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   LIMIT_OPTIONS,
+  PC_COA_OPTIONS,
   PETTY_CASH_BARANG_KATEGORI_OPTIONS,
   UOM_OPTIONS,
 } from "@/type/enum";
@@ -77,6 +80,7 @@ const EMPTY_FORM: PettyCashBarangFormInput = {
   last_purchase_price: 0,
   link: "",
   description: "",
+  coa: ["GMI", "GIS"],
 };
 
 // --- Dialog Tambah / Edit Barang Petty Cash ---
@@ -107,6 +111,7 @@ function BarangDialog({
         last_purchase_price: initialData.last_purchase_price ?? 0,
         link: initialData.link ?? "",
         description: initialData.description ?? "",
+        coa: initialData.coa?.length ? initialData.coa : ["GMI", "GIS"],
       });
     } else {
       setFormData(EMPTY_FORM);
@@ -120,9 +125,22 @@ function BarangDialog({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const toggleCoa = (value: "GMI" | "GIS", checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      coa: checked
+        ? [...prev.coa, value]
+        : prev.coa.filter((c) => c !== value),
+    }));
+  };
+
   const handleSubmit = async () => {
     if (!formData.part_name?.trim()) {
       toast.error("Nama Barang wajib diisi.");
+      return;
+    }
+    if (formData.coa.length === 0) {
+      toast.error("Pilih minimal satu COA (GMI/GIS).");
       return;
     }
 
@@ -217,6 +235,31 @@ function BarangDialog({
                 disabled={loading}
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>
+              COA <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex items-center gap-6">
+              {PC_COA_OPTIONS.map((opt) => (
+                <div key={opt} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`coa-${opt}`}
+                    checked={formData.coa.includes(opt)}
+                    onCheckedChange={(checked) => toggleCoa(opt, !!checked)}
+                    disabled={loading}
+                  />
+                  <Label htmlFor={`coa-${opt}`} className="font-normal">
+                    {opt}
+                  </Label>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Barang cuma muncul di pencarian Input Pengajuan milik requester
+              dengan company yang sama - centang keduanya kalau berlaku utk
+              GMI & GIS.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
@@ -467,6 +510,7 @@ export default function PettyCashBarangClient() {
                 <TableHead className="w-[120px]">Kode</TableHead>
                 <TableHead>Nama Barang</TableHead>
                 <TableHead className="w-[120px]">Kategori</TableHead>
+                <TableHead className="w-[100px]">COA</TableHead>
                 <TableHead className="w-[90px]">UoM</TableHead>
                 <TableHead className="w-[140px] text-right">
                   Harga Ref
@@ -480,7 +524,7 @@ export default function PettyCashBarangClient() {
             <TableBody>
               {loading || isPending ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
+                  <TableCell colSpan={9} className="text-center h-24">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
@@ -510,6 +554,23 @@ export default function PettyCashBarangClient() {
                       {item.category || (
                         <span className="text-muted-foreground">-</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {(item.coa ?? []).length > 0 ? (
+                          item.coa.map((c) => (
+                            <Badge
+                              key={c}
+                              variant="outline"
+                              className="text-[10px] px-1.5 py-0 font-normal"
+                            >
+                              {c}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {item.uom || (
@@ -552,7 +613,7 @@ export default function PettyCashBarangClient() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className="text-center h-24 text-muted-foreground"
                   >
                     <div className="flex flex-col items-center gap-2">

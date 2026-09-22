@@ -8,6 +8,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import {
+  Attachment,
   PettyCashPengajuan,
   PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
@@ -15,6 +16,7 @@ import {
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
   advanceApproval,
+  buildEditAndApproveUpdate,
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
@@ -113,6 +115,14 @@ export interface CreatePengajuanPayload {
   company_code: string;
   department: string;
   needed_date: string;
+  // Minggu ke berapa (bulan berjalan) dana ini dibutuhkan - lihat
+  // lib/weekOfMonth.ts & InputPengajuanClient.tsx (cuma minggu ini/depan
+  // dalam bulan yang sama, tidak boleh minggu yang sudah lewat).
+  week_of_month: number;
+  // Snapshot profiles.lokasi requester PAS submit - sama perlakuannya
+  // dengan company/department yang juga dikirim dari form, bukan di-join
+  // ulang belakangan.
+  site: string | null;
   notes: string;
   items: PettyCashPengajuanItem[];
   attachments: { url: string; name: string }[];
@@ -157,6 +167,8 @@ export const createPettyCashPengajuan = async (
       department: payload.department,
       cost_center_id: null,
       needed_date: payload.needed_date,
+      week_of_month: payload.week_of_month,
+      site: payload.site,
       notes: payload.notes,
       items: payload.items,
       total_amount: totalAmount,
@@ -164,6 +176,7 @@ export const createPettyCashPengajuan = async (
       status: "In Approval",
       approvals: template.approval_path,
       discussions: [],
+      revisions: [],
     };
 
     const { data, error } = await supabase
@@ -338,6 +351,61 @@ export const rejectPengajuanStep = async (
       status: "Rejected",
       approvals: updatedApprovals,
       discussions: [...(pengajuan.discussions || []), newDiscussion],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", pengajuan.id);
+
+  if (error) throw error;
+};
+
+export interface EditPengajuanEdits {
+  needed_date: string;
+  week_of_month: number | null;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit & Setujui" - approver mengedit seluruh field yang bisa diedit
+ * SEKALIGUS approve step dia sendiri. Versi SEBELUM edit dicatat ke
+ * `revisions[]` (lihat buildEditAndApproveUpdate, lib/pcApprovalFlow.ts)
+ * supaya bisa dibandingkan lagi nanti - "versi asli" = revisions[0] kalau
+ * dokumen ini belum pernah direvisi sebelumnya.
+ */
+export const editAndApprovePengajuanStep = async (
+  pengajuan: Pick<
+    PettyCashPengajuan,
+    | "id"
+    | "approvals"
+    | "revisions"
+    | "needed_date"
+    | "week_of_month"
+    | "notes"
+    | "items"
+    | "attachments"
+  >,
+  userId: string,
+  userName: string,
+  edits: EditPengajuanEdits,
+): Promise<void> => {
+  const result = buildEditAndApproveUpdate(pengajuan, userId, userName);
+  if (!result) throw new Error("Bukan giliran Anda untuk approve dokumen ini.");
+
+  const totalAmount = edits.items.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const { error } = await supabase
+    .from("petty_cash_pengajuan")
+    .update({
+      status: result.status,
+      approvals: result.approvals,
+      revisions: result.revisions,
+      needed_date: edits.needed_date,
+      week_of_month: edits.week_of_month,
+      notes: edits.notes,
+      items: edits.items,
+      attachments: edits.attachments,
+      total_amount: totalAmount,
       updated_at: new Date().toISOString(),
     })
     .eq("id", pengajuan.id);

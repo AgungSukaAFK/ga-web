@@ -24,7 +24,12 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useNotifSettings } from "@/lib/notifications/settings";
-import { SOUND_PRESETS, playSound, unlockAudio } from "@/lib/notifications/sound";
+import {
+  SOUND_PRESETS,
+  playSound,
+  playCustomSound,
+  unlockAudio,
+} from "@/lib/notifications/sound";
 import {
   getPushSubscriptionStatus,
   subscribeToPush,
@@ -32,6 +37,7 @@ import {
   type PushSubscriptionStatus,
 } from "@/lib/notifications/push";
 import { useInstallPrompt } from "@/lib/pwa/use-install-prompt";
+import { CustomRingtoneSettings } from "@/components/custom-ringtone-settings";
 
 // Switch sederhana (proyek belum punya komponen Switch).
 function Toggle({
@@ -135,7 +141,11 @@ export function NotificationSettings() {
 
   const handlePreview = () => {
     unlockAudio();
-    playSound(settings.soundType, settings.volume);
+    if (settings.soundType === "custom") {
+      playCustomSound(settings.volume);
+    } else {
+      playSound(settings.soundType, settings.volume);
+    }
   };
 
   const handleBrowserToggle = (v: boolean) => {
@@ -237,6 +247,10 @@ export function NotificationSettings() {
               Coba
             </Button>
           </div>
+        </div>
+
+        <div className="border-t pt-3">
+          <CustomRingtoneSettings />
         </div>
 
         {/* Browser notification */}

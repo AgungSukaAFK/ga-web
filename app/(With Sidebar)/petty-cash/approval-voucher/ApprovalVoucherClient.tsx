@@ -1,20 +1,20 @@
 // src/app/(With Sidebar)/petty-cash/approval-voucher/ApprovalVoucherClient.tsx
 //
-// Antrian approval Pengajuan Voucher Petty Cash (petty_cash_voucher) - sama
-// persis mekanismenya dengan ApprovalPengajuanClient.tsx (satu tabel
-// approval sekuensial berbeda, lihat lib/pcApprovalFlow.ts), tapi jalur
-// approval-nya sendiri terpisah (Template Approval ber-approval_type
-// "Approval Voucher", lihat services/pcApprovalTemplateService.ts). Item &
+// Antrian approval Pengajuan Voucher Petty Cash (petty_cash_voucher) - cuma
+// menampilkan dokumen yang SEDANG giliran user login (lihat
+// fetchVoucherApprovalQueue, services/pettyCashVoucherService.ts).
+// Approver bisa: Tolak, Setujui Langsung, atau Edit & Setujui (edit seluruh
+// field lalu approve sekaligus, dengan versi sebelumnya dicatat ke
+// `revisions[]`) - lihat PcApprovalActions, components/petty-cash/. Item &
 // nominal di sini adalah SNAPSHOT dari Pengajuan asalnya - lihat
 // createVoucherFromPengajuan, services/pettyCashVoucherService.ts.
 
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -39,16 +39,11 @@ import {
   fetchVoucherApprovalQueue,
   approveVoucherStep,
   rejectVoucherStep,
+  editAndApproveVoucherStep,
 } from "@/services/pettyCashVoucherService";
-import {
-  Loader2,
-  RefreshCcw,
-  Inbox,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  CalendarDays,
-} from "lucide-react";
+import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
+import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
+import { Loader2, RefreshCcw, Inbox, CalendarDays, ExternalLink } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("id-ID", {
@@ -68,8 +63,6 @@ export default function ApprovalVoucherClient() {
   const [processing, setProcessing] = useState(false);
 
   const [selected, setSelected] = useState<PettyCashVoucher | null>(null);
-  const [isRejectOpen, setIsRejectOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
 
   const loadData = async () => {
     setLoading(true);
@@ -117,26 +110,38 @@ export default function ApprovalVoucherClient() {
     }
   };
 
-  const handleRejectSubmit = async () => {
-    if (!rejectReason.trim())
-      return toast.error("Alasan penolakan wajib diisi.");
+  const handleReject = async (reason: string) => {
     if (!selected || !profile) return;
-
     setProcessing(true);
     try {
-      await rejectVoucherStep(
-        selected,
-        profile.id,
-        profile.nama,
-        rejectReason,
-      );
+      await rejectVoucherStep(selected, profile.id, profile.nama, reason);
       toast.success(`${selected.kode_voucher} telah ditolak.`);
-      setIsRejectOpen(false);
-      setRejectReason("");
       setSelected(null);
       await loadData();
     } catch (error: any) {
       toast.error("Gagal menolak", { description: error.message });
+      throw error;
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleEditAndApprove = async (edits: any) => {
+    if (!selected || !profile) return;
+    setProcessing(true);
+    try {
+      await editAndApproveVoucherStep(
+        selected,
+        profile.id,
+        profile.nama,
+        edits,
+      );
+      toast.success(`${selected.kode_voucher} berhasil diedit & disetujui.`);
+      setSelected(null);
+      await loadData();
+    } catch (error: any) {
+      toast.error("Gagal edit & setujui", { description: error.message });
+      throw error;
     } finally {
       setProcessing(false);
     }
@@ -168,23 +173,25 @@ export default function ApprovalVoucherClient() {
                 <TableHead className="w-[180px]">Kode Voucher</TableHead>
                 <TableHead className="w-[180px]">Dari Pengajuan</TableHead>
                 <TableHead>Pemohon</TableHead>
+                <TableHead className="w-[140px]">Departemen</TableHead>
                 <TableHead className="w-[150px] text-right">
                   Total Voucher
                 </TableHead>
+                <TableHead className="w-[130px]">Dibutuhkan</TableHead>
                 <TableHead className="w-[110px] text-center">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-32">
+                  <TableCell colSpan={7} className="text-center h-32">
                     <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
               ) : queue.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={7}
                     className="text-center h-32 text-muted-foreground"
                   >
                     <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
@@ -203,8 +210,12 @@ export default function ApprovalVoucherClient() {
                     <TableCell className="text-sm">
                       {v.users_with_profiles?.nama || "-"}
                     </TableCell>
+                    <TableCell className="text-sm">{v.department}</TableCell>
                     <TableCell className="text-right font-medium text-sm">
                       {formatCurrency(v.total_amount)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(v.needed_date)}
                     </TableCell>
                     <TableCell className="text-center">
                       <Button
@@ -223,20 +234,30 @@ export default function ApprovalVoucherClient() {
         </div>
       </Content>
 
-      {/* DIALOG DETAIL + AKSI APPROVE/REJECT */}
+      {/* DIALOG DETAIL + AKSI APPROVE/REJECT/EDIT */}
       <Dialog
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
       >
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selected?.kode_voucher}</DialogTitle>
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>{selected?.kode_voucher}</span>
+              {selected && (
+                <Link
+                  href={`/petty-cash/voucher/${selected.id}`}
+                  target="_blank"
+                  className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
+                >
+                  Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </DialogTitle>
             <DialogDescription>
-              Dari Pengajuan {selected?.petty_cash_pengajuan?.kode_pengajuan} -
-              diajukan oleh {selected?.users_with_profiles?.nama || "-"} (
-              {selected?.department}){" "}
               {selected && (
                 <span className="inline-flex items-center gap-1">
+                  Dari Pengajuan{" "}
+                  {selected.petty_cash_pengajuan?.kode_pengajuan || "-"} -{" "}
                   <CalendarDays className="h-3 w-3" />
                   Dibutuhkan {formatDate(selected.needed_date)}
                 </span>
@@ -245,153 +266,44 @@ export default function ApprovalVoucherClient() {
           </DialogHeader>
 
           {selected && (
-            <div className="space-y-4">
-              {selected.notes && (
-                <div className="text-sm bg-muted/50 rounded-md p-3 border">
-                  {selected.notes}
-                </div>
-              )}
-
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[500px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama Barang</TableHead>
-                      <TableHead className="w-[70px]">Qty</TableHead>
-                      <TableHead className="w-[110px] text-right">
-                        Harga Satuan
-                      </TableHead>
-                      <TableHead className="w-[120px] text-right">
-                        Subtotal
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selected.items.map((it, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <div className="font-medium">{it.part_name}</div>
-                          {it.note && (
-                            <div className="text-xs text-muted-foreground">
-                              {it.note}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {it.qty} {it.uom || ""}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(it.unit_price)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(it.subtotal)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">
-                    Total Voucher
-                  </p>
-                  <p className="text-xl font-bold text-primary">
-                    {formatCurrency(selected.total_amount)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Jalur Approval
-                </p>
-                <div className="space-y-1">
-                  {selected.approvals.map((app, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between text-sm border rounded-md px-3 py-1.5"
-                    >
-                      <span>
-                        {i + 1}. {app.nama}{" "}
-                        <span className="text-xs text-muted-foreground">
-                          ({app.department})
-                        </span>
-                      </span>
-                      {app.status === "approved" ? (
-                        <Badge className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800">
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Approved
-                        </Badge>
-                      ) : app.status === "rejected" ? (
-                        <Badge variant="destructive">
-                          <XCircle className="h-3 w-3 mr-1" /> Rejected
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          <Clock className="h-3 w-3 mr-1" /> Pending
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <PcDocumentInfoPanel
+              requesterName={selected.users_with_profiles?.nama}
+              requesterEmail={selected.users_with_profiles?.email}
+              department={selected.department}
+              companyCode={selected.company_code}
+              site={selected.site}
+              costCenterName={selected.cost_centers?.name}
+              neededDate={selected.needed_date}
+              weekOfMonth={selected.week_of_month}
+              notes={selected.notes}
+              items={selected.items}
+              totalAmount={selected.total_amount}
+              attachments={selected.attachments}
+              approvals={selected.approvals}
+              discussions={selected.discussions}
+              revisions={selected.revisions}
+            />
           )}
 
-          <DialogFooter className="sm:justify-between">
-            <Button
-              variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setIsRejectOpen(true)}
-              disabled={processing}
-            >
-              <XCircle className="mr-2 h-4 w-4" /> Tolak
-            </Button>
-            <Button onClick={handleApprove} disabled={processing}>
-              {processing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-              )}
-              Setujui
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* DIALOG ALASAN PENOLAKAN */}
-      <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Tolak Voucher</DialogTitle>
-            <DialogDescription>
-              Jelaskan alasan penolakan - requester akan melihat catatan ini.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="Contoh: Dokumen pendukung belum lengkap..."
-            rows={4}
-          />
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setIsRejectOpen(false)}
-              disabled={processing}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRejectSubmit}
-              disabled={processing}
-            >
-              {processing && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Tolak Voucher
-            </Button>
+          <DialogFooter className="sm:justify-between flex-wrap gap-2">
+            {selected && profile && (
+              <PcApprovalActions
+                docLabel="Voucher"
+                kode={selected.kode_voucher}
+                companyCode={selected.company_code}
+                editInitial={{
+                  needed_date: selected.needed_date,
+                  week_of_month: selected.week_of_month,
+                  notes: selected.notes,
+                  items: selected.items,
+                  attachments: selected.attachments,
+                }}
+                processing={processing}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onEditAndApprove={handleEditAndApprove}
+              />
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

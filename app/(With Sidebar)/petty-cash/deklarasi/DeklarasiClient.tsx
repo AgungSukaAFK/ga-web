@@ -53,6 +53,7 @@ import {
   fetchMyDeklarasi,
   createDeklarasiFromVoucher,
 } from "@/services/pettyCashDeklarasiService";
+import Link from "next/link";
 import {
   Loader2,
   RefreshCcw,
@@ -61,6 +62,7 @@ import {
   CalendarDays,
   UploadCloud,
   X,
+  Eye,
 } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
@@ -88,6 +90,10 @@ type DeclareRow = {
   qty: string;
   unit_price: number;
   note: string;
+  // COA baris ini - dibawa apa adanya dari item Voucher asalnya, TIDAK
+  // bisa diubah di Deklarasi (lihat komentar coa di PettyCashPengajuanItem,
+  // type/index.ts).
+  coa: "GMI" | "GIS" | null;
 };
 
 export default function DeklarasiClient() {
@@ -142,6 +148,7 @@ export default function DeklarasiClient() {
         qty: String(it.qty),
         unit_price: it.unit_price,
         note: it.note || "",
+        coa: it.coa ?? null,
       })),
     );
     setNotes("");
@@ -213,6 +220,8 @@ export default function DeklarasiClient() {
           company_code: selected.company_code,
           department: selected.department,
           cost_center_id: selected.cost_center_id,
+          week_of_month: selected.week_of_month,
+          site: selected.site,
           notes,
           items: rows.map((r) => ({
             barang_id: r.barang_id,
@@ -223,6 +232,7 @@ export default function DeklarasiClient() {
             unit_price: r.unit_price,
             subtotal: Number(r.qty) * r.unit_price,
             note: r.note.trim() || null,
+            coa: r.coa,
           })),
           total_amount: totalAmount,
           attachments,
@@ -336,19 +346,22 @@ export default function DeklarasiClient() {
                       Nominal Riil
                     </TableHead>
                     <TableHead className="w-[140px]">Status</TableHead>
+                    <TableHead className="w-[60px] text-center">
+                      Aksi
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center h-28">
+                      <TableCell colSpan={5} className="text-center h-28">
                         <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                       </TableCell>
                     </TableRow>
                   ) : deklarasiList.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="text-center h-28 text-muted-foreground"
                       >
                         Belum ada Deklarasi yang dibuat.
@@ -368,6 +381,21 @@ export default function DeklarasiClient() {
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={d.status} />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          >
+                            <Link
+                              href={`/petty-cash/deklarasi/${d.id}`}
+                              target="_blank"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Link>
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))

@@ -5,6 +5,11 @@
 // (alur lama lump-sum Reimbursement/Cash Advance). Begitu disubmit, jalur
 // approval-nya OTOMATIS diambil dari Template Approval Petty Cash sesuai
 // departemen requester (lihat services/pcApprovalTemplateService.ts).
+//
+// COA per baris item WAJIB terisi sebelum submit (lihat PcItemsEditor,
+// components/petty-cash/) - requester non-Lourdes dikunci ke company sendiri
+// (coaMode="locked"), akun Lourdes wajib memilih GMI/GIS per baris
+// (coaMode="choose") kalau barangnya berlaku utk keduanya.
 
 "use client";
 
@@ -15,8 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CurrencyInput } from "@/components/ui/currency-input";
-import { Combobox } from "@/components/combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -24,14 +34,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
@@ -40,41 +42,24 @@ import {
 } from "@/lib/attachments";
 import { toast } from "sonner";
 import { createPettyCashPengajuan } from "@/services/pettyCashPengajuanService";
-import { PettyCashBarang, PettyCashPengajuanItem } from "@/type";
-import { UOM_OPTIONS } from "@/type/enum";
-import { PettyCashItemSearchCombobox } from "./PettyCashItemSearchCombobox";
+import { PettyCashPengajuanItem } from "@/type";
+import {
+  PcItemsEditor,
+  hasUnresolvedCoa,
+} from "@/components/petty-cash/PcItemsEditor";
+import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
+import { getSelectableWeeksOfCurrentMonth } from "@/lib/weekOfMonth";
 import { formatCurrency } from "@/lib/utils";
 import {
   Loader2,
   Save,
   Package,
-  Plus,
-  Trash2,
   UploadCloud,
   X,
   Info,
   UserCircle,
+  CalendarClock,
 } from "lucide-react";
-
-const UOM_COMBOBOX_DATA = [...UOM_OPTIONS]
-  .sort((a, b) => a.localeCompare(b))
-  .map((u) => ({ value: u, label: u }));
-
-const makeRowKey = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random()}`;
-
-type ItemRow = {
-  _rowKey: string;
-  barang_id: number | null;
-  part_name: string;
-  category: string | null;
-  uom: string | null;
-  qty: string; // string di state biar field bisa dikosongkan, dikonversi Number saat submit
-  unit_price: number;
-  note: string;
-};
 
 export default function InputPengajuanClient() {
   const router = useRouter();
@@ -84,13 +69,18 @@ export default function InputPengajuanClient() {
     company: string;
     department: string;
     nama: string;
+    lokasi: string | null;
   } | null>(null);
 
   const [neededDate, setNeededDate] = useState(
     new Date().toISOString().split("T")[0],
   );
+  const selectableWeeks = getSelectableWeeksOfCurrentMonth();
+  const [weekOfMonth, setWeekOfMonth] = useState<number | "">(
+    selectableWeeks[0] ?? "",
+  );
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<ItemRow[]>([]);
+  const [items, setItems] = useState<PettyCashPengajuanItem[]>([]);
   const [attachments, setAttachments] = useState<
     { url: string; name: string }[]
   >([]);
@@ -108,7 +98,7 @@ export default function InputPengajuanClient() {
 
         const { data: userProfile, error } = await supabase
           .from("profiles")
-          .select("company, department, nama")
+          .select("company, department, nama, lokasi")
           .eq("id", user.id)
           .single();
         if (error) throw error;
@@ -120,51 +110,8 @@ export default function InputPengajuanClient() {
     fetchInitialData();
   }, []);
 
-  const addItemFromCatalog = (barang: PettyCashBarang) => {
-    setItems((prev) => [
-      ...prev,
-      {
-        _rowKey: makeRowKey(),
-        barang_id: barang.id,
-        part_name: barang.part_name,
-        category: barang.category,
-        uom: barang.uom,
-        qty: "1",
-        unit_price: barang.last_purchase_price || 0,
-        note: "",
-      },
-    ]);
-  };
-
-  const addManualItem = () => {
-    setItems((prev) => [
-      ...prev,
-      {
-        _rowKey: makeRowKey(),
-        barang_id: null,
-        part_name: "",
-        category: null,
-        uom: null,
-        qty: "1",
-        unit_price: 0,
-        note: "",
-      },
-    ]);
-  };
-
-  const updateItem = (rowKey: string, patch: Partial<ItemRow>) => {
-    setItems((prev) =>
-      prev.map((it) => (it._rowKey === rowKey ? { ...it, ...patch } : it)),
-    );
-  };
-
-  const removeItem = (rowKey: string) =>
-    setItems((prev) => prev.filter((it) => it._rowKey !== rowKey));
-
-  const totalAmount = items.reduce(
-    (sum, it) => sum + (Number(it.qty) || 0) * (it.unit_price || 0),
-    0,
-  );
+  const isLourdes = profile?.company === "LOURDES";
+  const totalAmount = items.reduce((sum, it) => sum + it.subtotal, 0);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,8 +155,16 @@ export default function InputPengajuanClient() {
     if (items.some((it) => !it.part_name.trim())) {
       return toast.error("Nama barang wajib diisi untuk semua baris.");
     }
-    if (items.some((it) => !Number(it.qty) || Number(it.qty) <= 0)) {
+    if (items.some((it) => !it.qty || it.qty <= 0)) {
       return toast.error("Qty setiap barang wajib diisi dan lebih dari 0.");
+    }
+    if (hasUnresolvedCoa(items)) {
+      return toast.error(
+        "Setiap barang wajib punya COA (GMI/GIS) - lengkapi dulu baris yang belum dipilih.",
+      );
+    }
+    if (!weekOfMonth) {
+      return toast.error("Pilih minggu ke berapa dana ini dibutuhkan.");
     }
     if (!profile?.company || !profile?.department) {
       return toast.error("Data profil (Company/Departemen) tidak lengkap.");
@@ -222,24 +177,15 @@ export default function InputPengajuanClient() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Sesi login berakhir.");
 
-      const payloadItems: PettyCashPengajuanItem[] = items.map((it) => ({
-        barang_id: it.barang_id,
-        part_name: it.part_name.trim(),
-        category: it.category,
-        uom: it.uom,
-        qty: Number(it.qty),
-        unit_price: it.unit_price,
-        subtotal: Number(it.qty) * it.unit_price,
-        note: it.note.trim() || null,
-      }));
-
       const newPengajuan = await createPettyCashPengajuan(
         {
           company_code: profile.company,
           department: profile.department,
           needed_date: neededDate,
+          week_of_month: weekOfMonth,
+          site: profile.lokasi ?? null,
           notes,
-          items: payloadItems,
+          items,
           attachments,
         },
         user.id,
@@ -271,7 +217,8 @@ export default function InputPengajuanClient() {
                 Detail Pengajuan
               </CardTitle>
               <CardDescription>
-                Tanggal dibutuhkan dan catatan tambahan (opsional).
+                Tanggal dibutuhkan, minggu ke berapa, dan catatan tambahan
+                (opsional).
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
@@ -285,6 +232,32 @@ export default function InputPengajuanClient() {
                     value={neededDate}
                     onChange={(e) => setNeededDate(e.target.value)}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    Minggu ke- (bulan ini){" "}
+                    <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={weekOfMonth ? String(weekOfMonth) : ""}
+                    onValueChange={(val) => setWeekOfMonth(Number(val))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih minggu" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectableWeeks.map((w) => (
+                        <SelectItem key={w} value={String(w)}>
+                          Minggu ke-{w}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Cuma minggu ini atau minggu berikutnya di bulan berjalan -
+                    minggu yang sudah lewat tidak bisa dipilih.
+                  </p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -314,150 +287,17 @@ export default function InputPengajuanClient() {
               <CardDescription>
                 Cari dari katalog Barang Petty Cash, atau tambah barang manual
                 kalau belum ada di katalog.
+                {isLourdes &&
+                  " Barang yang berlaku utk GMI & GIS sekaligus wajib dipilih salah satu COA-nya per baris."}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1">
-                  <PettyCashItemSearchCombobox onSelect={addItemFromCatalog} />
-                </div>
-                <Button type="button" variant="outline" onClick={addManualItem}>
-                  <Plus className="mr-2 h-4 w-4" /> Barang Manual
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[800px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[180px]">Nama Barang</TableHead>
-                      <TableHead className="w-[110px]">UoM</TableHead>
-                      <TableHead className="w-[90px]">Qty</TableHead>
-                      <TableHead className="w-[150px]">Harga Satuan</TableHead>
-                      <TableHead className="w-[140px] text-right">
-                        Subtotal
-                      </TableHead>
-                      <TableHead className="min-w-[160px]">Catatan</TableHead>
-                      <TableHead className="w-[50px]" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={7}
-                          className="text-center h-24 text-muted-foreground"
-                        >
-                          Belum ada barang ditambahkan.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      items.map((it) => (
-                        <TableRow key={it._rowKey}>
-                          <TableCell>
-                            {it.barang_id ? (
-                              <div>
-                                <div className="font-medium">
-                                  {it.part_name}
-                                </div>
-                                {it.category && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {it.category}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <Input
-                                value={it.part_name}
-                                onChange={(e) =>
-                                  updateItem(it._rowKey, {
-                                    part_name: e.target.value,
-                                  })
-                                }
-                                placeholder="Nama barang manual"
-                                className="h-9"
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {it.barang_id ? (
-                              <span className="text-sm">{it.uom || "-"}</span>
-                            ) : (
-                              <Combobox
-                                data={UOM_COMBOBOX_DATA}
-                                defaultValue={it.uom || ""}
-                                onChange={(val) =>
-                                  updateItem(it._rowKey, { uom: val })
-                                }
-                                placeholder="Cari satuan..."
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={it.qty}
-                              onChange={(e) =>
-                                updateItem(it._rowKey, { qty: e.target.value })
-                              }
-                              className="h-9 w-20"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <CurrencyInput
-                              value={it.unit_price}
-                              onValueChange={(val) =>
-                                updateItem(it._rowKey, { unit_price: val })
-                              }
-                              className="h-9"
-                            />
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm">
-                            {formatCurrency(
-                              (Number(it.qty) || 0) * (it.unit_price || 0),
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={it.note}
-                              onChange={(e) =>
-                                updateItem(it._rowKey, { note: e.target.value })
-                              }
-                              placeholder="-"
-                              className="h-9"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => removeItem(it._rowKey)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {items.length > 0 && (
-                <div className="flex justify-end">
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">
-                      Total Pengajuan
-                    </p>
-                    <p className="text-xl font-bold text-primary">
-                      {formatCurrency(totalAmount)}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <PcItemsEditor
+                onChange={setItems}
+                coaMode={isLourdes ? "choose" : "locked"}
+                lockedCoa={isLourdes ? null : (profile?.company as "GMI" | "GIS" | undefined) ?? null}
+                coaSearchFilter={isLourdes ? null : (profile?.company as "GMI" | "GIS" | undefined) ?? null}
+              />
             </CardContent>
           </Card>
 
@@ -582,8 +422,31 @@ export default function InputPengajuanClient() {
                 </p>
                 <p className="font-semibold">{profile?.company || "-"}</p>
               </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Site</p>
+                <p className="font-semibold">{profile?.lokasi || "-"}</p>
+              </div>
             </CardContent>
           </Card>
+
+          {items.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3 border-b bg-muted/20">
+                <CardTitle className="text-base">Ringkasan</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">
+                    Total Pengajuan
+                  </p>
+                  <p className="text-lg font-bold text-primary">
+                    {formatCurrency(totalAmount)}
+                  </p>
+                </div>
+                <PcCoaBreakdown items={items} />
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader className="pb-2">
