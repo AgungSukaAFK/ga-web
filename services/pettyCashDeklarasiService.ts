@@ -18,7 +18,13 @@
 // dari auth.uid() (lihat supabase/petty-cash-deklarasi-setup.sql).
 
 import { createClient } from "@/lib/supabase/client";
-import { Attachment, PettyCashDeklarasi, PettyCashPengajuanItem, PettyCashVoucher } from "@/type";
+import {
+  Attachment,
+  PettyCashDeklarasi,
+  PettyCashPengajuanApprover,
+  PettyCashPengajuanItem,
+  PettyCashVoucher,
+} from "@/type";
 import { PC_APPROVAL_TYPE_DEKLARASI } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import {
@@ -153,6 +159,43 @@ export const fetchMyDeklarasi = async (
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashDeklarasi[];
+};
+
+/**
+ * Semua Deklarasi lintas user/departemen - dipakai halaman Management Petty
+ * Cash (admin only, lihat petty_cash_deklarasi_update_admin di
+ * supabase/petty-cash-admin-management-setup.sql).
+ */
+export const fetchAllDeklarasi = async (): Promise<PettyCashDeklarasi[]> => {
+  const { data, error } = await supabase
+    .from("petty_cash_deklarasi")
+    .select(
+      `*, users_with_profiles:profiles!user_id(nama, email), ${VOUCHER_WITH_PENGAJUAN}`,
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as PettyCashDeklarasi[];
+};
+
+/**
+ * Override status & approvals sebuah Deklarasi apa pun - admin only (dijamin
+ * di RLS, lihat komentar adminUpdatePengajuan,
+ * services/pettyCashPengajuanService.ts untuk alasan yang sama).
+ */
+export const adminUpdateDeklarasi = async (
+  id: number,
+  patch: {
+    status?: string;
+    approvals?: PettyCashPengajuanApprover[];
+  },
+): Promise<void> => {
+  const { error } = await supabase
+    .from("petty_cash_deklarasi")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
 };
 
 export interface CreateDeklarasiPayload {

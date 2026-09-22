@@ -11,6 +11,14 @@
 
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,13 +35,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchMyPengajuan } from "@/services/pettyCashPengajuanService";
 import { PettyCashPengajuan } from "@/type";
 import {
   PC_PENGAJUAN_STATUS_COLORS,
   PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
+  PC_PENGAJUAN_STATUS_OPTIONS,
 } from "@/type/enum";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -47,6 +56,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Search,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -64,6 +74,9 @@ export default function MyPettyCashPengajuanPage() {
 
   const [pengajuan, setPengajuan] = useState<PettyCashPengajuan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selected, setSelected] = useState<PettyCashPengajuan | null>(null);
@@ -90,6 +103,19 @@ export default function MyPettyCashPengajuanPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const filteredPengajuan = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return pengajuan.filter((pj) => {
+      if (statusFilter !== "all" && pj.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        pj.kode_pengajuan.toLowerCase().includes(q) ||
+        pj.department?.toLowerCase().includes(q) ||
+        pj.notes?.toLowerCase().includes(q)
+      );
+    });
+  }, [pengajuan, search, statusFilter]);
 
   const handleViewDetails = (pj: PettyCashPengajuan) => {
     setSelected(pj);
@@ -132,6 +158,30 @@ export default function MyPettyCashPengajuanPage() {
           </div>
         }
       >
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari kode pengajuan, departemen, atau catatan..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="sm:w-[200px]">
+              <SelectValue placeholder="Semua Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              {PC_PENGAJUAN_STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="rounded-md border overflow-x-auto">
           <Table className="min-w-[900px] table-fixed">
             <TableHeader>
@@ -159,18 +209,20 @@ export default function MyPettyCashPengajuanPage() {
                     </span>
                   </TableCell>
                 </TableRow>
-              ) : pengajuan.length === 0 ? (
+              ) : filteredPengajuan.length === 0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={7}
                     className="text-center h-32 text-muted-foreground"
                   >
                     <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                    Belum ada pengajuan Petty Cash.
+                    {pengajuan.length === 0
+                      ? "Belum ada pengajuan Petty Cash."
+                      : "Tidak ada data yang cocok dengan filter."}
                   </TableCell>
                 </TableRow>
               ) : (
-                pengajuan.map((pj) => (
+                filteredPengajuan.map((pj) => (
                   <TableRow
                     key={pj.id}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
