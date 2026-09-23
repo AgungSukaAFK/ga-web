@@ -13,3 +13,4 @@
 -- petty-cash-voucher-claim-setup.sql sebelumnya pernah dijalankan).
 
 drop policy if exists "petty_cash_voucher_update_owner" on public.petty_cash_voucher;
+
