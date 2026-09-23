@@ -154,12 +154,12 @@ export const createPettyCashPengajuan = async (
     );
   }
 
-  // Auto-isi Budget sesuai departemen (mirip resolvePcAutoTemplate di atas)
-  // - null kalau belum ada budget aktif utk departemen ini, SENGAJA TIDAK
-  // memblokir submit (beda dari Template Approval yang wajib ada) - baru
-  // memblokir nanti pas pembuatan sub-voucher (lihat komentar
-  // PettyCashSubVoucher, type/index.ts).
-  const budget = await resolveAutoBudget(payload.department);
+  // Auto-isi Budget sesuai departemen & site (mirip resolvePcAutoTemplate di
+  // atas, cuma kuncinya dua kolom) - null kalau belum ada budget aktif utk
+  // kombinasi ini, SENGAJA TIDAK memblokir submit (beda dari Template
+  // Approval yang wajib ada) - baru memblokir nanti pas pembuatan
+  // sub-voucher (lihat komentar PettyCashSubVoucher, type/index.ts).
+  const budget = await resolveAutoBudget(payload.department, payload.site);
 
   const totalAmount = payload.items.reduce((sum, i) => sum + i.subtotal, 0);
 

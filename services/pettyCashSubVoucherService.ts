@@ -5,6 +5,9 @@
 // PettyCashSubVoucher di type/index.ts & supabase/petty-cash-sub-voucher-setup.sql).
 // MENGGANTIKAN alur klaim sekali-penuh yang lama (submitVoucherClaim,
 // "Permintaan Klaim" - sudah dihapus dari services/pettyCashVoucherService.ts).
+// UI-nya menyatu di halaman "Pengajuan Voucher"
+// (PengajuanVoucherClient.tsx, tabel "Voucher Saya") - bukan halaman
+// terpisah, lihat komentar di sana.
 //
 // Pembuatan sub-voucher SELALU lewat RPC create_petty_cash_sub_voucher
 // (SECURITY DEFINER) - satu transaksi yang atomically validasi sisa Voucher
@@ -33,47 +36,6 @@ const generateSubVoucherCode = async (
 
   if (error) throw error;
   return `${kodeVoucher}-SV${(count ?? 0) + 1}`;
-};
-
-/**
- * Voucher milik `userId` yang masih bisa ditarik - status "Approved" dan
- * sisa (total_amount - SUM sub-voucher yang sudah ada) > 0. Dipakai halaman
- * /petty-cash/sub-voucher.
- */
-export const fetchDrawableVouchers = async (
-  userId: string,
-): Promise<PettyCashVoucher[]> => {
-  const { data, error } = await supabase
-    .from("petty_cash_voucher")
-    .select(
-      "*, petty_cash_pengajuan(kode_pengajuan), petty_cash_sub_voucher(id, amount), petty_cash_budget(name, current_budget)",
-    )
-    .eq("user_id", userId)
-    .eq("status", "Approved")
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  const rows = (data ?? []) as unknown as PettyCashVoucher[];
-  return rows.filter((v) => {
-    const drawn = (v.petty_cash_sub_voucher ?? []).reduce(
-      (sum, sv) => sum + sv.amount,
-      0,
-    );
-    return v.total_amount - drawn > 0;
-  });
-};
-
-export const fetchMySubVouchers = async (
-  userId: string,
-): Promise<PettyCashSubVoucher[]> => {
-  const { data, error } = await supabase
-    .from("petty_cash_sub_voucher")
-    .select("*, petty_cash_voucher(kode_voucher, total_amount)")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as unknown as PettyCashSubVoucher[];
 };
 
 /**

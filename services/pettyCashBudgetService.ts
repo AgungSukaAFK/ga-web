@@ -1,10 +1,12 @@
 // src/services/pettyCashBudgetService.ts
 //
 // "Budgeting" Petty Cash (GA/Admin only, tabel `petty_cash_budget` +
-// `petty_cash_budget_history`, lihat supabase/petty-cash-budget-setup.sql) -
-// pool budget PER DEPARTEMEN, AUTO-terisi ke Pengajuan baru sesuai
-// departemen requester (resolveAutoBudget, mirip resolvePcAutoTemplate di
-// services/pcApprovalTemplateService.ts), approver Pengajuan boleh ganti.
+// `petty_cash_budget_history`, lihat supabase/petty-cash-budget-setup.sql &
+// petty-cash-budget-site-setup.sql) - pool budget PER DEPARTEMEN + SITE,
+// AUTO-terisi ke Pengajuan baru sesuai departemen & site requester
+// (resolveAutoBudget, mirip resolvePcAutoTemplate di
+// services/pcApprovalTemplateService.ts - cuma kuncinya dua kolom di sini),
+// approver Pengajuan boleh ganti.
 //
 // CRUD/top-up/history/activate-nya SENGAJA dibuat identik dengan
 // services/costCenterService.ts (cost center milik MR/PO) supaya
@@ -39,21 +41,29 @@ export const fetchActiveBudgets = async (): Promise<PettyCashBudget[]> => {
 };
 
 /**
- * Budget aktif utk SATU departemen - dipakai auto-isi budget_id saat
- * createPettyCashPengajuan (services/pettyCashPengajuanService.ts). Null
- * kalau departemen belum punya budget aktif (GA/Admin belum setup) - TIDAK
+ * Budget aktif utk SATU kombinasi departemen+site - dipakai auto-isi
+ * budget_id saat createPettyCashPengajuan
+ * (services/pettyCashPengajuanService.ts). Cocok PERSIS department & site
+ * sekaligus (bukan wildcard/fallback kalau site tidak cocok). Null kalau
+ * belum ada budget aktif utk kombinasi itu (GA/Admin belum setup) - TIDAK
  * memblokir submit Pengajuan, cuma memblokir nanti pas pembuatan
  * sub-voucher (lihat komentar PettyCashSubVoucher, type/index.ts).
  */
 export const resolveAutoBudget = async (
   department: string,
+  site: string | null,
 ): Promise<PettyCashBudget | null> => {
-  const { data, error } = await supabase
+  let query = supabase
     .from("petty_cash_budget")
     .select("*")
     .eq("department", department)
-    .eq("is_active", true)
-    .maybeSingle();
+    .eq("is_active", true);
+  // `.eq("site", null)` tidak match NULL di Postgrest (perlu `.is`) - cabang
+  // ini menjaga requester yang belum punya site (`site` null di profile-nya)
+  // tetap bisa ke-match ke budget yang site-nya juga belum diisi.
+  query = site ? query.eq("site", site) : query.is("site", null);
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   return data as unknown as PettyCashBudget | null;
@@ -73,7 +83,12 @@ export const fetchBudgetHistory = async (
 };
 
 export const createBudget = async (
-  input: { name: string; department: string; initial_budget: number },
+  input: {
+    name: string;
+    department: string;
+    site: string;
+    initial_budget: number;
+  },
   adminUserId: string,
 ): Promise<PettyCashBudget> => {
   const { data: newBudget, error } = await supabase
@@ -81,6 +96,7 @@ export const createBudget = async (
     .insert({
       name: input.name,
       department: input.department,
+      site: input.site,
       initial_budget: input.initial_budget,
       current_budget: input.initial_budget,
     })

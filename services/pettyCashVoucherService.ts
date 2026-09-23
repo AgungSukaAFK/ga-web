@@ -148,12 +148,22 @@ export const fetchApprovedPengajuanForVoucher = async (
   );
 };
 
+/**
+ * Voucher milik `userId` - dipakai halaman Pengajuan Voucher ("Voucher
+ * Saya"), termasuk join sub-voucher (progress tarikan) & budget (batas
+ * tarikan) supaya tabel & dialog "Tarik Dana" di halaman itu tidak perlu
+ * query terpisah.
+ */
 export const fetchMyVouchers = async (
   userId: string,
 ): Promise<PettyCashVoucher[]> => {
   const { data, error } = await supabase
     .from("petty_cash_voucher")
-    .select("*, petty_cash_pengajuan(kode_pengajuan)")
+    .select(
+      `*, petty_cash_pengajuan(kode_pengajuan),
+       petty_cash_sub_voucher(id, amount),
+       petty_cash_budget(name, current_budget)`,
+    )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 

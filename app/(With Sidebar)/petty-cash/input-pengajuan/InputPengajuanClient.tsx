@@ -134,20 +134,20 @@ export default function InputPengajuanClient() {
     fetchInitialData();
   }, []);
 
-  // Preview budget yang BAKAL auto-terisi sesuai departemen (resolusi
+  // Preview budget yang BAKAL auto-terisi sesuai departemen & site (resolusi
   // sebenarnya terjadi lagi di createPettyCashPengajuan saat submit, ini
   // cuma tampilan transparansi ke requester sebelum kirim) - null = belum
-  // ada budget aktif utk departemen ini (TIDAK memblokir submit, lihat
+  // ada budget aktif utk kombinasi ini (TIDAK memblokir submit, lihat
   // komentar resolveAutoBudget, services/pettyCashBudgetService.ts).
   const [resolvedBudget, setResolvedBudget] = useState<PettyCashBudget | null>(
     null,
   );
   useEffect(() => {
     if (!profile?.department) return;
-    resolveAutoBudget(profile.department)
+    resolveAutoBudget(profile.department, profile.lokasi ?? null)
       .then(setResolvedBudget)
       .catch(() => setResolvedBudget(null));
-  }, [profile?.department]);
+  }, [profile?.department, profile?.lokasi]);
 
   const isLourdes = profile?.company === "LOURDES";
   // COA (GMI/GIS) yang berlaku utk SELURUH pengajuan ini - cuma dipilih
