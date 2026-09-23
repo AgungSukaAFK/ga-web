@@ -8,6 +8,38 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Tanggal HARI INI (YYYY-MM-DD) menurut jam LOKAL device pemanggil (browser
+ * requester), bukan UTC/waktu server - dipakai buat `min` attribute input
+ * type="date" & validasi "tidak boleh backdate" (mis. Tanggal Dibutuhkan
+ * Input Pengajuan Petty Cash). `date.toISOString()` SENGAJA tidak dipakai
+ * karena itu tanggal UTC - salah kalau device-nya di zona waktu +offset
+ * (mis. WIB) & jam lokalnya sudah lewat tengah malam tapi UTC-nya masih hari
+ * sebelumnya, atau sebaliknya di zona waktu -offset.
+ */
+export const getLocalDateString = (date: Date = new Date()): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+/**
+ * ID acak N digit (default 7, artinya 1.000.000-9.999.999) - dipakai sebagai
+ * primary key `id` dokumen Petty Cash (Pengajuan/Voucher/Deklarasi, lihat
+ * createPettyCashPengajuan dkk. di services/pettyCash*Service.ts) SUPAYA
+ * BUKAN auto-increment 1,2,3,... yang gampang ditebak/diurut requester lain
+ * lewat URL (mis. /petty-cash/pengajuan/5 -> coba tebak /4, /6). Insert-nya
+ * tetap harus retry kalau bentrok id (jarang tapi mungkin - constraint unik
+ * primary key) - sama idiomnya dengan retry kode_pengajuan/kode_voucher/
+ * kode_deklarasi yang sudah ada di service masing-masing.
+ */
+export const generateRandomId = (digits: number = 7): number => {
+  const min = 10 ** (digits - 1);
+  const max = 10 ** digits - 1;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
 // This check can be removed, it is just for tutorial purposes
 export const hasEnvVars =
   process.env.NEXT_PUBLIC_SUPABASE_URL &&

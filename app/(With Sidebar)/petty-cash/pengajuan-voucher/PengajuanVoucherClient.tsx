@@ -34,6 +34,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import Link from "next/link";
 import { PettyCashPengajuan, PettyCashVoucher } from "@/type";
 import {
   PC_VOUCHER_STATUS_COLORS,
@@ -50,6 +51,7 @@ import {
   FileCheck2,
   ReceiptText,
   CalendarDays,
+  Eye,
 } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
@@ -219,19 +221,22 @@ export default function PengajuanVoucherClient() {
                       Total Voucher
                     </TableHead>
                     <TableHead className="w-[140px]">Status</TableHead>
+                    <TableHead className="w-[70px] text-center">
+                      Aksi
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center h-28">
+                      <TableCell colSpan={5} className="text-center h-28">
                         <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                       </TableCell>
                     </TableRow>
                   ) : vouchers.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="text-center h-28 text-muted-foreground"
                       >
                         Belum ada Voucher yang dibuat.
@@ -251,6 +256,17 @@ export default function PengajuanVoucherClient() {
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={v.status} />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Link href={`/petty-cash/voucher/${v.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-primary"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
                         </TableCell>
                       </TableRow>
                     ))

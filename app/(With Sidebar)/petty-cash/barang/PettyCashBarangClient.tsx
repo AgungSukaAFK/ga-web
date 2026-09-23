@@ -52,21 +52,32 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   LIMIT_OPTIONS,
   PC_COA_OPTIONS,
-  PETTY_CASH_BARANG_KATEGORI_OPTIONS,
+  PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA,
   UOM_OPTIONS,
 } from "@/type/enum";
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 
-// Diurutkan A-Z di sini (bukan di type/enum.ts) supaya daftar sumbernya tetap
-// bisa dikelompokkan per makna, sementara yang tampil di combobox tetap
-// alfabetis biar gampang di-scan.
-const KATEGORI_COMBOBOX_DATA: ComboboxData = [
-  ...PETTY_CASH_BARANG_KATEGORI_OPTIONS,
-]
-  .sort((a, b) => a.localeCompare(b))
-  .map((k) => ({ value: k, label: k }));
+// Kategori RELATIF terhadap COA (lihat komentar
+// PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA, type/enum.ts) - gabungkan
+// daftar kategori tiap COA yang sedang dicentang di form (union, bukan
+// interseksi, supaya barang yang berlaku utk GMI & GIS tetap bisa pilih
+// kategori dari keduanya), lalu diurutkan A-Z di sini biar gampang di-scan.
+const kategoriComboboxDataForCoa = (
+  coa: readonly string[],
+): ComboboxData => {
+  const source = coa.length > 0 ? coa : (["GMI", "GIS"] as const);
+  const merged = new Set<string>();
+  source.forEach((c) => {
+    (PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA[c as "GMI" | "GIS"] ?? []).forEach(
+      (k) => merged.add(k),
+    );
+  });
+  return [...merged]
+    .sort((a, b) => a.localeCompare(b))
+    .map((k) => ({ value: k, label: k }));
+};
 const UOM_COMBOBOX_DATA: ComboboxData = [...UOM_OPTIONS]
   .sort((a, b) => a.localeCompare(b))
   .map((u) => ({ value: u, label: u }));
@@ -226,7 +237,7 @@ function BarangDialog({
               <Label htmlFor="category">Kategori</Label>
               <Combobox
                 id="category"
-                data={KATEGORI_COMBOBOX_DATA}
+                data={kategoriComboboxDataForCoa(formData.coa)}
                 defaultValue={formData.category || ""}
                 onChange={(val) =>
                   setFormData((prev) => ({ ...prev, category: val }))

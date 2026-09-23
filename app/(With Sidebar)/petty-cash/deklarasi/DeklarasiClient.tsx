@@ -1,11 +1,12 @@
 // src/app/(With Sidebar)/petty-cash/deklarasi/DeklarasiClient.tsx
 //
-// Requester bikin Deklarasi dari salah satu Voucher miliknya yang sudah
-// "Permintaan Klaim" (lihat submitVoucherClaim,
-// services/pettyCashVoucherService.ts) dan belum pernah dideklarasikan.
-// Item disalin dari Voucher asalnya, tapi qty/harga satuan/catatan per baris
-// BOLEH disesuaikan ke pemakaian riil (struk asli kadang beda dari rencana)
-// - lihat createDeklarasiFromVoucher, services/pettyCashDeklarasiService.ts.
+// Requester bikin Deklarasi dari salah satu Sub-Voucher miliknya (tarikan
+// dana parsial, lihat services/pettyCashSubVoucherService.ts) yang belum
+// pernah dideklarasikan. Item AWAL disalin dari Voucher INDUKnya (bukan
+// dari sub-voucher-nya sendiri - sub-voucher cuma nominal, tidak punya
+// rincian barang sendiri), tapi qty/harga satuan/catatan per baris BOLEH
+// disesuaikan ke pemakaian riil (struk asli kadang beda dari rencana) -
+// lihat createDeklarasiFromSubVoucher, services/pettyCashDeklarasiService.ts.
 // Begitu dikirim, Deklarasi langsung masuk jalur approval-nya sendiri
 // (Template Approval ber-approval_type "Approval Deklarasi").
 
@@ -43,16 +44,16 @@ import {
 } from "@/lib/attachments";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import { Attachment, PettyCashDeklarasi, PettyCashVoucher } from "@/type";
+import { Attachment, PettyCashDeklarasi, PettyCashSubVoucher } from "@/type";
 import {
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import {
-  fetchClaimedVouchersForDeklarasi,
   fetchMyDeklarasi,
-  createDeklarasiFromVoucher,
+  createDeklarasiFromSubVoucher,
 } from "@/services/pettyCashDeklarasiService";
+import { fetchSubVouchersForDeklarasi } from "@/services/pettyCashSubVoucherService";
 import Link from "next/link";
 import {
   Loader2,
@@ -100,13 +101,13 @@ export default function DeklarasiClient() {
   const supabase = createClient();
 
   const [userId, setUserId] = useState<string | null>(null);
-  const [eligible, setEligible] = useState<PettyCashVoucher[]>([]);
+  const [eligible, setEligible] = useState<PettyCashSubVoucher[]>([]);
   const [deklarasiList, setDeklarasiList] = useState<PettyCashDeklarasi[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const [selected, setSelected] = useState<PettyCashVoucher | null>(null);
+  const [selected, setSelected] = useState<PettyCashSubVoucher | null>(null);
   const [rows, setRows] = useState<DeclareRow[]>([]);
   const [notes, setNotes] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -121,7 +122,7 @@ export default function DeklarasiClient() {
       setUserId(user.id);
 
       const [eligibleData, deklarasiData] = await Promise.all([
-        fetchClaimedVouchersForDeklarasi(user.id),
+        fetchSubVouchersForDeklarasi(user.id),
         fetchMyDeklarasi(user.id),
       ]);
       setEligible(eligibleData);
@@ -137,10 +138,10 @@ export default function DeklarasiClient() {
     loadData();
   }, []);
 
-  const openDeclareForm = (voucher: PettyCashVoucher) => {
-    setSelected(voucher);
+  const openDeclareForm = (subVoucher: PettyCashSubVoucher) => {
+    setSelected(subVoucher);
     setRows(
-      voucher.items.map((it) => ({
+      (subVoucher.petty_cash_voucher?.items ?? []).map((it) => ({
         barang_id: it.barang_id,
         part_name: it.part_name,
         category: it.category,
@@ -214,14 +215,15 @@ export default function DeklarasiClient() {
 
     setCreating(true);
     try {
-      const deklarasi = await createDeklarasiFromVoucher(
+      const deklarasi = await createDeklarasiFromSubVoucher(
         {
-          voucher_id: selected.id,
-          company_code: selected.company_code,
-          department: selected.department,
-          cost_center_id: selected.cost_center_id,
-          week_of_month: selected.week_of_month,
-          site: selected.site,
+          sub_voucher_id: selected.id,
+          voucher_id: selected.voucher_id,
+          company_code: selected.petty_cash_voucher?.company_code || "",
+          department: selected.petty_cash_voucher?.department || "",
+          cost_center_id: selected.petty_cash_voucher?.cost_center_id ?? null,
+          week_of_month: selected.petty_cash_voucher?.week_of_month ?? null,
+          site: selected.petty_cash_voucher?.site ?? null,
           notes,
           items: rows.map((r) => ({
             barang_id: r.barang_id,
@@ -274,17 +276,20 @@ export default function DeklarasiClient() {
           <div>
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
               <FileCheck2 className="h-4 w-4 text-primary" />
-              Voucher Siap Dideklarasikan
+              Sub-Voucher Siap Dideklarasikan
             </h3>
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[700px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[180px]">Kode Voucher</TableHead>
+                    <TableHead className="w-[200px]">
+                      Kode Sub-Voucher
+                    </TableHead>
+                    <TableHead className="w-[180px]">Dari Voucher</TableHead>
                     <TableHead className="w-[150px] text-right">
                       Nominal Dicairkan
                     </TableHead>
-                    <TableHead className="w-[140px]">Dibutuhkan</TableHead>
+                    <TableHead className="w-[140px]">Ditarik</TableHead>
                     <TableHead className="w-[160px] text-center">
                       Aksi
                     </TableHead>
@@ -293,33 +298,39 @@ export default function DeklarasiClient() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center h-28">
+                      <TableCell colSpan={5} className="text-center h-28">
                         <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                       </TableCell>
                     </TableRow>
                   ) : eligible.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="text-center h-28 text-muted-foreground"
                       >
-                        Belum ada Voucher yang siap dideklarasikan.
+                        Belum ada Sub-Voucher yang siap dideklarasikan.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    eligible.map((v) => (
-                      <TableRow key={v.id}>
+                    eligible.map((sv) => (
+                      <TableRow key={sv.id}>
                         <TableCell className="font-semibold text-sm">
-                          {v.kode_voucher}
+                          {sv.kode_sub_voucher}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {sv.petty_cash_voucher?.kode_voucher || "-"}
                         </TableCell>
                         <TableCell className="text-right font-medium text-sm">
-                          {formatCurrency(v.total_amount)}
+                          {formatCurrency(sv.amount)}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {formatDate(v.needed_date)}
+                          {formatDate(sv.created_at)}
                         </TableCell>
                         <TableCell className="text-center">
-                          <Button size="sm" onClick={() => openDeclareForm(v)}>
+                          <Button
+                            size="sm"
+                            onClick={() => openDeclareForm(sv)}
+                          >
                             Buat Deklarasi
                           </Button>
                         </TableCell>
@@ -414,14 +425,17 @@ export default function DeklarasiClient() {
       >
         <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Deklarasi dari {selected?.kode_voucher}</DialogTitle>
+            <DialogTitle>
+              Deklarasi dari {selected?.kode_sub_voucher}
+            </DialogTitle>
             <DialogDescription>
               Sesuaikan qty/harga satuan tiap barang ke pemakaian riil
               (berdasarkan struk asli).{" "}
               {selected && (
                 <span className="inline-flex items-center gap-1">
                   <CalendarDays className="h-3 w-3" />
-                  Dibutuhkan {formatDate(selected.needed_date)}
+                  Ditarik {formatDate(selected.created_at)} - Nominal
+                  Tarikan {formatCurrency(selected.amount)}
                 </span>
               )}
             </DialogDescription>
@@ -500,9 +514,9 @@ export default function DeklarasiClient() {
 
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="text-sm text-muted-foreground">
-                  Nominal Voucher (rencana):{" "}
+                  Nominal Tarikan (rencana):{" "}
                   <span className="font-medium text-foreground">
-                    {formatCurrency(selected.total_amount)}
+                    {formatCurrency(selected.amount)}
                   </span>
                 </div>
                 <div className="text-right">

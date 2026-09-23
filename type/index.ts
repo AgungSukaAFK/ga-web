@@ -785,6 +785,21 @@ export interface PettyCashPengajuanItem {
   coa: "GMI" | "GIS" | null;
 }
 
+// "Template Pengajuan" Petty Cash - daftar barang siap pakai PER-USER (lihat
+// supabase/petty-cash-pengajuan-template-setup.sql) untuk kebutuhan yang
+// bisa diprediksi & relatif konstan, dipakai lewat ?template=<id> di
+// InputPengajuanClient.tsx. `coa` tiap item di sini SELALU null/diabaikan -
+// diresolusi ulang ke COA yang berlaku SAAT template diterapkan (bukan
+// dibekukan dari saat dibuat).
+export interface PettyCashPengajuanTemplate {
+  id: number;
+  user_id: string;
+  nama_template: string;
+  items: PettyCashPengajuanItem[];
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
 // Satu entri riwayat revisi - ditulis SEBELUM approver menerapkan
 // "Edit & Setujui" (lihat buildEditAndApproveUpdate, lib/pcApprovalFlow.ts):
 // snapshot ini adalah nilai field-field yang BISA diedit approver PERSIS
@@ -836,6 +851,15 @@ export interface PettyCashPengajuan {
   // histori dokumen tidak berubah kalau requester pindah site belakangan.
   // Null utk baris lama dari sebelum field ini ada.
   site: string | null;
+  // Budget Petty Cash yang menanggung pengajuan ini - AUTO-terisi sesuai
+  // departemen requester saat submit (lihat resolveAutoBudget,
+  // services/pettyCashBudgetService.ts, mirip resolvePcAutoTemplate), tapi
+  // approver BOLEH ganti ke budget lain lewat "Edit & Setujui" (lihat
+  // PcEditAndApproveDialog.tsx). Null kalau departemen belum punya budget
+  // aktif - dibiarkan null, TIDAK memblokir submit Pengajuan (baru
+  // memblokir pas pembuatan sub-voucher, lihat komentar
+  // PettyCashSubVoucher di bawah).
+  budget_id: number | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -854,6 +878,7 @@ export interface PettyCashPengajuan {
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
   cost_centers?: { name: string; current_budget: number } | null;
+  petty_cash_budget?: { name: string; current_budget: number } | null;
   // Voucher yang sudah dibuat dari Pengajuan ini (kalau ada) - dipakai utk
   // filter "belum di-voucher-kan" (lihat fetchApprovedPengajuanForVoucher,
   // services/pettyCashVoucherService.ts). Satu Pengajuan cuma boleh punya
@@ -886,6 +911,9 @@ export interface PettyCashVoucher {
   // PettyCashPengajuan.
   week_of_month: number | null;
   site: string | null;
+  // Disalin dari budget_id Pengajuan asalnya saat Voucher dibuat (lihat
+  // createVoucherFromPengajuan) - sama pola dengan company_code/department.
+  budget_id: number | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -902,22 +930,123 @@ export interface PettyCashVoucher {
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
   cost_centers?: { name: string; current_budget: number } | null;
+  petty_cash_budget?: { name: string; current_budget: number } | null;
   petty_cash_pengajuan?: { kode_pengajuan: string } | null;
-  // Deklarasi yang sudah dibuat dari Voucher ini (kalau ada) - dipakai utk
-  // filter "belum dideklarasikan" (lihat fetchClaimedVouchersForDeklarasi,
-  // services/pettyCashDeklarasiService.ts). Satu Voucher cuma boleh punya
-  // SATU Deklarasi (unique voucher_id di DB), jadi arraynya panjang 0 atau 1.
-  petty_cash_deklarasi?: { id: number }[] | null;
+  // Sub-voucher (tarikan dana parsial) yang sudah dibuat dari Voucher ini -
+  // lihat komentar PettyCashSubVoucher di bawah. Dipakai menghitung sisa
+  // yang belum ditarik (total_amount - SUM(amount)) & menampilkan progress
+  // "50/500rb" di halaman detail Voucher.
+  petty_cash_sub_voucher?: PettyCashSubVoucher[] | null;
+}
+
+// ==========================================
+// SUB-VOUCHER PETTY CASH - tabel `petty_cash_sub_voucher`. Voucher yang
+// sudah full-approved BISA DITARIK BERTAHAP (bukan sekali klaim penuh
+// seperti alur lama) - tiap "tarikan" dicatat sebagai satu baris sub-
+// voucher di sini, cukup nominal (BUKAN dokumen approval terpisah - tidak
+// ada approval_path/approvals sendiri, karena persetujuannya sudah ada di
+// level Voucher induk). SELALU dibuat lewat RPC
+// `create_petty_cash_sub_voucher` (services/pettyCashSubVoucherService.ts),
+// TIDAK PERNAH lewat insert langsung - RPC itu yang atomically: (1)
+// validasi sisa Voucher (total_amount - SUM sub-voucher yang sudah ada)
+// cukup, (2) potong `petty_cash_budget.current_budget` departemen Voucher
+// ybs (via budget_id yang disalin dari Pengajuan asalnya), gagal kalau sisa
+// budget tidak cukup atau budget 0. Satu Voucher boleh punya banyak sub-
+// voucher, asal totalnya tidak melebihi total_amount Voucher.
+//
+// Tiap sub-voucher WAJIB dideklarasikan pemakaiannya sendiri-sendiri (lihat
+// PettyCashDeklarasi.sub_voucher_id di bawah) - beda dari alur lama yang
+// satu Deklarasi utk satu Voucher penuh.
+// ==========================================
+
+export interface PettyCashSubVoucher {
+  id: number;
+  kode_sub_voucher: string;
+  voucher_id: number;
+  user_id: string;
+  amount: number;
+  notes: string | null;
+  status: string;
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain) - field non-kode/total di
+  // sini (company_code dkk.) cuma ke-isi kalau di-join eksplisit lewat
+  // fetchSubVouchersForDeklarasi (services/pettyCashSubVoucherService.ts),
+  // dipakai bikin Deklarasi (yang butuh company_code/department/dkk milik
+  // Voucher induk, bukan milik sub-voucher-nya sendiri).
+  petty_cash_voucher?: {
+    kode_voucher: string;
+    total_amount: number;
+    items?: PettyCashPengajuanItem[];
+    company_code?: string;
+    department?: string;
+    cost_center_id?: number | null;
+    week_of_month?: number | null;
+    site?: string | null;
+    petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+  } | null;
+  // Dipakai filter "belum dideklarasikan" (lihat
+  // fetchSubVouchersForDeklarasi, services/pettyCashSubVoucherService.ts) -
+  // sama pola dengan petty_cash_voucher?/petty_cash_deklarasi? di tabel
+  // lain. fetchVoucherById (services/pettyCashVoucherService.ts) join lebih
+  // lengkap (kode_deklarasi/status) utk tabel "Riwayat Sub-Voucher" di
+  // halaman detail Voucher.
+  petty_cash_deklarasi?:
+    | { id: number; kode_deklarasi?: string; status?: string }[]
+    | null;
+}
+
+// ==========================================
+// BUDGET PETTY CASH - tabel `petty_cash_budget`, per DEPARTEMEN (bukan per
+// company/COA) - satu departemen maksimal satu budget AKTIF sekaligus
+// (partial unique index, mirip aturan "satu departemen satu template auto"
+// di pc_approval_template_auto_rules). Auto-terisi ke Pengajuan baru sesuai
+// departemen requester (resolveAutoBudget), approver Pengajuan boleh ganti.
+// Dikelola GA/Admin di halaman /petty-cash/budgeting - pola CRUD & riwayat
+// top-up-nya SENGAJA dibuat identik dengan CostCenter/CostCenterHistory
+// (services/costCenterService.ts) supaya konsisten, meski tabelnya
+// terpisah (petty cash butuh auto-resolve by department & auto-potong saat
+// sub-voucher dibuat, yang tidak dipunyai cost center MR/PO).
+// ==========================================
+
+export interface PettyCashBudget {
+  id: number;
+  name: string;
+  department: string;
+  initial_budget: number;
+  current_budget: number;
+  is_active: boolean;
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+}
+
+export interface PettyCashBudgetHistory {
+  id: number;
+  budget_id: number;
+  ref_type: "initial" | "topup" | "adjustment" | "deduction" | "deactivate";
+  ref_id: number | null;
+  user_id: string | null;
+  change_amount: number;
+  previous_budget: number;
+  new_budget: number;
+  description: string;
+  created_at: string | Date;
+  profiles?: { nama: string } | null;
 }
 
 // ==========================================
 // DEKLARASI PETTY CASH - tabel `petty_cash_deklarasi`. Tahap SETELAH sebuah
-// Voucher diajukan klaim pencairannya ("Permintaan Klaim", lihat
-// submitVoucherClaim, services/pettyCashVoucherService.ts). Requester
-// melaporkan pemakaian RIIL dana yang sudah dicairkan - lihat
-// createDeklarasiFromVoucher, services/pettyCashDeklarasiService.ts. Satu
-// Voucher cuma boleh dipakai untuk SATU Deklarasi (unique voucher_id di DB,
-// lihat supabase/petty-cash-deklarasi-setup.sql).
+// Sub-Voucher ditarik (lihat PettyCashSubVoucher di atas) - requester
+// melaporkan pemakaian RIIL dana yang sudah dicairkan lewat sub-voucher itu
+// - lihat createDeklarasiFromSubVoucher,
+// services/pettyCashDeklarasiService.ts. Satu Sub-Voucher cuma boleh dipakai
+// untuk SATU Deklarasi (unique sub_voucher_id di DB, lihat
+// supabase/petty-cash-deklarasi-sub-voucher-setup.sql).
 //
 // BEDA dari Voucher (snapshot APA ADANYA dari Pengajuan): item Deklarasi
 // disalin dari Voucher asalnya TAPI qty/unit_price/note per baris BOLEH
@@ -933,7 +1062,11 @@ export interface PettyCashVoucher {
 export interface PettyCashDeklarasi {
   id: number;
   kode_deklarasi: string;
+  // Disalin (denormalisasi) dari sub_voucher.voucher_id saat dibuat - murni
+  // supaya tampilan "Dari Voucher X" tidak perlu join tambahan. Kunci
+  // relasi yang SEBENARNYA (unique) adalah sub_voucher_id di bawah.
   voucher_id: number;
+  sub_voucher_id: number;
   user_id: string;
   company_code: string;
   department: string;
@@ -965,4 +1098,5 @@ export interface PettyCashDeklarasi {
     total_amount: number;
     petty_cash_pengajuan?: { kode_pengajuan: string } | null;
   } | null;
+  petty_cash_sub_voucher?: { kode_sub_voucher: string; amount: number } | null;
 }

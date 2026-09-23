@@ -48,6 +48,7 @@ import {
   FileText,
   FileCheck2,
   ShieldAlert,
+  PiggyBank,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -281,10 +282,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   // MENU PETTY CASH - tiap item disaring sesuai hak akses halamannya
   // masing-masing, meniru gate yang SUDAH ADA di halaman/RLS terkait (bukan
-  // aturan baru): Barang & Template = admin/GA (sama seperti
+  // aturan baru): Barang, Template Approval, & Budgeting = admin/GA (sama seperti
   // PettyCashBarangClient.tsx canModify & PcApprovalTemplateClient.tsx),
   // approval-approval = role "approver" (sama seperti "Approval &
-  // Validation" MR/PO di atas), sisanya self-service jadi terbuka utk semua.
+  // Validation" MR/PO di atas). Template Pengajuan BEDA - itu template
+  // PER-USER (milik requester sendiri, lihat
+  // supabase/petty-cash-pengajuan-template-setup.sql), bukan katalog
+  // bersama admin/GA, jadi terbuka utk semua sama seperti Input Pengajuan.
+  // Sisanya self-service jadi terbuka utk semua.
   const pettyCashItems = React.useMemo(() => {
     const isAdmin = profile?.role === "admin";
     const isGA = isGADepartment(profile?.department);
@@ -312,10 +317,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         visible: canManagePc,
       },
       {
+        title: "Budgeting",
+        url: "/petty-cash/budgeting",
+        icon: PiggyBank,
+        visible: canManagePc,
+      },
+      {
         title: "Template Pengajuan",
         url: "/petty-cash/template-pengajuan",
         icon: FileSignature,
-        visible: canManagePc,
+        visible: true,
       },
       {
         title: "Input Pengajuan",
@@ -342,8 +353,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         visible: canApprovePc,
       },
       {
-        title: "Claim Voucher",
-        url: "/petty-cash/claim-voucher",
+        title: "Sub-Voucher",
+        url: "/petty-cash/sub-voucher",
         icon: Wallet,
         visible: true,
       },

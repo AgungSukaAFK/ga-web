@@ -60,6 +60,8 @@ interface PcDocumentInfoPanelProps {
   companyCode: string;
   site?: string | null;
   costCenterName?: string | null;
+  budgetName?: string | null;
+  budgetRemaining?: number | null;
   neededDate?: string | Date | null;
   weekOfMonth?: number | null;
   showNeededDate?: boolean;
@@ -79,6 +81,8 @@ export function PcDocumentInfoPanel({
   companyCode,
   site,
   costCenterName,
+  budgetName,
+  budgetRemaining,
   neededDate,
   weekOfMonth,
   showNeededDate = true,
@@ -112,6 +116,17 @@ export function PcDocumentInfoPanel({
             icon={Wallet}
             label="Cost Center"
             value={costCenterName}
+          />
+        )}
+        {budgetName && (
+          <InfoField
+            icon={Wallet}
+            label="Budget"
+            value={
+              budgetRemaining != null
+                ? `${budgetName} (Sisa ${formatCurrency(budgetRemaining)})`
+                : budgetName
+            }
           />
         )}
         {showNeededDate && neededDate && (

@@ -31,12 +31,16 @@ interface PcApprovalActionsProps {
   kode: string;
   companyCode: string;
   showNeededDate?: boolean;
+  // true HANYA utk docLabel "Pengajuan" - lihat komentar showBudget di
+  // PcEditAndApproveDialog.tsx.
+  showBudget?: boolean;
   editInitial: {
     needed_date?: string | Date;
     week_of_month?: number | null;
     notes: string | null;
     items: PettyCashPengajuanItem[];
     attachments: Attachment[];
+    budget_id?: number | null;
   };
   processing: boolean;
   onApprove: () => Promise<void> | void;
@@ -49,6 +53,7 @@ export function PcApprovalActions({
   kode,
   companyCode,
   showNeededDate = true,
+  showBudget = false,
   editInitial,
   processing,
   onApprove,
@@ -133,6 +138,7 @@ export function PcApprovalActions({
         kode={kode}
         companyCode={companyCode}
         showNeededDate={showNeededDate}
+        showBudget={showBudget}
         initial={editInitial}
         onSubmit={onEditAndApprove}
       />

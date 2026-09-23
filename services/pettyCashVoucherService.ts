@@ -31,6 +31,7 @@ import {
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
+import { generateRandomId } from "@/lib/utils";
 
 const supabase = createClient();
 
@@ -99,7 +100,9 @@ export const generateVoucherCode = async (
     .eq("company_code", prefix)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
     .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
-    .order("id", { ascending: false })
+    // created_at, BUKAN id - id sekarang random (lihat generateRandomId,
+    // lib/utils.ts), jadi tidak lagi berurutan sesuai waktu dibuat.
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -159,63 +162,6 @@ export const fetchMyVouchers = async (
 };
 
 /**
- * Voucher milik `userId` yang sudah "Approved" dan siap diajukan klaim
- * pencairannya - dipakai halaman /petty-cash/claim-voucher.
- */
-export const fetchClaimableVouchers = async (
-  userId: string,
-): Promise<PettyCashVoucher[]> => {
-  const { data, error } = await supabase
-    .from("petty_cash_voucher")
-    .select("*, petty_cash_pengajuan(kode_pengajuan)")
-    .eq("user_id", userId)
-    .eq("status", "Approved")
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as unknown as PettyCashVoucher[];
-};
-
-/**
- * Ajukan klaim pencairan atas Voucher yang sudah "Approved" - menaikkan
- * status jadi "Permintaan Klaim" (lihat PC_VOUCHER_STATUS_OPTIONS,
- * type/enum.ts). Cuma pemilik dokumen yang boleh (lihat
- * petty_cash_voucher_update_owner, supabase/petty-cash-voucher-claim-setup.sql)
- * - dicek juga di sini supaya gagal cepat dengan pesan yang jelas kalau
- * statusnya sudah bukan "Approved" lagi (mis. double-submit dari 2 tab).
- */
-export const submitVoucherClaim = async (
-  voucher: Pick<PettyCashVoucher, "id" | "status" | "discussions">,
-  userId: string,
-  userName: string,
-): Promise<void> => {
-  if (voucher.status !== "Approved") {
-    throw new Error(
-      "Voucher ini belum/sudah tidak berstatus Approved, tidak bisa diajukan klaim.",
-    );
-  }
-
-  const newDiscussion = {
-    user_id: userId,
-    user_name: userName,
-    message: "Klaim pencairan Voucher diajukan.",
-    timestamp: new Date().toISOString(),
-  };
-
-  const { error } = await supabase
-    .from("petty_cash_voucher")
-    .update({
-      status: "Permintaan Klaim",
-      discussions: [...(voucher.discussions || []), newDiscussion],
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", voucher.id)
-    .eq("status", "Approved");
-
-  if (error) throw error;
-};
-
-/**
  * Semua Voucher lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_voucher_update_admin di
  * supabase/petty-cash-admin-management-setup.sql).
@@ -224,7 +170,7 @@ export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan), petty_cash_budget(name, current_budget)",
     )
     .order("created_at", { ascending: false });
 
@@ -258,7 +204,11 @@ export const fetchVoucherById = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+      `*, users_with_profiles:profiles!user_id(nama, email),
+       petty_cash_pengajuan(kode_pengajuan),
+       petty_cash_budget(name, current_budget),
+       petty_cash_sub_voucher(id, kode_sub_voucher, amount, notes, status, created_at,
+         petty_cash_deklarasi(id, kode_deklarasi, status))`,
     )
     .eq("id", id)
     .single();
@@ -281,6 +231,7 @@ export const createVoucherFromPengajuan = async (
     | "company_code"
     | "department"
     | "cost_center_id"
+    | "budget_id"
     | "needed_date"
     | "week_of_month"
     | "site"
@@ -307,15 +258,18 @@ export const createVoucherFromPengajuan = async (
     pengajuan.company_code,
     pengajuan.department,
   );
+  let currentId = generateRandomId();
 
   while (attempts < maxAttempts) {
     const dbPayload = {
+      id: currentId,
       kode_voucher: currentCode,
       pengajuan_id: pengajuan.id,
       user_id: userId,
       company_code: pengajuan.company_code,
       department: pengajuan.department,
       cost_center_id: pengajuan.cost_center_id,
+      budget_id: pengajuan.budget_id,
       needed_date: pengajuan.needed_date,
       week_of_month: pengajuan.week_of_month,
       site: pengajuan.site,
@@ -336,19 +290,6 @@ export const createVoucherFromPengajuan = async (
       .single();
 
     if (error) {
-      if (error.code === "23505" && error.message.includes("kode_voucher")) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          throw new Error(
-            "Sistem sedang sibuk dan terjadi bentrok nomor voucher. Silakan coba submit ulang.",
-          );
-        }
-        currentCode = await generateVoucherCode(
-          pengajuan.company_code,
-          pengajuan.department,
-        );
-        continue;
-      }
       if (
         error.code === "23505" &&
         error.message.includes("petty_cash_voucher_pengajuan_id_key")
@@ -356,6 +297,28 @@ export const createVoucherFromPengajuan = async (
         throw new Error(
           "Pengajuan ini sudah pernah dibuatkan Voucher sebelumnya.",
         );
+      }
+      if (
+        error.code === "23505" &&
+        (error.message.includes("kode_voucher") ||
+          error.message.includes("petty_cash_voucher_pkey"))
+      ) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw new Error(
+            "Sistem sedang sibuk dan terjadi bentrok nomor voucher. Silakan coba submit ulang.",
+          );
+        }
+        if (error.message.includes("kode_voucher")) {
+          currentCode = await generateVoucherCode(
+            pengajuan.company_code,
+            pengajuan.department,
+          );
+        }
+        if (error.message.includes("petty_cash_voucher_pkey")) {
+          currentId = generateRandomId();
+        }
+        continue;
       }
       throw error;
     }
@@ -377,7 +340,7 @@ export const fetchVoucherApprovalQueue = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan), petty_cash_budget(name, current_budget)",
     )
     .eq("status", "In Approval")
     .contains(
