@@ -1,11 +1,15 @@
 // src/app/(With Sidebar)/petty-cash/management/PettyCashManagementClient.tsx
 //
-// Management Petty Cash (ADMIN ONLY) - satu halaman untuk melihat & meng-
-// override status + jalur approval SEMUA dokumen di alur baru Petty Cash
-// (petty_cash_pengajuan / petty_cash_voucher / petty_cash_deklarasi), lintas
-// user & departemen. Dipakai buat membenahi dokumen yang nyangkut (mis.
-// approver resign/salah pencet) tanpa harus lewat alur approve/reject normal
-// tahap per tahap. Proteksi di level RLS ada di
+// Management Petty Cash (ADMIN ONLY) - satu halaman untuk memantau SEMUA
+// dokumen di alur baru Petty Cash (petty_cash_pengajuan / petty_cash_voucher
+// / petty_cash_deklarasi), lintas user & departemen. Klik row/Eye buka
+// dialog PREVIEW ringkas (read-only) - override status/jalur approval PAKSA
+// (mis. dokumen nyangkut karena approver resign/salah pencet) SEKARANG di
+// halaman detail lengkap (link "Detail Lengkap / Cetak" di dialog ini ->
+// petty-cash/{stage}/[id]/page.tsx, lihat PcAdminOverridePanel di sana) -
+// BUKAN lagi di dialog ini, supaya override juga bisa diakses dari halaman
+// detail yang dibuka dari tempat lain (Approval queue, dsb), bukan cuma dari
+// sini. Proteksi di level RLS ada di
 // supabase/petty-cash-admin-management-setup.sql (cuma role admin yang bisa
 // UPDATE lewat policy itu) - guard di komponen ini cuma proteksi UI, bukan
 // pengganti RLS.
@@ -41,13 +45,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
   PettyCashPengajuan,
-  PettyCashPengajuanApprover,
   PettyCashVoucher,
   PettyCashDeklarasi,
 } from "@/type";
@@ -63,26 +65,10 @@ import {
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
-import {
-  fetchAllPengajuan,
-  adminUpdatePengajuan,
-} from "@/services/pettyCashPengajuanService";
-import {
-  fetchAllVouchers,
-  adminUpdateVoucher,
-} from "@/services/pettyCashVoucherService";
-import {
-  fetchAllDeklarasi,
-  adminUpdateDeklarasi,
-} from "@/services/pettyCashDeklarasiService";
-import {
-  Loader2,
-  RefreshCcw,
-  Eye,
-  ShieldAlert,
-  Search,
-  Save,
-} from "lucide-react";
+import { fetchAllPengajuan } from "@/services/pettyCashPengajuanService";
+import { fetchAllVouchers } from "@/services/pettyCashVoucherService";
+import { fetchAllDeklarasi } from "@/services/pettyCashDeklarasiService";
+import { Loader2, RefreshCcw, Eye, ShieldAlert, Search } from "lucide-react";
 
 type StageKey = "pengajuan" | "voucher" | "deklarasi";
 type AnyDoc = PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi;
@@ -137,10 +123,6 @@ const STAGE_CONFIG: Record<
     statusColors: Record<string, string>;
     statusColorDefault: string;
     fetchAll: () => Promise<AnyDoc[]>;
-    adminUpdate: (
-      id: number,
-      patch: { status?: string; approvals?: PettyCashPengajuanApprover[] },
-    ) => Promise<void>;
   }
 > = {
   pengajuan: {
@@ -149,7 +131,6 @@ const STAGE_CONFIG: Record<
     statusColors: PC_PENGAJUAN_STATUS_COLORS,
     statusColorDefault: PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
     fetchAll: fetchAllPengajuan,
-    adminUpdate: adminUpdatePengajuan,
   },
   voucher: {
     label: "Voucher",
@@ -157,7 +138,6 @@ const STAGE_CONFIG: Record<
     statusColors: PC_VOUCHER_STATUS_COLORS,
     statusColorDefault: PC_VOUCHER_STATUS_COLOR_DEFAULT,
     fetchAll: fetchAllVouchers,
-    adminUpdate: adminUpdateVoucher,
   },
   deklarasi: {
     label: "Deklarasi",
@@ -165,19 +145,14 @@ const STAGE_CONFIG: Record<
     statusColors: PC_DEKLARASI_STATUS_COLORS,
     statusColorDefault: PC_DEKLARASI_STATUS_COLOR_DEFAULT,
     fetchAll: fetchAllDeklarasi,
-    adminUpdate: adminUpdateDeklarasi,
   },
 };
-
-const APPROVAL_STATUS_OPTIONS = ["pending", "approved", "rejected"] as const;
 
 export default function PettyCashManagementClient({
   isAdmin,
 }: {
   isAdmin: boolean;
 }) {
-  const supabase = createClient();
-
   const [stage, setStage] = useState<StageKey>("pengajuan");
   const [docs, setDocs] = useState<AnyDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -186,11 +161,6 @@ export default function PettyCashManagementClient({
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const [selected, setSelected] = useState<AnyDoc | null>(null);
-  const [editStatus, setEditStatus] = useState<string>("");
-  const [editApprovals, setEditApprovals] = useState<
-    PettyCashPengajuanApprover[]
-  >([]);
-  const [saving, setSaving] = useState(false);
 
   const config = STAGE_CONFIG[stage];
 
@@ -232,40 +202,7 @@ export default function PettyCashManagementClient({
     );
   };
 
-  const openDetail = (row: AnyDoc) => {
-    setSelected(row);
-    setEditStatus(row.status);
-    setEditApprovals(row.approvals || []);
-  };
-
-  const updateApprovalStatus = (
-    idx: number,
-    status: "pending" | "approved" | "rejected",
-  ) => {
-    setEditApprovals((prev) =>
-      prev.map((app, i) => (i === idx ? { ...app, status } : app)),
-    );
-  };
-
-  const handleSave = async () => {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      await config.adminUpdate(selected.id, {
-        status: editStatus,
-        approvals: editApprovals,
-      });
-      toast.success(`${getKode(stage, selected)} berhasil diperbarui.`);
-      setSelected(null);
-      await loadData();
-    } catch (error: any) {
-      toast.error("Gagal menyimpan perubahan", {
-        description: error.message,
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openDetail = (row: AnyDoc) => setSelected(row);
 
   if (!isAdmin) {
     return (
@@ -405,7 +342,7 @@ export default function PettyCashManagementClient({
         </div>
       </Content>
 
-      {/* DIALOG DETAIL + OVERRIDE */}
+      {/* DIALOG PREVIEW (read-only) - override ada di halaman detail lengkap */}
       <Dialog
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
@@ -442,6 +379,10 @@ export default function PettyCashManagementClient({
                 companyCode={selected.company_code}
                 site={(selected as any).site}
                 costCenterName={selected.cost_centers?.name}
+                budgetName={(selected as any).petty_cash_budget?.name}
+                budgetRemaining={
+                  (selected as any).petty_cash_budget?.current_budget
+                }
                 neededDate={getNeededDate(stage, selected)}
                 weekOfMonth={(selected as any).week_of_month}
                 showNeededDate={showsNeededDate(stage)}
@@ -453,88 +394,17 @@ export default function PettyCashManagementClient({
                 discussions={selected.discussions}
                 revisions={(selected as any).revisions}
               />
-
-              <div className="space-y-2 border-t pt-4">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Status Dokumen (override)
-                </p>
-                <Select value={editStatus} onValueChange={setEditStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {config.statusOptions.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Jalur Approval (override per approver)
-                </p>
-                <div className="space-y-1.5">
-                  {editApprovals.map((app, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between gap-2 text-sm border rounded-md px-3 py-1.5"
-                    >
-                      <span className="truncate">
-                        {i + 1}. {app.nama}{" "}
-                        <span className="text-xs text-muted-foreground">
-                          ({app.department})
-                        </span>
-                      </span>
-                      <Select
-                        value={app.status}
-                        onValueChange={(v) =>
-                          updateApprovalStatus(
-                            i,
-                            v as "pending" | "approved" | "rejected",
-                          )
-                        }
-                      >
-                        <SelectTrigger className="w-[130px] h-8 shrink-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APPROVAL_STATUS_OPTIONS.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                  {editApprovals.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Belum ada jalur approval tercatat.
-                    </p>
-                  )}
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Ini preview ringkas & read-only - untuk override status/jalur
+                approval paksa, buka &quot;Detail Lengkap / Cetak&quot; di
+                atas.
+              </p>
             </div>
           )}
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSelected(null)}
-              disabled={saving}
-            >
-              Batal
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Simpan Perubahan
+            <Button variant="outline" onClick={() => setSelected(null)}>
+              Tutup
             </Button>
           </DialogFooter>
         </DialogContent>

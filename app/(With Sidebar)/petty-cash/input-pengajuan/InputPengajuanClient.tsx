@@ -6,15 +6,18 @@
 // approval-nya OTOMATIS diambil dari Template Approval Petty Cash sesuai
 // departemen requester (lihat services/pcApprovalTemplateService.ts).
 //
-// COA per baris item WAJIB terisi sebelum submit (lihat PcItemsEditor,
-// components/petty-cash/) - requester non-Lourdes dikunci ke company sendiri
-// (coaMode="locked"), akun Lourdes wajib memilih GMI/GIS per baris
-// (coaMode="choose") kalau barangnya berlaku utk keduanya.
+// COA (lihat PcItemsEditor, components/petty-cash/) - requester non-Lourdes
+// dikunci ke company sendiri (coaMode="locked", combobox katalog otomatis
+// cuma nampilin barang yang coa-nya memuat company itu). Akun Lourdes wajib
+// pilih SATU COA (GMI/GIS) dulu utk SELURUH pengajuan ini (lourdesCoa di
+// bawah) SEBELUM bisa nambah barang - bukan per baris lagi - biar konsisten
+// sama requester company lain & combobox katalognya ikut terfilter ke COA
+// yang dipilih itu.
 
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,14 +45,16 @@ import {
 } from "@/lib/attachments";
 import { toast } from "sonner";
 import { createPettyCashPengajuan } from "@/services/pettyCashPengajuanService";
-import { PettyCashPengajuanItem } from "@/type";
+import { fetchPengajuanTemplateById } from "@/services/pettyCashPengajuanTemplateService";
+import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
+import { PettyCashBudget, PettyCashPengajuanItem } from "@/type";
 import {
   PcItemsEditor,
   hasUnresolvedCoa,
 } from "@/components/petty-cash/PcItemsEditor";
 import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
 import { getSelectableWeeksOfCurrentMonth } from "@/lib/weekOfMonth";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getLocalDateString } from "@/lib/utils";
 import {
   Loader2,
   Save,
@@ -63,6 +68,8 @@ import {
 
 export default function InputPengajuanClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const templateId = searchParams.get("template");
   const supabase = createClient();
 
   const [profile, setProfile] = useState<{
@@ -72,9 +79,26 @@ export default function InputPengajuanClient() {
     lokasi: string | null;
   } | null>(null);
 
-  const [neededDate, setNeededDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [neededDate, setNeededDate] = useState(getLocalDateString());
+  // Batas bawah "Tanggal Dibutuhkan" - HARI INI menurut jam lokal device
+  // requester (bukan UTC/server), lihat komentar getLocalDateString
+  // (lib/utils.ts). Dicek ulang tiap menit supaya kalau form ini dibiarkan
+  // terbuka lewat tengah malam lokal, batasnya otomatis maju ke hari
+  // berikutnya tanpa perlu refresh halaman.
+  const [minDate, setMinDate] = useState(getLocalDateString());
+  useEffect(() => {
+    const interval = setInterval(
+      () => setMinDate(getLocalDateString()),
+      60_000,
+    );
+    return () => clearInterval(interval);
+  }, []);
+  // Kalau tengah malam lokal lewat sementara form ini terbuka, tanggal yang
+  // sudah dipilih requester ikut jadi backdate - majukan otomatis ke hari
+  // baru daripada baru ketahuan pas submit.
+  useEffect(() => {
+    setNeededDate((prev) => (prev < minDate ? minDate : prev));
+  }, [minDate]);
   const selectableWeeks = getSelectableWeeksOfCurrentMonth();
   const [weekOfMonth, setWeekOfMonth] = useState<number | "">(
     selectableWeeks[0] ?? "",
@@ -110,8 +134,57 @@ export default function InputPengajuanClient() {
     fetchInitialData();
   }, []);
 
+  // Preview budget yang BAKAL auto-terisi sesuai departemen (resolusi
+  // sebenarnya terjadi lagi di createPettyCashPengajuan saat submit, ini
+  // cuma tampilan transparansi ke requester sebelum kirim) - null = belum
+  // ada budget aktif utk departemen ini (TIDAK memblokir submit, lihat
+  // komentar resolveAutoBudget, services/pettyCashBudgetService.ts).
+  const [resolvedBudget, setResolvedBudget] = useState<PettyCashBudget | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!profile?.department) return;
+    resolveAutoBudget(profile.department)
+      .then(setResolvedBudget)
+      .catch(() => setResolvedBudget(null));
+  }, [profile?.department]);
+
   const isLourdes = profile?.company === "LOURDES";
+  // COA (GMI/GIS) yang berlaku utk SELURUH pengajuan ini - cuma dipilih
+  // akun Lourdes (lihat komentar di atas file ini). Reset daftar barang
+  // begitu dipilih ulang lewat `key={lourdesCoa}` di PcItemsEditor -
+  // barang yang sudah ditambah bisa jadi tidak relevan lagi dengan COA
+  // baru, jadi dianggap sebagai pengajuan baru daripada disinkron manual.
+  const [lourdesCoa, setLourdesCoa] = useState<"GMI" | "GIS" | null>(null);
   const totalAmount = items.reduce((sum, it) => sum + it.subtotal, 0);
+
+  // Terapkan Template Pengajuan (?template=<id>, lihat
+  // PettyCashPengajuanTemplateClient.tsx) - `coa` tiap item template
+  // SENGAJA diabaikan di sini, diresolusi ulang ke currentLockedCoa di
+  // bawah pas dioper sebagai initialItems ke PcItemsEditor (lihat komentar
+  // di type/index.ts: COA tidak boleh dibekukan dari saat template dibuat).
+  const [templateItems, setTemplateItems] = useState<PettyCashPengajuanItem[]>(
+    [],
+  );
+  const [templateLoading, setTemplateLoading] = useState(!!templateId);
+
+  useEffect(() => {
+    if (!templateId) return;
+    setTemplateLoading(true);
+    fetchPengajuanTemplateById(Number(templateId))
+      .then((tpl) => {
+        setTemplateItems(tpl.items || []);
+        toast.success(
+          `Template "${tpl.nama_template}" diterapkan - ${
+            tpl.items?.length ?? 0
+          } barang dimuat.`,
+        );
+      })
+      .catch((error: any) => {
+        toast.error("Gagal memuat template", { description: error.message });
+      })
+      .finally(() => setTemplateLoading(false));
+  }, [templateId]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -149,6 +222,18 @@ export default function InputPengajuanClient() {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
 
   const handleSubmit = async () => {
+    // Dicek ulang pakai jam lokal SAAT INI (bukan minDate yang bisa sedikit
+    // basi kalau interval-nya belum tick) - jaga-jaga native date picker-nya
+    // dilewati (browser lama/aneh) atau tab dibiarkan terbuka lewat tengah
+    // malam lokal persis saat submit.
+    if (neededDate < getLocalDateString()) {
+      return toast.error(
+        "Tanggal Dibutuhkan tidak boleh tanggal yang sudah lewat.",
+      );
+    }
+    if (isLourdes && !lourdesCoa) {
+      return toast.error("Pilih COA (GMI/GIS) untuk pengajuan ini dulu.");
+    }
     if (items.length === 0) {
       return toast.error("Tambahkan minimal 1 barang.");
     }
@@ -230,6 +315,7 @@ export default function InputPengajuanClient() {
                   <Input
                     type="date"
                     value={neededDate}
+                    min={minDate}
                     onChange={(e) => setNeededDate(e.target.value)}
                   />
                 </div>
@@ -288,16 +374,67 @@ export default function InputPengajuanClient() {
                 Cari dari katalog Barang Petty Cash, atau tambah barang manual
                 kalau belum ada di katalog.
                 {isLourdes &&
-                  " Barang yang berlaku utk GMI & GIS sekaligus wajib dipilih salah satu COA-nya per baris."}
+                  " Pilih dulu COA (GMI/GIS) untuk pengajuan ini - katalog barang yang muncul ikut COA yang dipilih."}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
-              <PcItemsEditor
-                onChange={setItems}
-                coaMode={isLourdes ? "choose" : "locked"}
-                lockedCoa={isLourdes ? null : (profile?.company as "GMI" | "GIS" | undefined) ?? null}
-                coaSearchFilter={isLourdes ? null : (profile?.company as "GMI" | "GIS" | undefined) ?? null}
-              />
+              {isLourdes && (
+                <div className="space-y-2 max-w-[220px]">
+                  <Label>
+                    COA Pengajuan <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={lourdesCoa ?? ""}
+                    onValueChange={(val) =>
+                      setLourdesCoa(val as "GMI" | "GIS")
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih GMI/GIS" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GMI">GMI</SelectItem>
+                      <SelectItem value="GIS">GIS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {templateLoading ? (
+                <p className="text-sm text-muted-foreground italic flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Memuat
+                  template...
+                </p>
+              ) : isLourdes && !lourdesCoa ? (
+                <p className="text-sm text-muted-foreground italic">
+                  Pilih COA di atas dulu sebelum menambahkan barang.
+                </p>
+              ) : (
+                <PcItemsEditor
+                  key={`${isLourdes ? lourdesCoa : "fixed"}-${templateId ?? "blank"}`}
+                  initialItems={templateItems.map((it) => ({
+                    ...it,
+                    coa: isLourdes
+                      ? lourdesCoa
+                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
+                        null),
+                    subtotal: it.qty * it.unit_price,
+                  }))}
+                  onChange={setItems}
+                  coaMode="locked"
+                  lockedCoa={
+                    isLourdes
+                      ? lourdesCoa
+                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
+                        null)
+                  }
+                  coaSearchFilter={
+                    isLourdes
+                      ? lourdesCoa
+                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
+                        null)
+                  }
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -425,6 +562,21 @@ export default function InputPengajuanClient() {
               <div>
                 <p className="text-muted-foreground text-xs mb-1">Site</p>
                 <p className="font-semibold">{profile?.lokasi || "-"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Budget</p>
+                {resolvedBudget ? (
+                  <p className="font-semibold">
+                    {resolvedBudget.name}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (Sisa {formatCurrency(resolvedBudget.current_budget)})
+                    </span>
+                  </p>
+                ) : (
+                  <p className="font-semibold text-muted-foreground">
+                    Belum ada budget aktif utk departemen ini
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -284,12 +284,14 @@ export default function ApprovalPengajuanClient() {
                 docLabel="Pengajuan"
                 kode={selected.kode_pengajuan}
                 companyCode={selected.company_code}
+                showBudget
                 editInitial={{
                   needed_date: selected.needed_date,
                   week_of_month: selected.week_of_month,
                   notes: selected.notes,
                   items: selected.items,
                   attachments: selected.attachments,
+                  budget_id: selected.budget_id,
                 }}
                 processing={processing}
                 onApprove={handleApprove}

@@ -1,14 +1,14 @@
 // src/services/pettyCashDeklarasiService.ts
 //
 // "Deklarasi" Petty Cash - tabel `petty_cash_deklarasi`, tahap SETELAH
-// sebuah Voucher (petty_cash_voucher, pettyCashVoucherService.ts) diajukan
-// klaim pencairannya ("Permintaan Klaim", lihat submitVoucherClaim). Di sini
-// requester melaporkan pemakaian RIIL dana yang sudah dicairkan - item
-// disalin dari Voucher asalnya tapi qty/unit_price/note per baris BOLEH
-// disesuaikan ke pemakaian riil (beda dari createVoucherFromPengajuan yang
-// snapshot apa adanya) - satu Voucher cuma boleh dipakai untuk SATU
-// Deklarasi (unique voucher_id di DB, lihat
-// supabase/petty-cash-deklarasi-setup.sql).
+// sebuah Sub-Voucher (petty_cash_sub_voucher, tarikan dana parsial - lihat
+// services/pettyCashSubVoucherService.ts) ditarik. Di sini requester
+// melaporkan pemakaian RIIL dana yang sudah dicairkan lewat tarikan itu -
+// item disalin dari Voucher asalnya tapi qty/unit_price/note per baris
+// BOLEH disesuaikan ke pemakaian riil (beda dari createVoucherFromPengajuan
+// yang snapshot apa adanya) - satu Sub-Voucher cuma boleh dipakai untuk SATU
+// Deklarasi (unique sub_voucher_id di DB, lihat
+// supabase/petty-cash-deklarasi-sub-voucher-setup.sql).
 //
 // Jalur approval Deklarasi TERPISAH dari jalur approval Voucher-nya -
 // diambil dari Template Approval ber-approval_type "Approval Deklarasi"
@@ -23,7 +23,6 @@ import {
   PettyCashDeklarasi,
   PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
-  PettyCashVoucher,
 } from "@/type";
 import { PC_APPROVAL_TYPE_DEKLARASI } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
@@ -33,6 +32,7 @@ import {
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
+import { generateRandomId } from "@/lib/utils";
 
 const supabase = createClient();
 
@@ -76,7 +76,8 @@ const deptAbbreviations: { [key: string]: string } = {
   "Boards of Director": "BOD",
 };
 
-const VOUCHER_WITH_PENGAJUAN = "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan))";
+const VOUCHER_WITH_PENGAJUAN =
+  "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan)), petty_cash_sub_voucher(kode_sub_voucher, amount)";
 
 /**
  * Generate Kode Deklarasi Petty Cash yang unik per company.
@@ -103,7 +104,9 @@ export const generateDeklarasiCode = async (
     .eq("company_code", prefix)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
     .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
-    .order("id", { ascending: false })
+    // created_at, BUKAN id - id sekarang random (lihat generateRandomId,
+    // lib/utils.ts), jadi tidak lagi berurutan sesuai waktu dibuat.
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -124,29 +127,6 @@ export const generateDeklarasiCode = async (
   }
 
   return `${prefix}/PC-DKL/${currentMonthRoman}/${currentYearYY}/${deptIdentifier}/${nextNumber}`;
-};
-
-/**
- * Voucher milik `userId` yang sudah "Permintaan Klaim" dan BELUM punya
- * Deklarasi - inilah daftar yang boleh dipilih requester di halaman
- * Deklarasi. `petty_cash_deklarasi(id)` di-embed lewat FK voucher_id supaya
- * bisa difilter "belum dideklarasikan"-nya tanpa query terpisah.
- */
-export const fetchClaimedVouchersForDeklarasi = async (
-  userId: string,
-): Promise<PettyCashVoucher[]> => {
-  const { data, error } = await supabase
-    .from("petty_cash_voucher")
-    .select("*, petty_cash_pengajuan(kode_pengajuan), petty_cash_deklarasi(id)")
-    .eq("user_id", userId)
-    .eq("status", "Permintaan Klaim")
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  const rows = (data ?? []) as unknown as PettyCashVoucher[];
-  return rows.filter(
-    (row) => !row.petty_cash_deklarasi || row.petty_cash_deklarasi.length === 0,
-  );
 };
 
 export const fetchMyDeklarasi = async (
@@ -220,6 +200,7 @@ export const adminUpdateDeklarasi = async (
 };
 
 export interface CreateDeklarasiPayload {
+  sub_voucher_id: number;
   voucher_id: number;
   company_code: string;
   department: string;
@@ -235,13 +216,16 @@ export interface CreateDeklarasiPayload {
 }
 
 /**
- * Buat Deklarasi baru dari sebuah Voucher yang sudah "Permintaan Klaim" -
- * item disalin dari Voucher asalnya, tapi qty/unit_price/note per baris
- * boleh sudah disesuaikan requester ke pemakaian riil (lihat komentar di
- * atas file ini). Jalur approval-nya diambil dari Template Approval
- * ber-approval_type "Approval Deklarasi" untuk departemen yang sama.
+ * Buat Deklarasi baru dari sebuah Sub-Voucher (tarikan dana parsial) - item
+ * disalin dari Voucher asalnya, tapi qty/unit_price/note per baris boleh
+ * sudah disesuaikan requester ke pemakaian riil (lihat komentar di atas
+ * file ini). Jalur approval-nya diambil dari Template Approval
+ * ber-approval_type "Approval Deklarasi" untuk departemen yang sama. Begitu
+ * Deklarasi ini disetujui, trigger DB
+ * (petty-cash-voucher-deklarasi-complete-setup.sql) yang cek apakah SEMUA
+ * sub-voucher Voucher induknya sudah tuntas dideklarasikan.
  */
-export const createDeklarasiFromVoucher = async (
+export const createDeklarasiFromSubVoucher = async (
   payload: CreateDeklarasiPayload,
   userId: string,
 ): Promise<PettyCashDeklarasi> => {
@@ -265,10 +249,13 @@ export const createDeklarasiFromVoucher = async (
     payload.company_code,
     payload.department,
   );
+  let currentId = generateRandomId();
 
   while (attempts < maxAttempts) {
     const dbPayload = {
+      id: currentId,
       kode_deklarasi: currentCode,
+      sub_voucher_id: payload.sub_voucher_id,
       voucher_id: payload.voucher_id,
       user_id: userId,
       company_code: payload.company_code,
@@ -293,26 +280,35 @@ export const createDeklarasiFromVoucher = async (
       .single();
 
     if (error) {
-      if (error.code === "23505" && error.message.includes("kode_deklarasi")) {
+      if (
+        error.code === "23505" &&
+        error.message.includes("petty_cash_deklarasi_sub_voucher_id_key")
+      ) {
+        throw new Error(
+          "Sub-Voucher ini sudah pernah dibuatkan Deklarasi sebelumnya.",
+        );
+      }
+      if (
+        error.code === "23505" &&
+        (error.message.includes("kode_deklarasi") ||
+          error.message.includes("petty_cash_deklarasi_pkey"))
+      ) {
         attempts++;
         if (attempts >= maxAttempts) {
           throw new Error(
             "Sistem sedang sibuk dan terjadi bentrok nomor deklarasi. Silakan coba submit ulang.",
           );
         }
-        currentCode = await generateDeklarasiCode(
-          payload.company_code,
-          payload.department,
-        );
+        if (error.message.includes("kode_deklarasi")) {
+          currentCode = await generateDeklarasiCode(
+            payload.company_code,
+            payload.department,
+          );
+        }
+        if (error.message.includes("petty_cash_deklarasi_pkey")) {
+          currentId = generateRandomId();
+        }
         continue;
-      }
-      if (
-        error.code === "23505" &&
-        error.message.includes("petty_cash_deklarasi_voucher_id_key")
-      ) {
-        throw new Error(
-          "Voucher ini sudah pernah dibuatkan Deklarasi sebelumnya.",
-        );
       }
       throw error;
     }

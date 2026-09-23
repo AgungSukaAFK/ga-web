@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +40,9 @@ import {
   getAttachmentSizeError,
   getUploadErrorMessage,
 } from "@/lib/attachments";
-import { Attachment, PettyCashPengajuanItem } from "@/type";
+import { Attachment, PettyCashBudget, PettyCashPengajuanItem } from "@/type";
+import { getLocalDateString } from "@/lib/utils";
+import { fetchActiveBudgets } from "@/services/pettyCashBudgetService";
 import { Loader2, UploadCloud, X, PencilLine } from "lucide-react";
 
 const WEEK_OPTIONS = [1, 2, 3, 4, 5];
@@ -51,6 +53,9 @@ export interface PcEditAndApproveEdits {
   notes: string | null;
   items: PettyCashPengajuanItem[];
   attachments: Attachment[];
+  // Cuma terisi kalau showBudget=true (docLabel "Pengajuan") - lihat
+  // komentar budget_id di EditPengajuanEdits, services/pettyCashPengajuanService.ts.
+  budget_id?: number | null;
 }
 
 interface PcEditAndApproveDialogProps {
@@ -60,12 +65,18 @@ interface PcEditAndApproveDialogProps {
   kode: string;
   companyCode: string; // dipakai nentuin coaMode/lockedCoa sama seperti saat dokumen dibuat
   showNeededDate?: boolean; // false utk Deklarasi (tidak punya needed_date)
+  // true HANYA utk docLabel "Pengajuan" - approver Pengajuan boleh ganti
+  // Budget yang auto-terisi (lihat komentar budget_id, PettyCashPengajuan,
+  // type/index.ts). Voucher/Deklarasi tidak punya kontrol ini (budget_id
+  // Voucher cuma disalin dari Pengajuan asalnya, tidak diedit lagi di sini).
+  showBudget?: boolean;
   initial: {
     needed_date?: string | Date;
     week_of_month?: number | null;
     notes: string | null;
     items: PettyCashPengajuanItem[];
     attachments: Attachment[];
+    budget_id?: number | null;
   };
   onSubmit: (edits: PcEditAndApproveEdits) => Promise<void> | void;
 }
@@ -77,6 +88,7 @@ export function PcEditAndApproveDialog({
   kode,
   companyCode,
   showNeededDate = true,
+  showBudget = false,
   initial,
   onSubmit,
 }: PcEditAndApproveDialogProps) {
@@ -84,7 +96,7 @@ export function PcEditAndApproveDialog({
   const [neededDate, setNeededDate] = useState(
     initial.needed_date
       ? new Date(initial.needed_date).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0],
+      : getLocalDateString(),
   );
   const [weekOfMonth, setWeekOfMonth] = useState<number | null>(
     initial.week_of_month ?? null,
@@ -96,6 +108,21 @@ export function PcEditAndApproveDialog({
   );
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [budgetId, setBudgetId] = useState<number | null>(
+    initial.budget_id ?? null,
+  );
+  const [budgetOptions, setBudgetOptions] = useState<PettyCashBudget[]>([]);
+
+  useEffect(() => {
+    if (!showBudget || !open) return;
+    fetchActiveBudgets()
+      .then(setBudgetOptions)
+      .catch((error: any) =>
+        toast.error("Gagal memuat daftar budget", {
+          description: error.message,
+        }),
+      );
+  }, [showBudget, open]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -141,6 +168,7 @@ export function PcEditAndApproveDialog({
         notes: notes.trim() || null,
         items,
         attachments,
+        budget_id: showBudget ? budgetId : undefined,
       });
       onOpenChange(false);
     } catch (error: any) {
@@ -207,6 +235,32 @@ export function PcEditAndApproveDialog({
               className="resize-none"
             />
           </div>
+
+          {showBudget && (
+            <div className="space-y-2">
+              <Label>Budget</Label>
+              <Select
+                value={budgetId ? String(budgetId) : ""}
+                onValueChange={(val) => setBudgetId(Number(val))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih budget..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {budgetOptions.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name} ({b.department}) - Sisa{" "}
+                      {b.current_budget.toLocaleString("id-ID")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Budget yang menanggung Pengajuan ini - auto-terisi sesuai
+                departemen requester, boleh diganti di sini kalau perlu.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Daftar Barang</Label>

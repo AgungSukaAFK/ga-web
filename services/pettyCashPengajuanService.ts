@@ -14,12 +14,14 @@ import {
   PettyCashPengajuanItem,
 } from "@/type";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
+import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
 import {
   advanceApproval,
   buildEditAndApproveUpdate,
   isMyApprovalTurn,
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
+import { generateRandomId } from "@/lib/utils";
 
 const supabase = createClient();
 
@@ -88,7 +90,9 @@ export const generatePengajuanCode = async (
     .eq("company_code", prefix)
     .gte("created_at", `${currentYear}-01-01T00:00:00Z`)
     .lt("created_at", `${currentYear + 1}-01-01T00:00:00Z`)
-    .order("id", { ascending: false })
+    // created_at, BUKAN id - id sekarang random (lihat generateRandomId,
+    // lib/utils.ts), jadi tidak lagi berurutan sesuai waktu dibuat.
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -150,6 +154,13 @@ export const createPettyCashPengajuan = async (
     );
   }
 
+  // Auto-isi Budget sesuai departemen (mirip resolvePcAutoTemplate di atas)
+  // - null kalau belum ada budget aktif utk departemen ini, SENGAJA TIDAK
+  // memblokir submit (beda dari Template Approval yang wajib ada) - baru
+  // memblokir nanti pas pembuatan sub-voucher (lihat komentar
+  // PettyCashSubVoucher, type/index.ts).
+  const budget = await resolveAutoBudget(payload.department);
+
   const totalAmount = payload.items.reduce((sum, i) => sum + i.subtotal, 0);
 
   let attempts = 0;
@@ -158,14 +169,17 @@ export const createPettyCashPengajuan = async (
     payload.company_code,
     payload.department,
   );
+  let currentId = generateRandomId();
 
   while (attempts < maxAttempts) {
     const dbPayload = {
+      id: currentId,
       kode_pengajuan: currentCode,
       user_id: userId,
       company_code: payload.company_code,
       department: payload.department,
       cost_center_id: null,
+      budget_id: budget?.id ?? null,
       needed_date: payload.needed_date,
       week_of_month: payload.week_of_month,
       site: payload.site,
@@ -186,17 +200,26 @@ export const createPettyCashPengajuan = async (
       .single();
 
     if (error) {
-      if (error.code === "23505" && error.message.includes("kode_pengajuan")) {
+      if (
+        error.code === "23505" &&
+        (error.message.includes("kode_pengajuan") ||
+          error.message.includes("petty_cash_pengajuan_pkey"))
+      ) {
         attempts++;
         if (attempts >= maxAttempts) {
           throw new Error(
             "Sistem sedang sibuk dan terjadi bentrok nomor pengajuan. Silakan coba submit ulang.",
           );
         }
-        currentCode = await generatePengajuanCode(
-          payload.company_code,
-          payload.department,
-        );
+        if (error.message.includes("kode_pengajuan")) {
+          currentCode = await generatePengajuanCode(
+            payload.company_code,
+            payload.department,
+          );
+        }
+        if (error.message.includes("petty_cash_pengajuan_pkey")) {
+          currentId = generateRandomId();
+        }
         continue;
       }
       throw error;
@@ -230,7 +253,9 @@ export const fetchMyPengajuan = async (
 export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, users_with_profiles:profiles!user_id(nama, email)")
+    .select(
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget)",
+    )
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -264,7 +289,9 @@ export const fetchPengajuanById = async (
 ): Promise<PettyCashPengajuan> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, users_with_profiles:profiles!user_id(nama, email)")
+    .select(
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget)",
+    )
     .eq("id", id)
     .single();
 
@@ -284,7 +311,9 @@ export const fetchPengajuanApprovalQueue = async (
 ): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, users_with_profiles:profiles!user_id(nama, email)")
+    .select(
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget)",
+    )
     .eq("status", "In Approval")
     .contains(
       "approvals",
@@ -364,6 +393,11 @@ export interface EditPengajuanEdits {
   notes: string | null;
   items: PettyCashPengajuanItem[];
   attachments: Attachment[];
+  // Budget yang menanggung Pengajuan ini - approver boleh ganti dari yang
+  // auto-terisi (lihat komentar budget_id, PettyCashPengajuan di
+  // type/index.ts). undefined = tidak diubah (dipertahankan whatever yang
+  // sudah ada), beda dari null yang secara eksplisit melepas budget.
+  budget_id?: number | null;
 }
 
 /**
@@ -406,6 +440,7 @@ export const editAndApprovePengajuanStep = async (
       items: edits.items,
       attachments: edits.attachments,
       total_amount: totalAmount,
+      budget_id: edits.budget_id,
       updated_at: new Date().toISOString(),
     })
     .eq("id", pengajuan.id);

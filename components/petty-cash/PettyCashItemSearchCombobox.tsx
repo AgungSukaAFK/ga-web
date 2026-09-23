@@ -90,8 +90,15 @@ export function PettyCashItemSearchCombobox({
                 >
                   <div className="flex flex-col w-full">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold truncate">
-                        {barang.part_name}
+                      <span className="truncate">
+                        {barang.part_number && (
+                          <span className="font-mono text-muted-foreground mr-1.5">
+                            {barang.part_number}
+                          </span>
+                        )}
+                        <span className="font-semibold">
+                          {barang.part_name}
+                        </span>
                       </span>
                       {barang.last_purchase_price ? (
                         <span className="text-xs text-muted-foreground shrink-0">

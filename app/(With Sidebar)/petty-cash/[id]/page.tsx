@@ -481,7 +481,7 @@ export default function PettyCashDetailPage() {
           <ArrowLeft className="h-4 w-4 mr-2" /> Kembali
         </Button>
         {pc.status !== "Pending Validation" && (
-          <Button variant="secondary" size="sm" onClick={() => window.print()}>
+          <Button size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" /> Cetak Dokumen
           </Button>
         )}
