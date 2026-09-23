@@ -349,18 +349,7 @@ export default function PettyCashManagementClient({
       >
         <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <span>{selected && getKode(stage, selected)}</span>
-              {selected && (
-                <Link
-                  href={`/petty-cash/${stage}/${selected.id}`}
-                  target="_blank"
-                  className="text-xs font-normal text-primary hover:underline"
-                >
-                  Detail Lengkap / Cetak
-                </Link>
-              )}
-            </DialogTitle>
+            <DialogTitle>{selected && getKode(stage, selected)}</DialogTitle>
             <DialogDescription>
               Diajukan oleh {selected?.users_with_profiles?.nama || "-"} (
               {selected?.department})
@@ -395,9 +384,10 @@ export default function PettyCashManagementClient({
                 revisions={(selected as any).revisions}
               />
               <p className="text-xs text-muted-foreground text-center">
-                Ini preview ringkas & read-only - untuk override status/jalur
-                approval paksa, buka &quot;Detail Lengkap / Cetak&quot; di
-                atas.
+                Ini preview ringkas & read-only - untuk approve/reject/edit
+                dokumen atau override status/jalur approval paksa, buka
+                &quot;Lihat Detail Lengkap&quot; di bawah (akses aksi tetap
+                mengikuti role Anda - approver giliran berjalan atau admin).
               </p>
             </div>
           )}
@@ -406,6 +396,13 @@ export default function PettyCashManagementClient({
             <Button variant="outline" onClick={() => setSelected(null)}>
               Tutup
             </Button>
+            {selected && (
+              <Button asChild>
+                <Link href={`/petty-cash/${stage}/${selected.id}`}>
+                  <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
+                </Link>
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

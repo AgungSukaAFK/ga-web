@@ -1,11 +1,12 @@
 // src/app/(With Sidebar)/petty-cash/budgeting/PettyCashBudgetingClient.tsx
 //
 // "Budgeting" Petty Cash (GA/Admin only) - kelola pool budget PER
-// DEPARTEMEN yang AUTO-terisi ke Input Pengajuan baru (lihat komentar
-// PettyCashBudget di type/index.ts). Add/Edit-Top-up/Riwayat/Aktifkan-
-// Nonaktifkan - pola & tampilannya SENGAJA dibuat identik dengan
-// app/(With Sidebar)/cost-center-management/CostCenterClient.tsx (cost
-// center milik MR/PO) supaya konsisten, meski datanya terpisah.
+// DEPARTEMEN + SITE yang AUTO-terisi ke Input Pengajuan baru (lihat
+// komentar PettyCashBudget di type/index.ts - resolveAutoBudget cocokkan
+// department & site SEKALIGUS, bukan departemen saja). Add/Edit-Top-up/
+// Riwayat/Aktifkan-Nonaktifkan - pola & tampilannya SENGAJA dibuat identik
+// dengan app/(With Sidebar)/cost-center-management/CostCenterClient.tsx
+// (cost center milik MR/PO) supaya konsisten, meski datanya terpisah.
 
 "use client";
 
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
-import { dataDepartment } from "@/type/comboboxData";
+import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { toast } from "sonner";
 import { PettyCashBudget, PettyCashBudgetHistory } from "@/type";
 import {
@@ -72,6 +73,7 @@ function BudgetDialog({
   const isCreateMode = !budget;
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
+  const [site, setSite] = useState("");
   const [initialBudget, setInitialBudget] = useState(0);
   const [newBudget, setNewBudget] = useState(0);
   const [reason, setReason] = useState("");
@@ -81,11 +83,13 @@ function BudgetDialog({
     if (budget) {
       setName(budget.name);
       setDepartment(budget.department);
+      setSite(budget.site || "");
       setInitialBudget(budget.initial_budget);
       setNewBudget(budget.current_budget);
     } else {
       setName("");
       setDepartment("");
+      setSite("");
       setInitialBudget(0);
       setNewBudget(0);
     }
@@ -114,13 +118,13 @@ function BudgetDialog({
         );
         toast.success(`Budget "${budget.name}" berhasil diperbarui.`);
       } else {
-        if (!name.trim() || !department) {
-          toast.error("Nama dan Departemen wajib diisi.");
+        if (!name.trim() || !department || !site) {
+          toast.error("Nama, Departemen, dan Site/Lokasi wajib diisi.");
           setLoading(false);
           return;
         }
         await createBudget(
-          { name: name.trim(), department, initial_budget: initialBudget },
+          { name: name.trim(), department, site, initial_budget: initialBudget },
           adminUser.id,
         );
         toast.success(`Budget "${name}" berhasil dibuat.`);
@@ -168,6 +172,24 @@ function BudgetDialog({
               />
             </div>
           </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label className="text-right">Site/Lokasi</Label>
+            <div className="col-span-3">
+              <Combobox
+                data={dataLokasi}
+                onChange={setSite}
+                defaultValue={site}
+                placeholder="Pilih site/lokasi..."
+                disabled={!isCreateMode}
+              />
+            </div>
+          </div>
+          {isCreateMode && (
+            <p className="text-xs text-muted-foreground -mt-2 col-span-4 text-right">
+              Kombinasi Departemen + Site ini akan otomatis dipasangkan ke
+              Pengajuan dari requester yang sama.
+            </p>
+          )}
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="budget" className="text-right">
               {isCreateMode ? "Initial Budget" : "Current Budget"}
@@ -412,6 +434,7 @@ export default function PettyCashBudgetingClient({
               <TableRow>
                 <TableHead>Nama</TableHead>
                 <TableHead>Departemen</TableHead>
+                <TableHead>Site/Lokasi</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Initial Budget</TableHead>
                 <TableHead className="text-right">Sisa Budget</TableHead>
@@ -421,7 +444,7 @@ export default function PettyCashBudgetingClient({
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
@@ -436,6 +459,9 @@ export default function PettyCashBudgetingClient({
                       </TableCell>
                       <TableCell className={dimClass}>
                         <Badge variant="outline">{item.department}</Badge>
+                      </TableCell>
+                      <TableCell className={cn("text-sm", dimClass)}>
+                        {item.site || "-"}
                       </TableCell>
                       <TableCell>
                         {isInactive ? (
@@ -493,7 +519,7 @@ export default function PettyCashBudgetingClient({
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     Belum ada budget - tambah budget pertama utk sebuah
                     departemen.
                   </TableCell>

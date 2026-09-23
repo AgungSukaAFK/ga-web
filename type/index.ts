@@ -1000,11 +1000,13 @@ export interface PettyCashSubVoucher {
 }
 
 // ==========================================
-// BUDGET PETTY CASH - tabel `petty_cash_budget`, per DEPARTEMEN (bukan per
-// company/COA) - satu departemen maksimal satu budget AKTIF sekaligus
-// (partial unique index, mirip aturan "satu departemen satu template auto"
-// di pc_approval_template_auto_rules). Auto-terisi ke Pengajuan baru sesuai
-// departemen requester (resolveAutoBudget), approver Pengajuan boleh ganti.
+// BUDGET PETTY CASH - tabel `petty_cash_budget`, per DEPARTEMEN + SITE
+// (bukan per company/COA) - satu kombinasi departemen+site maksimal satu
+// budget AKTIF sekaligus (partial unique index, mirip aturan "satu
+// departemen satu template auto" di pc_approval_template_auto_rules, cuma
+// kuncinya dua kolom di sini). Auto-terisi ke Pengajuan baru sesuai
+// departemen & site requester (resolveAutoBudget), approver Pengajuan boleh
+// ganti.
 // Dikelola GA/Admin di halaman /petty-cash/budgeting - pola CRUD & riwayat
 // top-up-nya SENGAJA dibuat identik dengan CostCenter/CostCenterHistory
 // (services/costCenterService.ts) supaya konsisten, meski tabelnya
@@ -1016,6 +1018,10 @@ export interface PettyCashBudget {
   id: number;
   name: string;
   department: string;
+  // Sama makna dengan `site` di PettyCashPengajuan dkk. (snapshot
+  // profiles.lokasi) - auto-resolve (resolveAutoBudget) mencocokkan
+  // department & site SEKALIGUS, bukan departemen saja.
+  site: string | null;
   initial_budget: number;
   current_budget: number;
   is_active: boolean;

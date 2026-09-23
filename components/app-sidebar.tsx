@@ -34,7 +34,6 @@ import {
   PackagePlus,
   ArchiveRestore,
   Bell,
-  Wallet,
   PlusCircle,
   FileSignature,
   Users,
@@ -351,12 +350,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         url: "/petty-cash/approval-voucher",
         icon: BadgeCheck,
         visible: canApprovePc,
-      },
-      {
-        title: "Sub-Voucher",
-        url: "/petty-cash/sub-voucher",
-        icon: Wallet,
-        visible: true,
       },
       {
         title: "Deklarasi",

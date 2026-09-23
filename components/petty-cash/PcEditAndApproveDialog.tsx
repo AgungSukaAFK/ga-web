@@ -249,7 +249,8 @@ export function PcEditAndApproveDialog({
                 <SelectContent>
                   {budgetOptions.map((b) => (
                     <SelectItem key={b.id} value={String(b.id)}>
-                      {b.name} ({b.department}) - Sisa{" "}
+                      {b.name} ({b.department}
+                      {b.site ? ` - ${b.site}` : ""}) - Sisa{" "}
                       {b.current_budget.toLocaleString("id-ID")}
                     </SelectItem>
                   ))}
