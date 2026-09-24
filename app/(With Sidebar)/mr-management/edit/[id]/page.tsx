@@ -2,7 +2,7 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { removeAttachmentVps } from "@/services/storageService";
@@ -96,6 +96,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -172,6 +178,7 @@ const InfoItem = ({
 );
 
 function AdminEditMRPageContent({ params }: { params: { id: string } }) {
+  const remarksEditorRef = useRef<RichMentionEditorHandle>(null);
   const mrId = parseInt(params.id);
   const router = useRouter();
 
@@ -1252,17 +1259,34 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 <div className="md:col-span-2 space-y-1">
                   <Label htmlFor="remarks">Remarks</Label>
                   {isEditing ? (
-                    <Textarea
-                      id="remarks"
-                      name="remarks"
-                      value={mr.remarks || ""}
-                      onChange={handleInputChange}
-                      rows={3}
+                    <RichMentionEditor
+                      ref={remarksEditorRef}
+                      initialContent={parseRichValue(mr.remarks)}
+                      onChange={() =>
+                        setMr((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                remarks: remarksEditorRef.current?.isEmpty()
+                                  ? ""
+                                  : stringifyRichContent(
+                                      remarksEditorRef.current?.getJSON() ?? {
+                                        type: "doc",
+                                      },
+                                    ),
+                              }
+                            : prev,
+                        )
+                      }
                     />
                   ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] whitespace-pre-wrap">
-                      {mr.remarks || "-"}
-                    </p>
+                    <div className="p-2 border rounded-md bg-muted/50 min-h-[36px]">
+                      {mr.remarks ? (
+                        <RichContentView content={parseRichValue(mr.remarks)} />
+                      ) : (
+                        "-"
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

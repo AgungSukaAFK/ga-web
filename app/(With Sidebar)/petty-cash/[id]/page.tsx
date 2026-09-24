@@ -37,6 +37,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue } from "@/lib/rich-content";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
@@ -596,7 +598,7 @@ export default function PettyCashDetailPage() {
                   <span className="text-muted-foreground text-xs font-medium block mb-1">
                     Tujuan Penggunaan
                   </span>
-                  <p className="text-sm whitespace-pre-wrap">{pc.purpose}</p>
+                  <RichContentView content={parseRichValue(pc.purpose)} />
                 </div>
                 {pc.type === "Reimbursement" && pc.bank_name && (
                   <>

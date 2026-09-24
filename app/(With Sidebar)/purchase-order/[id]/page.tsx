@@ -103,6 +103,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue, extractPlainText } from "@/lib/rich-content";
 import { FollowupApprovalButton } from "@/components/followup-approval-button";
 import {
   Dialog,
@@ -2078,7 +2080,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   <InfoItem
                     icon={Info}
                     label="Catatan PO"
-                    value={po.notes || "N/A"}
+                    value={
+                      po.notes ? (
+                        <RichContentView content={parseRichValue(po.notes)} />
+                      ) : (
+                        "N/A"
+                      )
+                    }
                     isBlock
                   />
                 </div>
@@ -2468,7 +2476,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <InfoItem
                       icon={Info}
                       label="Remarks MR"
-                      value={po.material_requests.remarks}
+                      value={
+                        po.material_requests.remarks ? (
+                          <RichContentView
+                            content={parseRichValue(po.material_requests.remarks)}
+                          />
+                        ) : (
+                          "N/A"
+                        )
+                      }
                       isBlock
                     />
                   </div>
@@ -3965,7 +3981,7 @@ const PrintablePO = ({
             Catatan / Notes:
           </h4>
           <p className="text-xs italic text-gray-600 whitespace-pre-wrap leading-relaxed pt-1">
-            {po.notes || "Tidak ada catatan khusus."}
+            {extractPlainText(po.notes) || "Tidak ada catatan khusus."}
           </p>
         </div>
         <div className="space-y-1">

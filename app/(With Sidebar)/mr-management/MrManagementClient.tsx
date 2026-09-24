@@ -111,6 +111,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { extractPlainText } from "@/lib/rich-content";
 
 // --- Konstanta Filter ---
 const dataLokasi: ComboboxData = [
@@ -522,7 +523,7 @@ export default function MrManagementClient() {
           "Tanggal Dibuat": formatDateFriendly(mr.created_at ?? undefined),
           "Due Date": formatDateFriendly(mr.due_date ?? undefined),
           "Total Estimasi": Number(mr.cost_estimation),
-          Remarks: mr.remarks,
+          Remarks: extractPlainText(mr.remarks),
         };
 
         const orders = normalizeMrOrders(mr.orders);

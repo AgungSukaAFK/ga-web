@@ -44,6 +44,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
+import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
 import { exportStyledExcel } from "@/lib/excel-export";
@@ -601,7 +602,7 @@ export function MaterialRequestContent({
           "Tanggal Dibuat": formatDateFriendly(mr.created_at ?? undefined),
           "Due Date": formatDateFriendly(mr.due_date ?? undefined),
           "Total Estimasi": Number(mr.cost_estimation) || 0,
-          Remarks: mr.remarks || "-",
+          Remarks: extractPlainText(mr.remarks) || "-",
         };
 
         const orders = normalizeMrOrders(mr.orders);

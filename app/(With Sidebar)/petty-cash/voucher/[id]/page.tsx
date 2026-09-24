@@ -39,7 +39,10 @@ import {
   editAndApproveVoucherStep,
   adminUpdateVoucher,
 } from "@/services/pettyCashVoucherService";
-import { addVoucherDiscussion } from "@/services/pcDiscussionService";
+import {
+  addVoucherDiscussion,
+  PcDiscussionPayload,
+} from "@/services/pcDiscussionService";
 import { PettyCashVoucher } from "@/type";
 import {
   PC_VOUCHER_STATUS_COLORS,
@@ -200,9 +203,9 @@ function VoucherDetailContent({ id }: { id: string }) {
     }
   };
 
-  const handlePostDiscussion = async (message: string) => {
+  const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
-    await addVoucherDiscussion(doc.id, message);
+    await addVoucherDiscussion(doc.id, payload);
     await load();
   };
 

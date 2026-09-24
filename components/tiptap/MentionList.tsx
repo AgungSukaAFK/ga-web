@@ -1,19 +1,20 @@
-import Image from "next/image";
 import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useState,
 } from "react";
+import { MentionListItem } from "@/services/mentionSearchService";
 
-// Definisi tipe method yang bisa dipanggil dari parent (suggestion.ts)
+// Definisi tipe method yang bisa dipanggil dari parent (create-mention-suggestion.tsx)
 export interface MentionListRef {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean;
 }
 
 interface MentionListProps {
-  items: any[];
-  command: (props: any) => void;
+  items: MentionListItem[];
+  command: (item: MentionListItem) => void;
+  emptyLabel: string;
 }
 
 const MentionList = forwardRef<MentionListRef, MentionListProps>(
@@ -23,7 +24,7 @@ const MentionList = forwardRef<MentionListRef, MentionListProps>(
     const selectItem = (index: number) => {
       const item = props.items[index];
       if (item) {
-        props.command({ id: item.id, label: item.name });
+        props.command(item);
       }
     };
 
@@ -55,7 +56,7 @@ const MentionList = forwardRef<MentionListRef, MentionListProps>(
           downHandler();
           return true;
         }
-        if (event.key === "Enter") {
+        if (event.key === "Enter" || event.key === "Tab") {
           enterHandler();
           return true;
         }
@@ -64,38 +65,31 @@ const MentionList = forwardRef<MentionListRef, MentionListProps>(
     }));
 
     return (
-      <div className="bg-popover text-popover-foreground border rounded-md shadow-md overflow-hidden p-1 min-w-[200px] z-50">
+      <div className="bg-popover text-popover-foreground border rounded-md shadow-md overflow-hidden p-1 min-w-[220px] max-h-64 overflow-y-auto z-50">
         {props.items.length ? (
-          props.items.map((item: any, index: number) => (
+          props.items.map((item, index) => (
             <button
-              key={index}
+              key={item.id}
               type="button"
-              className={`w-full text-left px-3 py-2 text-sm rounded-sm flex items-center gap-2 ${
+              onMouseDown={(e) => e.preventDefault()}
+              className={`w-full text-left px-3 py-2 text-sm rounded-sm flex flex-col gap-0.5 ${
                 index === selectedIndex
                   ? "bg-accent text-accent-foreground"
                   : ""
               }`}
               onClick={() => selectItem(index)}
             >
-              <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold border">
-                {item.avatar_url ? (
-                  <Image
-                    src={item.avatar_url}
-                    alt={item.name}
-                    width={24}
-                    height={24}
-                    className="rounded-full object-cover"
-                  />
-                ) : (
-                  item.name.charAt(0).toUpperCase()
-                )}
-              </div>
-              <span>{item.name}</span>
+              <span className="font-medium truncate">{item.label}</span>
+              {item.sublabel && (
+                <span className="text-xs text-muted-foreground truncate">
+                  {item.sublabel}
+                </span>
+              )}
             </button>
           ))
         ) : (
           <div className="px-3 py-2 text-sm text-muted-foreground">
-            User tidak ditemukan
+            {props.emptyLabel}
           </div>
         )}
       </div>
@@ -103,7 +97,6 @@ const MentionList = forwardRef<MentionListRef, MentionListProps>(
   },
 );
 
-// 🔑 WAJIB untuk menghilangkan react/display-name
 MentionList.displayName = "MentionList";
 
 export default MentionList;

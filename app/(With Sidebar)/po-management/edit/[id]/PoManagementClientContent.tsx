@@ -2,12 +2,18 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -261,6 +267,7 @@ export function PoManagementEditClientContent({
   const params = use(paramsPromise);
   const router = useRouter();
   const poId = parseInt(params.id);
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
 
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -842,13 +849,20 @@ export function PoManagementEditClientContent({
                 label="Tujuan Site (MR)"
                 value={poForm.material_requests.tujuan_site || "N/A"}
               />
-              <div className="md:col-span-2">
-                <InfoItem
-                  icon={Info}
-                  label="Remarks MR"
-                  value={poForm.material_requests.remarks}
-                  isBlock
-                />
+              <div className="md:col-span-2 flex flex-col gap-1">
+                <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Remarks MR
+                </dt>
+                <dd className="text-sm font-semibold col-span-2">
+                  {poForm.material_requests.remarks ? (
+                    <RichContentView
+                      content={parseRichValue(poForm.material_requests.remarks)}
+                    />
+                  ) : (
+                    "N/A"
+                  )}
+                </dd>
               </div>
             </div>
           </Content>
@@ -987,13 +1001,26 @@ export function PoManagementEditClientContent({
             <Label className="text-sm font-medium sr-only">
               Catatan Internal
             </Label>
-            <Textarea
-              value={poForm.notes || ""}
-              onChange={(e) =>
-                setPoForm((p) => (p ? { ...p, notes: e.target.value } : null))
-              }
+            <RichMentionEditor
+              ref={notesEditorRef}
+              initialContent={parseRichValue(poForm.notes)}
               placeholder="Masukkan catatan internal..."
-              rows={4}
+              onChange={() =>
+                setPoForm((p) =>
+                  p
+                    ? {
+                        ...p,
+                        notes: notesEditorRef.current?.isEmpty()
+                          ? ""
+                          : stringifyRichContent(
+                              notesEditorRef.current?.getJSON() ?? {
+                                type: "doc",
+                              },
+                            ),
+                      }
+                    : null,
+                )
+              }
             />
           </div>
         </Content>

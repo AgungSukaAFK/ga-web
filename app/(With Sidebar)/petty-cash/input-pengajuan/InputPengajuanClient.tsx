@@ -16,13 +16,18 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { stringifyRichContent } from "@/lib/rich-content";
 import {
   Select,
   SelectContent,
@@ -67,6 +72,7 @@ import {
 } from "lucide-react";
 
 export default function InputPengajuanClient() {
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template");
@@ -353,12 +359,20 @@ export default function InputPengajuanClient() {
                     (Opsional)
                   </span>
                 </Label>
-                <Textarea
+                <RichMentionEditor
+                  ref={notesEditorRef}
                   placeholder="Konteks/keterangan tambahan untuk pengajuan ini..."
-                  rows={3}
-                  className="resize-none"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={() =>
+                    setNotes(
+                      notesEditorRef.current?.isEmpty()
+                        ? ""
+                        : stringifyRichContent(
+                            notesEditorRef.current?.getJSON() ?? {
+                              type: "doc",
+                            },
+                          ),
+                    )
+                  }
                 />
               </div>
             </CardContent>

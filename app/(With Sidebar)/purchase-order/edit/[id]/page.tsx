@@ -2,12 +2,17 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -239,6 +244,7 @@ function VendorSearchCombobox({
 function EditPOPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const poId = parseInt(params.id);
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
 
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1057,13 +1063,26 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             <Label className="text-sm font-medium sr-only">
               Catatan Internal
             </Label>
-            <Textarea
-              value={poForm.notes || ""}
-              onChange={(e) =>
-                setPoForm((p) => (p ? { ...p, notes: e.target.value } : null))
-              }
+            <RichMentionEditor
+              ref={notesEditorRef}
+              initialContent={parseRichValue(poForm.notes)}
               placeholder="Masukkan catatan internal..."
-              rows={4}
+              onChange={() =>
+                setPoForm((p) =>
+                  p
+                    ? {
+                        ...p,
+                        notes: notesEditorRef.current?.isEmpty()
+                          ? ""
+                          : stringifyRichContent(
+                              notesEditorRef.current?.getJSON() ?? {
+                                type: "doc",
+                              },
+                            ),
+                      }
+                    : null,
+                )
+              }
             />
           </div>
         </Content>

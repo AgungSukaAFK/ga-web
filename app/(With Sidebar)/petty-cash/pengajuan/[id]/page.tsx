@@ -32,7 +32,10 @@ import {
   editAndApprovePengajuanStep,
   adminUpdatePengajuan,
 } from "@/services/pettyCashPengajuanService";
-import { addPengajuanDiscussion } from "@/services/pcDiscussionService";
+import {
+  addPengajuanDiscussion,
+  PcDiscussionPayload,
+} from "@/services/pcDiscussionService";
 import { PettyCashPengajuan } from "@/type";
 import {
   PC_PENGAJUAN_STATUS_COLORS,
@@ -193,9 +196,9 @@ function PengajuanDetailContent({ id }: { id: string }) {
     }
   };
 
-  const handlePostDiscussion = async (message: string) => {
+  const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
-    await addPengajuanDiscussion(doc.id, message);
+    await addPengajuanDiscussion(doc.id, payload);
     await load();
   };
 
