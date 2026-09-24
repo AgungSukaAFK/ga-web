@@ -253,7 +253,6 @@ function VoucherDetailContent({ id }: { id: string }) {
             department={doc.department}
             companyCode={doc.company_code}
             site={doc.site}
-            costCenterName={doc.cost_centers?.name}
             budgetName={doc.petty_cash_budget?.name}
             budgetRemaining={doc.petty_cash_budget?.current_budget}
             neededDate={doc.needed_date}

@@ -236,7 +236,7 @@ export const fetchMyPengajuan = async (
 ): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*")
+    .select("*, petty_cash_budget(name, current_budget)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 

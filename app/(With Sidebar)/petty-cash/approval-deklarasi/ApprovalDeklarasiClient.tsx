@@ -269,6 +269,10 @@ export default function ApprovalDeklarasiClient() {
               department={selected.department}
               companyCode={selected.company_code}
               site={selected.site}
+              budgetName={selected.petty_cash_voucher?.petty_cash_budget?.name}
+              budgetRemaining={
+                selected.petty_cash_voucher?.petty_cash_budget?.current_budget
+              }
               weekOfMonth={selected.week_of_month}
               showNeededDate={false}
               notes={selected.notes}

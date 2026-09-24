@@ -1013,12 +1013,13 @@ export default function BuatMRPage() {
 
             <div className="space-y-2">
               <Label>Catatan / Link Ref</Label>
-              <Input
+              <Textarea
                 value={orderItem.note}
                 onChange={(e) =>
                   setOrderItem({ ...orderItem, note: e.target.value })
                 }
                 placeholder="(Opsional)"
+                rows={3}
               />
             </div>
           </div>

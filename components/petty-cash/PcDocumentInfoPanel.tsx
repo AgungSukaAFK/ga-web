@@ -1,11 +1,16 @@
 // src/components/petty-cash/PcDocumentInfoPanel.tsx
 //
 // Panel info LENGKAP sebuah dokumen Petty Cash (Pengajuan/Voucher/Deklarasi)
-// - requester, departemen, company, site, cost center, tanggal/minggu
+// - requester, departemen, company, site, budget, tanggal/minggu
 // dibutuhkan, item + COA, jalur approval, lampiran, diskusi/riwayat
 // penolakan, dan riwayat revisi. Dipakai di dialog detail "Pengajuan Saya",
 // dialog approval (semua tahap), halaman Management, dan halaman detail
 // cetak `[id]` - satu tempat, bukan markup yang di-duplikasi di tiap file.
+//
+// TIDAK ADA field cost center (beda dari Cost Center MR/PO) - Petty Cash
+// punya Budgeting sendiri (petty_cash_budget, lihat komentar
+// PettyCashBudget di type/index.ts), itu yang ditampilkan lewat
+// budgetName/budgetRemaining.
 
 import { Badge } from "@/components/ui/badge";
 import { PcItemsEditor } from "./PcItemsEditor";
@@ -59,7 +64,6 @@ interface PcDocumentInfoPanelProps {
   department: string;
   companyCode: string;
   site?: string | null;
-  costCenterName?: string | null;
   budgetName?: string | null;
   budgetRemaining?: number | null;
   neededDate?: string | Date | null;
@@ -80,7 +84,6 @@ export function PcDocumentInfoPanel({
   department,
   companyCode,
   site,
-  costCenterName,
   budgetName,
   budgetRemaining,
   neededDate,
@@ -111,13 +114,6 @@ export function PcDocumentInfoPanel({
         <InfoField icon={Building2} label="Departemen" value={department} />
         <InfoField icon={Wallet} label="Company" value={companyCode} />
         <InfoField icon={MapPin} label="Site" value={site} />
-        {costCenterName && (
-          <InfoField
-            icon={Wallet}
-            label="Cost Center"
-            value={costCenterName}
-          />
-        )}
         {budgetName && (
           <InfoField
             icon={Wallet}

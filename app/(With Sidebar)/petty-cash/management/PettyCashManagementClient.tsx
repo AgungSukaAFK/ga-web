@@ -98,6 +98,19 @@ const getNeededDate = (stage: StageKey, row: AnyDoc) =>
       ? (row as PettyCashVoucher).needed_date
       : null;
 
+// Budget yang menanggung dokumen ini - Pengajuan/Voucher punya budget_id
+// sendiri (join langsung), Deklarasi tidak (budget-nya ikut Voucher
+// asalnya, nested lewat VOUCHER_WITH_PENGAJUAN di
+// services/pettyCashDeklarasiService.ts - lihat komentar
+// PettyCashSubVoucher, type/index.ts).
+const getBudget = (
+  stage: StageKey,
+  row: AnyDoc,
+): { name: string; current_budget: number } | null | undefined =>
+  stage === "deklarasi"
+    ? (row as PettyCashDeklarasi).petty_cash_voucher?.petty_cash_budget
+    : (row as PettyCashPengajuan | PettyCashVoucher).petty_cash_budget;
+
 // Kode dokumen asal (rantai Pengajuan -> Voucher -> Deklarasi) - dipakai
 // nunjukin konteks di dialog detail, sesuai relasi yang di-join
 // fetchAllVouchers/fetchAllDeklarasi (lihat services/pettyCash*Service.ts).
@@ -367,11 +380,8 @@ export default function PettyCashManagementClient({
                 department={selected.department}
                 companyCode={selected.company_code}
                 site={(selected as any).site}
-                costCenterName={selected.cost_centers?.name}
-                budgetName={(selected as any).petty_cash_budget?.name}
-                budgetRemaining={
-                  (selected as any).petty_cash_budget?.current_budget
-                }
+                budgetName={getBudget(stage, selected)?.name}
+                budgetRemaining={getBudget(stage, selected)?.current_budget}
                 neededDate={getNeededDate(stage, selected)}
                 weekOfMonth={(selected as any).week_of_month}
                 showNeededDate={showsNeededDate(stage)}
