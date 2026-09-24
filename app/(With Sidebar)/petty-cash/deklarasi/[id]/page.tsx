@@ -257,7 +257,10 @@ function DeklarasiDetailContent({ id }: { id: string }) {
             department={doc.department}
             companyCode={doc.company_code}
             site={doc.site}
-            costCenterName={doc.cost_centers?.name}
+            budgetName={doc.petty_cash_voucher?.petty_cash_budget?.name}
+            budgetRemaining={
+              doc.petty_cash_voucher?.petty_cash_budget?.current_budget
+            }
             weekOfMonth={doc.week_of_month}
             showNeededDate={false}
             notes={doc.notes}

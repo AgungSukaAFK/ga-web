@@ -877,7 +877,6 @@ export interface PettyCashPengajuan {
 
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
-  cost_centers?: { name: string; current_budget: number } | null;
   petty_cash_budget?: { name: string; current_budget: number } | null;
   // Voucher yang sudah dibuat dari Pengajuan ini (kalau ada) - dipakai utk
   // filter "belum di-voucher-kan" (lihat fetchApprovedPengajuanForVoucher,
@@ -929,7 +928,6 @@ export interface PettyCashVoucher {
 
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
-  cost_centers?: { name: string; current_budget: number } | null;
   petty_cash_budget?: { name: string; current_budget: number } | null;
   petty_cash_pengajuan?: { kode_pengajuan: string } | null;
   // Sub-voucher (tarikan dana parsial) yang sudah dibuat dari Voucher ini -
@@ -1096,13 +1094,16 @@ export interface PettyCashDeklarasi {
   updated_at: string | Date;
   updated_by: string | null;
 
-  // Field relasi (saat di-join dengan tabel lain)
+  // Field relasi (saat di-join dengan tabel lain) - Budget ikut Voucher
+  // asalnya (nested, lihat VOUCHER_WITH_PENGAJUAN,
+  // services/pettyCashDeklarasiService.ts), GANTI cost center MR/PO yang
+  // dulu di sini (dead field, tidak pernah dipakai di alur baru petty cash).
   users_with_profiles?: { nama: string; email?: string } | null;
-  cost_centers?: { name: string; current_budget: number } | null;
   petty_cash_voucher?: {
     kode_voucher: string;
     total_amount: number;
     petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+    petty_cash_budget?: { name: string; current_budget: number } | null;
   } | null;
   petty_cash_sub_voucher?: { kode_sub_voucher: string; amount: number } | null;
 }

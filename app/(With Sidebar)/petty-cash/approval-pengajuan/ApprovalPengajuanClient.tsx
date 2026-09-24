@@ -266,6 +266,8 @@ export default function ApprovalPengajuanClient() {
               department={selected.department}
               companyCode={selected.company_code}
               site={selected.site}
+              budgetName={selected.petty_cash_budget?.name}
+              budgetRemaining={selected.petty_cash_budget?.current_budget}
               neededDate={selected.needed_date}
               weekOfMonth={selected.week_of_month}
               notes={selected.notes}
