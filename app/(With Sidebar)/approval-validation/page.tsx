@@ -28,6 +28,7 @@ import {
 } from "@/services/approvalService";
 import { MaterialRequest, User as Profile, PurchaseOrder } from "@/type";
 import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { extractPlainText } from "@/lib/rich-content";
 
 // Tipe baru untuk daftar PO yang butuh validasi
 interface ValidationPO {
@@ -336,7 +337,7 @@ function ApprovalValidationContent() {
                       {(mr as any).users_with_profiles?.nama || "N/A"}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
-                      {mr.remarks}
+                      {extractPlainText(mr.remarks)}
                     </TableCell>
                     <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
                     <TableCell className="text-right">

@@ -29,7 +29,10 @@ import {
   editAndApproveDeklarasiStep,
   adminUpdateDeklarasi,
 } from "@/services/pettyCashDeklarasiService";
-import { addDeklarasiDiscussion } from "@/services/pcDiscussionService";
+import {
+  addDeklarasiDiscussion,
+  PcDiscussionPayload,
+} from "@/services/pcDiscussionService";
 import { PettyCashDeklarasi } from "@/type";
 import {
   PC_DEKLARASI_STATUS_COLORS,
@@ -190,9 +193,9 @@ function DeklarasiDetailContent({ id }: { id: string }) {
     }
   };
 
-  const handlePostDiscussion = async (message: string) => {
+  const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
-    await addDeklarasiDiscussion(doc.id, message);
+    await addDeklarasiDiscussion(doc.id, payload);
     await load();
   };
 

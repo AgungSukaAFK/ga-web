@@ -12,12 +12,17 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { stringifyRichContent } from "@/lib/rich-content";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -98,6 +103,7 @@ type DeclareRow = {
 };
 
 export default function DeklarasiClient() {
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const supabase = createClient();
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -536,12 +542,20 @@ export default function DeklarasiClient() {
                     (Opsional)
                   </span>
                 </Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                <RichMentionEditor
+                  ref={notesEditorRef}
                   placeholder="Konteks/keterangan tambahan, misal alasan selisih nominal..."
-                  rows={2}
-                  className="resize-none"
+                  onChange={() =>
+                    setNotes(
+                      notesEditorRef.current?.isEmpty()
+                        ? ""
+                        : stringifyRichContent(
+                            notesEditorRef.current?.getJSON() ?? {
+                              type: "doc",
+                            },
+                          ),
+                    )
+                  }
                 />
               </div>
 

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { removeAttachmentVps } from "@/services/storageService";
@@ -97,6 +97,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -211,6 +217,7 @@ const getPriorityPickerColor = (p: string) => {
 };
 
 function DetailMRPageContent({ params }: { params: { id: string } }) {
+  const remarksEditorRef = useRef<RichMentionEditorHandle>(null);
   const mrId = parseInt(params.id);
   const router = useRouter();
   const supabase = createClient();
@@ -1893,16 +1900,30 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <div className="md:col-span-2 space-y-1">
               <Label>Remarks</Label>
               {isEditing ? (
-                <Textarea
-                  value={mr.remarks}
-                  onChange={(e) => setMr({ ...mr, remarks: e.target.value })}
+                <RichMentionEditor
+                  ref={remarksEditorRef}
+                  initialContent={parseRichValue(mr.remarks)}
                   disabled={actionLoading}
-                  rows={3}
-                  className="bg-background resize-none"
+                  onChange={() =>
+                    setMr({
+                      ...mr,
+                      remarks: remarksEditorRef.current?.isEmpty()
+                        ? ""
+                        : stringifyRichContent(
+                            remarksEditorRef.current?.getJSON() ?? {
+                              type: "doc",
+                            },
+                          ),
+                    })
+                  }
                 />
+              ) : mr.remarks ? (
+                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px]">
+                  <RichContentView content={parseRichValue(mr.remarks)} />
+                </div>
               ) : (
-                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px] whitespace-pre-wrap">
-                  {mr.remarks || "-"}
+                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px]">
+                  -
                 </div>
               )}
             </div>

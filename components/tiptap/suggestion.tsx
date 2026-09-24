@@ -1,51 +1,33 @@
 import { ReactRenderer } from "@tiptap/react";
 import tippy, { Instance as TippyInstance } from "tippy.js";
 import MentionList, { MentionListRef } from "./MentionList";
-import { createClient } from "@/lib/supabase/client";
+import { MentionListItem } from "@/services/mentionSearchService";
 
 /**
- * Fetch user list from Supabase based on query
+ * Factory suggestion Tiptap generik - dipakai buat ke-4 jenis mention
+ * (user/barang/vendor/dokumen), bedanya cuma di `emptyLabel` & fungsi fetch
+ * item-nya (dikonfigurasi terpisah lewat `items` di tiap entry `suggestions`
+ * pada mention-extensions.tsx). `onOpenChange` dipanggil true/false pas
+ * popup muncul/hilang - dipakai rich-mention-editor.tsx supaya tombol Enter
+ * tahu harus pilih item suggestion, bukan kirim pesan, selama popup terbuka.
  */
-const fetchUsers = async (query: string) => {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, name, avatar_url")
-    .ilike("name", `%${query}%`)
-    .eq("is_active", true) // Sembunyikan user yang sudah dinonaktifkan
-    .limit(5);
-
-  if (error) {
-    console.error("Error fetching users:", error);
-    return [];
-  }
-
-  return data ?? [];
-};
-
-/**
- * Mention suggestion configuration for Tiptap
- */
-const mentionSuggestion = {
-  items: async ({ query }: { query: string }) => {
-    return await fetchUsers(query);
-  },
-
-  render: () => {
+export function createMentionSuggestion(
+  emptyLabel: string,
+  onOpenChange?: (open: boolean) => void,
+) {
+  return () => {
     let component: ReactRenderer<MentionListRef> | null = null;
     let popup: TippyInstance[] | null = null;
 
     return {
       onStart: (props: any) => {
+        onOpenChange?.(true);
         component = new ReactRenderer(MentionList, {
-          props,
+          props: { ...props, emptyLabel },
           editor: props.editor,
         });
 
-        if (!props.clientRect) {
-          return;
-        }
+        if (!props.clientRect) return;
 
         popup = tippy("body", {
           getReferenceClientRect: props.clientRect,
@@ -59,32 +41,27 @@ const mentionSuggestion = {
       },
 
       onUpdate(props: any) {
-        component?.updateProps(props);
-
-        if (!props.clientRect) {
-          return;
-        }
-
-        popup?.[0].setProps({
-          getReferenceClientRect: props.clientRect,
-        });
+        component?.updateProps({ ...props, emptyLabel });
+        if (!props.clientRect) return;
+        popup?.[0].setProps({ getReferenceClientRect: props.clientRect });
       },
 
       onKeyDown(props: any) {
         if (props.event.key === "Escape") {
           popup?.[0].hide();
+          onOpenChange?.(false);
           return true;
         }
-
         return component?.ref?.onKeyDown(props) ?? false;
       },
 
       onExit() {
+        onOpenChange?.(false);
         popup?.[0].destroy();
         component?.destroy();
       },
     };
-  },
-};
+  };
+}
 
-export default mentionSuggestion;
+export type { MentionListItem };

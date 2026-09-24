@@ -10,11 +10,16 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
   Select,
   SelectContent,
@@ -102,6 +107,7 @@ export function PcEditAndApproveDialog({
     initial.week_of_month ?? null,
   );
   const [notes, setNotes] = useState(initial.notes ?? "");
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const [items, setItems] = useState<PettyCashPengajuanItem[]>(initial.items);
   const [attachments, setAttachments] = useState<Attachment[]>(
     initial.attachments ?? [],
@@ -228,11 +234,18 @@ export function PcEditAndApproveDialog({
 
           <div className="space-y-2">
             <Label>Catatan</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="resize-none"
+            <RichMentionEditor
+              ref={notesEditorRef}
+              initialContent={parseRichValue(notes)}
+              onChange={() =>
+                setNotes(
+                  notesEditorRef.current?.isEmpty()
+                    ? ""
+                    : stringifyRichContent(
+                        notesEditorRef.current?.getJSON() ?? { type: "doc" },
+                      ),
+                )
+              }
             />
           </div>
 

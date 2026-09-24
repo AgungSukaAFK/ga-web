@@ -13,6 +13,8 @@
 // budgetName/budgetRemaining.
 
 import { Badge } from "@/components/ui/badge";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue } from "@/lib/rich-content";
 import { PcItemsEditor } from "./PcItemsEditor";
 import { PcCoaBreakdown } from "./PcCoaBreakdown";
 import { PcRevisionHistory } from "./PcRevisionHistory";
@@ -143,7 +145,7 @@ export function PcDocumentInfoPanel({
 
       {notes && (
         <div className="text-sm bg-muted/50 rounded-md p-3 border">
-          {notes}
+          <RichContentView content={parseRichValue(notes)} />
         </div>
       )}
 
@@ -235,7 +237,11 @@ export function PcDocumentInfoPanel({
                     {new Date(d.timestamp).toLocaleString("id-ID")}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap">{d.message}</p>
+                <RichContentView
+                  content={d.content}
+                  text={d.message}
+                  mentions={d.mentions}
+                />
               </div>
             ))}
           </div>

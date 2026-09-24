@@ -19,11 +19,17 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,6 +112,7 @@ const DrawProgressBar = ({ drawn, total }: { drawn: number; total: number }) => 
 };
 
 export default function PengajuanVoucherClient() {
+  const drawNotesEditorRef = useRef<RichMentionEditorHandle>(null);
   const supabase = createClient();
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -394,7 +401,7 @@ export default function PengajuanVoucherClient() {
             <div className="space-y-4">
               {selected.notes && (
                 <div className="text-sm bg-muted/50 rounded-md p-3 border">
-                  {selected.notes}
+                  <RichContentView content={parseRichValue(selected.notes)} />
                 </div>
               )}
               <div className="overflow-x-auto rounded-md border">
@@ -495,11 +502,20 @@ export default function PengajuanVoucherClient() {
                   (Opsional)
                 </span>
               </Label>
-              <Textarea
-                value={drawNotes}
-                onChange={(e) => setDrawNotes(e.target.value)}
-                rows={2}
+              <RichMentionEditor
+                ref={drawNotesEditorRef}
                 placeholder="Ex: Kebutuhan minggu ini..."
+                onChange={() =>
+                  setDrawNotes(
+                    drawNotesEditorRef.current?.isEmpty()
+                      ? ""
+                      : stringifyRichContent(
+                          drawNotesEditorRef.current?.getJSON() ?? {
+                            type: "doc",
+                          },
+                        ),
+                  )
+                }
               />
             </div>
           </div>

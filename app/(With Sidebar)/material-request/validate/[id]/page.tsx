@@ -12,6 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue } from "@/lib/rich-content";
 import { DiscussionSection } from "../../[id]/discussion-component";
 import { toast } from "sonner";
 import {
@@ -698,7 +700,19 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               label="Total Estimasi Biaya"
               value={formatCurrency(mr.cost_estimation)}
             />
-            <InfoItem icon={Info} label="Remarks" value={mr.remarks} isBlock />
+            <div className="flex flex-col gap-1">
+              <div className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Remarks
+              </div>
+              <div className="text-sm font-semibold col-span-2">
+                {mr.remarks ? (
+                  <RichContentView content={parseRichValue(mr.remarks)} />
+                ) : (
+                  "-"
+                )}
+              </div>
+            </div>
           </div>
         </Content>
 

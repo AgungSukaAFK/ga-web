@@ -5,11 +5,16 @@
 import { Content } from "@/components/content";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MaterialRequest, Order, Attachment, Barang } from "@/type";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { stringifyRichContent } from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -98,6 +103,7 @@ const PRIORITY_OPTIONS: {
 
 export default function BuatMRPage() {
   const router = useRouter();
+  const remarksEditorRef = useRef<RichMentionEditorHandle>(null);
 
   const [formCreateMR, setFormCreateMR] = useState<Omit<MaterialRequest, "id">>(
     {
@@ -851,17 +857,24 @@ export default function BuatMRPage() {
 
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Remarks (Tujuan & Latar Belakang)</Label>
-            <Textarea
+            <RichMentionEditor
+              ref={remarksEditorRef}
               placeholder="Contoh: Laptop lama rusak layar, dibutuhkan untuk kerja harian tim IT..."
-              value={formCreateMR.remarks}
-              rows={4}
-              onChange={(e) =>
-                setFormCreateMR({ ...formCreateMR, remarks: e.target.value })
+              onChange={() =>
+                setFormCreateMR({
+                  ...formCreateMR,
+                  remarks: remarksEditorRef.current?.isEmpty()
+                    ? ""
+                    : stringifyRichContent(
+                        remarksEditorRef.current?.getJSON() ?? { type: "doc" },
+                      ),
+                })
               }
             />
             <p className="text-xs text-muted-foreground">
               Isi jelas & detail (alasan, kondisi saat ini, urgensi) - remarks
-              yang lengkap mempercepat keputusan approver.
+              yang lengkap mempercepat keputusan approver. Bisa pakai @ (orang),
+              # (barang), $ (vendor), / (dokumen) buat tag.
             </p>
           </div>
           <div className="flex flex-col gap-2 col-span-12">

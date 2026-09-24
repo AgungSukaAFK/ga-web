@@ -1,7 +1,8 @@
 // src/app/material-request/[id]/discussion-section.tsx
+
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,11 +10,14 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Discussion, DiscussionAttachment, DiscussionMention } from "@/type";
+import { Discussion, DiscussionAttachment } from "@/type";
 import { logActivity } from "@/services/logService";
 import { sendNotification } from "@/lib/notifications/client";
-import { MentionTextarea } from "@/components/mention-textarea";
-import { MessageWithMentions } from "@/components/message-with-mentions";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
 import { MessageAttachmentToolbar } from "@/components/message-attachment-toolbar";
 import { DiscussionAttachmentView } from "@/components/discussion-attachment-view";
 import { useImageAttachmentUpload } from "@/hooks/use-image-attachment-upload";
@@ -29,10 +33,8 @@ export function DiscussionSection({
   initialDiscussions,
 }: DiscussionSectionProps) {
   const [discussions, setDiscussions] = useState(initialDiscussions);
-  const [newMessage, setNewMessage] = useState("");
-  const [pendingMentions, setPendingMentions] = useState<DiscussionMention[]>(
-    [],
-  );
+  const editorRef = useRef<RichMentionEditorHandle>(null);
+  const [isMessageEmpty, setIsMessageEmpty] = useState(true);
   const [pendingAttachment, setPendingAttachment] =
     useState<DiscussionAttachment | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -50,9 +52,9 @@ export function DiscussionSection({
   };
 
   const submitMessage = async (attachmentOverride?: DiscussionAttachment) => {
-    const message = attachmentOverride ? "" : newMessage;
+    const isEmpty = editorRef.current?.isEmpty() ?? true;
     const attachment = attachmentOverride ?? pendingAttachment ?? undefined;
-    if (message.trim() === "" && !attachment) return;
+    if ((attachmentOverride ? false : isEmpty) && !attachment) return;
 
     setLoading(true);
 
@@ -69,20 +71,22 @@ export function DiscussionSection({
         .single();
       const userName = profile?.nama || user.email || "Unknown User";
 
-      // Hanya notifikasi/simpan mention yang tag-nya masih ada di pesan final
-      // (kalau user hapus "@Nama"-nya lagi sebelum kirim, ga usah dinotif).
-      const finalMentions = pendingMentions.filter(
-        (m, index, arr) =>
-          message.includes(`@${m.nama}`) &&
-          arr.findIndex((x) => x.id === m.id) === index,
-      );
+      const message = attachmentOverride ? "" : editorRef.current?.getText() ?? "";
+      const content =
+        !attachmentOverride && !isEmpty
+          ? editorRef.current?.getJSON()
+          : undefined;
+      const mentions = attachmentOverride
+        ? []
+        : editorRef.current?.getMentions() ?? [];
 
       const newDiscussionEntry: Discussion = {
         user_id: user.id,
         user_name: userName,
         message,
         timestamp: new Date().toISOString(),
-        ...(finalMentions.length > 0 ? { mentions: finalMentions } : {}),
+        ...(content ? { content } : {}),
+        ...(mentions.length > 0 ? { mentions } : {}),
         ...(attachment ? { attachment } : {}),
       };
 
@@ -104,8 +108,9 @@ export function DiscussionSection({
         { message },
       );
 
+      const userMentions = mentions.filter((m) => m.type === "user");
       await Promise.all(
-        finalMentions
+        userMentions
           .filter((m) => m.id !== user.id)
           .map((m) =>
             sendNotification({
@@ -122,8 +127,8 @@ export function DiscussionSection({
       );
 
       setDiscussions(updatedDiscussions);
-      setNewMessage("");
-      setPendingMentions([]);
+      editorRef.current?.clear();
+      setIsMessageEmpty(true);
       if (!attachmentOverride) setPendingAttachment(null);
       toast.success("Pesan berhasil terkirim!");
       router.refresh();
@@ -166,13 +171,14 @@ export function DiscussionSection({
                         {new Date(chat.timestamp).toLocaleString("id-ID")}
                       </p>
                     </div>
-                    {chat.message && (
-                      <p className="text-sm mt-1 whitespace-pre-wrap">
-                        <MessageWithMentions
+                    {(chat.content || chat.message) && (
+                      <div className="mt-1">
+                        <RichContentView
+                          content={chat.content}
                           text={chat.message}
                           mentions={chat.mentions}
                         />
-                      </p>
+                      </div>
                     )}
                     {chat.attachment && (
                       <DiscussionAttachmentView attachment={chat.attachment} />
@@ -186,10 +192,10 @@ export function DiscussionSection({
               </p>
             )}
           </div>
-          <form onSubmit={handleSubmit} className="pt-4 border-t space-y-1.5">
+          <form onSubmit={handleSubmit} className="pt-4 border-t space-y-2">
             <div
               className={cn(
-                "flex flex-col gap-2 rounded-md sm:flex-row sm:items-start",
+                "rounded-md",
                 isDraggingOver &&
                   "outline-2 outline-dashed outline-primary/60 outline-offset-4",
               )}
@@ -207,59 +213,34 @@ export function DiscussionSection({
                 if (file) handleUploadFile(file);
               }}
             >
-              <MentionTextarea
+              <RichMentionEditor
+                ref={editorRef}
                 placeholder="Tulis pesan Anda di sini... (bisa drag & drop atau paste gambar)"
-                value={newMessage}
-                onValueChange={setNewMessage}
-                onMentionAdd={(mention) =>
-                  setPendingMentions((prev) =>
-                    prev.some((m) => m.id === mention.id)
-                      ? prev
-                      : [...prev, mention],
-                  )
-                }
-                onSubmit={() => submitMessage()}
-                onPaste={(e) => {
-                  const item = Array.from(e.clipboardData.items).find((i) =>
-                    i.type.startsWith("image/"),
-                  );
-                  const file = item?.getAsFile();
-                  if (file) {
-                    e.preventDefault();
-                    handleUploadFile(file);
-                  }
-                }}
-                rows={2}
                 disabled={loading || uploading}
-                className="sm:min-w-0 sm:flex-1"
+                onSubmit={() => submitMessage()}
+                onPasteImage={handleUploadFile}
+                onChange={() =>
+                  setIsMessageEmpty(editorRef.current?.isEmpty() ?? true)
+                }
               />
-              <div className="flex items-center justify-between gap-2 sm:contents">
-                <MessageAttachmentToolbar
-                  pendingAttachment={pendingAttachment}
-                  onPendingAttachmentChange={setPendingAttachment}
-                  onSendSticker={handleSendSticker}
-                  uploading={uploading}
-                  onUploadFile={handleUploadFile}
-                  disabled={loading}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  disabled={
-                    loading ||
-                    uploading ||
-                    (newMessage.trim() === "" && !pendingAttachment)
-                  }
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Tips: ketik <span className="font-medium">@</span> lalu nama
-              user untuk mention/tag - orang yang ditag akan mendapat
-              notifikasi. Enter untuk kirim, Shift+Enter untuk baris baru.
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <MessageAttachmentToolbar
+                pendingAttachment={pendingAttachment}
+                onPendingAttachmentChange={setPendingAttachment}
+                onSendSticker={handleSendSticker}
+                uploading={uploading}
+                onUploadFile={handleUploadFile}
+                disabled={loading}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={loading || uploading || (isMessageEmpty && !pendingAttachment)}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
           </form>
         </div>
       </CardContent>

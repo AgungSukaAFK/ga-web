@@ -8,6 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { stringifyRichContent } from "@/lib/rich-content";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -24,7 +29,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { createPettyCash } from "@/services/pettyCashService";
@@ -46,6 +51,7 @@ import {
 } from "lucide-react";
 
 export default function CreatePettyCashPage() {
+  const purposeEditorRef = useRef<RichMentionEditorHandle>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -318,13 +324,20 @@ export default function CreatePettyCashPage() {
                   Tujuan Penggunaan (Keterangan Detail){" "}
                   <span className="text-red-500">*</span>
                 </Label>
-                <Textarea
+                <RichMentionEditor
+                  ref={purposeEditorRef}
                   placeholder="Jelaskan secara rinci tujuan penggunaan dana ini..."
-                  rows={4}
-                  className="resize-none"
-                  value={formData.purpose}
-                  onChange={(e) =>
-                    setFormData({ ...formData, purpose: e.target.value })
+                  onChange={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      purpose: purposeEditorRef.current?.isEmpty()
+                        ? ""
+                        : stringifyRichContent(
+                            purposeEditorRef.current?.getJSON() ?? {
+                              type: "doc",
+                            },
+                          ),
+                    }))
                   }
                 />
               </div>

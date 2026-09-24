@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { NoteWithLinks } from "@/components/note-with-links";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue } from "@/lib/rich-content";
 import { DiscussionSection } from "../../../material-request/[id]/discussion-component";
 import {
   PurchaseOrderDetail,
@@ -501,12 +503,19 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
               label="Tujuan Pengiriman"
               value={po.shipping_address}
             />
-            <InfoItem
-              icon={Info}
-              label="Catatan PO"
-              value={po.notes || "N/A"}
-              isBlock
-            />
+            <div className="flex flex-col gap-1">
+              <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Catatan PO
+              </dt>
+              <dd className="text-sm font-semibold col-span-2">
+                {po.notes ? (
+                  <RichContentView content={parseRichValue(po.notes)} />
+                ) : (
+                  "N/A"
+                )}
+              </dd>
+            </div>
           </div>
         </Content>
 

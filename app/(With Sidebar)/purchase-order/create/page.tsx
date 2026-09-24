@@ -2,12 +2,17 @@
 
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { stringifyRichContent } from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -305,6 +310,7 @@ function CreatePOPageContent() {
   const searchParams = useSearchParams();
   const mrIdParam = searchParams.get("mrId");
   const supabase = createClient();
+  const notesEditorRef = useRef<RichMentionEditorHandle>(null);
 
   const [mrData, setMrData] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1446,11 +1452,18 @@ function CreatePOPageContent() {
         </Content>
 
         <Content title="Catatan PO">
-          <Textarea
+          <RichMentionEditor
+            ref={notesEditorRef}
             placeholder="Tambahkan catatan untuk vendor atau internal..."
-            value={poForm.notes}
-            onChange={(e) =>
-              setPoForm((prev) => ({ ...prev, notes: e.target.value }))
+            onChange={() =>
+              setPoForm((prev) => ({
+                ...prev,
+                notes: notesEditorRef.current?.isEmpty()
+                  ? ""
+                  : stringifyRichContent(
+                      notesEditorRef.current?.getJSON() ?? { type: "doc" },
+                    ),
+              }))
             }
           />
         </Content>

@@ -122,9 +122,20 @@ export interface Attachment {
   type?: "po" | "finance" | "bast" | "invoice" | "quotation" | "delivery";
 }
 
+// Jenis entitas yang bisa di-tag di rich editor (diskusi & field catatan) -
+// lihat components/rich-mention-editor.tsx & components/tiptap/mention-extensions.tsx.
+// "user" dipakai untuk kirim notifikasi tag; 3 lainnya cuma jadi link/chip.
+export type MentionType = "user" | "barang" | "vendor" | "document";
+
 export interface DiscussionMention {
   id: string;
   nama: string;
+  // Optional supaya entri lama (sebelum multi-entity mention ada) tetap valid -
+  // kalau tidak ada, diperlakukan sebagai "user" (lihat MessageWithMentions).
+  type?: MentionType;
+  // Info tambahan buat render chip/link - part_number (barang), kode_vendor
+  // (vendor), atau kode dokumen (MR/PO/PC) + url tujuan.
+  meta?: { kode?: string; href?: string };
 }
 
 // Permintaan "follow-up" ke approver yang lagi jadi penentu (blocking) di
@@ -147,7 +158,14 @@ export type DiscussionAttachment =
 export interface Discussion {
   user_id: string;
   user_name: string;
+  // Plain-text fallback (dipakai notifikasi, activity log, & render entri
+  // lama yang belum punya `content`).
   message: string;
+  // Rich content (Tiptap JSON doc) - kalau ada, dipakai buat render rich
+  // formatting + mention chip. Pakai `unknown` di sini (bukan import
+  // JSONContent dari @tiptap/react) supaya file tipe ini tidak perlu
+  // bergantung ke Tiptap; komponen rich text yang cast ke JSONContent.
+  content?: Record<string, unknown>;
   timestamp: string;
   mentions?: DiscussionMention[];
   attachment?: DiscussionAttachment;

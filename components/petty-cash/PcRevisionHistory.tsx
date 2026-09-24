@@ -20,6 +20,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { PcItemsEditor } from "./PcItemsEditor";
+import { RichContentView } from "@/components/rich-content-view";
+import { parseRichValue } from "@/lib/rich-content";
 import { Attachment, PcDocumentRevision, PettyCashPengajuanItem } from "@/type";
 import { History } from "lucide-react";
 
@@ -142,7 +144,9 @@ export function PcRevisionHistory({
               </div>
               {viewing.snapshot.notes && (
                 <div className="text-sm bg-muted/50 rounded-md p-3 border">
-                  {viewing.snapshot.notes}
+                  <RichContentView
+                    content={parseRichValue(viewing.snapshot.notes)}
+                  />
                 </div>
               )}
               <PcItemsEditor readOnly initialItems={viewing.snapshot.items} />

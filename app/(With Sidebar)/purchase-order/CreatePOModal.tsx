@@ -17,6 +17,7 @@ import { fetchApprovedMaterialRequests } from "@/services/purchaseOrderService";
 import { Loader2, FilePlus2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { ApprovedMaterialRequest } from "@/type";
+import { extractPlainText } from "@/lib/rich-content";
 
 interface CreatePOModalProps {
   isOpen: boolean;
@@ -96,7 +97,7 @@ export function CreatePOModal({ isOpen, onClose }: CreatePOModalProps) {
                       </div>
                       {/* REVISI: Line clamp untuk remarks */}
                       <p className="text-sm text-muted-foreground mt-2 line-clamp-3 break-words">
-                        {mr.remarks || "Tidak ada remarks."}
+                        {extractPlainText(mr.remarks) || "Tidak ada remarks."}
                       </p>
                     </div>
                     <FilePlus2 className="h-5 w-5 text-muted-foreground group-hover:text-primary flex-shrink-0 mt-1" />

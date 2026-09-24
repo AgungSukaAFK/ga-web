@@ -16,45 +16,63 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Loader2, Send } from "lucide-react";
+import {
+  RichMentionEditor,
+  RichMentionEditorHandle,
+} from "@/components/rich-mention-editor";
+import { RichContentView } from "@/components/rich-content-view";
+import { DiscussionMention } from "@/type";
+import { PcDiscussionPayload } from "@/services/pcDiscussionService";
 
 interface PcDiscussionEntry {
   user_id?: string;
   user_name?: string;
   message?: string;
+  content?: Record<string, unknown>;
+  mentions?: DiscussionMention[];
   timestamp: string;
 }
 
 interface PcDiscussionPanelProps {
   discussions: PcDiscussionEntry[] | null | undefined;
-  onSubmit: (message: string) => Promise<void>;
+  onSubmit: (payload: PcDiscussionPayload) => Promise<void>;
 }
 
 export function PcDiscussionPanel({
   discussions,
   onSubmit,
 }: PcDiscussionPanelProps) {
-  const [message, setMessage] = useState("");
+  const editorRef = useRef<RichMentionEditorHandle>(null);
+  const [isEmpty, setIsEmpty] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!message.trim() || submitting) return;
+  const submitMessage = async () => {
+    if ((editorRef.current?.isEmpty() ?? true) || submitting) return;
     setSubmitting(true);
     try {
-      await onSubmit(message.trim());
-      setMessage("");
+      await onSubmit({
+        message: editorRef.current?.getText().trim() ?? "",
+        content: editorRef.current?.getJSON(),
+        mentions: editorRef.current?.getMentions(),
+      });
+      editorRef.current?.clear();
+      setIsEmpty(true);
     } catch (error: any) {
       toast.error("Gagal mengirim pesan", { description: error.message });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitMessage();
   };
 
   const list = discussions ?? [];
@@ -84,9 +102,13 @@ export function PcDiscussionPanel({
                         {new Date(chat.timestamp).toLocaleString("id-ID")}
                       </p>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">
-                      {chat.message}
-                    </p>
+                    {(chat.content || chat.message) && (
+                      <RichContentView
+                        content={chat.content}
+                        text={chat.message}
+                        mentions={chat.mentions}
+                      />
+                    )}
                   </div>
                 </div>
               ))
@@ -96,32 +118,25 @@ export function PcDiscussionPanel({
               </p>
             )}
           </div>
-          <form onSubmit={handleSubmit} className="pt-4 border-t flex gap-2">
-            <Textarea
+          <form onSubmit={handleSubmit} className="pt-4 border-t space-y-2">
+            <RichMentionEditor
+              ref={editorRef}
               placeholder="Tulis pesan..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit(e);
-                }
-              }}
-              rows={2}
               disabled={submitting}
-              className="flex-1"
+              onSubmit={() => submitMessage()}
+              onChange={() =>
+                setIsEmpty(editorRef.current?.isEmpty() ?? true)
+              }
             />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={submitting || !message.trim()}
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
+            <div className="flex justify-end">
+              <Button type="submit" size="icon" disabled={submitting || isEmpty}>
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </form>
         </div>
       </CardContent>
