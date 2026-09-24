@@ -2,10 +2,10 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DiscussionMessageBubble } from "@/components/discussion-message-bubble";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Send } from "lucide-react";
@@ -33,6 +33,7 @@ export function DiscussionSection({
   initialDiscussions,
 }: DiscussionSectionProps) {
   const [discussions, setDiscussions] = useState(initialDiscussions);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const editorRef = useRef<RichMentionEditorHandle>(null);
   const [isMessageEmpty, setIsMessageEmpty] = useState(true);
   const [pendingAttachment, setPendingAttachment] =
@@ -45,6 +46,12 @@ export function DiscussionSection({
   const { uploading, uploadFile } = useImageAttachmentUpload(
     `discussions/material-request/${mrId}`,
   );
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
+  }, []);
 
   const handleUploadFile = async (file: File) => {
     const attachment = await uploadFile(file);
@@ -158,33 +165,23 @@ export function DiscussionSection({
           <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
             {discussions.length > 0 ? (
               discussions.map((chat, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <Avatar>
-                    <AvatarFallback>
-                      {chat.user_name?.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="w-full rounded-lg bg-muted p-3">
-                    <div className="flex justify-between items-center">
-                      <p className="font-semibold text-sm">{chat.user_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(chat.timestamp).toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                    {(chat.content || chat.message) && (
-                      <div className="mt-1">
-                        <RichContentView
-                          content={chat.content}
-                          text={chat.message}
-                          mentions={chat.mentions}
-                        />
-                      </div>
-                    )}
-                    {chat.attachment && (
-                      <DiscussionAttachmentView attachment={chat.attachment} />
-                    )}
-                  </div>
-                </div>
+                <DiscussionMessageBubble
+                  key={index}
+                  isMine={!!currentUserId && chat.user_id === currentUserId}
+                  userName={chat.user_name}
+                  timestamp={chat.timestamp}
+                >
+                  {(chat.content || chat.message) && (
+                    <RichContentView
+                      content={chat.content}
+                      text={chat.message}
+                      mentions={chat.mentions}
+                    />
+                  )}
+                  {chat.attachment && (
+                    <DiscussionAttachmentView attachment={chat.attachment} />
+                  )}
+                </DiscussionMessageBubble>
               ))
             ) : (
               <p className="text-sm text-center text-muted-foreground">

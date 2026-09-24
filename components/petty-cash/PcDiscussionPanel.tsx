@@ -16,10 +16,11 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DiscussionMessageBubble } from "@/components/discussion-message-bubble";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Send } from "lucide-react";
 import {
@@ -51,6 +52,14 @@ export function PcDiscussionPanel({
   const editorRef = useRef<RichMentionEditorHandle>(null);
   const [isEmpty, setIsEmpty] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
+  }, []);
 
   const submitMessage = async () => {
     if ((editorRef.current?.isEmpty() ?? true) || submitting) return;
@@ -87,30 +96,21 @@ export function PcDiscussionPanel({
           <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
             {list.length > 0 ? (
               list.map((chat, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback className="text-xs">
-                      {(chat.user_name || "?").substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="w-full rounded-lg bg-muted/50 p-3 border">
-                    <div className="flex justify-between items-center mb-1 gap-2">
-                      <p className="font-semibold text-xs truncate">
-                        {chat.user_name || "-"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground shrink-0">
-                        {new Date(chat.timestamp).toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                    {(chat.content || chat.message) && (
-                      <RichContentView
-                        content={chat.content}
-                        text={chat.message}
-                        mentions={chat.mentions}
-                      />
-                    )}
-                  </div>
-                </div>
+                <DiscussionMessageBubble
+                  key={idx}
+                  compact
+                  isMine={!!currentUserId && chat.user_id === currentUserId}
+                  userName={chat.user_name}
+                  timestamp={chat.timestamp}
+                >
+                  {(chat.content || chat.message) && (
+                    <RichContentView
+                      content={chat.content}
+                      text={chat.message}
+                      mentions={chat.mentions}
+                    />
+                  )}
+                </DiscussionMessageBubble>
               ))
             ) : (
               <p className="text-sm text-center text-muted-foreground">
