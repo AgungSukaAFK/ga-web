@@ -130,7 +130,7 @@ export default function FeedbackPage() {
     editorProps: {
       attributes: {
         class:
-          "prose dark:prose-invert prose-sm sm:prose-base focus:outline-none",
+          "feedback-editor prose dark:prose-invert prose-sm sm:prose-base focus:outline-none",
       },
     },
   });

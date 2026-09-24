@@ -269,9 +269,15 @@
 }
 
 /* ================================================================== */
-/* TipTap Editor                                                       */
+/* TipTap Editor - khusus form feedback (.feedback-editor)             */
+/* PENTING: selector di-scope ke .feedback-editor, JANGAN pakai bare   */
+/* .ProseMirror - Tiptap otomatis nempelin class "ProseMirror" ke      */
+/* SEMUA instance editor di app ini (lihat components/rich-mention-    */
+/* editor.tsx & components/rich-content-view.tsx, dipakai di diskusi   */
+/* MR/PO/Petty Cash serta field catatan/remarks) - bare selector bikin */
+/* min-height 150px & border di sini leak ke semua editor lain.        */
 /* ================================================================== */
-.ProseMirror {
+.feedback-editor.ProseMirror {
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius);
   border: 1px solid hsl(var(--input));
@@ -280,12 +286,12 @@
   color: hsl(var(--foreground));
 }
 
-.ProseMirror:focus {
+.feedback-editor.ProseMirror:focus {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-.ProseMirror p.is-editor-empty:first-child::before {
+.feedback-editor.ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: hsl(var(--muted-foreground));
