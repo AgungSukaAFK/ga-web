@@ -1586,6 +1586,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const syncItemStatusFromBreakdown = async (
     item: Order,
     freshBreakdown: Record<string, PoQtyBreakdownEntry[]>,
+    // Index baris item ini di `material_requests.orders` (kalau tau) - lihat
+    // komentar sama di material-request/[id]/page.tsx: perlu diteruskan ke
+    // updateMrItemStatus supaya baris duplikat (part_number sama diminta 2x
+    // terpisah) ke-update di posisi yang benar.
+    itemIndex?: number,
   ) => {
     if (!po?.mr_id || !item.part_number || !currentUser) return;
     if (ADVANCED_ITEM_STATUSES.includes(item.status || "")) return;
@@ -1606,6 +1611,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         item.part_number,
         { status: newStatus, level: newLevel },
         currentUser.id,
+        itemIndex,
       );
     }
   };
@@ -1630,11 +1636,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         manualLinkPoCode,
         qty,
         currentUser.id,
+        selectedItemIndexToEdit ?? undefined,
       );
 
       const freshBreakdown = await fetchPoQtyBreakdownForMr(po.mr_id);
       setPoBreakdown(freshBreakdown);
-      await syncItemStatusFromBreakdown(selectedItemToEdit, freshBreakdown);
+      await syncItemStatusFromBreakdown(
+        selectedItemToEdit,
+        freshBreakdown,
+        selectedItemIndexToEdit ?? undefined,
+      );
       await recalculateMrStatus(po.mr_id);
 
       await logActivity(
@@ -1665,9 +1676,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       setManualLinkQty("");
 
       const freshPo = await fetchPoData();
-      const freshItem = freshPo?.material_requests?.orders?.find(
-        (o: Order) => o.part_number === selectedItemToEdit.part_number,
-      );
+      const freshItem =
+        selectedItemIndexToEdit !== null
+          ? freshPo?.material_requests?.orders?.[selectedItemIndexToEdit]
+          : freshPo?.material_requests?.orders?.find(
+              (o: Order) => o.part_number === selectedItemToEdit.part_number,
+            );
       if (freshItem) setSelectedItemToEdit(freshItem);
       setPosForMr(await fetchPosForMr(po.mr_id));
     } catch (err: any) {
@@ -1687,11 +1701,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         selectedItemToEdit.part_number,
         kodePo,
         currentUser.id,
+        selectedItemIndexToEdit ?? undefined,
       );
 
       const freshBreakdown = await fetchPoQtyBreakdownForMr(po.mr_id);
       setPoBreakdown(freshBreakdown);
-      await syncItemStatusFromBreakdown(selectedItemToEdit, freshBreakdown);
+      await syncItemStatusFromBreakdown(
+        selectedItemToEdit,
+        freshBreakdown,
+        selectedItemIndexToEdit ?? undefined,
+      );
       await recalculateMrStatus(po.mr_id);
 
       await logActivity(
@@ -1711,9 +1730,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       toast.success("Link PO manual dihapus");
 
       const freshPo = await fetchPoData();
-      const freshItem = freshPo?.material_requests?.orders?.find(
-        (o: Order) => o.part_number === selectedItemToEdit.part_number,
-      );
+      const freshItem =
+        selectedItemIndexToEdit !== null
+          ? freshPo?.material_requests?.orders?.[selectedItemIndexToEdit]
+          : freshPo?.material_requests?.orders?.find(
+              (o: Order) => o.part_number === selectedItemToEdit.part_number,
+            );
       if (freshItem) setSelectedItemToEdit(freshItem);
     } catch (err: any) {
       toast.error("Gagal menghapus link PO", { description: err.message });
@@ -1736,6 +1758,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         selectedItemToEdit.part_number,
         hasIssue,
         currentUser.id,
+        undefined,
+        selectedItemIndexToEdit ?? undefined,
       );
 
       await logActivity(
@@ -1767,9 +1791,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       );
 
       const freshPo = await fetchPoData();
-      const freshItem = freshPo?.material_requests?.orders?.find(
-        (o: Order) => o.part_number === selectedItemToEdit.part_number,
-      );
+      const freshItem =
+        selectedItemIndexToEdit !== null
+          ? freshPo?.material_requests?.orders?.[selectedItemIndexToEdit]
+          : freshPo?.material_requests?.orders?.find(
+              (o: Order) => o.part_number === selectedItemToEdit.part_number,
+            );
       if (freshItem) setSelectedItemToEdit(freshItem);
     } catch (err: any) {
       toast.error("Gagal update payment issue", { description: err.message });

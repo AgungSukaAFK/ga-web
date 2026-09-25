@@ -301,6 +301,50 @@ export const deleteMaterialRequest = async (mrId: number) => {
 };
 
 // --- FUNGSI UPDATE STATUS ITEM ---
+// Cari index baris `orders` yang paling tepat utk 1 part_number. Perlu
+// disambiguasi karena satu MR BISA punya >1 baris dengan part_number yang
+// SAMA (barang yang sama diminta 2x secara terpisah - legal, bukan data
+// anomali/rusak) - kalau cuma dicari pakai `findIndex` murni by part_number,
+// baris duplikat ke-2/dst TIDAK PERNAH ke-reach (selalu ke-resolve ke
+// kemunculan PERTAMA), jadi update yang sebenarnya dimaksud utk baris
+// duplikat malah salah sasaran nimpa baris pertama yang sudah benar (bug
+// nyata yang pernah kejadian - lihat MR GMI/MR/VI/26/TE/435, part_number
+// GA-TLS-0179-10mm/12mm/13mm masing2 double).
+//
+// `preferredIndex` (index yang sudah diketahui pemanggil - dari posisi row
+// di UI yang diklik, atau dari loop pemanggil yang iterasi `orders` itu
+// sendiri) diprioritaskan dulu asal masih cocok part_number-nya (atau memang
+// item ini tidak punya part_number sama sekali - kasus data anomali/legacy,
+// satu2nya cara nemuin itemnya ya lewat posisinya) DAN belum "diklaim"
+// pemanggil lain di batch yang sama (`claimed` - dipakai pemanggil yang loop
+// BANYAK item eksternal sekaligus, mis. createPurchaseOrder/
+// submitReceiveRecord di purchaseOrderService.ts, supaya tiap item eksternal
+// dgn part_number sama tetap kebagian baris `orders` yang BEDA, bukan nubruk
+// ke baris yang sama berkali-kali). Baru kalau preferredIndex gak dikasih/gak
+// valid, fallback cari kemunculan part_number pertama yang belum diklaim.
+export const findMrOrderIndex = (
+  orders: { part_number?: string | null }[],
+  partNumber: string | null | undefined,
+  preferredIndex?: number,
+  claimed?: Set<number>,
+): number => {
+  if (
+    preferredIndex !== undefined &&
+    orders[preferredIndex] &&
+    (!partNumber || orders[preferredIndex].part_number === partNumber) &&
+    !claimed?.has(preferredIndex)
+  ) {
+    return preferredIndex;
+  }
+  if (!partNumber) return -1;
+  for (let i = 0; i < orders.length; i++) {
+    if (orders[i]?.part_number === partNumber && !claimed?.has(i)) {
+      return i;
+    }
+  }
+  return -1;
+};
+
 export const updateMrItemStatus = async (
   mrId: number,
   partNumber: string | null | undefined,
@@ -311,9 +355,11 @@ export const updateMrItemStatus = async (
     note?: string;
   },
   userId: string,
-  // Fallback kalau item ini gak punya part_number (data anomali/legacy - lihat
-  // komentar di komponen pemanggil) - dipakai untuk tetap bisa nemuin &
-  // memperbaiki item itu lewat posisinya di array `orders`.
+  // Index row yang dimaksud (kalau pemanggil tau) - lihat findMrOrderIndex di
+  // atas. Diprioritaskan di atas pencarian by part_number kalau masih cocok,
+  // supaya item dgn part_number duplikat tetap ke-update di baris yang benar
+  // (bukan cuma dipakai sebagai fallback item tanpa part_number seperti
+  // sebelumnya).
   fallbackIndex?: number,
 ) => {
   const supabase = createClient();
@@ -329,18 +375,7 @@ export const updateMrItemStatus = async (
   }
 
   const currentOrders = mr.orders as any[];
-  let itemIndex = partNumber
-    ? currentOrders.findIndex(
-        (item) => item.part_number && item.part_number === partNumber,
-      )
-    : -1;
-  if (
-    itemIndex === -1 &&
-    fallbackIndex !== undefined &&
-    currentOrders[fallbackIndex]
-  ) {
-    itemIndex = fallbackIndex;
-  }
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, fallbackIndex);
 
   if (itemIndex === -1) {
     return { success: false, message: "Item not found" };
@@ -393,6 +428,10 @@ export const uploadBastForMrItem = async (
   // biasa jadi gak bisa pakai client anon bawaan (material_requests gak
   // punya RLS anon).
   client: ReturnType<typeof createClient> = createClient(),
+  // Lihat komentar preferredIndex di addManualPoLink. Ditaruh setelah
+  // `client` (bukan sebelumnya) supaya urutan positional argument call site
+  // lama yang override `client` (mis. goodsReceiptService.ts) tidak berubah.
+  preferredIndex?: number,
 ) => {
   const supabase = client;
 
@@ -407,9 +446,7 @@ export const uploadBastForMrItem = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
 
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
@@ -629,6 +666,8 @@ export const removeBastForMrItem = async (
   partNumber: string,
   attachmentUrl: string,
   userId: string,
+  // Lihat komentar preferredIndex di addManualPoLink.
+  preferredIndex?: number,
 ) => {
   const supabase = createClient();
 
@@ -643,9 +682,7 @@ export const removeBastForMrItem = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
 
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
@@ -731,18 +768,7 @@ export const addStockFulfillment = async (
   }
 
   const currentOrders = mr.orders as any[];
-  let itemIndex = partNumber
-    ? currentOrders.findIndex(
-        (item) => item.part_number && item.part_number === partNumber,
-      )
-    : -1;
-  if (
-    itemIndex === -1 &&
-    fallbackIndex !== undefined &&
-    currentOrders[fallbackIndex]
-  ) {
-    itemIndex = fallbackIndex;
-  }
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, fallbackIndex);
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
   }
@@ -776,6 +802,10 @@ export const addManualPoLink = async (
   kodePo: string,
   qty: number,
   userId: string,
+  // Index row yang dimaksud (kalau pemanggil tau posisinya di UI) - lihat
+  // findMrOrderIndex, dipakai supaya item dgn part_number duplikat tetap
+  // ke-link di baris yang benar.
+  preferredIndex?: number,
 ) => {
   const supabase = createClient();
 
@@ -790,9 +820,7 @@ export const addManualPoLink = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
   }
@@ -826,6 +854,8 @@ export const removeManualPoLink = async (
   partNumber: string,
   kodePo: string,
   userId: string,
+  // Lihat komentar preferredIndex di addManualPoLink.
+  preferredIndex?: number,
 ) => {
   const supabase = createClient();
 
@@ -840,9 +870,7 @@ export const removeManualPoLink = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
   }
@@ -1031,6 +1059,8 @@ export const setItemPaymentIssue = async (
   hasIssue: boolean,
   userId: string,
   note?: string,
+  // Lihat komentar preferredIndex di addManualPoLink.
+  preferredIndex?: number,
 ) => {
   const supabase = createClient();
 
@@ -1045,9 +1075,7 @@ export const setItemPaymentIssue = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = currentOrders.findIndex(
-    (item) => item.part_number && item.part_number === partNumber,
-  );
+  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
   }

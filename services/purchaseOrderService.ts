@@ -20,6 +20,7 @@ import {
   updateMrItemStatus,
   recalculateMrStatus,
   recalculateMrLevel,
+  findMrOrderIndex,
 } from "./mrService";
 import {
   PAYMENT_VALIDATOR_USER_ID,
@@ -618,11 +619,25 @@ export const createPurchaseOrder = async (
     // di sini sudah kumulatif dari semua PO terkait.
     const poBreakdown = await fetchPoQtyBreakdownForMr(mr_id);
 
+    // Kalau MR-nya punya baris duplikat (part_number sama diminta 2x
+    // terpisah - lihat komentar findMrOrderIndex di mrService.ts),
+    // `claimedIndices` memastikan tiap poItem (termasuk yang part_number-nya
+    // sama) kebagian baris `orders` yang BEDA - bukan nubruk terus ke baris
+    // pertama sehingga baris duplikatnya gak pernah ke-stamp status/po_refs
+    // sama sekali (bug nyata yang pernah kejadian).
+    const claimedIndices = new Set<number>();
+
     for (const poItem of poData.items) {
       if (!poItem.part_number) continue;
-      const originalOrder = originalOrders.find(
-        (o) => o.part_number === poItem.part_number,
+      const orderIndex = findMrOrderIndex(
+        originalOrders,
+        poItem.part_number,
+        undefined,
+        claimedIndices,
       );
+      if (orderIndex === -1) continue;
+      claimedIndices.add(orderIndex);
+      const originalOrder = originalOrders[orderIndex];
       const cumulativeQty = (poBreakdown[poItem.part_number] || []).reduce(
         (sum, entry) => sum + (entry.qty || 0),
         0,
@@ -651,6 +666,7 @@ export const createPurchaseOrder = async (
             poRef: newPo.kode_po,
           },
           user_id,
+          orderIndex,
         );
       } catch (err) {
         console.error(
@@ -970,8 +986,20 @@ export const submitReceiveRecord = async (
     po.id,
   );
 
+  // Sama seperti createPurchaseOrder - kalau `po.items` punya part_number
+  // duplikat (barang yang sama diminta 2x terpisah di MR-nya), pastikan
+  // masing2 kebagian baris `orders` yang BEDA supaya keduanya ikut maju
+  // status penerimaannya, bukan cuma baris pertama yang ke-update berulang.
+  const claimedIndices = new Set<number>();
   for (const item of items) {
-    const order = orders.find((o) => o.part_number === item.part_number);
+    const orderIndex = findMrOrderIndex(
+      orders,
+      item.part_number,
+      undefined,
+      claimedIndices,
+    );
+    const order = orderIndex !== -1 ? orders[orderIndex] : undefined;
+    if (orderIndex !== -1) claimedIndices.add(orderIndex);
     // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
     // PO lain) dilewati supaya tidak ketimpa - sama seperti guard lama.
     // "PO Created" di sini cuma backward-compat buat data lama yang belum
@@ -1019,6 +1047,7 @@ export const submitReceiveRecord = async (
           level: "Open 5",
         },
         userId,
+        orderIndex !== -1 ? orderIndex : undefined,
       );
     } catch (err) {
       console.error(
