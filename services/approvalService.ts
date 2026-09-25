@@ -369,7 +369,13 @@ export const processMrApproval = async (
   // langsung di sini lagi).
   if (isAllApproved) {
     const orders = normalizeMrOrders((mr.orders as any[]) || []);
-    for (const item of orders) {
+    // Loop langsung atas `orders` (bukan list eksternal) - index-nya (`i`)
+    // dikasihkan sebagai preferredIndex ke updateMrItemStatus supaya kalau
+    // ada baris duplikat (part_number sama diminta 2x terpisah), tiap baris
+    // tetap ke-update di posisinya sendiri, bukan cuma baris pertama yang
+    // ke-reach (lihat komentar findMrOrderIndex di mrService.ts).
+    for (let i = 0; i < orders.length; i++) {
+      const item = orders[i];
       if (!item.part_number) continue;
       if (item.status === "Cancelled" || item.status === "Replaced") continue;
       if (item.level && item.level !== "Open 1") continue;
@@ -379,6 +385,7 @@ export const processMrApproval = async (
           item.part_number,
           { level: "Open 2" },
           userId,
+          i,
         );
       } catch (err) {
         console.error(

@@ -847,6 +847,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         selectedItemForStatus.part_number,
         hasIssue,
         currentUser.id,
+        undefined,
+        selectedItemIndexForStatus ?? undefined,
       );
 
       await logActivity(
@@ -869,9 +871,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       );
 
       const freshMr = await fetchMrData();
-      const freshItem = freshMr?.orders.find(
-        (o: Order) => o.part_number === selectedItemForStatus.part_number,
-      );
+      const freshItem =
+        selectedItemIndexForStatus !== null
+          ? freshMr?.orders?.[selectedItemIndexForStatus]
+          : freshMr?.orders.find(
+              (o: Order) => o.part_number === selectedItemForStatus.part_number,
+            );
       if (freshItem) setSelectedItemForStatus(freshItem);
     } catch (err: any) {
       toast.error("Gagal update payment issue", { description: err.message });
@@ -896,6 +901,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const syncItemStatusFromBreakdown = async (
     item: Order,
     freshBreakdown: Record<string, PoQtyBreakdownEntry[]>,
+    // Index baris item ini di `mr.orders` (kalau tau) - diteruskan ke
+    // updateMrItemStatus supaya kalau ada baris duplikat (part_number sama
+    // diminta 2x terpisah), baris yang benar yang ke-update, bukan selalu
+    // kemunculan pertama part_number ini.
+    itemIndex?: number,
   ) => {
     if (!item.part_number || !currentUser) return;
     if (ADVANCED_ITEM_STATUSES.includes(item.status || "")) return;
@@ -921,6 +931,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         item.part_number,
         { status: newStatus, level: newLevel },
         currentUser.id,
+        itemIndex,
       );
     }
   };
@@ -945,11 +956,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         manualLinkPoCode,
         qty,
         currentUser.id,
+        selectedItemIndexForStatus ?? undefined,
       );
 
       const freshBreakdown = await fetchPoQtyBreakdownForMr(mrId);
       setPoBreakdown(freshBreakdown);
-      await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
+      await syncItemStatusFromBreakdown(
+        selectedItemForStatus,
+        freshBreakdown,
+        selectedItemIndexForStatus ?? undefined,
+      );
       await recalculateMrStatus(mrId);
 
       await logActivity(
@@ -970,9 +986,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       setManualLinkQty("");
 
       const freshMr = await fetchMrData();
-      const freshItem = freshMr?.orders.find(
-        (o: Order) => o.part_number === selectedItemForStatus.part_number,
-      );
+      const freshItem =
+        selectedItemIndexForStatus !== null
+          ? freshMr?.orders?.[selectedItemIndexForStatus]
+          : freshMr?.orders.find(
+              (o: Order) => o.part_number === selectedItemForStatus.part_number,
+            );
       if (freshItem) setSelectedItemForStatus(freshItem);
     } catch (err: any) {
       toast.error("Gagal menambahkan link PO", { description: err.message });
@@ -991,11 +1010,16 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         selectedItemForStatus.part_number,
         kodePo,
         currentUser.id,
+        selectedItemIndexForStatus ?? undefined,
       );
 
       const freshBreakdown = await fetchPoQtyBreakdownForMr(mrId);
       setPoBreakdown(freshBreakdown);
-      await syncItemStatusFromBreakdown(selectedItemForStatus, freshBreakdown);
+      await syncItemStatusFromBreakdown(
+        selectedItemForStatus,
+        freshBreakdown,
+        selectedItemIndexForStatus ?? undefined,
+      );
       await recalculateMrStatus(mrId);
 
       await logActivity(
@@ -1010,9 +1034,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       toast.success("Link PO manual dihapus");
 
       const freshMr = await fetchMrData();
-      const freshItem = freshMr?.orders.find(
-        (o: Order) => o.part_number === selectedItemForStatus.part_number,
-      );
+      const freshItem =
+        selectedItemIndexForStatus !== null
+          ? freshMr?.orders?.[selectedItemIndexForStatus]
+          : freshMr?.orders.find(
+              (o: Order) => o.part_number === selectedItemForStatus.part_number,
+            );
       if (freshItem) setSelectedItemForStatus(freshItem);
     } catch (err: any) {
       toast.error("Gagal menghapus link PO", { description: err.message });
