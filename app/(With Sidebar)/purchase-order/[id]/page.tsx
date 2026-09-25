@@ -50,6 +50,7 @@ import {
   FileText,
   QrCode,
   Download,
+  Link as LinkIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -80,6 +81,9 @@ import {
   deriveReceiveDrivenStatus,
   fetchBarangAssetFlags,
   getFullReceivedStamp,
+  fetchPoQtyBreakdownForMr,
+  fetchPosForMr,
+  PoQtyBreakdownEntry,
 } from "@/services/purchaseOrderService";
 import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
 import { PaginatedPrintDocument } from "./PaginatedPrintDocument";
@@ -91,6 +95,9 @@ import {
   removeBastForMrItem,
   sendItemsToRequester,
   editItemsDeliveryToRequester,
+  addManualPoLink,
+  removeManualPoLink,
+  setItemPaymentIssue,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
 import { logActivity } from "@/services/logService";
@@ -238,6 +245,20 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     status: "",
     note: "",
   });
+  // Breakdown qty per part_number dari semua PO sesama-MR + link manual
+  // (mirror poBreakdown di material-request/[id]/page.tsx) - dipakai supaya
+  // dialog edit status di halaman PO ini juga bisa nampilin PO mana saja yg
+  // sudah meng-cover item, dan nge-link manual item yg part_number PO-nya
+  // beda dari part_number MR (barang disubstitusi pas belanja).
+  const [poBreakdown, setPoBreakdown] = useState<
+    Record<string, PoQtyBreakdownEntry[]>
+  >({});
+  const [posForMr, setPosForMr] = useState<
+    { id: number; kode_po: string; status: string; is_asset: boolean }[]
+  >([]);
+  const [manualLinkPoCode, setManualLinkPoCode] = useState("");
+  const [manualLinkQty, setManualLinkQty] = useState("");
+  const [savingManualLink, setSavingManualLink] = useState(false);
   // ----------------------------------------------
 
   const [qrUrl, setQrUrl] = useState("");
@@ -406,6 +427,24 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         }
         setPoRefsMap(map);
       });
+  }, [po?.mr_id]);
+
+  // Sama seperti material-request/[id]/page.tsx - dibutuhkan supaya dialog
+  // edit status item di halaman PO ini juga bisa nampilin PO Terhubung &
+  // form Link Manual ke PO (bukan cuma form status doang seperti sebelumnya).
+  const refreshPoBreakdownAndPos = async () => {
+    if (!po?.mr_id) return;
+    const [freshBreakdown, freshPos] = await Promise.all([
+      fetchPoQtyBreakdownForMr(po.mr_id),
+      fetchPosForMr(po.mr_id),
+    ]);
+    setPoBreakdown(freshBreakdown);
+    setPosForMr(freshPos);
+    return freshBreakdown;
+  };
+
+  useEffect(() => {
+    refreshPoBreakdownAndPos();
   }, [po?.mr_id]);
 
   const getCostCenterName = () => {
@@ -1473,6 +1512,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       status: item.status || "Pending",
       note: item.status_note || "",
     });
+    setManualLinkPoCode("");
+    setManualLinkQty("");
     setIsEditStatusOpen(true);
   };
 
@@ -1519,9 +1560,219 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
       toast.success("Status barang berhasil diperbarui");
       setIsEditStatusOpen(false);
-      fetchPoData(); // Refresh data
+      await fetchPoData(); // Refresh data
+      refreshPoBreakdownAndPos();
     } catch (err: any) {
       toast.error("Gagal update status", { description: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Status "lanjutan" yang ga boleh dimundurkan cuma gara-gara utak-atik link
+  // PO manual (barang sudah diterima GA/dalam pengiriman/requester sudah
+  // upload BAST/sudah dibatalkan-diganti secara sengaja) - mirror
+  // ADVANCED_ITEM_STATUSES di material-request/[id]/page.tsx.
+  const ADVANCED_ITEM_STATUSES = [
+    "Dikirim Vendor",
+    "Diterima GA",
+    "On Delivery",
+    "Pending BAST",
+    "Completed",
+    "Cancelled",
+    "Replaced",
+  ];
+
+  const syncItemStatusFromBreakdown = async (
+    item: Order,
+    freshBreakdown: Record<string, PoQtyBreakdownEntry[]>,
+  ) => {
+    if (!po?.mr_id || !item.part_number || !currentUser) return;
+    if (ADVANCED_ITEM_STATUSES.includes(item.status || "")) return;
+
+    const cumulative = (freshBreakdown[item.part_number] || []).reduce(
+      (sum, e) => sum + (e.qty || 0),
+      0,
+    );
+    const requested = Number(item.qty) || 0;
+    const isFulfilled = cumulative >= requested && requested > 0;
+    const newStatus = cumulative > 0 ? "Processing" : "Pending";
+    const newLevel =
+      isFulfilled && item.level !== "Open 3B" ? "Open 3A" : undefined;
+
+    if (newStatus !== item.status || (newLevel && newLevel !== item.level)) {
+      await updateMrItemStatus(
+        po.mr_id,
+        item.part_number,
+        { status: newStatus, level: newLevel },
+        currentUser.id,
+      );
+    }
+  };
+
+  const handleAddManualLink = async () => {
+    if (!po?.mr_id || !selectedItemToEdit?.part_number || !currentUser) return;
+    const qty = Number(manualLinkQty);
+    if (!manualLinkPoCode) {
+      toast.error("Pilih PO terlebih dahulu");
+      return;
+    }
+    if (!qty || qty <= 0) {
+      toast.error("Qty harus lebih dari 0");
+      return;
+    }
+
+    setSavingManualLink(true);
+    try {
+      await addManualPoLink(
+        po.mr_id,
+        selectedItemToEdit.part_number,
+        manualLinkPoCode,
+        qty,
+        currentUser.id,
+      );
+
+      const freshBreakdown = await fetchPoQtyBreakdownForMr(po.mr_id);
+      setPoBreakdown(freshBreakdown);
+      await syncItemStatusFromBreakdown(selectedItemToEdit, freshBreakdown);
+      await recalculateMrStatus(po.mr_id);
+
+      await logActivity(
+        currentUser.id,
+        "ADD_MANUAL_PO_LINK",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} menautkan PO ${manualLinkPoCode} (qty ${qty}) secara manual ke barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        {
+          part_number: selectedItemToEdit.part_number,
+          kode_po: manualLinkPoCode,
+          qty,
+        },
+      );
+      await logMrActivity(
+        "ADD_MANUAL_PO_LINK",
+        `${userProfile?.nama || currentUser.email || "Unknown"} menautkan PO ${manualLinkPoCode} (qty ${qty}) secara manual ke barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        {
+          po_id: po.id,
+          part_number: selectedItemToEdit.part_number,
+          kode_po: manualLinkPoCode,
+          qty,
+        },
+      );
+
+      toast.success("Link PO manual berhasil ditambahkan");
+      setManualLinkPoCode("");
+      setManualLinkQty("");
+
+      const freshPo = await fetchPoData();
+      const freshItem = freshPo?.material_requests?.orders?.find(
+        (o: Order) => o.part_number === selectedItemToEdit.part_number,
+      );
+      if (freshItem) setSelectedItemToEdit(freshItem);
+      setPosForMr(await fetchPosForMr(po.mr_id));
+    } catch (err: any) {
+      toast.error("Gagal menambahkan link PO", { description: err.message });
+    } finally {
+      setSavingManualLink(false);
+    }
+  };
+
+  const handleRemoveManualLink = async (kodePo: string) => {
+    if (!po?.mr_id || !selectedItemToEdit?.part_number || !currentUser) return;
+
+    setSavingManualLink(true);
+    try {
+      await removeManualPoLink(
+        po.mr_id,
+        selectedItemToEdit.part_number,
+        kodePo,
+        currentUser.id,
+      );
+
+      const freshBreakdown = await fetchPoQtyBreakdownForMr(po.mr_id);
+      setPoBreakdown(freshBreakdown);
+      await syncItemStatusFromBreakdown(selectedItemToEdit, freshBreakdown);
+      await recalculateMrStatus(po.mr_id);
+
+      await logActivity(
+        currentUser.id,
+        "REMOVE_MANUAL_PO_LINK",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} menghapus tautan PO ${kodePo} dari barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        { part_number: selectedItemToEdit.part_number, kode_po: kodePo },
+      );
+      await logMrActivity(
+        "REMOVE_MANUAL_PO_LINK",
+        `${userProfile?.nama || currentUser.email || "Unknown"} menghapus tautan PO ${kodePo} dari barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        { po_id: po.id, part_number: selectedItemToEdit.part_number, kode_po: kodePo },
+      );
+
+      toast.success("Link PO manual dihapus");
+
+      const freshPo = await fetchPoData();
+      const freshItem = freshPo?.material_requests?.orders?.find(
+        (o: Order) => o.part_number === selectedItemToEdit.part_number,
+      );
+      if (freshItem) setSelectedItemToEdit(freshItem);
+    } catch (err: any) {
+      toast.error("Gagal menghapus link PO", { description: err.message });
+    } finally {
+      setSavingManualLink(false);
+    }
+  };
+
+  // Toggle "Payment Issue" (Open 3A <-> Open 3B) - independen dari form
+  // status di atas, langsung tersimpan begitu diklik - mirror
+  // handleTogglePaymentIssue di material-request/[id]/page.tsx.
+  const handleTogglePaymentIssue = async () => {
+    if (!po?.mr_id || !selectedItemToEdit?.part_number || !currentUser) return;
+    const hasIssue = selectedItemToEdit.level !== "Open 3B";
+
+    setActionLoading(true);
+    try {
+      await setItemPaymentIssue(
+        po.mr_id,
+        selectedItemToEdit.part_number,
+        hasIssue,
+        currentUser.id,
+      );
+
+      await logActivity(
+        currentUser.id,
+        "TOGGLE_PAYMENT_ISSUE",
+        "purchase_order",
+        String(po.id),
+        `${userProfile?.nama || currentUser.email || "Unknown"} ${hasIssue ? "menandai" : "melepas"} Payment Issue pada barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        {
+          part_number: selectedItemToEdit.part_number,
+          has_payment_issue: hasIssue,
+          new_level: hasIssue ? "Open 3B" : "Open 3A",
+        },
+      );
+      await logMrActivity(
+        "TOGGLE_PAYMENT_ISSUE",
+        `${userProfile?.nama || currentUser.email || "Unknown"} ${hasIssue ? "menandai" : "melepas"} Payment Issue pada barang "${selectedItemToEdit.name}" (${selectedItemToEdit.part_number}) lewat PO ${po.kode_po}`,
+        {
+          po_id: po.id,
+          part_number: selectedItemToEdit.part_number,
+          has_payment_issue: hasIssue,
+        },
+      );
+
+      toast.success(
+        hasIssue
+          ? "Item ditandai Payment Issue (Open 3B)"
+          : "Payment Issue dilepas, kembali ke Open 3A",
+      );
+
+      const freshPo = await fetchPoData();
+      const freshItem = freshPo?.material_requests?.orders?.find(
+        (o: Order) => o.part_number === selectedItemToEdit.part_number,
+      );
+      if (freshItem) setSelectedItemToEdit(freshItem);
+    } catch (err: any) {
+      toast.error("Gagal update payment issue", { description: err.message });
     } finally {
       setActionLoading(false);
     }
@@ -3275,27 +3526,196 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </Dialog>
 
         {/* --- DIALOG EDIT STATUS BARANG MR --- */}
+        {/* Dialog Kelola Status & PO per Item - sama dengan modal di
+            material-request/[id]/page.tsx, supaya link manual ke PO (item yg
+            part_number-nya beda dari PO gara-gara substitusi) juga bisa
+            dikelola dari halaman detail PO, bukan cuma dari halaman MR. */}
         <Dialog open={isEditStatusOpen} onOpenChange={setIsEditStatusOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Update Status Barang MR</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="h-5 w-5" /> Kelola Status & PO Barang
+              </DialogTitle>
               <DialogDescription>
                 Ubah status barang <strong>{selectedItemToEdit?.name}</strong>{" "}
-                secara manual.
+                secara manual, atau cek PO mana saja yang sudah meng-cover
+                item ini.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-4 py-2">
               {selectedItemToEdit && !selectedItemToEdit.part_number && (
                 <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <p>
-                    Barang ini tidak punya Part Number - perbaiki lewat
-                    halaman detail MR (&quot;Edit Rincian&quot;) kalau ini
-                    seharusnya barang dari Master Data.
+                    Barang ini tidak punya Part Number, jadi info Breakdown PO
+                    &amp; Link PO Manual di bawah tidak bisa ditampilkan.
+                    Kalau ini seharusnya barang dari Master Data, perbaiki
+                    Part Number-nya lewat halaman detail MR (&quot;Edit
+                    Rincian&quot;).
                   </p>
                 </div>
               )}
+
+              {selectedItemToEdit?.level && (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Level
+                    </p>
+                    <ItemLevelBadge
+                      level={selectedItemToEdit.level}
+                      className="mt-1 text-xs px-2 py-0.5"
+                    />
+                  </div>
+                  {isPurchasing &&
+                    (selectedItemToEdit.level === "Open 3A" ||
+                      selectedItemToEdit.level === "Open 3B") && (
+                      <Button
+                        size="sm"
+                        variant={
+                          selectedItemToEdit.level === "Open 3B"
+                            ? "destructive"
+                            : "outline"
+                        }
+                        disabled={actionLoading}
+                        onClick={handleTogglePaymentIssue}
+                      >
+                        {selectedItemToEdit.level === "Open 3B"
+                          ? "Lepas Payment Issue"
+                          : "Tandai Payment Issue"}
+                      </Button>
+                    )}
+                </div>
+              )}
+
+              {selectedItemToEdit?.part_number && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    PO Terhubung
+                  </p>
+                  {(poBreakdown[selectedItemToEdit.part_number] || [])
+                    .length > 0 ? (
+                    <>
+                      <ul className="space-y-1 text-sm">
+                        {poBreakdown[selectedItemToEdit.part_number].map(
+                          (entry, idx) => (
+                            <li
+                              key={idx}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <Link
+                                href={`/purchase-order?search=${encodeURIComponent(
+                                  entry.kode_po,
+                                )}`}
+                                className="hover:underline flex items-center gap-1"
+                                target="_blank"
+                              >
+                                <LinkIcon className="w-3 h-3" />
+                                {entry.kode_po}
+                                {entry.is_manual && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1 py-0 font-normal"
+                                  >
+                                    manual
+                                  </Badge>
+                                )}
+                              </Link>
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                {entry.qty} {selectedItemToEdit.uom} •{" "}
+                                {entry.po_status}
+                                {entry.is_manual && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    disabled={savingManualLink}
+                                    onClick={() =>
+                                      handleRemoveManualLink(entry.kode_po)
+                                    }
+                                    title="Hapus link manual ini"
+                                  >
+                                    <X className="h-3 w-3 text-destructive" />
+                                  </Button>
+                                )}
+                              </span>
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                      <p className="text-xs text-muted-foreground pt-1 border-t">
+                        Total ter-PO:{" "}
+                        {poBreakdown[selectedItemToEdit.part_number].reduce(
+                          (sum, entry) => sum + (entry.qty || 0),
+                          0,
+                        )}{" "}
+                        / {Number(selectedItemToEdit.qty) || 0}{" "}
+                        {selectedItemToEdit.uom}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Belum ada PO yang meng-cover item ini.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {selectedItemToEdit?.part_number && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Link Manual ke PO
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Dipakai kalau barang yang dibeli disubstitusi/diganti pas
+                    belanja (part_number PO beda dari part_number MR ini),
+                    sehingga tidak ke-detect otomatis.
+                  </p>
+                  <div className="flex gap-2">
+                    <Select
+                      value={manualLinkPoCode}
+                      onValueChange={setManualLinkPoCode}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Pilih PO..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {posForMr.length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                            Belum ada PO di MR ini.
+                          </div>
+                        )}
+                        {posForMr.map((poOption) => (
+                          <SelectItem key={poOption.id} value={poOption.kode_po}>
+                            {poOption.kode_po} ({poOption.status})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      className="w-24"
+                      value={manualLinkQty}
+                      onChange={(e) => setManualLinkQty(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleAddManualLink}
+                      disabled={savingManualLink}
+                    >
+                      {savingManualLink ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Tambah"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-2">
                 <Label htmlFor="status">Status Barang</Label>
                 <Select
