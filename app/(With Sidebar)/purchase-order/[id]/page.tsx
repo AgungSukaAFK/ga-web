@@ -3672,6 +3672,34 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     belanja (part_number PO beda dari part_number MR ini),
                     sehingga tidak ke-detect otomatis.
                   </p>
+                  {po?.kode_po &&
+                    !isMrItemInPO(selectedItemToEdit) &&
+                    !(poBreakdown[selectedItemToEdit.part_number] || []).some(
+                      (e) => e.kode_po === po.kode_po,
+                    ) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const cumulative = (
+                            poBreakdown[selectedItemToEdit.part_number!] || []
+                          ).reduce((sum, e) => sum + (e.qty || 0), 0);
+                          const remaining = Math.max(
+                            0,
+                            (Number(selectedItemToEdit.qty) || 0) - cumulative,
+                          );
+                          setManualLinkPoCode(po.kode_po);
+                          setManualLinkQty(
+                            remaining > 0 ? String(remaining) : "",
+                          );
+                        }}
+                      >
+                        <LinkIcon className="mr-1 h-3 w-3" /> Hubungkan dengan
+                        PO Ini ({po.kode_po})
+                      </Button>
+                    )}
                   <div className="flex gap-2">
                     <Select
                       value={manualLinkPoCode}
