@@ -14,6 +14,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { RichContentView } from "@/components/rich-content-view";
+import { DiscussionAttachmentView } from "@/components/discussion-attachment-view";
 import { parseRichValue } from "@/lib/rich-content";
 import { PcItemsEditor } from "./PcItemsEditor";
 import { PcCoaBreakdown } from "./PcCoaBreakdown";
@@ -76,6 +77,11 @@ interface PcDocumentInfoPanelProps {
   totalAmount: number;
   attachments: Attachment[];
   approvals: PettyCashPengajuanApprover[];
+  // false utk dokumen yang tidak punya jalur approval sendiri (Sub-Voucher -
+  // persetujuannya sudah ada di level Voucher induk, lihat komentar
+  // PettyCashSubVoucher, type/index.ts) - menyembunyikan section "Jalur
+  // Approval" sepenuhnya, bukan cuma menampilkannya kosong.
+  showApprovals?: boolean;
   discussions?: any[];
   revisions?: PcDocumentRevision[];
 }
@@ -96,6 +102,7 @@ export function PcDocumentInfoPanel({
   totalAmount,
   attachments,
   approvals,
+  showApprovals = true,
   discussions,
   revisions,
 }: PcDocumentInfoPanelProps) {
@@ -161,6 +168,7 @@ export function PcDocumentInfoPanel({
         </div>
       </div>
 
+      {showApprovals && (
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">
           Jalur Approval
@@ -201,6 +209,7 @@ export function PcDocumentInfoPanel({
           ))}
         </div>
       </div>
+      )}
 
       {attachments?.length > 0 && (
         <div className="space-y-2">
@@ -242,6 +251,9 @@ export function PcDocumentInfoPanel({
                   text={d.message}
                   mentions={d.mentions}
                 />
+                {d.attachment && (
+                  <DiscussionAttachmentView attachment={d.attachment} />
+                )}
               </div>
             ))}
           </div>

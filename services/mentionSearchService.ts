@@ -62,7 +62,7 @@ export async function searchDocumentMentions(
   const q = query.trim().replace(/[,()"%]/g, "");
   if (!q) return [];
 
-  const [mr, po, pcLegacy, pengajuan, voucher, deklarasi] = await Promise.all([
+  const [mr, po, pengajuan, voucher, deklarasi] = await Promise.all([
     supabase
       .from("material_requests")
       .select("id, kode_mr")
@@ -73,11 +73,6 @@ export async function searchDocumentMentions(
       .select("id, kode_po")
       .ilike("kode_po", `%${q}%`)
       .limit(4),
-    supabase
-      .from("petty_cash_requests")
-      .select("id, kode_pc")
-      .ilike("kode_pc", `%${q}%`)
-      .limit(3),
     supabase
       .from("petty_cash_pengajuan")
       .select("id, kode_pengajuan")
@@ -108,14 +103,6 @@ export async function searchDocumentMentions(
       sublabel: "Purchase Order",
       href: `/purchase-order/${r.id}`,
     })),
-    ...(pcLegacy.data || []).map(
-      (r: { id: string | number; kode_pc: string }) => ({
-        id: `pc:${r.id}`,
-        label: r.kode_pc,
-        sublabel: "Petty Cash",
-        href: `/petty-cash/${r.id}`,
-      }),
-    ),
     ...(pengajuan.data || []).map(
       (r: { id: string | number; kode_pengajuan: string }) => ({
         id: `pcp:${r.id}`,

@@ -49,7 +49,11 @@ import {
   getUploadErrorMessage,
 } from "@/lib/attachments";
 import { toast } from "sonner";
-import { createPettyCashPengajuan } from "@/services/pettyCashPengajuanService";
+import {
+  checkPengajuanEligibility,
+  createPettyCashPengajuan,
+  PengajuanEligibility,
+} from "@/services/pettyCashPengajuanService";
 import { fetchPengajuanTemplateById } from "@/services/pettyCashPengajuanTemplateService";
 import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
 import { PettyCashBudget, PettyCashPengajuanItem } from "@/type";
@@ -58,6 +62,7 @@ import {
   hasUnresolvedCoa,
 } from "@/components/petty-cash/PcItemsEditor";
 import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getSelectableWeeksOfCurrentMonth } from "@/lib/weekOfMonth";
 import { formatCurrency, getLocalDateString } from "@/lib/utils";
 import {
@@ -69,6 +74,7 @@ import {
   Info,
   UserCircle,
   CalendarClock,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function InputPengajuanClient() {
@@ -118,6 +124,14 @@ export default function InputPengajuanClient() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // Cek kelayakan SEBELUM requester mulai mengisi form (bukan baru ketahuan
+  // sebagai error setelah form diisi penuh & disubmit) - lihat komentar
+  // checkPengajuanEligibility, services/pettyCashPengajuanService.ts.
+  const [eligibility, setEligibility] = useState<PengajuanEligibility | null>(
+    null,
+  );
+  const [eligibilityLoading, setEligibilityLoading] = useState(true);
+
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -133,8 +147,18 @@ export default function InputPengajuanClient() {
           .single();
         if (error) throw error;
         setProfile(userProfile);
+
+        const eligibilityResult = await checkPengajuanEligibility(
+          user.id,
+          userProfile.department,
+          userProfile.lokasi ?? null,
+          userProfile.company,
+        );
+        setEligibility(eligibilityResult);
       } catch (error: any) {
         toast.error("Gagal memuat data awal", { description: error.message });
+      } finally {
+        setEligibilityLoading(false);
       }
     };
     fetchInitialData();
@@ -149,11 +173,11 @@ export default function InputPengajuanClient() {
     null,
   );
   useEffect(() => {
-    if (!profile?.department) return;
-    resolveAutoBudget(profile.department, profile.lokasi ?? null)
+    if (!profile?.department || !profile?.company) return;
+    resolveAutoBudget(profile.department, profile.lokasi ?? null, profile.company)
       .then(setResolvedBudget)
       .catch(() => setResolvedBudget(null));
-  }, [profile?.department, profile?.lokasi]);
+  }, [profile?.department, profile?.lokasi, profile?.company]);
 
   const isLourdes = profile?.company === "LOURDES";
   // COA (GMI/GIS) yang berlaku utk SELURUH pengajuan ini - cuma dipilih
@@ -292,6 +316,42 @@ export default function InputPengajuanClient() {
       setLoading(false);
     }
   };
+
+  if (eligibilityLoading) {
+    return (
+      <Content title="Input Pengajuan Petty Cash">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      </Content>
+    );
+  }
+
+  if (eligibility && !eligibility.eligible) {
+    return (
+      <Content
+        title="Input Pengajuan Petty Cash"
+        description="Ajukan kebutuhan barang Petty Cash - pilih dari katalog atau tambah manual."
+      >
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Belum bisa membuat Pengajuan baru</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-4 space-y-1">
+              {eligibility.reasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+        <div className="mt-4">
+          <Button variant="outline" onClick={() => router.push("/petty-cash/pengajuan-saya")}>
+            Kembali ke Pengajuan Saya
+          </Button>
+        </div>
+      </Content>
+    );
+  }
 
   return (
     <Content
@@ -639,8 +699,10 @@ export default function InputPengajuanClient() {
                 katalog Barang Petty Cash.
               </p>
               <p>
-                * Kalau departemen Anda belum punya Template Approval yang
-                di-set, pengajuan tidak bisa dikirim - hubungi GA/Admin.
+                * Departemen Anda wajib punya Template Approval & Budget
+                Petty Cash aktif, dan Anda tidak sedang punya Sub-Voucher
+                yang belum dideklarasikan, sebelum bisa mengirim pengajuan
+                baru - hubungi GA/Admin kalau ada yang belum diatur.
               </p>
             </CardContent>
           </Card>

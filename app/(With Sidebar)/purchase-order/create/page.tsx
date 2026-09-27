@@ -43,7 +43,7 @@ import { logActivity } from "@/services/logService";
 import { removeAttachmentVps } from "@/services/storageService";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { isMarketplaceVendor } from "@/type/enum";
-import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import {
@@ -80,7 +80,9 @@ import {
   Vendor,
   StoredVendorDetails,
   Barang,
+  Discussion,
 } from "@/type";
+import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -126,7 +128,6 @@ import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 // --- INTERFACE EXTENSION ---
 // Kita extend POItem lokal di sini agar tidak error TS
@@ -311,6 +312,7 @@ function CreatePOPageContent() {
   const mrIdParam = searchParams.get("mrId");
   const supabase = createClient();
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
+  const [isNotesEmpty, setIsNotesEmpty] = useState(true);
 
   const [mrData, setMrData] = useState<MaterialRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1452,20 +1454,40 @@ function CreatePOPageContent() {
         </Content>
 
         <Content title="Catatan PO">
-          <RichMentionEditor
-            ref={notesEditorRef}
-            placeholder="Tambahkan catatan untuk vendor atau internal..."
-            onChange={() =>
-              setPoForm((prev) => ({
-                ...prev,
-                notes: notesEditorRef.current?.isEmpty()
-                  ? ""
-                  : stringifyRichContent(
-                      notesEditorRef.current?.getJSON() ?? { type: "doc" },
-                    ),
-              }))
-            }
-          />
+          <div className="flex flex-col gap-2">
+            <RichMentionEditor
+              ref={notesEditorRef}
+              placeholder="Tambahkan catatan untuk vendor atau internal..."
+              onChange={() => {
+                setPoForm((prev) => ({
+                  ...prev,
+                  notes: notesEditorRef.current?.isEmpty()
+                    ? ""
+                    : stringifyRichContent(
+                        notesEditorRef.current?.getJSON() ?? { type: "doc" },
+                      ),
+                }));
+                setIsNotesEmpty(notesEditorRef.current?.isEmpty() ?? true);
+              }}
+              onSubmit={() => {
+                if (notesEditorRef.current?.isEmpty()) return;
+                toast.success("Catatan PO tersimpan.");
+              }}
+            />
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={isNotesEmpty}
+                onClick={() => {
+                  if (notesEditorRef.current?.isEmpty()) return;
+                  toast.success("Catatan PO tersimpan.");
+                }}
+              >
+                <Send className="mr-2 h-4 w-4" /> Simpan Catatan
+              </Button>
+            </div>
+          </div>
         </Content>
       </div>
 
@@ -2036,44 +2058,21 @@ function CreatePOPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG LIHAT DISKUSI MR (NEW) --- */}
+      {/* --- DIALOG DISKUSI MR --- */}
       <Dialog open={isDiscussionOpen} onOpenChange={setIsDiscussionOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Diskusi Internal MR</DialogTitle>
             <DialogDescription>
-              Riwayat percakapan pada {mrData?.kode_mr}
+              Percakapan pada {mrData?.kode_mr}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="h-[300px] w-full rounded-md border p-4 bg-muted/20">
-            {mrData?.discussions &&
-            Array.isArray(mrData.discussions) &&
-            mrData.discussions.length > 0 ? (
-              <div className="space-y-4">
-                {mrData.discussions.map((chat: any, i: number) => (
-                  <div key={i} className="flex flex-col space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">
-                        {chat.user_name || "User"}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {formatDateFriendly(chat.created_at)}
-                      </span>
-                    </div>
-                    <div
-                      className="bg-background border rounded-md p-2 text-sm shadow-sm"
-                      dangerouslySetInnerHTML={{ __html: chat.message }}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm">
-                <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
-                <p>Belum ada diskusi pada MR ini.</p>
-              </div>
-            )}
-          </ScrollArea>
+          {mrData && (
+            <DiscussionSection
+              mrId={String(mrData.id)}
+              initialDiscussions={(mrData.discussions as Discussion[]) || []}
+            />
+          )}
           <DialogFooter>
             <Button onClick={() => setIsDiscussionOpen(false)}>Tutup</Button>
           </DialogFooter>

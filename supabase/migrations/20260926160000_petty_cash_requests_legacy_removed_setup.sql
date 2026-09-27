@@ -1,0 +1,27 @@
+-- Alur Petty Cash lama (lump-sum Reimbursement/Cash Advance, tabel
+-- petty_cash_requests, services/pettyCashService.ts, halaman
+-- /petty-cash/buat & /petty-cash/[id]) SUDAH DIGANTI TOTAL oleh alur baru
+-- berbasis item (Pengajuan -> Voucher -> Deklarasi, lihat
+-- petty-cash-pengajuan-setup.sql dkk.) - tidak ada lagi halaman yang link ke
+-- sana (sidebar & dokumentasi sudah 100% alur baru).
+--
+-- Tabel lama ini bermasalah: cost_center_id-nya nge-refer ke cost_centers
+-- milik MR/PO (fk_petty_cash_cost_center), padahal Petty Cash TIDAK ADA
+-- hubungannya dengan Cost Center MR/PO - budget Petty Cash alur baru sudah
+-- punya pool sendiri (petty_cash_budget, lihat petty-cash-budget-setup.sql).
+-- Drop tabel ini sekalian membereskan coupling yang salah itu.
+--
+-- Jalankan SEKALI lewat SQL Editor Supabase (project utama).
+--
+-- DIUBAH (2026-09-28) dari `drop table` jadi `rename to` - versi asli
+-- skrip ini MENGHAPUS PERMANEN isi tabel ini kalau masih ada baris lama di
+-- production (fitur lama ini kemungkinan pernah dipakai user sebelum
+-- "Rombak Petty Cash"). Rename JAUH lebih aman: tabel & seluruh datanya
+-- tetap ada utuh (cuma pindah nama & lepas dari skema publik yang aktif),
+-- tidak ada halaman/kode manapun di app baru yang mengacunya lagi (lihat
+-- komentar di atas), jadi efeknya SAMA PERSIS dari sisi aplikasi seperti di-
+-- drop, tanpa risiko kehilangan data kalau ternyata masih dibutuhkan/perlu
+-- diaudit nanti. Kalau suatu saat sudah 100% yakin datanya tidak diperlukan
+-- lagi, baru hapus manual dgn `drop table public.petty_cash_requests_archive_20260926 cascade;`.
+alter table if exists public.petty_cash_requests
+  rename to petty_cash_requests_archive_20260926;

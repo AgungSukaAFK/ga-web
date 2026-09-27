@@ -1,17 +1,21 @@
 // src/app/(With Sidebar)/petty-cash/budgeting/PettyCashBudgetingClient.tsx
 //
 // "Budgeting" Petty Cash (GA/Admin only) - kelola pool budget PER
-// DEPARTEMEN + SITE yang AUTO-terisi ke Input Pengajuan baru (lihat
-// komentar PettyCashBudget di type/index.ts - resolveAutoBudget cocokkan
-// department & site SEKALIGUS, bukan departemen saja). Add/Edit-Top-up/
-// Riwayat/Aktifkan-Nonaktifkan - pola & tampilannya SENGAJA dibuat identik
-// dengan app/(With Sidebar)/cost-center-management/CostCenterClient.tsx
-// (cost center milik MR/PO) supaya konsisten, meski datanya terpisah.
+// DEPARTEMEN + SITE + PERUSAHAAN (GMI/GIS/LOURDES) yang AUTO-terisi ke
+// Input Pengajuan baru (lihat komentar PettyCashBudget di type/index.ts -
+// resolveAutoBudget cocokkan department & site & company SEKALIGUS).
+// Pola & tampilannya SENGAJA dibuat identik dengan
+// app/(With Sidebar)/cost-center-management/CostCenterClient.tsx (cost
+// center milik MR/PO) supaya konsisten - search + pagination + filter
+// "Perusahaan" khusus admin company LOURDES - bedanya di sini TIDAK ada
+// kolom "Kode" seperti Cost Center, karena Budget Petty Cash tidak
+// memakainya.
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { Content } from "@/components/content";
+import { PaginationComponent } from "@/components/pagination-components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +23,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/combobox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -35,10 +47,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { isGADepartment } from "@/lib/constants/departments";
 import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { toast } from "sonner";
-import { PettyCashBudget, PettyCashBudgetHistory } from "@/type";
+import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
 import {
   fetchBudgets,
   fetchBudgetHistory,
@@ -53,9 +67,11 @@ import {
   History,
   Power,
   PowerOff,
-  ShieldAlert,
+  Search,
 } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { User } from "@supabase/supabase-js";
+import { LIMIT_OPTIONS } from "@/type/enum";
 
 function BudgetDialog({
   open,
@@ -74,6 +90,7 @@ function BudgetDialog({
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [site, setSite] = useState("");
+  const [companyCode, setCompanyCode] = useState("");
   const [initialBudget, setInitialBudget] = useState(0);
   const [newBudget, setNewBudget] = useState(0);
   const [reason, setReason] = useState("");
@@ -84,12 +101,14 @@ function BudgetDialog({
       setName(budget.name);
       setDepartment(budget.department);
       setSite(budget.site || "");
+      setCompanyCode(budget.company_code || "");
       setInitialBudget(budget.initial_budget);
       setNewBudget(budget.current_budget);
     } else {
       setName("");
       setDepartment("");
       setSite("");
+      setCompanyCode("");
       setInitialBudget(0);
       setNewBudget(0);
     }
@@ -118,13 +137,21 @@ function BudgetDialog({
         );
         toast.success(`Budget "${budget.name}" berhasil diperbarui.`);
       } else {
-        if (!name.trim() || !department || !site) {
-          toast.error("Nama, Departemen, dan Site/Lokasi wajib diisi.");
+        if (!name.trim() || !department || !site || !companyCode) {
+          toast.error(
+            "Nama, Departemen, Site/Lokasi, dan Perusahaan wajib diisi.",
+          );
           setLoading(false);
           return;
         }
         await createBudget(
-          { name: name.trim(), department, site, initial_budget: initialBudget },
+          {
+            name: name.trim(),
+            department,
+            site,
+            company_code: companyCode,
+            initial_budget: initialBudget,
+          },
           adminUser.id,
         );
         toast.success(`Budget "${name}" berhasil dibuat.`);
@@ -140,78 +167,88 @@ function BudgetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {isCreateMode ? "Buat Budget Baru" : `Edit/Top-up: ${budget?.name}`}
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="name" className="text-right">
-              Nama
-            </Label>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="name">Nama</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="col-span-3"
               disabled={!isCreateMode}
               placeholder="Ex: Budget GA Bulanan"
             />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Departemen</Label>
-            <div className="col-span-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Departemen</Label>
               <Combobox
                 data={dataDepartment}
                 onChange={setDepartment}
                 defaultValue={department}
-                placeholder="Pilih departemen..."
+                placeholder="Cari departemen..."
                 disabled={!isCreateMode}
               />
             </div>
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Site/Lokasi</Label>
-            <div className="col-span-3">
+            <div className="space-y-2">
+              <Label>Site/Lokasi</Label>
               <Combobox
                 data={dataLokasi}
                 onChange={setSite}
                 defaultValue={site}
-                placeholder="Pilih site/lokasi..."
+                placeholder="Cari site/lokasi..."
                 disabled={!isCreateMode}
               />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Perusahaan</Label>
+              <Select
+                onValueChange={setCompanyCode}
+                value={companyCode}
+                disabled={!isCreateMode}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pilih Perusahaan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GMI">GMI</SelectItem>
+                  <SelectItem value="GIS">GIS</SelectItem>
+                  <SelectItem value="LOURDES">LOURDES</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="budget">
+                {isCreateMode ? "Initial Budget" : "Current Budget"}
+              </Label>
+              <CurrencyInput
+                id="budget"
+                value={isCreateMode ? initialBudget : newBudget}
+                onValueChange={isCreateMode ? setInitialBudget : setNewBudget}
+                placeholder="Rp 0"
+              />
+            </div>
+          </div>
           {isCreateMode && (
-            <p className="text-xs text-muted-foreground -mt-2 col-span-4 text-right">
-              Kombinasi Departemen + Site ini akan otomatis dipasangkan ke
-              Pengajuan dari requester yang sama.
+            <p className="text-xs text-muted-foreground">
+              Kombinasi Departemen + Site + Perusahaan ini akan otomatis
+              dipasangkan ke Pengajuan dari requester yang sama.
             </p>
           )}
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="budget" className="text-right">
-              {isCreateMode ? "Initial Budget" : "Current Budget"}
-            </Label>
-            <CurrencyInput
-              id="budget"
-              value={isCreateMode ? initialBudget : newBudget}
-              onValueChange={isCreateMode ? setInitialBudget : setNewBudget}
-              className="col-span-3"
-              placeholder="Rp 0"
-            />
-          </div>
           {!isCreateMode && (
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="reason" className="text-right">
-                Alasan Update
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="reason">Alasan Update</Label>
               <Textarea
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="col-span-3"
                 placeholder="Mis: Top-up budget Q4..."
               />
             </div>
@@ -264,7 +301,7 @@ function HistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl">
         <DialogHeader>
           <DialogTitle>Riwayat Budget: {budget?.name}</DialogTitle>
         </DialogHeader>
@@ -323,56 +360,140 @@ function HistoryDialog({
   );
 }
 
-export default function PettyCashBudgetingClient({
-  canManage,
-}: {
-  canManage: boolean;
-}) {
-  const supabase = createClient();
+export function PettyCashBudgetingClientContent() {
+  const s = createClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const [budgets, setBudgets] = useState<PettyCashBudget[]>([]);
+  const [data, setData] = useState<PettyCashBudget[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isPending, startTransition] = useTransition();
+  const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
+
+  const currentPage = Number(searchParams.get("page") || "1");
+  const limit = Number(searchParams.get("limit") || 25);
+  const searchTerm = searchParams.get("search") || "";
+  const companyFilter = searchParams.get("company") || "";
+
+  const [searchInput, setSearchInput] = useState(searchTerm);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [selected, setSelected] = useState<PettyCashBudget | null>(null);
+  const [selectedBudget, setSelectedBudget] = useState<PettyCashBudget | null>(
+    null,
+  );
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
+  const createQueryString = useCallback(
+    (paramsToUpdate: Record<string, string | number | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(paramsToUpdate).forEach(([name, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          String(value).trim() !== ""
+        ) {
+          params.set(name, String(value));
+        } else {
+          params.delete(name);
+        }
+      });
+      if (Object.keys(paramsToUpdate).some((k) => k !== "page")) {
+        params.set("page", "1");
+      }
+      return params.toString();
+    },
+    [searchParams],
+  );
+
+  const loadData = useCallback(() => {
+    async function fetchData() {
+      setLoading(true);
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await s.auth.getUser();
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
       setAuthUser(user);
 
-      const data = await fetchBudgets();
-      setBudgets(data);
-    } catch (err: any) {
-      toast.error("Gagal memuat budget", { description: err.message });
-    } finally {
-      setLoading(false);
+      const { data: profileData } = await s
+        .from("users_with_profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      const isAllowed =
+        profileData?.role === "admin" ||
+        isGADepartment(profileData?.department) ||
+        profileData?.department === "General Manager";
+      if (!profileData || !isAllowed) {
+        toast.error("Akses ditolak.");
+        router.push("/dashboard");
+        return;
+      }
+      setAdminProfile(profileData);
+
+      try {
+        const { data: budgetData, count } = await fetchBudgets(
+          currentPage,
+          limit,
+          searchTerm,
+          companyFilter,
+          profileData,
+        );
+        setData(budgetData);
+        setTotalItems(count);
+      } catch (err: any) {
+        toast.error("Gagal memuat budget", { description: err.message });
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+    fetchData();
+  }, [s, currentPage, limit, searchTerm, companyFilter, router]);
 
   useEffect(() => {
-    if (canManage) loadData();
-    else setLoading(false);
-  }, [canManage]);
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (searchInput !== searchTerm) {
+        startTransition(() => {
+          router.push(
+            `${pathname}?${createQueryString({ search: searchInput })}`,
+          );
+        });
+      }
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchInput, searchTerm, pathname, router, createQueryString]);
+
+  const handleFilterChange = (
+    updates: Record<string, string | number | undefined>,
+  ) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString(updates)}`);
+    });
+  };
 
   const handleOpenNew = () => {
-    setSelected(null);
+    setSelectedBudget(null);
     setIsFormOpen(true);
   };
 
   const handleOpenEdit = (b: PettyCashBudget) => {
-    setSelected(b);
+    setSelectedBudget(b);
     setIsFormOpen(true);
   };
 
   const handleOpenHistory = (b: PettyCashBudget) => {
-    setSelected(b);
+    setSelectedBudget(b);
     setIsHistoryOpen(true);
   };
 
@@ -382,10 +503,6 @@ export default function PettyCashBudgetingClient({
       return;
     }
     const willDeactivate = b.is_active !== false;
-    const confirmMsg = willDeactivate
-      ? `Nonaktifkan Budget "${b.name}"? Departemen "${b.department}" tidak akan otomatis ke-assign budget ini lagi ke Pengajuan baru.`
-      : `Aktifkan kembali Budget "${b.name}"?`;
-    if (!confirm(confirmMsg)) return;
 
     setTogglingId(b.id);
     try {
@@ -405,22 +522,11 @@ export default function PettyCashBudgetingClient({
     }
   };
 
-  if (!canManage) {
-    return (
-      <Content title="Budgeting Petty Cash" description="Khusus GA/Admin.">
-        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-2">
-          <ShieldAlert className="h-10 w-10" />
-          <p className="text-sm">Anda tidak memiliki akses ke halaman ini.</p>
-        </div>
-      </Content>
-    );
-  }
-
   return (
     <>
       <Content
         title="Budgeting Petty Cash"
-        description="Kelola budget per departemen - otomatis diterapkan ke Input Pengajuan baru sesuai departemen requester."
+        description="Kelola budget per departemen, site, dan perusahaan - otomatis diterapkan ke Input Pengajuan baru sesuai requester."
         cardAction={
           <Button onClick={handleOpenNew}>
             <Plus className="mr-2 h-4 w-4" /> Tambah Budget
@@ -428,6 +534,45 @@ export default function PettyCashBudgetingClient({
         }
         className="col-span-12"
       >
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <Input
+              placeholder="Cari berdasarkan Nama, Departemen, atau Site..."
+              className="pl-10"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+          {adminProfile?.company === "LOURDES" && (
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Perusahaan</label>
+                  <Select
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        company: value === "all" ? undefined : value,
+                      })
+                    }
+                    defaultValue={companyFilter || "all"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter perusahaan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Perusahaan</SelectItem>
+                      <SelectItem value="GMI">GMI</SelectItem>
+                      <SelectItem value="GIS">GIS</SelectItem>
+                      <SelectItem value="LOURDES">LOURDES</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="border rounded-md overflow-x-auto">
           <Table>
             <TableHeader>
@@ -435,6 +580,7 @@ export default function PettyCashBudgetingClient({
                 <TableHead>Nama</TableHead>
                 <TableHead>Departemen</TableHead>
                 <TableHead>Site/Lokasi</TableHead>
+                <TableHead>Perusahaan</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Initial Budget</TableHead>
                 <TableHead className="text-right">Sisa Budget</TableHead>
@@ -442,14 +588,14 @@ export default function PettyCashBudgetingClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
+              {loading || isPending ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
+                  <TableCell colSpan={8} className="text-center h-24">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
-              ) : budgets.length > 0 ? (
-                budgets.map((item) => {
+              ) : data.length > 0 ? (
+                data.map((item) => {
                   const isInactive = item.is_active === false;
                   const dimClass = isInactive ? "opacity-50" : "";
                   return (
@@ -458,10 +604,15 @@ export default function PettyCashBudgetingClient({
                         {item.name}
                       </TableCell>
                       <TableCell className={dimClass}>
-                        <Badge variant="outline">{item.department}</Badge>
+                        {item.department}
                       </TableCell>
                       <TableCell className={cn("text-sm", dimClass)}>
                         {item.site || "-"}
+                      </TableCell>
+                      <TableCell className={dimClass}>
+                        <Badge variant="outline">
+                          {item.company_code || "-"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {isInactive ? (
@@ -495,31 +646,46 @@ export default function PettyCashBudgetingClient({
                         >
                           <Edit className="mr-2 h-3 w-3" /> Edit/Top-up
                         </Button>
-                        <Button
-                          variant={isInactive ? "outline" : "destructive"}
-                          size="sm"
-                          onClick={() => handleToggleActive(item)}
-                          disabled={togglingId === item.id}
+                        <ConfirmDialog
+                          title={
+                            isInactive
+                              ? `Aktifkan Budget: ${item.name}`
+                              : `Nonaktifkan Budget: ${item.name}`
+                          }
+                          description={
+                            isInactive
+                              ? `Aktifkan kembali Budget "${item.name}"?`
+                              : `Nonaktifkan Budget "${item.name}"? Kombinasi departemen+site+perusahaan ini tidak akan otomatis ke-assign budget ini lagi ke Pengajuan baru.`
+                          }
+                          confirmText={isInactive ? "Aktifkan" : "Nonaktifkan"}
+                          cancelText="Batal"
+                          onConfirm={() => handleToggleActive(item)}
                         >
-                          {togglingId === item.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : isInactive ? (
-                            <>
-                              <Power className="mr-2 h-3 w-3" /> Aktifkan
-                            </>
-                          ) : (
-                            <>
-                              <PowerOff className="mr-2 h-3 w-3" /> Nonaktifkan
-                            </>
-                          )}
-                        </Button>
+                          <Button
+                            variant={isInactive ? "outline" : "destructive"}
+                            size="sm"
+                            disabled={togglingId === item.id}
+                          >
+                            {togglingId === item.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : isInactive ? (
+                              <>
+                                <Power className="mr-2 h-3 w-3" /> Aktifkan
+                              </>
+                            ) : (
+                              <>
+                                <PowerOff className="mr-2 h-3 w-3" /> Nonaktifkan
+                              </>
+                            )}
+                          </Button>
+                        </ConfirmDialog>
                       </TableCell>
                     </TableRow>
                   );
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
+                  <TableCell colSpan={8} className="text-center h-24">
                     Belum ada budget - tambah budget pertama utk sebuah
                     departemen.
                   </TableCell>
@@ -528,21 +694,65 @@ export default function PettyCashBudgetingClient({
             </TableBody>
           </Table>
         </div>
+
+        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <Select
+              value={String(limit)}
+              onValueChange={(value) => handleFilterChange({ limit: value })}
+            >
+              <SelectTrigger className="w-[70px]">
+                <SelectValue placeholder={limit} />
+              </SelectTrigger>
+              <SelectContent>
+                {LIMIT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span>dari {totalItems} budget.</span>
+          </div>
+          <PaginationComponent
+            currentPage={currentPage}
+            totalPages={Math.ceil(totalItems / limit)}
+            limit={limit}
+            basePath={pathname}
+          />
+        </div>
       </Content>
 
       <BudgetDialog
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
-        onSave={loadData}
+        onSave={() => loadData()}
         adminUser={authUser}
-        budget={selected}
+        budget={selectedBudget}
       />
 
       <HistoryDialog
         open={isHistoryOpen}
         onOpenChange={setIsHistoryOpen}
-        budget={selected}
+        budget={selectedBudget}
       />
     </>
   );
 }
+
+export const PettyCashBudgetingSkeleton = () => (
+  <Content title="Budgeting Petty Cash" size="lg" className="col-span-12">
+    <div className="flex flex-col gap-4 mb-6">
+      <div className="flex flex-col md:flex-row gap-4">
+        <Skeleton className="h-10 w-full md:w-1/2" />
+        <Skeleton className="h-10 w-full md:w-auto px-6" />
+      </div>
+    </div>
+    <Skeleton className="h-96 w-full rounded-lg" />
+    <div className="mt-6 flex justify-between items-center">
+      <Skeleton className="h-8 w-32" />
+      <Skeleton className="h-9 w-64" />
+    </div>
+  </Content>
+);

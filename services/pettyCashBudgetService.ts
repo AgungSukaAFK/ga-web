@@ -2,61 +2,107 @@
 //
 // "Budgeting" Petty Cash (GA/Admin only, tabel `petty_cash_budget` +
 // `petty_cash_budget_history`, lihat supabase/petty-cash-budget-setup.sql &
-// petty-cash-budget-site-setup.sql) - pool budget PER DEPARTEMEN + SITE,
-// AUTO-terisi ke Pengajuan baru sesuai departemen & site requester
-// (resolveAutoBudget, mirip resolvePcAutoTemplate di
-// services/pcApprovalTemplateService.ts - cuma kuncinya dua kolom di sini),
-// approver Pengajuan boleh ganti.
+// petty-cash-budget-site-setup.sql & petty-cash-budget-company-setup.sql) -
+// pool budget PER DEPARTEMEN + SITE + COMPANY, AUTO-terisi ke Pengajuan
+// baru sesuai departemen & site & company requester (resolveAutoBudget,
+// mirip resolvePcAutoTemplate di services/pcApprovalTemplateService.ts -
+// cuma kuncinya tiga kolom di sini), approver Pengajuan boleh ganti.
 //
 // CRUD/top-up/history/activate-nya SENGAJA dibuat identik dengan
 // services/costCenterService.ts (cost center milik MR/PO) supaya
 // konsisten, meski tabelnya terpisah - lihat komentar PettyCashBudget di
-// type/index.ts untuk alasannya.
+// type/index.ts untuk alasannya. fetchBudgets juga ikut pola
+// fetchCostCenters (paginasi + search + filter company, LOURDES bebas
+// lihat semua company, GMI/GIS dikunci ke company sendiri).
 
 import { createClient } from "@/lib/supabase/client";
-import { PettyCashBudget, PettyCashBudgetHistory } from "@/type";
+import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
 
 const supabase = createClient();
 
-export const fetchBudgets = async (): Promise<PettyCashBudget[]> => {
-  const { data, error } = await supabase
+export const fetchBudgets = async (
+  page: number,
+  limit: number,
+  searchQuery: string | null,
+  companyFilter: string | null,
+  adminProfile: Profile | null,
+): Promise<{ data: PettyCashBudget[]; count: number }> => {
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
     .from("petty_cash_budget")
-    .select("*")
-    .order("department", { ascending: true });
+    .select("*", { count: "exact" });
+
+  if (searchQuery) {
+    query = query.or(
+      `name.ilike.%${searchQuery}%,department.ilike.%${searchQuery}%,site.ilike.%${searchQuery}%`,
+    );
+  }
+
+  if (companyFilter) {
+    query = query.eq("company_code", companyFilter);
+  }
+
+  // Filter berdasarkan perusahaan admin, kecuali admin LOURDES (sama pola
+  // dengan fetchCostCenters, services/costCenterService.ts).
+  if (adminProfile && adminProfile.company !== "LOURDES") {
+    query = query.eq("company_code", adminProfile.company);
+  }
+
+  const { data, error, count } = await query
+    .order("department", { ascending: true })
+    .range(from, to);
 
   if (error) throw error;
-  return (data ?? []) as unknown as PettyCashBudget[];
+  return {
+    data: (data ?? []) as unknown as PettyCashBudget[],
+    count: count || 0,
+  };
 };
 
-/** Dipakai combobox pilih budget (Input Pengajuan otomatis / Edit & Setujui approver). */
-export const fetchActiveBudgets = async (): Promise<PettyCashBudget[]> => {
-  const { data, error } = await supabase
+/**
+ * Dipakai combobox pilih budget (Input Pengajuan otomatis / Edit & Setujui
+ * approver) - `companyCode` opsional membatasi pilihan ke company dokumen
+ * yang sedang diedit (approver tidak boleh salah pasang budget company
+ * lain), kalau tidak diisi kembalikan semua budget aktif apa pun company-nya.
+ */
+export const fetchActiveBudgets = async (
+  companyCode?: string | null,
+): Promise<PettyCashBudget[]> => {
+  let query = supabase
     .from("petty_cash_budget")
     .select("*")
-    .eq("is_active", true)
-    .order("department", { ascending: true });
+    .eq("is_active", true);
+  if (companyCode) query = query.eq("company_code", companyCode);
+
+  const { data, error } = await query.order("department", {
+    ascending: true,
+  });
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashBudget[];
 };
 
 /**
- * Budget aktif utk SATU kombinasi departemen+site - dipakai auto-isi
- * budget_id saat createPettyCashPengajuan
+ * Budget aktif utk SATU kombinasi departemen+site+company - dipakai
+ * auto-isi budget_id saat createPettyCashPengajuan
  * (services/pettyCashPengajuanService.ts). Cocok PERSIS department & site
- * sekaligus (bukan wildcard/fallback kalau site tidak cocok). Null kalau
- * belum ada budget aktif utk kombinasi itu (GA/Admin belum setup) - TIDAK
- * memblokir submit Pengajuan, cuma memblokir nanti pas pembuatan
- * sub-voucher (lihat komentar PettyCashSubVoucher, type/index.ts).
+ * & company sekaligus (bukan wildcard/fallback kalau site tidak cocok).
+ * Null kalau belum ada budget aktif utk kombinasi itu (GA/Admin belum
+ * setup) - TIDAK memblokir submit Pengajuan, cuma memblokir nanti pas
+ * pembuatan sub-voucher (lihat komentar PettyCashSubVoucher, type/index.ts).
  */
 export const resolveAutoBudget = async (
   department: string,
   site: string | null,
+  companyCode: string,
 ): Promise<PettyCashBudget | null> => {
   let query = supabase
     .from("petty_cash_budget")
     .select("*")
     .eq("department", department)
+    .eq("company_code", companyCode)
     .eq("is_active", true);
   // `.eq("site", null)` tidak match NULL di Postgrest (perlu `.is`) - cabang
   // ini menjaga requester yang belum punya site (`site` null di profile-nya)
@@ -87,6 +133,7 @@ export const createBudget = async (
     name: string;
     department: string;
     site: string;
+    company_code: string;
     initial_budget: number;
   },
   adminUserId: string,
@@ -97,6 +144,7 @@ export const createBudget = async (
       name: input.name,
       department: input.department,
       site: input.site,
+      company_code: input.company_code,
       initial_budget: input.initial_budget,
       current_budget: input.initial_budget,
     })

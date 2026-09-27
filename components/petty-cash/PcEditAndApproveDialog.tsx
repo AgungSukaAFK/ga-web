@@ -121,14 +121,16 @@ export function PcEditAndApproveDialog({
 
   useEffect(() => {
     if (!showBudget || !open) return;
-    fetchActiveBudgets()
+    // Dikunci ke company dokumen ini (sama seperti coaMode/lockedCoa di
+    // bawah) - approver tidak boleh salah pasang budget milik company lain.
+    fetchActiveBudgets(companyCode)
       .then(setBudgetOptions)
       .catch((error: any) =>
         toast.error("Gagal memuat daftar budget", {
           description: error.message,
         }),
       );
-  }, [showBudget, open]);
+  }, [showBudget, open, companyCode]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

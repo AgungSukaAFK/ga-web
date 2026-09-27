@@ -7,7 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MaterialRequest, Order, Attachment, Barang } from "@/type";
+import {
+  MaterialRequest,
+  Order,
+  Attachment,
+  Barang,
+  Discussion,
+  DiscussionSubmitPayload,
+} from "@/type";
+import { DiscussionPanel } from "@/components/discussion-panel";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -141,6 +149,33 @@ export default function BuatMRPage() {
     lokasi: string;
     company: string;
   } | null>(null);
+
+  // Id sesi form (BUKAN kode_mr - kode_mr masih preview & bisa berubah sampai
+  // 3x sebelum insert final, lihat generateMRCode/proceedCreateMR/createMaterialRequest)
+  // dipakai sebagai prefix folder upload gambar diskusi selama MR belum
+  // tersimpan di DB.
+  const [draftId] = useState(() => crypto.randomUUID());
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
+  }, []);
+
+  const handleDraftDiscussionSubmit = (payload: DiscussionSubmitPayload) => {
+    const entry: Discussion = {
+      user_id: currentUserId ?? "",
+      user_name: userProfile?.nama || "Anda",
+      timestamp: new Date().toISOString(),
+      ...payload,
+    };
+    setFormCreateMR((prev) => ({
+      ...prev,
+      discussions: [...(prev.discussions ?? []), entry],
+    }));
+  };
 
   const getPriorityColor = (p: string) => {
     switch (p) {
@@ -1072,6 +1107,16 @@ export default function BuatMRPage() {
             </ul>
           )}
         </div>
+      </Content>
+
+      <Content title="Diskusi" size="lg">
+        <DiscussionPanel
+          discussions={formCreateMR.discussions ?? []}
+          onSubmit={handleDraftDiscussionSubmit}
+          storagePathPrefix={`discussions/material-request/draft/${draftId}`}
+          currentUserId={currentUserId}
+          placeholder="Tulis catatan awal untuk MR ini... (opsional, bisa drag & drop atau paste gambar)"
+        />
       </Content>
 
       <Content size="lg">
