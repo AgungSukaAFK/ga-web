@@ -5,7 +5,7 @@
 // & persis petty-cash/pengajuan/[id]/page.tsx - lihat komentar lengkap di
 // sana), approve/reject/edit-&-setujui (PcApprovalActions, muncul HANYA
 // kalau giliran approval user ini sedang pending), override admin
-// (PcAdminOverridePanel, role admin), dan panel diskusi (PcDiscussionPanel,
+// (PcAdminOverridePanel, role admin), dan panel diskusi (DiscussionPanel,
 // semua user login boleh kirim pesan).
 //
 // SELURUH <Content> di atas dibungkus `no-print` - lihat komentar sama
@@ -38,7 +38,12 @@ import {
   rejectVoucherStep,
   editAndApproveVoucherStep,
   adminUpdateVoucher,
+  adminForceUpdateVoucher,
 } from "@/services/pettyCashVoucherService";
+import {
+  adminDeletePettyCashDocument,
+  adminRenamePettyCashKode,
+} from "@/services/pettyCashAdminService";
 import {
   addVoucherDiscussion,
   PcDiscussionPayload,
@@ -48,12 +53,14 @@ import {
   PC_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_COLOR_DEFAULT,
   PC_VOUCHER_STATUS_OPTIONS,
+  PC_SUB_VOUCHER_STATUS_COLORS,
+  PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
-import { PcDiscussionPanel } from "@/components/petty-cash/PcDiscussionPanel";
+import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
@@ -203,6 +210,36 @@ function VoucherDetailContent({ id }: { id: string }) {
     }
   };
 
+  const handleForceEdit = async (edits: any, reason: string) => {
+    if (!doc) return;
+    await adminForceUpdateVoucher(doc.id, edits, reason);
+    toast.success(`${doc.kode_voucher} berhasil diedit paksa.`);
+    await load();
+  };
+
+  const handleRenameKode = async (newKode: string, reason: string) => {
+    if (!doc) return;
+    const result = await adminRenamePettyCashKode(
+      "voucher",
+      doc.id,
+      newKode,
+      reason,
+    );
+    if (result.cascaded_sub_voucher_count > 0) {
+      toast.success(
+        `Kode ${result.cascaded_sub_voucher_count} Sub-Voucher turunan ikut diperbarui.`,
+      );
+    }
+    await load();
+  };
+
+  const handleDeleteDoc = async (reason: string) => {
+    if (!doc) return;
+    await adminDeletePettyCashDocument("voucher", doc.id, reason);
+    toast.success(`${doc.kode_voucher} & seluruh turunannya berhasil dihapus.`);
+    router.push("/petty-cash/management");
+  };
+
   const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
     await addVoucherDiscussion(doc.id, payload);
@@ -305,6 +342,7 @@ function VoucherDetailContent({ id }: { id: string }) {
                                 <TableHead className="text-right">
                                   Nominal
                                 </TableHead>
+                                <TableHead>Status Pembayaran</TableHead>
                                 <TableHead>Status Deklarasi</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -315,10 +353,25 @@ function VoucherDetailContent({ id }: { id: string }) {
                                 return (
                                   <TableRow key={sv.id}>
                                     <TableCell className="font-medium text-sm">
-                                      {sv.kode_sub_voucher}
+                                      <Link
+                                        href={`/petty-cash/sub-voucher/${sv.id}`}
+                                        className="text-primary hover:underline"
+                                      >
+                                        {sv.kode_sub_voucher}
+                                      </Link>
                                     </TableCell>
                                     <TableCell className="text-right text-sm">
                                       {formatCurrency(sv.amount)}
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      <Badge
+                                        className={
+                                          PC_SUB_VOUCHER_STATUS_COLORS[sv.status] ||
+                                          PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT
+                                        }
+                                      >
+                                        {sv.status}
+                                      </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       {deklarasi ? (
@@ -373,16 +426,37 @@ function VoucherDetailContent({ id }: { id: string }) {
           {viewer?.isAdmin && (
             <PcAdminOverridePanel
               key={doc.id}
+              docType="voucher"
+              docId={doc.id}
+              kode={doc.kode_voucher}
               status={doc.status}
               approvals={doc.approvals}
               statusOptions={PC_VOUCHER_STATUS_OPTIONS}
-              onSave={handleAdminSave}
+              onSaveStatus={handleAdminSave}
+              docLabel="Voucher"
+              showNeededDate
+              showBudget
+              editInitial={{
+                needed_date: doc.needed_date,
+                week_of_month: doc.week_of_month,
+                site: doc.site,
+                company_code: doc.company_code,
+                department: doc.department,
+                budget_id: doc.budget_id,
+                notes: doc.notes,
+                items: doc.items,
+                attachments: doc.attachments,
+              }}
+              onForceEdit={handleForceEdit}
+              onRenameKode={handleRenameKode}
+              onDelete={handleDeleteDoc}
             />
           )}
 
-          <PcDiscussionPanel
+          <DiscussionPanel
             discussions={doc.discussions}
             onSubmit={handlePostDiscussion}
+            storagePathPrefix={`discussions/petty-cash/voucher/${doc.id}`}
           />
         </div>
       </Content>

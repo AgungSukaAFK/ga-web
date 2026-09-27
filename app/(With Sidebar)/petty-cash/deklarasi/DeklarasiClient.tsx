@@ -1,12 +1,13 @@
 // src/app/(With Sidebar)/petty-cash/deklarasi/DeklarasiClient.tsx
 //
 // Requester bikin Deklarasi dari salah satu Sub-Voucher miliknya (tarikan
-// dana parsial, lihat services/pettyCashSubVoucherService.ts) yang belum
-// pernah dideklarasikan. Item AWAL disalin dari Voucher INDUKnya (bukan
-// dari sub-voucher-nya sendiri - sub-voucher cuma nominal, tidak punya
-// rincian barang sendiri), tapi qty/harga satuan/catatan per baris BOLEH
-// disesuaikan ke pemakaian riil (struk asli kadang beda dari rencana) -
-// lihat createDeklarasiFromSubVoucher, services/pettyCashDeklarasiService.ts.
+// dana parsial, lihat services/pettyCashSubVoucherService.ts) yang sudah
+// "Selesai" dibayar Finance dan belum pernah dideklarasikan. Item AWAL
+// disalin dari Sub-Voucher itu SENDIRI (`sv.items` - barang yang BENERAN
+// ditarik di tarikan ini, lihat PettyCashSubVoucherItem, type/index.ts),
+// tapi qty/harga satuan/catatan per baris BOLEH disesuaikan ke pemakaian
+// riil (struk asli kadang beda dari rencana) - lihat
+// createDeklarasiFromSubVoucher, services/pettyCashDeklarasiService.ts.
 // Begitu dikirim, Deklarasi langsung masuk jalur approval-nya sendiri
 // (Template Approval ber-approval_type "Approval Deklarasi").
 
@@ -58,7 +59,11 @@ import {
   fetchMyDeklarasi,
   createDeklarasiFromSubVoucher,
 } from "@/services/pettyCashDeklarasiService";
-import { fetchSubVouchersForDeklarasi } from "@/services/pettyCashSubVoucherService";
+import {
+  fetchPendingSubVouchers,
+  fetchSubVouchersForDeklarasi,
+} from "@/services/pettyCashSubVoucherService";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import {
   Loader2,
@@ -69,6 +74,7 @@ import {
   UploadCloud,
   X,
   Eye,
+  Clock,
 } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
@@ -108,6 +114,14 @@ export default function DeklarasiClient() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [eligible, setEligible] = useState<PettyCashSubVoucher[]>([]);
+  // Sub-voucher yang belum dideklarasikan TAPI belum "Selesai" dibayar
+  // Finance - tidak muncul di tabel "Siap Dideklarasikan" di bawah, jadi
+  // ditampilkan di alert info sendiri supaya requester tidak bingung kenapa
+  // tarikannya "hilang" (lihat komentar fetchPendingSubVouchers,
+  // services/pettyCashSubVoucherService.ts).
+  const [awaitingPayment, setAwaitingPayment] = useState<PettyCashSubVoucher[]>(
+    [],
+  );
   const [deklarasiList, setDeklarasiList] = useState<PettyCashDeklarasi[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -127,11 +141,15 @@ export default function DeklarasiClient() {
       if (!user) throw new Error("Tidak terautentikasi.");
       setUserId(user.id);
 
-      const [eligibleData, deklarasiData] = await Promise.all([
+      const [eligibleData, pendingData, deklarasiData] = await Promise.all([
         fetchSubVouchersForDeklarasi(user.id),
+        fetchPendingSubVouchers(user.id),
         fetchMyDeklarasi(user.id),
       ]);
       setEligible(eligibleData);
+      setAwaitingPayment(
+        pendingData.filter((sv) => sv.status !== "Selesai"),
+      );
       setDeklarasiList(deklarasiData);
     } catch (error: any) {
       toast.error("Gagal memuat data", { description: error.message });
@@ -147,7 +165,7 @@ export default function DeklarasiClient() {
   const openDeclareForm = (subVoucher: PettyCashSubVoucher) => {
     setSelected(subVoucher);
     setRows(
-      (subVoucher.petty_cash_voucher?.items ?? []).map((it) => ({
+      (subVoucher.items ?? []).map((it) => ({
         barang_id: it.barang_id,
         part_name: it.part_name,
         category: it.category,
@@ -227,7 +245,6 @@ export default function DeklarasiClient() {
           voucher_id: selected.voucher_id,
           company_code: selected.petty_cash_voucher?.company_code || "",
           department: selected.petty_cash_voucher?.department || "",
-          cost_center_id: selected.petty_cash_voucher?.cost_center_id ?? null,
           week_of_month: selected.petty_cash_voucher?.week_of_month ?? null,
           site: selected.petty_cash_voucher?.site ?? null,
           notes,
@@ -279,6 +296,19 @@ export default function DeklarasiClient() {
         }
       >
         <div className="space-y-8">
+          {awaitingPayment.length > 0 && (
+            <Alert>
+              <Clock className="h-4 w-4" />
+              <AlertTitle>
+                {awaitingPayment.length} tarikan masih menunggu pembayaran Finance
+              </AlertTitle>
+              <AlertDescription>
+                {awaitingPayment.map((sv) => sv.kode_sub_voucher).join(", ")} -
+                belum bisa dideklarasikan sampai dananya benar-benar
+                ditransfer/dibayar Finance.
+              </AlertDescription>
+            </Alert>
+          )}
           <div>
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
               <FileCheck2 className="h-4 w-4 text-primary" />

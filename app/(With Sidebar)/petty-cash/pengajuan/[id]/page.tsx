@@ -8,7 +8,7 @@
 // giliran approval user ini sedang pending - isMyApprovalTurn,
 // lib/pcApprovalFlow.ts - jalur approve/reject/edit yang sama dengan yang
 // dipakai ApprovalPengajuanClient), override admin (PcAdminOverridePanel,
-// muncul HANYA utk role admin), dan panel diskusi (PcDiscussionPanel, semua
+// muncul HANYA utk role admin), dan panel diskusi (DiscussionPanel, semua
 // user login boleh kirim pesan).
 //
 // SELURUH <Content> di atas (bukan cuma cardAction) dibungkus `no-print` -
@@ -31,7 +31,12 @@ import {
   rejectPengajuanStep,
   editAndApprovePengajuanStep,
   adminUpdatePengajuan,
+  adminForceUpdatePengajuan,
 } from "@/services/pettyCashPengajuanService";
+import {
+  adminDeletePettyCashDocument,
+  adminRenamePettyCashKode,
+} from "@/services/pettyCashAdminService";
 import {
   addPengajuanDiscussion,
   PcDiscussionPayload,
@@ -46,7 +51,7 @@ import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
-import { PcDiscussionPanel } from "@/components/petty-cash/PcDiscussionPanel";
+import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
@@ -196,6 +201,28 @@ function PengajuanDetailContent({ id }: { id: string }) {
     }
   };
 
+  const handleForceEdit = async (edits: any, reason: string) => {
+    if (!doc) return;
+    await adminForceUpdatePengajuan(doc.id, edits, reason);
+    toast.success(`${doc.kode_pengajuan} berhasil diedit paksa.`);
+    await load();
+  };
+
+  const handleRenameKode = async (newKode: string, reason: string) => {
+    if (!doc) return;
+    await adminRenamePettyCashKode("pengajuan", doc.id, newKode, reason);
+    await load();
+  };
+
+  const handleDeleteDoc = async (reason: string) => {
+    if (!doc) return;
+    await adminDeletePettyCashDocument("pengajuan", doc.id, reason);
+    toast.success(
+      `${doc.kode_pengajuan} & seluruh turunannya berhasil dihapus.`,
+    );
+    router.push("/petty-cash/management");
+  };
+
   const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
     await addPengajuanDiscussion(doc.id, payload);
@@ -286,16 +313,37 @@ function PengajuanDetailContent({ id }: { id: string }) {
           {viewer?.isAdmin && (
             <PcAdminOverridePanel
               key={doc.id}
+              docType="pengajuan"
+              docId={doc.id}
+              kode={doc.kode_pengajuan}
               status={doc.status}
               approvals={doc.approvals}
               statusOptions={PC_PENGAJUAN_STATUS_OPTIONS}
-              onSave={handleAdminSave}
+              onSaveStatus={handleAdminSave}
+              docLabel="Pengajuan"
+              showNeededDate
+              showBudget
+              editInitial={{
+                needed_date: doc.needed_date,
+                week_of_month: doc.week_of_month,
+                site: doc.site,
+                company_code: doc.company_code,
+                department: doc.department,
+                budget_id: doc.budget_id,
+                notes: doc.notes,
+                items: doc.items,
+                attachments: doc.attachments,
+              }}
+              onForceEdit={handleForceEdit}
+              onRenameKode={handleRenameKode}
+              onDelete={handleDeleteDoc}
             />
           )}
 
-          <PcDiscussionPanel
+          <DiscussionPanel
             discussions={doc.discussions}
             onSubmit={handlePostDiscussion}
+            storagePathPrefix={`discussions/petty-cash/pengajuan/${doc.id}`}
           />
         </div>
       </Content>

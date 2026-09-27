@@ -54,8 +54,8 @@ const toRoman = (num: number): string => {
   return roman[num] || num.toString();
 };
 
-// Sama seperti deptAbbreviations di pettyCashPengajuanService.ts /
-// pettyCashService.ts - disamakan supaya format kode konsisten se-aplikasi.
+// Sama seperti deptAbbreviations di pettyCashPengajuanService.ts -
+// disamakan supaya format kode konsisten se-aplikasi.
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
   "HRGA-HSE": "HRGA-HSE",
@@ -161,7 +161,7 @@ export const fetchMyVouchers = async (
     .from("petty_cash_voucher")
     .select(
       `*, petty_cash_pengajuan(kode_pengajuan),
-       petty_cash_sub_voucher(id, amount),
+       petty_cash_sub_voucher(id, amount, items, status),
        petty_cash_budget(name, current_budget)`,
     )
     .eq("user_id", userId)
@@ -208,6 +208,47 @@ export const adminUpdateVoucher = async (
   if (error) throw error;
 };
 
+export interface AdminForceEditVoucher {
+  needed_date: string;
+  week_of_month: number | null;
+  site: string | null;
+  company_code: string;
+  department: string;
+  budget_id: number | null;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit Paksa" (admin only) - sama pola dengan adminForceUpdatePengajuan
+ * (services/pettyCashPengajuanService.ts), lihat komentar di sana. Dijamin
+ * admin only di dalam RPC (admin_force_update_voucher, lihat
+ * supabase/petty-cash-admin-full-management-setup.sql).
+ */
+export const adminForceUpdateVoucher = async (
+  id: number,
+  edits: AdminForceEditVoucher,
+  reason: string,
+): Promise<PettyCashVoucher> => {
+  const { data, error } = await supabase.rpc("admin_force_update_voucher", {
+    p_id: id,
+    p_needed_date: edits.needed_date,
+    p_week_of_month: edits.week_of_month,
+    p_site: edits.site,
+    p_company_code: edits.company_code,
+    p_department: edits.department,
+    p_budget_id: edits.budget_id,
+    p_notes: edits.notes,
+    p_items: edits.items,
+    p_attachments: edits.attachments,
+    p_reason: reason,
+  });
+
+  if (error) throw error;
+  return data as unknown as PettyCashVoucher;
+};
+
 export const fetchVoucherById = async (
   id: number,
 ): Promise<PettyCashVoucher> => {
@@ -240,7 +281,6 @@ export const createVoucherFromPengajuan = async (
     | "id"
     | "company_code"
     | "department"
-    | "cost_center_id"
     | "budget_id"
     | "needed_date"
     | "week_of_month"
@@ -254,6 +294,8 @@ export const createVoucherFromPengajuan = async (
 ): Promise<PettyCashVoucher> => {
   const template = await resolvePcAutoTemplate(
     pengajuan.department,
+    pengajuan.site,
+    pengajuan.company_code,
     PC_APPROVAL_TYPE_VOUCHER,
   );
   if (!template) {
@@ -278,7 +320,6 @@ export const createVoucherFromPengajuan = async (
       user_id: userId,
       company_code: pengajuan.company_code,
       department: pengajuan.department,
-      cost_center_id: pengajuan.cost_center_id,
       budget_id: pengajuan.budget_id,
       needed_date: pengajuan.needed_date,
       week_of_month: pengajuan.week_of_month,

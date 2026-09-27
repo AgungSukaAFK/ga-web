@@ -61,7 +61,8 @@ export default function TambahBarangPage() {
   const [formData, setFormData] = useState({
     part_number: "",
     part_name: "",
-    category: "",
+    coa_gmi: "",
+    coa_gis: "",
     uom: "",
     vendor: "",
     price: 0,
@@ -72,12 +73,7 @@ export default function TambahBarangPage() {
 
   // --- HANDLER MANUAL SUBMIT ---
   const handleSubmit = async () => {
-    if (
-      !formData.part_number ||
-      !formData.part_name ||
-      !formData.category ||
-      !formData.uom
-    ) {
+    if (!formData.part_number || !formData.part_name || !formData.uom) {
       toast.warning("Mohon lengkapi field yang bertanda bintang (*)");
       return;
     }
@@ -90,7 +86,8 @@ export default function TambahBarangPage() {
         {
           part_number: formData.part_number,
           part_name: formData.part_name,
-          category: formData.category,
+          coa_gmi: formData.coa_gmi || null,
+          coa_gis: formData.coa_gis || null,
           uom: formData.uom,
           vendor: formData.vendor || null,
           last_purchase_price: formData.price || 0,
@@ -124,7 +121,8 @@ export default function TambahBarangPage() {
     const headers = [
       "Part Number (Wajib)",
       "Nama Barang (Wajib)",
-      "Kategori (Wajib)",
+      "COA GMI (Optional)",
+      "COA GIS (Optional)",
       "UOM (Wajib)",
       "Harga Referensi",
       "Vendor",
@@ -137,6 +135,7 @@ export default function TambahBarangPage() {
       "ATK-001",
       "Kertas A4 80gr",
       "ATK",
+      "",
       "RIM",
       "50000",
       "PaperOne",
@@ -148,6 +147,7 @@ export default function TambahBarangPage() {
       "IT-LPT-02",
       "Laptop Dell Latitude",
       "IT",
+      "",
       "UNIT",
       "12000000",
       "Dell Indo",
@@ -199,19 +199,21 @@ export default function TambahBarangPage() {
           // Mapping sesuai urutan Template
           const pn = cols[0]?.trim();
           const name = cols[1]?.trim();
-          const cat = cols[2]?.trim();
-          const uom = cols[3]?.trim();
-          const price = parseFloat(cols[4]?.trim() || "0");
-          const vendor = cols[5]?.trim() || null;
-          const link = cols[6]?.trim() || null;
-          const desc = cols[7]?.trim() || null;
+          const coaGmi = cols[2]?.trim() || null;
+          const coaGis = cols[3]?.trim() || null;
+          const uom = cols[4]?.trim();
+          const price = parseFloat(cols[5]?.trim() || "0");
+          const vendor = cols[6]?.trim() || null;
+          const link = cols[7]?.trim() || null;
+          const desc = cols[8]?.trim() || null;
 
           // Validasi Field Wajib
-          if (pn && name && cat && uom) {
+          if (pn && name && uom) {
             dataToInsert.push({
               part_number: pn,
               part_name: name,
-              category: cat,
+              coa_gmi: coaGmi,
+              coa_gis: coaGis,
               uom: uom,
               last_purchase_price: isNaN(price) ? 0 : price,
               vendor: vendor,
@@ -295,17 +297,18 @@ export default function TambahBarangPage() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="h-7">1. Part Number*</TableHead>
                       <TableHead className="h-7">2. Nama*</TableHead>
-                      <TableHead className="h-7">3. Kategori*</TableHead>
-                      <TableHead className="h-7">4. UOM*</TableHead>
+                      <TableHead className="h-7">3. COA GMI</TableHead>
+                      <TableHead className="h-7">4. COA GIS</TableHead>
+                      <TableHead className="h-7">5. UOM*</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow className="hover:bg-transparent border-0">
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="py-2 text-muted-foreground italic"
                       >
-                        ...dilanjutkan: 5. Harga, 6. Vendor, 7. Link, 8. Catatan
+                        ...dilanjutkan: 6. Harga, 7. Vendor, 8. Link, 9. Catatan
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -430,31 +433,54 @@ export default function TambahBarangPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Tag className="h-3 w-3" /> Kategori{" "}
-                  <span className="text-red-500">*</span>
+                  <Tag className="h-3 w-3" /> COA GMI{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <Input
                   placeholder="Elektronik / ATK"
-                  value={formData.category}
+                  value={formData.coa_gmi}
                   onChange={(e) =>
-                    setFormData({ ...formData, category: e.target.value })
+                    setFormData({ ...formData, coa_gmi: e.target.value })
                   }
                   className="h-11 border-muted-foreground/30"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">
-                  Satuan (UoM) <span className="text-red-500">*</span>
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Tag className="h-3 w-3" /> COA GIS{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <Input
-                  placeholder="PCS / UNIT / SET"
-                  value={formData.uom}
+                  placeholder="Elektronik / ATK"
+                  value={formData.coa_gis}
                   onChange={(e) =>
-                    setFormData({ ...formData, uom: e.target.value })
+                    setFormData({ ...formData, coa_gis: e.target.value })
                   }
                   className="h-11 border-muted-foreground/30"
                 />
               </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground -mt-4">
+              Kosongkan COA GMI/GIS jika barang ini belum/tidak aktif untuk
+              company tersebut.
+            </p>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">
+                Satuan (UoM) <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder="PCS / UNIT / SET"
+                value={formData.uom}
+                onChange={(e) =>
+                  setFormData({ ...formData, uom: e.target.value })
+                }
+                className="h-11 border-muted-foreground/30"
+              />
             </div>
 
             {/* Checkbox Asset */}

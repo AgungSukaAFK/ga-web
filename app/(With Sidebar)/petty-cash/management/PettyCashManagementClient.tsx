@@ -2,17 +2,24 @@
 //
 // Management Petty Cash (ADMIN ONLY) - satu halaman untuk memantau SEMUA
 // dokumen di alur baru Petty Cash (petty_cash_pengajuan / petty_cash_voucher
-// / petty_cash_deklarasi), lintas user & departemen. Klik row/Eye buka
-// dialog PREVIEW ringkas (read-only) - override status/jalur approval PAKSA
-// (mis. dokumen nyangkut karena approver resign/salah pencet) SEKARANG di
-// halaman detail lengkap (link "Detail Lengkap / Cetak" di dialog ini ->
-// petty-cash/{stage}/[id]/page.tsx, lihat PcAdminOverridePanel di sana) -
-// BUKAN lagi di dialog ini, supaya override juga bisa diakses dari halaman
-// detail yang dibuka dari tempat lain (Approval queue, dsb), bukan cuma dari
-// sini. Proteksi di level RLS ada di
-// supabase/petty-cash-admin-management-setup.sql (cuma role admin yang bisa
-// UPDATE lewat policy itu) - guard di komponen ini cuma proteksi UI, bukan
-// pengganti RLS.
+// / petty_cash_sub_voucher / petty_cash_deklarasi), lintas user &
+// departemen, 4 tab (Pengajuan/Voucher/Sub-Voucher/Deklarasi - tab
+// Sub-Voucher BARU, sebelumnya dokumen ini sama sekali tidak termonitor di
+// sini). Klik row/Eye buka dialog PREVIEW ringkas (read-only) - untuk
+// override status/jalur approval, ganti kode, edit paksa, & hapus
+// berantai, admin diarahkan ke link "Detail Lengkap" (halaman
+// petty-cash/{stage}/[id]/page.tsx, lihat PcAdminOverridePanel/
+// PcAdminSubVoucherPanel di sana) - kecuali HAPUS yang juga tersedia
+// sebagai aksi cepat langsung dari baris tabel (tombol tong sampah),
+// supaya admin tidak perlu buka detail dulu kalau cuma mau membersihkan
+// dokumen sampah.
+//
+// Proteksi di level RLS/RPC ada di
+// supabase/petty-cash-admin-management-setup.sql (override status) &
+// supabase/petty-cash-admin-full-management-setup.sql (ganti kode/edit
+// paksa/hapus berantai) - guard di komponen ini cuma proteksi UI, bukan
+// pengganti itu. `isAdmin` di-cek sendiri di sini (bukan prop dari page.tsx)
+// - sama pola dgn ApprovalPettyCashClient.tsx & halaman detail lainnya.
 
 "use client";
 
@@ -45,15 +52,19 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
   PettyCashPengajuan,
   PettyCashVoucher,
+  PettyCashSubVoucher,
   PettyCashDeklarasi,
+  PcDocType,
 } from "@/type";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
+import { PcAdminDeleteDialog } from "@/components/petty-cash/PcAdminDeleteDialog";
 import {
   PC_PENGAJUAN_STATUS_OPTIONS,
   PC_PENGAJUAN_STATUS_COLORS,
@@ -61,17 +72,36 @@ import {
   PC_VOUCHER_STATUS_OPTIONS,
   PC_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_COLOR_DEFAULT,
+  PC_SUB_VOUCHER_STATUS_OPTIONS,
+  PC_SUB_VOUCHER_STATUS_COLORS,
+  PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
   PC_DEKLARASI_STATUS_OPTIONS,
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import { fetchAllPengajuan } from "@/services/pettyCashPengajuanService";
 import { fetchAllVouchers } from "@/services/pettyCashVoucherService";
+import { fetchAllSubVouchers } from "@/services/pettyCashSubVoucherService";
 import { fetchAllDeklarasi } from "@/services/pettyCashDeklarasiService";
-import { Loader2, RefreshCcw, Eye, ShieldAlert, Search } from "lucide-react";
+import {
+  adminDeletePettyCashDocument,
+  getDeleteImpactWarning,
+} from "@/services/pettyCashAdminService";
+import {
+  Loader2,
+  RefreshCcw,
+  Eye,
+  ShieldAlert,
+  Search,
+  Trash2,
+} from "lucide-react";
 
-type StageKey = "pengajuan" | "voucher" | "deklarasi";
-type AnyDoc = PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi;
+type StageKey = PcDocType;
+type AnyDoc =
+  | PettyCashPengajuan
+  | PettyCashVoucher
+  | PettyCashSubVoucher
+  | PettyCashDeklarasi;
 
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("id-ID", {
@@ -83,13 +113,40 @@ const formatDate = (dateStr: string | Date) =>
 const getKode = (stage: StageKey, row: AnyDoc): string => {
   if (stage === "pengajuan") return (row as PettyCashPengajuan).kode_pengajuan;
   if (stage === "voucher") return (row as PettyCashVoucher).kode_voucher;
+  if (stage === "sub_voucher")
+    return (row as PettyCashSubVoucher).kode_sub_voucher;
   return (row as PettyCashDeklarasi).kode_deklarasi;
 };
 
-// Deklarasi tidak punya needed_date (lihat komentar di type/index.ts) -
-// dipakai membedakan apa PcDocumentInfoPanel/tautan detail perlu
+// Sub-Voucher tidak punya `total_amount`/`company_code`/`department` sendiri
+// di top-level (nominalnya di kolom `amount`, company/dept ikut Voucher
+// induk lewat nested join - lihat komentar PettyCashSubVoucher,
+// type/index.ts) - tiga helper ini menyamakan aksesnya lintas tab supaya
+// render tabel/dialog di bawah bisa dipakai seragam tanpa banyak
+// percabangan di tiap tempat.
+const getTotalAmount = (stage: StageKey, row: AnyDoc): number =>
+  stage === "sub_voucher"
+    ? (row as PettyCashSubVoucher).amount
+    : (row as PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi)
+        .total_amount;
+
+const getDepartment = (stage: StageKey, row: AnyDoc): string =>
+  stage === "sub_voucher"
+    ? (row as PettyCashSubVoucher).petty_cash_voucher?.department || "-"
+    : (row as PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi)
+        .department;
+
+const getCompanyCode = (stage: StageKey, row: AnyDoc): string =>
+  stage === "sub_voucher"
+    ? (row as PettyCashSubVoucher).petty_cash_voucher?.company_code || "-"
+    : (row as PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi)
+        .company_code;
+
+// Deklarasi & Sub-Voucher tidak punya needed_date (lihat komentar di
+// type/index.ts) - dipakai membedakan apa PcDocumentInfoPanel perlu
 // menampilkan tanggal/minggu dibutuhkan atau tidak.
-const showsNeededDate = (stage: StageKey) => stage !== "deklarasi";
+const showsNeededDate = (stage: StageKey) =>
+  stage === "pengajuan" || stage === "voucher";
 
 const getNeededDate = (stage: StageKey, row: AnyDoc) =>
   stage === "pengajuan"
@@ -99,25 +156,29 @@ const getNeededDate = (stage: StageKey, row: AnyDoc) =>
       : null;
 
 // Budget yang menanggung dokumen ini - Pengajuan/Voucher punya budget_id
-// sendiri (join langsung), Deklarasi tidak (budget-nya ikut Voucher
-// asalnya, nested lewat VOUCHER_WITH_PENGAJUAN di
-// services/pettyCashDeklarasiService.ts - lihat komentar
-// PettyCashSubVoucher, type/index.ts).
+// sendiri (join langsung), Sub-Voucher/Deklarasi tidak (budget-nya ikut
+// Voucher asalnya, nested).
 const getBudget = (
   stage: StageKey,
   row: AnyDoc,
-): { name: string; current_budget: number } | null | undefined =>
-  stage === "deklarasi"
-    ? (row as PettyCashDeklarasi).petty_cash_voucher?.petty_cash_budget
-    : (row as PettyCashPengajuan | PettyCashVoucher).petty_cash_budget;
+): { name: string; current_budget: number } | null | undefined => {
+  if (stage === "deklarasi")
+    return (row as PettyCashDeklarasi).petty_cash_voucher?.petty_cash_budget;
+  if (stage === "sub_voucher")
+    return (row as PettyCashSubVoucher).petty_cash_voucher?.petty_cash_budget;
+  return (row as PettyCashPengajuan | PettyCashVoucher).petty_cash_budget;
+};
 
-// Kode dokumen asal (rantai Pengajuan -> Voucher -> Deklarasi) - dipakai
-// nunjukin konteks di dialog detail, sesuai relasi yang di-join
-// fetchAllVouchers/fetchAllDeklarasi (lihat services/pettyCash*Service.ts).
+// Kode dokumen asal (rantai Pengajuan -> Voucher -> Sub-Voucher ->
+// Deklarasi) - dipakai nunjukin konteks di dialog detail.
 const getSourceLabel = (stage: StageKey, row: AnyDoc): string | null => {
   if (stage === "voucher") {
     const kode = (row as PettyCashVoucher).petty_cash_pengajuan?.kode_pengajuan;
     return kode ? `Dari Pengajuan ${kode}` : null;
+  }
+  if (stage === "sub_voucher") {
+    const voucher = (row as PettyCashSubVoucher).petty_cash_voucher;
+    return voucher ? `Dari Voucher ${voucher.kode_voucher}` : null;
   }
   if (stage === "deklarasi") {
     const voucher = (row as PettyCashDeklarasi).petty_cash_voucher;
@@ -152,6 +213,13 @@ const STAGE_CONFIG: Record<
     statusColorDefault: PC_VOUCHER_STATUS_COLOR_DEFAULT,
     fetchAll: fetchAllVouchers,
   },
+  sub_voucher: {
+    label: "Sub-Voucher",
+    statusOptions: PC_SUB_VOUCHER_STATUS_OPTIONS,
+    statusColors: PC_SUB_VOUCHER_STATUS_COLORS,
+    statusColorDefault: PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
+    fetchAll: fetchAllSubVouchers,
+  },
   deklarasi: {
     label: "Deklarasi",
     statusOptions: PC_DEKLARASI_STATUS_OPTIONS,
@@ -161,11 +229,17 @@ const STAGE_CONFIG: Record<
   },
 };
 
-export default function PettyCashManagementClient({
-  isAdmin,
-}: {
-  isAdmin: boolean;
-}) {
+const DETAIL_PATH: Record<StageKey, string> = {
+  pengajuan: "pengajuan",
+  voucher: "voucher",
+  sub_voucher: "sub-voucher",
+  deklarasi: "deklarasi",
+};
+
+export default function PettyCashManagementClient() {
+  const supabase = createClient();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
   const [stage, setStage] = useState<StageKey>("pengajuan");
   const [docs, setDocs] = useState<AnyDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,8 +248,30 @@ export default function PettyCashManagementClient({
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const [selected, setSelected] = useState<AnyDoc | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    docType: StageKey;
+    id: number;
+    kode: string;
+  } | null>(null);
 
   const config = STAGE_CONFIG[stage];
+
+  useEffect(() => {
+    const loadAdmin = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return setIsAdmin(false);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      setIsAdmin(profile?.role === "admin");
+    };
+    loadAdmin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -194,6 +290,7 @@ export default function PettyCashManagementClient({
     setStatusFilter("all");
     setSearch("");
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, isAdmin]);
 
   const filteredDocs = useMemo(() => {
@@ -202,7 +299,7 @@ export default function PettyCashManagementClient({
       if (statusFilter !== "all" && row.status !== statusFilter) return false;
       if (!q) return true;
       const kode = getKode(stage, row).toLowerCase();
-      const dept = row.department?.toLowerCase() || "";
+      const dept = getDepartment(stage, row).toLowerCase();
       const pemohon = row.users_with_profiles?.nama?.toLowerCase() || "";
       return kode.includes(q) || dept.includes(q) || pemohon.includes(q);
     });
@@ -216,6 +313,28 @@ export default function PettyCashManagementClient({
   };
 
   const openDetail = (row: AnyDoc) => setSelected(row);
+
+  const handleConfirmDelete = async (reason: string) => {
+    if (!deleteTarget) return;
+    await adminDeletePettyCashDocument(
+      deleteTarget.docType,
+      deleteTarget.id,
+      reason,
+    );
+    toast.success(`${deleteTarget.kode} berhasil dihapus.`);
+    setDeleteTarget(null);
+    await loadData();
+  };
+
+  if (isAdmin === null) {
+    return (
+      <Content title="Management Petty Cash" className="col-span-12">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="animate-spin h-6 w-6 text-primary" />
+        </div>
+      </Content>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -237,7 +356,7 @@ export default function PettyCashManagementClient({
     <>
       <Content
         title="Management Petty Cash"
-        description="Pantau & override status/approval semua dokumen Petty Cash lintas departemen (admin only)."
+        description="Pantau, ganti kode, edit paksa, & hapus (dgn cascade + refund budget otomatis) semua dokumen Petty Cash lintas departemen (admin only)."
         cardAction={
           <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
             <RefreshCcw
@@ -252,6 +371,7 @@ export default function PettyCashManagementClient({
             <TabsList>
               <TabsTrigger value="pengajuan">Pengajuan</TabsTrigger>
               <TabsTrigger value="voucher">Voucher</TabsTrigger>
+              <TabsTrigger value="sub_voucher">Sub-Voucher</TabsTrigger>
               <TabsTrigger value="deklarasi">Deklarasi</TabsTrigger>
             </TabsList>
           </Tabs>
@@ -291,7 +411,7 @@ export default function PettyCashManagementClient({
                   <TableHead className="w-[140px]">Departemen</TableHead>
                   <TableHead className="w-[140px] text-right">Total</TableHead>
                   <TableHead className="w-[140px]">Status</TableHead>
-                  <TableHead className="w-[70px] text-center">Aksi</TableHead>
+                  <TableHead className="w-[90px] text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,24 +447,40 @@ export default function PettyCashManagementClient({
                         {row.users_with_profiles?.nama || "-"}
                       </TableCell>
                       <TableCell className="text-sm truncate">
-                        {row.department}
+                        {getDepartment(stage, row)}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-sm">
-                        {formatCurrency(row.total_amount)}
+                        {formatCurrency(getTotalAmount(stage, row))}
                       </TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>
                       <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-primary"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDetail(row);
-                          }}
+                        <div
+                          className="flex items-center justify-center gap-1"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-primary"
+                            onClick={() => openDetail(row)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              setDeleteTarget({
+                                docType: stage,
+                                id: row.id,
+                                kode: getKode(stage, row),
+                              })
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -355,7 +491,8 @@ export default function PettyCashManagementClient({
         </div>
       </Content>
 
-      {/* DIALOG PREVIEW (read-only) - override ada di halaman detail lengkap */}
+      {/* DIALOG PREVIEW (read-only) - override/edit paksa/ganti kode ada di
+          halaman detail lengkap */}
       <Dialog
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
@@ -365,7 +502,7 @@ export default function PettyCashManagementClient({
             <DialogTitle>{selected && getKode(stage, selected)}</DialogTitle>
             <DialogDescription>
               Diajukan oleh {selected?.users_with_profiles?.nama || "-"} (
-              {selected?.department})
+              {selected && getDepartment(stage, selected)})
               {selected && getSourceLabel(stage, selected)
                 ? ` - ${getSourceLabel(stage, selected)}`
                 : ""}
@@ -377,8 +514,8 @@ export default function PettyCashManagementClient({
               <PcDocumentInfoPanel
                 requesterName={selected.users_with_profiles?.nama}
                 requesterEmail={selected.users_with_profiles?.email}
-                department={selected.department}
-                companyCode={selected.company_code}
+                department={getDepartment(stage, selected)}
+                companyCode={getCompanyCode(stage, selected)}
                 site={(selected as any).site}
                 budgetName={getBudget(stage, selected)?.name}
                 budgetRemaining={getBudget(stage, selected)?.current_budget}
@@ -387,17 +524,19 @@ export default function PettyCashManagementClient({
                 showNeededDate={showsNeededDate(stage)}
                 notes={selected.notes}
                 items={selected.items}
-                totalAmount={selected.total_amount}
-                attachments={selected.attachments}
-                approvals={selected.approvals}
+                totalAmount={getTotalAmount(stage, selected)}
+                attachments={(selected as any).attachments ?? []}
+                approvals={(selected as any).approvals ?? []}
+                showApprovals={stage !== "sub_voucher"}
                 discussions={selected.discussions}
                 revisions={(selected as any).revisions}
               />
               <p className="text-xs text-muted-foreground text-center">
                 Ini preview ringkas & read-only - untuk approve/reject/edit
-                dokumen atau override status/jalur approval paksa, buka
-                &quot;Lihat Detail Lengkap&quot; di bawah (akses aksi tetap
-                mengikuti role Anda - approver giliran berjalan atau admin).
+                dokumen, ganti kode, edit paksa, atau override status/jalur
+                approval, buka &quot;Lihat Detail Lengkap&quot; di bawah
+                (akses aksi tetap mengikuti role Anda - approver giliran
+                berjalan atau admin).
               </p>
             </div>
           )}
@@ -408,7 +547,9 @@ export default function PettyCashManagementClient({
             </Button>
             {selected && (
               <Button asChild>
-                <Link href={`/petty-cash/${stage}/${selected.id}`}>
+                <Link
+                  href={`/petty-cash/${DETAIL_PATH[stage]}/${selected.id}`}
+                >
                   <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
                 </Link>
               </Button>
@@ -416,6 +557,17 @@ export default function PettyCashManagementClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {deleteTarget && (
+        <PcAdminDeleteDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          docLabel={STAGE_CONFIG[deleteTarget.docType].label}
+          kode={deleteTarget.kode}
+          impactWarning={getDeleteImpactWarning(deleteTarget.docType)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </>
   );
 }

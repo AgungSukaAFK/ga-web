@@ -2,7 +2,7 @@
 -- Jalankan lewat psql ke local DB:
 --   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -f supabase/seed-barang.sql
 
-INSERT INTO public.barang (part_number, part_name, category, uom, vendor, is_asset, last_purchase_price, link, description)
+INSERT INTO public.barang (part_number, part_name, coa_gmi, uom, vendor, is_asset, last_purchase_price, link, description)
 VALUES
   -- ATK / Office Supplies
   ('ATK-0001', 'Kertas HVS A4 80gr', 'ATK', 'Rim', 'PT Sinar Dunia', false, 55000, '', 'Kertas HVS putih ukuran A4'),
