@@ -61,7 +61,8 @@ export default function ItemRequestPage() {
   const [finalForm, setFinalForm] = useState({
     part_number: "",
     part_name: "",
-    category: "",
+    coa_gmi: "",
+    coa_gis: "",
     uom: "",
     vendor: "",
     price: 0,
@@ -135,7 +136,8 @@ export default function ItemRequestPage() {
     setFinalForm({
       part_number: "",
       part_name: req.proposed_name,
-      category: req.proposed_category,
+      coa_gmi: req.proposed_category,
+      coa_gis: "",
       uom: req.proposed_uom,
       vendor: "",
       price: 0,
@@ -171,7 +173,8 @@ export default function ItemRequestPage() {
         {
           part_number: finalForm.part_number,
           part_name: finalForm.part_name,
-          category: finalForm.category,
+          coa_gmi: finalForm.coa_gmi || null,
+          coa_gis: finalForm.coa_gis || null,
           uom: finalForm.uom,
           vendor: finalForm.vendor,
           last_purchase_price: finalForm.price,
@@ -456,18 +459,42 @@ export default function ItemRequestPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Tag className="h-3 w-3" /> Kategori Barang
-                </Label>
-                <Input
-                  value={finalForm.category}
-                  onChange={(e) =>
-                    setFinalForm({ ...finalForm, category: e.target.value })
-                  }
-                  className="h-11 bg-background border-muted-foreground/30"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <Tag className="h-3 w-3" /> COA GMI{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      (Optional)
+                    </span>
+                  </Label>
+                  <Input
+                    value={finalForm.coa_gmi}
+                    onChange={(e) =>
+                      setFinalForm({ ...finalForm, coa_gmi: e.target.value })
+                    }
+                    className="h-11 bg-background border-muted-foreground/30"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <Tag className="h-3 w-3" /> COA GIS{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      (Optional)
+                    </span>
+                  </Label>
+                  <Input
+                    value={finalForm.coa_gis}
+                    onChange={(e) =>
+                      setFinalForm({ ...finalForm, coa_gis: e.target.value })
+                    }
+                    className="h-11 bg-background border-muted-foreground/30"
+                  />
+                </div>
               </div>
+              <p className="text-[11px] text-muted-foreground -mt-4">
+                Kosongkan COA GMI/GIS jika barang ini belum/tidak aktif untuk
+                company tersebut.
+              </p>
 
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Satuan (UoM)</Label>

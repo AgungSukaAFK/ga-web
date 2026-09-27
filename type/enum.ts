@@ -384,41 +384,6 @@ export const MR_ITEM_LEVEL_COLORS: Record<string, string> = {
 // ENUM & KOSNTANTA PETTY CASH
 // ==========================================
 
-export const PETTY_CASH_TYPE_OPTIONS = [
-  "Reimbursement",
-  "Cash Advance",
-  "Pembayaran Langsung",
-  "Transport & Perjalanan",
-  "Entertain & Konsumsi",
-  "Lainnya",
-] as const;
-
-export const PETTY_CASH_STATUS_OPTIONS = [
-  "Pending Validation",
-  "In Approval",
-  "Cash Distributed",
-  "Pending Settlement",
-  "Settled",
-  "Rejected",
-] as const;
-
-export const PETTY_CASH_STATUS_COLORS: Record<string, string> = {
-  "Pending Validation":
-    "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600",
-  "In Approval":
-    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
-  "Cash Distributed":
-    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
-  "Pending Settlement":
-    "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
-  Settled:
-    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
-  Rejected:
-    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
-};
-export const PETTY_CASH_STATUS_COLOR_DEFAULT =
-  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
-
 // Kategori untuk katalog Barang Petty Cash (lihat petty_cash_barang &
 // PettyCashBarangClient.tsx) - beda dari kategori barang MR/PO utama.
 // Kategori RELATIF terhadap COA (GMI/GIS punya makna/daftar kategori
@@ -545,6 +510,27 @@ export const PC_VOUCHER_STATUS_COLORS: Record<string, string> = {
 export const PC_VOUCHER_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
+// Status pembayaran Sub-Voucher (petty_cash_sub_voucher, tarikan dana
+// parsial) - 'Menunggu Pembayaran' begitu dibuat (dana belum ditransfer
+// Finance), 'Selesai' begitu Finance approver (department Finance + role
+// approver, atau admin) menyelesaikan pembayaran + upload bukti transfer
+// (mark_petty_cash_sub_voucher_paid, RPC). Deklarasi cuma boleh dibuat dari
+// Sub-Voucher 'Selesai' - lihat fetchSubVouchersForDeklarasi,
+// services/pettyCashSubVoucherService.ts.
+export const PC_SUB_VOUCHER_STATUS_OPTIONS = [
+  "Menunggu Pembayaran",
+  "Selesai",
+] as const;
+
+export const PC_SUB_VOUCHER_STATUS_COLORS: Record<string, string> = {
+  "Menunggu Pembayaran":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Selesai:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+};
+export const PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
 // Status Deklarasi Petty Cash (petty_cash_deklarasi) - sama bentuknya dengan
 // PC_PENGAJUAN_STATUS_OPTIONS (tidak ada tahap "Permintaan Klaim" seperti
 // Voucher, karena Deklarasi sendiri sudah tahap SETELAH klaim diajukan).
@@ -563,6 +549,49 @@ export const PC_DEKLARASI_STATUS_COLORS: Record<string, string> = {
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
 };
 export const PC_DEKLARASI_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// "Status Utama" Petty Cash - BUKAN kolom database, murni status turunan
+// yang dihitung di FE dari satu rantai Pengajuan (Pengajuan -> Voucher ->
+// Sub-Voucher -> Deklarasi, lihat computePcOverallStatus,
+// services/pettyCashDashboardService.ts) untuk Dashboard Petty Cash
+// (app/(With Sidebar)/petty-cash/PcDashboardClient.tsx). 4 status mentah di
+// atas TETAP DIPAKAI APA ADANYA di query/RLS - ini cuma lapisan tampilan
+// supaya requester non-finance langsung tahu "sekarang giliran siapa",
+// bukan pengganti/migrasi status mentah. Lihat planning-pc.md Bagian 1.
+//
+// Oranye = giliran REQUESTER sendiri utk bertindak (ajukan Voucher, tarik
+// dana, atau ajukan Deklarasi) - warna baru, tidak dipakai status mentah
+// manapun di atas, sengaja dibedakan dari kuning ("menunggu ORANG LAIN")
+// supaya requester tidak salah kira "masih proses orang lain" padahal
+// sebenarnya bola ada di tangannya sendiri.
+export const PC_OVERALL_STATUS_COLORS: Record<string, string> = {
+  pengajuan_menunggu_approval:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  pengajuan_ditolak:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  menunggu_ajukan_voucher:
+    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
+  voucher_menunggu_approval:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  voucher_ditolak:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  menunggu_tarik_dana:
+    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
+  tarikan_menunggu_pembayaran:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  menunggu_ajukan_deklarasi:
+    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
+  deklarasi_menunggu_approval:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  deklarasi_ditolak:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  sebagian_tuntas:
+    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+  tuntas:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
+};
+export const PC_OVERALL_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
 // COA (company) yang boleh ditandai ke barang Petty Cash / baris item

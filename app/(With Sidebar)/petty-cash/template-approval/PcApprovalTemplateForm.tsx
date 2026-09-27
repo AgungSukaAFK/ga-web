@@ -3,9 +3,10 @@
 // Mirip TemplateForm.tsx (MR/PO, lihat approval-validation/templates/) tapi
 // disederhanakan: tidak ada "jenis approval" per baris approver (alur Petty
 // Cash cuma approve/reject sekuensial, tidak ada percabangan logic per jenis
-// seperti Payment Validator/Receiver di PO). Auto-terapkan (auto_rules) ADA
-// tapi lebih simpel dari punya MR/PO - cukup per-departemen, tanpa
-// document_type.
+// seperti Payment Validator/Receiver di PO). Auto-terapkan (auto_rules)
+// dicocokkan per kombinasi departemen + site/lokasi + perusahaan (bukan
+// document_type seperti MR/PO) - konsisten dengan pola resolveAutoBudget,
+// lihat komentar PcAutoRule di services/pcApprovalTemplateService.ts.
 //
 // "Tipe Approval" di sini beda dari "jenis approval per baris" di atas - ini
 // klasifikasi TEMPLATE-nya sendiri (satu dari 3 tahap alur Petty Cash, lihat
@@ -56,7 +57,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/combobox";
-import { dataDepartment } from "@/type/comboboxData";
+import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 
 interface PcApprovalTemplateFormProps {
   initialData?: PcApprovalTemplate | null;
@@ -180,9 +181,13 @@ export function PcApprovalTemplateForm({
   const removeAutoRule = (rowKey: string) =>
     setAutoRules((prev) => prev.filter((r) => r._rowKey !== rowKey));
 
-  const updateAutoRule = (rowKey: string, department: string) =>
+  const updateAutoRule = (
+    rowKey: string,
+    field: "department" | "site" | "company_code",
+    value: string,
+  ) =>
     setAutoRules((prev) =>
-      prev.map((r) => (r._rowKey === rowKey ? { ...r, department } : r)),
+      prev.map((r) => (r._rowKey === rowKey ? { ...r, [field]: value } : r)),
     );
 
   const handleSave = async () => {
@@ -194,15 +199,19 @@ export function PcApprovalTemplateForm({
       toast.error("Jalur approval harus memiliki minimal satu orang.");
       return;
     }
-    if (autoRules.some((r) => !r.department)) {
+    if (autoRules.some((r) => !r.department || !r.site || !r.company_code)) {
       toast.error(
-        "Tiap baris auto-terapkan wajib pilih departemennya (atau hapus barisnya).",
+        "Tiap baris auto-terapkan wajib pilih Departemen, Site/Lokasi, dan Perusahaan (atau hapus barisnya).",
       );
       return;
     }
-    const autoRuleDepts = autoRules.map((r) => r.department);
-    if (new Set(autoRuleDepts).size !== autoRuleDepts.length) {
-      toast.error("Ada departemen yang diulang di daftar auto-terapkan.");
+    const autoRuleKeys = autoRules.map(
+      (r) => `${r.department}|${r.site}|${r.company_code}`,
+    );
+    if (new Set(autoRuleKeys).size !== autoRuleKeys.length) {
+      toast.error(
+        "Ada kombinasi departemen+site+perusahaan yang diulang di daftar auto-terapkan.",
+      );
       return;
     }
 
@@ -264,30 +273,58 @@ export function PcApprovalTemplateForm({
         <div className="flex items-center justify-between">
           <Label>Auto-Terapkan Template (Opsional)</Label>
           <Button type="button" size="sm" variant="outline" onClick={addAutoRule}>
-            <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Departemen
+            <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Kombinasi
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Kalau diisi, template ini otomatis diterapkan begitu user dari
-          departemen berikut submit Input Pengajuan - tanpa validasi manual
-          GA. Satu departemen cuma boleh terhubung ke satu template.
+          kombinasi Departemen + Site/Lokasi + Perusahaan berikut submit
+          Input Pengajuan - tanpa validasi manual GA. Satu kombinasi
+          departemen+site+perusahaan cuma boleh terhubung ke satu template
+          per tipe approval.
         </p>
         {autoRules.length === 0 ? (
           <p className="text-xs text-muted-foreground italic pt-1">
-            Belum ada departemen yang auto-terapkan ke template ini.
+            Belum ada kombinasi yang auto-terapkan ke template ini.
           </p>
         ) : (
           <div className="space-y-2 pt-1">
             {autoRules.map((rule) => (
-              <div key={rule._rowKey} className="flex items-center gap-2">
-                <div className="flex-1">
-                  <Combobox
-                    data={dataDepartment}
-                    onChange={(value) => updateAutoRule(rule._rowKey, value)}
-                    defaultValue={rule.department}
-                    placeholder="Pilih departemen..."
-                  />
-                </div>
+              <div
+                key={rule._rowKey}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_140px_auto] sm:items-center"
+              >
+                <Combobox
+                  data={dataDepartment}
+                  onChange={(value) =>
+                    updateAutoRule(rule._rowKey, "department", value)
+                  }
+                  defaultValue={rule.department}
+                  placeholder="Departemen..."
+                />
+                <Combobox
+                  data={dataLokasi}
+                  onChange={(value) =>
+                    updateAutoRule(rule._rowKey, "site", value)
+                  }
+                  defaultValue={rule.site || ""}
+                  placeholder="Site/Lokasi..."
+                />
+                <Select
+                  value={rule.company_code || ""}
+                  onValueChange={(value) =>
+                    updateAutoRule(rule._rowKey, "company_code", value)
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Perusahaan..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GMI">GMI</SelectItem>
+                    <SelectItem value="GIS">GIS</SelectItem>
+                    <SelectItem value="LOURDES">LOURDES</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button
                   type="button"
                   size="icon"

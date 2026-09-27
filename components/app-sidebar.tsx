@@ -42,10 +42,7 @@ import {
   ClipboardList,
   Workflow,
   KeyRound,
-  Receipt,
-  BadgeCheck,
   FileText,
-  FileCheck2,
   ShieldAlert,
   PiggyBank,
 } from "lucide-react";
@@ -279,16 +276,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return markActive(baseNav);
   }, [profile, markActive, unreadCount]);
 
-  // MENU PETTY CASH - tiap item disaring sesuai hak akses halamannya
-  // masing-masing, meniru gate yang SUDAH ADA di halaman/RLS terkait (bukan
-  // aturan baru): Barang, Template Approval, & Budgeting = admin/GA (sama seperti
-  // PettyCashBarangClient.tsx canModify & PcApprovalTemplateClient.tsx),
-  // approval-approval = role "approver" (sama seperti "Approval &
-  // Validation" MR/PO di atas). Template Pengajuan BEDA - itu template
-  // PER-USER (milik requester sendiri, lihat
-  // supabase/petty-cash-pengajuan-template-setup.sql), bukan katalog
-  // bersama admin/GA, jadi terbuka utk semua sama seperti Input Pengajuan.
-  // Sisanya self-service jadi terbuka utk semua.
+  // MENU PETTY CASH (revisi "Rombak Petty Cash") - disederhanakan jadi 8
+  // item saja, tiap item disaring sesuai hak akses: Manajemen Petty Cash =
+  // admin only; Manajemen Budget, Barang Petty Cash, & Template Approval =
+  // admin/GA; Approval Petty Cash = admin/approver; sisanya (Dashboard,
+  // Pengajuan Saya, Deklarasi) self-service terbuka utk semua.
   const pettyCashItems = React.useMemo(() => {
     const isAdmin = profile?.role === "admin";
     const isGA = isGADepartment(profile?.department);
@@ -298,10 +290,22 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
     const pcNav = [
       {
-        title: "Pengajuan Saya",
+        title: "Dashboard Petty Cash",
         url: "/petty-cash",
-        icon: ClipboardList,
+        icon: LayoutDashboard,
         visible: true,
+      },
+      {
+        title: "Manajemen Petty Cash",
+        url: "/petty-cash/management",
+        icon: ShieldAlert,
+        visible: isAdmin,
+      },
+      {
+        title: "Manajemen Budget",
+        url: "/petty-cash/budgeting",
+        icon: PiggyBank,
+        visible: canManagePc,
       },
       {
         title: "Barang Petty Cash",
@@ -316,58 +320,22 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         visible: canManagePc,
       },
       {
-        title: "Budgeting",
-        url: "/petty-cash/budgeting",
-        icon: PiggyBank,
-        visible: canManagePc,
-      },
-      {
-        title: "Template Pengajuan",
-        url: "/petty-cash/template-pengajuan",
-        icon: FileSignature,
-        visible: true,
-      },
-      {
-        title: "Input Pengajuan",
-        url: "/petty-cash/input-pengajuan",
-        icon: PlusCircle,
-        visible: true,
-      },
-      {
-        title: "Approval Pengajuan",
-        url: "/petty-cash/approval-pengajuan",
+        title: "Approval Petty Cash",
+        url: "/petty-cash/approval",
         icon: CheckCheck,
         visible: canApprovePc,
       },
       {
-        title: "Pengajuan Voucher",
-        url: "/petty-cash/pengajuan-voucher",
-        icon: Receipt,
+        title: "Pengajuan Saya",
+        url: "/petty-cash/pengajuan-saya",
+        icon: ClipboardList,
         visible: true,
-      },
-      {
-        title: "Approval Voucher",
-        url: "/petty-cash/approval-voucher",
-        icon: BadgeCheck,
-        visible: canApprovePc,
       },
       {
         title: "Deklarasi",
         url: "/petty-cash/deklarasi",
         icon: FileText,
         visible: true,
-      },
-      {
-        title: "Approval Deklarasi",
-        url: "/petty-cash/approval-deklarasi",
-        icon: FileCheck2,
-        visible: canApprovePc,
-      },
-      {
-        title: "Management Petty Cash",
-        url: "/petty-cash/management",
-        icon: ShieldAlert,
-        visible: isAdmin,
       },
     ];
 

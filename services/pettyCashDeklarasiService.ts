@@ -204,12 +204,51 @@ export const adminUpdateDeklarasi = async (
   if (error) throw error;
 };
 
+export interface AdminForceEditDeklarasi {
+  company_code: string;
+  department: string;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit Paksa" (admin only) - sama pola dengan adminForceUpdatePengajuan
+ * (services/pettyCashPengajuanService.ts). Deklarasi tidak punya
+ * needed_date/week_of_month/budget_id sendiri (lihat komentar
+ * PettyCashDeklarasi, type/index.ts) jadi tidak ada di sini - week_of_month/
+ * site tetap ikut nilai yang disalin dari Voucher asalnya, sengaja tidak
+ * diedit lewat sini juga (konsisten dgn EditDeklarasiEdits di atas). Dijamin
+ * admin only di dalam RPC (admin_force_update_deklarasi, lihat
+ * supabase/petty-cash-admin-full-management-setup.sql).
+ */
+export const adminForceUpdateDeklarasi = async (
+  id: number,
+  edits: AdminForceEditDeklarasi,
+  reason: string,
+): Promise<PettyCashDeklarasi> => {
+  const { data, error } = await supabase.rpc(
+    "admin_force_update_deklarasi",
+    {
+      p_id: id,
+      p_company_code: edits.company_code,
+      p_department: edits.department,
+      p_notes: edits.notes,
+      p_items: edits.items,
+      p_attachments: edits.attachments,
+      p_reason: reason,
+    },
+  );
+
+  if (error) throw error;
+  return data as unknown as PettyCashDeklarasi;
+};
+
 export interface CreateDeklarasiPayload {
   sub_voucher_id: number;
   voucher_id: number;
   company_code: string;
   department: string;
-  cost_center_id: number | null;
   // Disalin dari Voucher asalnya - lihat komentar week_of_month/site di
   // PettyCashDeklarasi (type/index.ts).
   week_of_month: number | null;
@@ -240,6 +279,8 @@ export const createDeklarasiFromSubVoucher = async (
 
   const template = await resolvePcAutoTemplate(
     payload.department,
+    payload.site,
+    payload.company_code,
     PC_APPROVAL_TYPE_DEKLARASI,
   );
   if (!template) {
@@ -265,7 +306,6 @@ export const createDeklarasiFromSubVoucher = async (
       user_id: userId,
       company_code: payload.company_code,
       department: payload.department,
-      cost_center_id: payload.cost_center_id,
       week_of_month: payload.week_of_month,
       site: payload.site,
       notes: payload.notes,

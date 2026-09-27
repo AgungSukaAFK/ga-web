@@ -5,7 +5,7 @@
 // - lihat komentar lengkap di sana), approve/reject/edit-&-setujui
 // (PcApprovalActions, muncul HANYA kalau giliran approval user ini sedang
 // pending), override admin (PcAdminOverridePanel, role admin), dan panel
-// diskusi (PcDiscussionPanel, semua user login boleh kirim pesan). BEDA dari
+// diskusi (DiscussionPanel, semua user login boleh kirim pesan). BEDA dari
 // Pengajuan/Voucher: Deklarasi tidak punya needed_date (showNeededDate=false
 // di semua komponen bersama), dan menampilkan kode Voucher asal + Pengajuan
 // asalnya sebagai info tambahan dekat header.
@@ -28,7 +28,12 @@ import {
   rejectDeklarasiStep,
   editAndApproveDeklarasiStep,
   adminUpdateDeklarasi,
+  adminForceUpdateDeklarasi,
 } from "@/services/pettyCashDeklarasiService";
+import {
+  adminDeletePettyCashDocument,
+  adminRenamePettyCashKode,
+} from "@/services/pettyCashAdminService";
 import {
   addDeklarasiDiscussion,
   PcDiscussionPayload,
@@ -43,7 +48,7 @@ import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
-import { PcDiscussionPanel } from "@/components/petty-cash/PcDiscussionPanel";
+import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
@@ -193,6 +198,26 @@ function DeklarasiDetailContent({ id }: { id: string }) {
     }
   };
 
+  const handleForceEdit = async (edits: any, reason: string) => {
+    if (!doc) return;
+    await adminForceUpdateDeklarasi(doc.id, edits, reason);
+    toast.success(`${doc.kode_deklarasi} berhasil diedit paksa.`);
+    await load();
+  };
+
+  const handleRenameKode = async (newKode: string, reason: string) => {
+    if (!doc) return;
+    await adminRenamePettyCashKode("deklarasi", doc.id, newKode, reason);
+    await load();
+  };
+
+  const handleDeleteDoc = async (reason: string) => {
+    if (!doc) return;
+    await adminDeletePettyCashDocument("deklarasi", doc.id, reason);
+    toast.success(`${doc.kode_deklarasi} berhasil dihapus.`);
+    router.push("/petty-cash/management");
+  };
+
   const handlePostDiscussion = async (payload: PcDiscussionPayload) => {
     if (!doc) return;
     await addDeklarasiDiscussion(doc.id, payload);
@@ -298,16 +323,34 @@ function DeklarasiDetailContent({ id }: { id: string }) {
           {viewer?.isAdmin && (
             <PcAdminOverridePanel
               key={doc.id}
+              docType="deklarasi"
+              docId={doc.id}
+              kode={doc.kode_deklarasi}
               status={doc.status}
               approvals={doc.approvals}
               statusOptions={PC_DEKLARASI_STATUS_OPTIONS}
-              onSave={handleAdminSave}
+              onSaveStatus={handleAdminSave}
+              docLabel="Deklarasi"
+              showNeededDate={false}
+              showBudget={false}
+              editInitial={{
+                site: doc.site,
+                company_code: doc.company_code,
+                department: doc.department,
+                notes: doc.notes,
+                items: doc.items,
+                attachments: doc.attachments,
+              }}
+              onForceEdit={handleForceEdit}
+              onRenameKode={handleRenameKode}
+              onDelete={handleDeleteDoc}
             />
           )}
 
-          <PcDiscussionPanel
+          <DiscussionPanel
             discussions={doc.discussions}
             onSubmit={handlePostDiscussion}
+            storagePathPrefix={`discussions/petty-cash/deklarasi/${doc.id}`}
           />
         </div>
       </Content>

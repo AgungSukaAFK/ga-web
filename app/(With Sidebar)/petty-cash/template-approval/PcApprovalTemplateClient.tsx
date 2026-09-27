@@ -15,6 +15,7 @@ import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -66,7 +67,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PcApprovalTemplateForm } from "./PcApprovalTemplateForm";
-import { Loader2, Plus, Trash2, Edit, Search } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit, Search, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +85,11 @@ export default function PcApprovalTemplateClient() {
 
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const [duplicateSource, setDuplicateSource] =
+    useState<PcApprovalTemplate | null>(null);
+  const [duplicateName, setDuplicateName] = useState("");
+  const [isDuplicating, setIsDuplicating] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<PcApprovalType | "all">("all");
@@ -196,6 +202,52 @@ export default function PcApprovalTemplateClient() {
     }
   };
 
+  // Duplikat template: salin nama+deskripsi+tipe approval+jalur approver ke
+  // template baru (wajib nama beda, dicek client-side & juga dijaga unique
+  // constraint DB kalau ternyata bentrok sama template lain). auto_rules
+  // SENGAJA TIDAK ikut disalin - kalau ikut, langsung bentrok unique
+  // constraint (department+site+company+approval_type) dengan template
+  // asalnya. Habis dibuat, langsung buka form Edit template barunya supaya
+  // admin bisa lanjut atur (termasuk auto-terapkannya sendiri).
+  const openDuplicateDialog = (template: PcApprovalTemplate) => {
+    setDetailTemplate(null);
+    setDuplicateSource(template);
+    setDuplicateName(`${template.template_name} (Copy)`);
+  };
+
+  const handleConfirmDuplicate = async () => {
+    if (!duplicateSource) return;
+    const name = duplicateName.trim();
+    if (!name) {
+      toast.error("Nama template baru wajib diisi.");
+      return;
+    }
+    if (name === duplicateSource.template_name) {
+      toast.error("Nama template baru harus berbeda dari template asal.");
+      return;
+    }
+    setIsDuplicating(true);
+    try {
+      const created = await createPcTemplate({
+        template_name: name,
+        description: duplicateSource.description || "",
+        approval_type: duplicateSource.approval_type,
+        approval_path: duplicateSource.approval_path,
+        auto_rules: [],
+      });
+      toast.success(`Template "${name}" berhasil dibuat dari duplikat.`);
+      setDuplicateSource(null);
+      await loadTemplates();
+      setActiveForm(created);
+    } catch (error: any) {
+      toast.error("Gagal menduplikat template", {
+        description: error.message,
+      });
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
   // Modal buat/edit tidak boleh ketutup gara-gara klik di luar atau Escape -
   // sama seperti TemplateForm MR/PO, biar progress nyusun approver ga ilang.
   const preventOutsideClose = (e: Event) => e.preventDefault();
@@ -257,7 +309,7 @@ export default function PcApprovalTemplateClient() {
                 <TableHead>Deskripsi</TableHead>
                 <TableHead className="w-[140px]">Jumlah Approver</TableHead>
                 <TableHead className="w-[160px]">Terakhir Diubah</TableHead>
-                <TableHead className="text-right w-[120px]">Aksi</TableHead>
+                <TableHead className="text-right w-[160px]">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -285,7 +337,8 @@ export default function PcApprovalTemplateClient() {
                                 variant="outline"
                                 className="font-normal text-[10px] text-primary border-primary/40"
                               >
-                                Auto: {rule.department}
+                                Auto: {rule.department} • {rule.site || "-"} •{" "}
+                                {rule.company_code || "-"}
                               </Badge>
                             ))}
                           </div>
@@ -331,6 +384,13 @@ export default function PcApprovalTemplateClient() {
                         onClick={() => handleOpenEdit(template)}
                       >
                         <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openDuplicateDialog(template)}
+                      >
+                        <Copy className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
@@ -437,7 +497,7 @@ export default function PcApprovalTemplateClient() {
             </Table>
           </div>
 
-          <DialogFooter className="sm:justify-between">
+          <DialogFooter className="sm:justify-between flex-wrap gap-2">
             <Button
               variant="outline"
               className="text-destructive hover:text-destructive"
@@ -447,10 +507,66 @@ export default function PcApprovalTemplateClient() {
             >
               <Trash2 className="mr-2 h-4 w-4" /> Hapus
             </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  detailTemplate && openDuplicateDialog(detailTemplate)
+                }
+              >
+                <Copy className="mr-2 h-4 w-4" /> Duplikat
+              </Button>
+              <Button
+                onClick={() =>
+                  detailTemplate && handleOpenEdit(detailTemplate)
+                }
+              >
+                <Edit className="mr-2 h-4 w-4" /> Edit Template
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Duplikat: wajib isi nama baru sebelum template hasil
+          duplikat dibuat - lihat handleConfirmDuplicate. */}
+      <Dialog
+        open={!!duplicateSource}
+        onOpenChange={(open) => !open && setDuplicateSource(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Duplikat Template</DialogTitle>
+            <DialogDescription>
+              Membuat template baru dengan jalur approval yang sama seperti
+              &quot;{duplicateSource?.template_name}&quot;. Auto-terapkan
+              TIDAK ikut disalin (atur ulang sendiri supaya tidak bentrok).
+              Nama wajib berbeda dari template asal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="duplicate-name">Nama Template Baru</Label>
+            <Input
+              id="duplicate-name"
+              value={duplicateName}
+              onChange={(e) => setDuplicateName(e.target.value)}
+              placeholder="Nama template baru..."
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
             <Button
-              onClick={() => detailTemplate && handleOpenEdit(detailTemplate)}
+              variant="ghost"
+              onClick={() => setDuplicateSource(null)}
+              disabled={isDuplicating}
             >
-              <Edit className="mr-2 h-4 w-4" /> Edit Template
+              Batal
+            </Button>
+            <Button onClick={handleConfirmDuplicate} disabled={isDuplicating}>
+              {isDuplicating && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Duplikat & Edit
             </Button>
           </DialogFooter>
         </DialogContent>
