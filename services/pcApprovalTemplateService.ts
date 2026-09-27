@@ -33,13 +33,19 @@ export interface PcApprover {
   processed_at?: string | null;
 }
 
-// Kombinasi departemen yang bikin template ini otomatis diterapkan begitu
-// user submit Input Pengajuan (lihat resolvePcAutoTemplate) - beda dari
-// AutoRule milik MR/PO yang butuh document_type juga, karena Petty Cash cuma
-// satu jenis dokumen. Satu departemen cuma boleh punya SATU template auto
-// (unique per department, lihat pc_approval_template_auto_rules).
+// Kombinasi departemen + site/lokasi + perusahaan yang bikin template ini
+// otomatis diterapkan begitu user submit Input Pengajuan (lihat
+// resolvePcAutoTemplate) - beda dari AutoRule milik MR/PO yang butuh
+// document_type juga, karena Petty Cash cuma satu jenis dokumen. Konsisten
+// dengan pola resolveAutoBudget (services/pettyCashBudgetService.ts) - dua
+// requester beda site/company yang kebetulan sama departemennya SEHARUSNYA
+// bisa punya jalur approval auto yang berbeda. Satu kombinasi
+// department+site+company_code cuma boleh punya SATU template auto per
+// tipe approval (unique di pc_approval_template_auto_rules).
 export interface PcAutoRule {
   department: string;
+  site: string | null;
+  company_code: string | null;
 }
 
 export interface PcApprovalTemplate {
@@ -73,7 +79,7 @@ const SELECT_WITH_PROFILES = `
   *,
   created_by_profile:profiles!pc_approval_templates_created_by_fkey (nama),
   updated_by_profile:profiles!pc_approval_templates_updated_by_fkey (nama),
-  auto_rules:pc_approval_template_auto_rules (department)
+  auto_rules:pc_approval_template_auto_rules (department, site, company_code)
 `;
 
 /** Dipakai halaman kelola template (/petty-cash/template-approval). */
@@ -116,35 +122,45 @@ const savePcAutoRules = async (
       autoRules.map((rule) => ({
         template_id: templateId,
         department: rule.department,
+        site: rule.site,
+        company_code: rule.company_code,
         approval_type: approvalType,
       })),
     );
   if (insertError) {
     if (insertError.code === "23505")
       throw new Error(
-        "Ada departemen yang sudah punya template auto-terapkan lain untuk tipe approval ini. Kosongkan dulu setting auto-terapkan di template tersebut.",
+        "Ada kombinasi departemen+site+perusahaan yang sudah punya template auto-terapkan lain untuk tipe approval ini. Kosongkan dulu setting auto-terapkan di template tersebut.",
       );
     throw insertError;
   }
 };
 
 /**
- * Cari template yang auto-terapkan untuk departemen tertentu - dipanggil
- * saat submit Input Pengajuan. Lewat RPC (security definer) supaya requester
- * biasa tidak perlu akses baca langsung ke pc_approval_templates /
- * pc_approval_template_auto_rules. Null kalau departemen belum ada rule-nya.
+ * Cari template yang auto-terapkan untuk kombinasi departemen + site/lokasi
+ * + perusahaan tertentu - dipanggil saat submit Input Pengajuan/Voucher/
+ * Deklarasi. Lewat RPC (security definer) supaya requester biasa tidak
+ * perlu akses baca langsung ke pc_approval_templates /
+ * pc_approval_template_auto_rules. Null kalau kombinasinya belum ada
+ * rule-nya. `site` boleh null (disamakan dgn resolveAutoBudget - RPC-nya
+ * pakai IS NOT DISTINCT FROM supaya requester tanpa site tetap ke-match ke
+ * rule yang site-nya juga belum diisi).
  *
- * `approvalType` default "Approval Pengajuan" karena satu-satunya caller
- * saat ini (submitPengajuan, pettyCashPengajuanService.ts) memang khusus
- * tahap Input Pengajuan - saat alur Voucher/Deklarasi dibangun, panggil
- * dengan approvalType yang sesuai.
+ * `approvalType` default "Approval Pengajuan" karena caller paling awal
+ * (createPettyCashPengajuan, pettyCashPengajuanService.ts) memang khusus
+ * tahap Input Pengajuan - caller Voucher/Deklarasi (pettyCashVoucherService/
+ * pettyCashDeklarasiService.ts) panggil dengan approvalType yang sesuai.
  */
 export const resolvePcAutoTemplate = async (
   department: string,
+  site: string | null,
+  companyCode: string,
   approvalType: PcApprovalType = PC_APPROVAL_TYPE_PENGAJUAN,
 ): Promise<{ id: number; template_name: string; approval_path: PcApprover[] } | null> => {
   const { data, error } = await supabase.rpc("resolve_pc_auto_template", {
     p_department: department,
+    p_site: site,
+    p_company_code: companyCode,
     p_approval_type: approvalType,
   });
 

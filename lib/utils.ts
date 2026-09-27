@@ -105,7 +105,14 @@ export function validateCSV(csv: string) {
   const rows = parseCSV(csv);
   const [header, ...data] = rows;
 
-  const expected = ["part_number", "part_name", "category", "uom", "vendor"];
+  const expected = [
+    "part_number",
+    "part_name",
+    "coa_gmi",
+    "coa_gis",
+    "uom",
+    "vendor",
+  ];
   if (header.join(",") !== expected.join(",")) {
     return { valid: false, errors: ["Header CSV tidak sesuai"], rows: [] };
   }

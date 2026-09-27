@@ -64,6 +64,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 
+// Sentinel value dipakai di filter dropdown COA GMI/GIS utk memilih barang
+// yang field-nya kosong (= nonaktif utk company tsb).
+const EMPTY_COA = "__EMPTY__";
+
 // --- 1. Helper Component untuk Text Ellipsis ---
 const TruncatedCell = ({
   text,
@@ -83,6 +87,31 @@ const TruncatedCell = ({
   );
 };
 
+// --- Helper Component untuk nilai COA GMI/GIS (kosong = nonaktif) ---
+const CoaValue = ({
+  text,
+  className,
+}: {
+  text: string | null | undefined;
+  className?: string;
+}) => {
+  if (!text) {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] px-1.5 py-0 font-normal text-muted-foreground border-dashed"
+      >
+        Nonaktif
+      </Badge>
+    );
+  }
+  return (
+    <div className={cn("truncate", className)} title={text}>
+      {text}
+    </div>
+  );
+};
+
 export default function BarangClient() {
   const router = useRouter();
   const supabase = createClient();
@@ -94,7 +123,8 @@ export default function BarangClient() {
 
   // Filter & Pagination
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedCoaGmi, setSelectedCoaGmi] = useState<string>("all");
+  const [selectedCoaGis, setSelectedCoaGis] = useState<string>("all");
   const [isAssetFilter, setIsAssetFilter] = useState<"all" | "true" | "false">(
     "all",
   );
@@ -150,27 +180,45 @@ export default function BarangClient() {
         ) ||
         (item.vendor?.toLowerCase() || "").includes(searchTerm.toLowerCase());
 
-      const matchesCategory =
-        selectedCategory === "all" || item.category === selectedCategory;
+      const matchesCoaGmi =
+        selectedCoaGmi === "all" ||
+        (selectedCoaGmi === EMPTY_COA
+          ? !item.coa_gmi
+          : item.coa_gmi === selectedCoaGmi);
+
+      const matchesCoaGis =
+        selectedCoaGis === "all" ||
+        (selectedCoaGis === EMPTY_COA
+          ? !item.coa_gis
+          : item.coa_gis === selectedCoaGis);
 
       let matchesAsset = true;
       if (isAssetFilter === "true") matchesAsset = item.is_asset === true;
       if (isAssetFilter === "false") matchesAsset = item.is_asset === false;
 
-      return matchesSearch && matchesCategory && matchesAsset;
+      return (
+        matchesSearch && matchesCoaGmi && matchesCoaGis && matchesAsset
+      );
     });
-  }, [data, searchTerm, selectedCategory, isAssetFilter]);
+  }, [data, searchTerm, selectedCoaGmi, selectedCoaGis, isAssetFilter]);
 
-  const uniqueCategories = useMemo(() => {
-    const cats = data
-      .map((item) => item.category)
+  const uniqueCoaGmiValues = useMemo(() => {
+    const values = data
+      .map((item) => item.coa_gmi)
       .filter((c): c is string => !!c);
-    return Array.from(new Set(cats)).sort();
+    return Array.from(new Set(values)).sort();
+  }, [data]);
+
+  const uniqueCoaGisValues = useMemo(() => {
+    const values = data
+      .map((item) => item.coa_gis)
+      .filter((c): c is string => !!c);
+    return Array.from(new Set(values)).sort();
   }, [data]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory, isAssetFilter]);
+  }, [searchTerm, selectedCoaGmi, selectedCoaGis, isAssetFilter]);
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
@@ -188,7 +236,8 @@ export default function BarangClient() {
       No: index + 1,
       "Part Number": item.part_number,
       "Nama Barang": item.part_name,
-      Kategori: item.category,
+      "COA GMI": item.coa_gmi,
+      "COA GIS": item.coa_gis,
       UoM: item.uom,
       Vendor: item.vendor,
       "Harga Ref": item.last_purchase_price,
@@ -264,18 +313,36 @@ export default function BarangClient() {
               />
             </div>
             <div className="w-full lg:w-[180px]">
-              <Select
-                value={selectedCategory}
-                onValueChange={setSelectedCategory}
-              >
+              <Select value={selectedCoaGmi} onValueChange={setSelectedCoaGmi}>
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Kategori" />
+                  <SelectValue placeholder="COA GMI" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Kategori</SelectItem>
-                  {uniqueCategories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
+                  <SelectItem value="all">Semua COA GMI</SelectItem>
+                  <SelectItem value={EMPTY_COA}>
+                    Nonaktif (kosong)
+                  </SelectItem>
+                  {uniqueCoaGmiValues.map((val) => (
+                    <SelectItem key={val} value={val}>
+                      {val}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full lg:w-[180px]">
+              <Select value={selectedCoaGis} onValueChange={setSelectedCoaGis}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="COA GIS" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua COA GIS</SelectItem>
+                  <SelectItem value={EMPTY_COA}>
+                    Nonaktif (kosong)
+                  </SelectItem>
+                  {uniqueCoaGisValues.map((val) => (
+                    <SelectItem key={val} value={val}>
+                      {val}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -306,7 +373,8 @@ export default function BarangClient() {
                   <TableHead className="w-[50px]">No</TableHead>
                   <TableHead className="w-[130px]">Part Number</TableHead>
                   <TableHead className="min-w-[200px]">Nama Barang</TableHead>
-                  <TableHead className="w-[120px]">Kategori</TableHead>
+                  <TableHead className="w-[110px]">COA GMI</TableHead>
+                  <TableHead className="w-[110px]">COA GIS</TableHead>
                   <TableHead className="w-[150px]">Vendor</TableHead>
                   <TableHead className="w-[140px] text-right">
                     Harga Ref
@@ -320,7 +388,7 @@ export default function BarangClient() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
+                    <TableCell colSpan={9} className="h-24 text-center">
                       <div className="flex justify-center items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin" /> Memuat
                         data...
@@ -330,7 +398,7 @@ export default function BarangClient() {
                 ) : paginatedData.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       Data tidak ditemukan.
@@ -359,10 +427,11 @@ export default function BarangClient() {
                       </TableCell>
 
                       <TableCell>
-                        <TruncatedCell
-                          text={item.category}
-                          className="max-w-[120px]"
-                        />
+                        <CoaValue text={item.coa_gmi} className="max-w-[110px]" />
+                      </TableCell>
+
+                      <TableCell>
+                        <CoaValue text={item.coa_gis} className="max-w-[110px]" />
                       </TableCell>
 
                       <TableCell>
@@ -525,13 +594,19 @@ export default function BarangClient() {
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase">
-                      <Tag className="h-3 w-3" /> Kategori & Spesifikasi
+                      <Tag className="h-3 w-3" /> COA & Spesifikasi
                     </span>
                     <div className="p-3 bg-background border rounded-md space-y-2">
-                      <div className="grid grid-cols-2 text-sm">
-                        <span className="text-muted-foreground">Kategori:</span>
+                      <div className="grid grid-cols-2 text-sm items-center">
+                        <span className="text-muted-foreground">COA GMI:</span>
                         <span className="font-medium">
-                          {selectedItem.category || "-"}
+                          <CoaValue text={selectedItem.coa_gmi} />
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 text-sm items-center">
+                        <span className="text-muted-foreground">COA GIS:</span>
+                        <span className="font-medium">
+                          <CoaValue text={selectedItem.coa_gis} />
                         </span>
                       </div>
                       <div className="grid grid-cols-2 text-sm">

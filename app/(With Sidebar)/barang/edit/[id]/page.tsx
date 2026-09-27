@@ -42,7 +42,8 @@ function EditBarangContent({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState({
     part_number: "",
     part_name: "",
-    category: "",
+    coa_gmi: "",
+    coa_gis: "",
     uom: "",
     vendor: "",
     price: 0,
@@ -73,7 +74,8 @@ function EditBarangContent({ params }: { params: { id: string } }) {
         setFormData({
           part_number: data.part_number || "",
           part_name: data.part_name || "",
-          category: data.category || "",
+          coa_gmi: data.coa_gmi || "",
+          coa_gis: data.coa_gis || "",
           uom: data.uom || "",
           vendor: data.vendor || "",
           price: data.last_purchase_price || 0,
@@ -95,12 +97,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
   // --- HANDLER SUBMIT ---
   const handleSubmit = async () => {
     // 1. Validasi Wajib (Sama seperti Tambah Barang)
-    if (
-      !formData.part_number ||
-      !formData.part_name ||
-      !formData.category ||
-      !formData.uom
-    ) {
+    if (!formData.part_number || !formData.part_name || !formData.uom) {
       toast.warning("Mohon lengkapi field yang bertanda bintang (*)");
       return;
     }
@@ -114,7 +111,8 @@ function EditBarangContent({ params }: { params: { id: string } }) {
         .update({
           part_number: formData.part_number,
           part_name: formData.part_name,
-          category: formData.category,
+          coa_gmi: formData.coa_gmi || null,
+          coa_gis: formData.coa_gis || null,
           uom: formData.uom,
           vendor: formData.vendor || null,
           last_purchase_price: formData.price || 0,
@@ -232,31 +230,54 @@ function EditBarangContent({ params }: { params: { id: string } }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Tag className="h-3 w-3" /> Kategori{" "}
-                  <span className="text-red-500">*</span>
+                  <Tag className="h-3 w-3" /> COA GMI{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <Input
                   placeholder="Elektronik / ATK"
-                  value={formData.category}
+                  value={formData.coa_gmi}
                   onChange={(e) =>
-                    setFormData({ ...formData, category: e.target.value })
+                    setFormData({ ...formData, coa_gmi: e.target.value })
                   }
                   className="h-11 border-muted-foreground/30"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">
-                  Satuan (UoM) <span className="text-red-500">*</span>
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Tag className="h-3 w-3" /> COA GIS{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (Optional)
+                  </span>
                 </Label>
                 <Input
-                  placeholder="PCS / UNIT / SET"
-                  value={formData.uom}
+                  placeholder="Elektronik / ATK"
+                  value={formData.coa_gis}
                   onChange={(e) =>
-                    setFormData({ ...formData, uom: e.target.value })
+                    setFormData({ ...formData, coa_gis: e.target.value })
                   }
                   className="h-11 border-muted-foreground/30"
                 />
               </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground -mt-4">
+              Kosongkan COA GMI/GIS jika barang ini belum/tidak aktif untuk
+              company tersebut.
+            </p>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">
+                Satuan (UoM) <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder="PCS / UNIT / SET"
+                value={formData.uom}
+                onChange={(e) =>
+                  setFormData({ ...formData, uom: e.target.value })
+                }
+                className="h-11 border-muted-foreground/30"
+              />
             </div>
 
             {/* Checkbox Asset */}

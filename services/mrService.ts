@@ -203,12 +203,7 @@ export const generateMRCode = async (
 export const createMaterialRequest = async (
   formData: Omit<
     MaterialRequest,
-    | "id"
-    | "created_at"
-    | "approvals"
-    | "discussions"
-    | "userid"
-    | "company_code"
+    "id" | "created_at" | "approvals" | "userid" | "company_code"
   >,
   userId: string,
   company_code: string,
@@ -224,7 +219,12 @@ export const createMaterialRequest = async (
     prioritas: fixedPriority,
     status: "Pending Validation" as const,
     approvals: [],
-    discussions: [],
+    // Pertahankan catatan awal (kalau ada) yang sudah ditulis requester di
+    // panel diskusi draft SEBELUM MR ini disimpan (lihat DiscussionPanel di
+    // material-request/buat/page.tsx) - jangan ditimpa jadi array kosong.
+    discussions: Array.isArray(restOfData.discussions)
+      ? restOfData.discussions
+      : [],
   };
 
   // FIX BUG DUPLIKAT NOMOR: nomor urut di payload.kode_mr di titik ini

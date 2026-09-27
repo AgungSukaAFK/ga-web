@@ -1,10 +1,9 @@
 // src/services/pettyCashPengajuanService.ts
 //
-// "Input Pengajuan" Petty Cash - alur BARU berbasis item (tabel
-// `petty_cash_pengajuan`), terpisah total dari `petty_cash_requests`
-// (pettyCashService.ts, alur lama lump-sum Reimbursement/Cash Advance).
-// created_by/updated_by/created_at/updated_at di-set otomatis oleh trigger DB
-// dari auth.uid() (lihat supabase/petty-cash-pengajuan-setup.sql).
+// "Input Pengajuan" Petty Cash - alur berbasis item (tabel
+// `petty_cash_pengajuan`). created_by/updated_by/created_at/updated_at
+// di-set otomatis oleh trigger DB dari auth.uid() (lihat
+// supabase/petty-cash-pengajuan-setup.sql).
 
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -12,9 +11,11 @@ import {
   PettyCashPengajuan,
   PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
+  PettyCashPengajuanWithChain,
 } from "@/type";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
 import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
+import { fetchPendingSubVouchers } from "@/services/pettyCashSubVoucherService";
 import {
   advanceApproval,
   buildEditAndApproveUpdate,
@@ -44,8 +45,8 @@ const toRoman = (num: number): string => {
   return roman[num] || num.toString();
 };
 
-// Sama seperti deptAbbreviations di pettyCashService.ts - disamakan supaya
-// format kode konsisten se-aplikasi.
+// Sama seperti deptAbbreviations di mrService.ts - disamakan supaya format
+// kode konsisten se-aplikasi.
 const deptAbbreviations: { [key: string]: string } = {
   "General Affair": "GA",
   "HRGA-HSE": "HRGA-HSE",
@@ -132,6 +133,71 @@ export interface CreatePengajuanPayload {
   attachments: { url: string; name: string }[];
 }
 
+export interface PengajuanEligibility {
+  eligible: boolean;
+  reasons: string[];
+}
+
+/**
+ * Cek kelayakan `userId` membuat Pengajuan baru - dipanggil dari halaman
+ * "Pengajuan Saya" & Input Pengajuan SEBELUM requester mulai mengisi form,
+ * supaya alasannya ketahuan lebih awal (bukan baru muncul sebagai error
+ * setelah form diisi penuh dan disubmit). `createPettyCashPengajuan` di
+ * bawah memanggil ini lagi sebagai jaring pengaman terakhir (race condition
+ * antara requester buka form & submit, atau requester akses form langsung
+ * lewat URL tanpa lewat pengecekan di halaman Pengajuan Saya).
+ *
+ * 3 syarat wajib:
+ * 1. Departemen requester harus punya Template Approval "Approval Pengajuan"
+ *    aktif (resolvePcAutoTemplate) - tanpa ini dokumen tidak akan punya
+ *    jalur approval sama sekali.
+ * 2. Departemen (+ site) requester harus punya Budget Petty Cash aktif
+ *    (resolveAutoBudget) - dulu ini TIDAK memblokir submit (budget_id boleh
+ *    null, baru memblokir nanti pas pembuatan sub-voucher), sekarang
+ *    diwajibkan dari awal supaya requester tidak mengajukan sesuatu yang
+ *    dananya tidak akan pernah bisa dicairkan.
+ * 3. Requester tidak sedang punya Sub-Voucher (tarikan dana) yang belum
+ *    dideklarasikan - satu siklus pencairan dana harus dituntaskan dulu
+ *    (Deklarasi) sebelum boleh mengajukan Pengajuan baru. Ini termasuk
+ *    tarikan yang masih "Menunggu Pembayaran" Finance (belum tentu sudah
+ *    "Selesai") - lihat fetchPendingSubVouchers,
+ *    services/pettyCashSubVoucherService.ts.
+ */
+export const checkPengajuanEligibility = async (
+  userId: string,
+  department: string,
+  site: string | null,
+  companyCode: string,
+): Promise<PengajuanEligibility> => {
+  const reasons: string[] = [];
+
+  const [template, budget, pendingDeklarasi] = await Promise.all([
+    resolvePcAutoTemplate(department, site, companyCode),
+    resolveAutoBudget(department, site, companyCode),
+    fetchPendingSubVouchers(userId),
+  ]);
+
+  if (!template) {
+    reasons.push(
+      `Departemen "${department}" belum memiliki Template Approval Pengajuan yang aktif. Hubungi GA/Admin untuk mengaturnya terlebih dahulu.`,
+    );
+  }
+  if (!budget) {
+    reasons.push(
+      `Departemen "${department}"${site ? ` (site ${site})` : ""} belum memiliki Budget Petty Cash yang aktif. Hubungi GA/Admin untuk mengaturnya terlebih dahulu.`,
+    );
+  }
+  if (pendingDeklarasi.length > 0) {
+    reasons.push(
+      `Anda masih memiliki ${pendingDeklarasi.length} Sub-Voucher yang belum dideklarasikan (${pendingDeklarasi
+        .map((sv) => sv.kode_sub_voucher)
+        .join(", ")}). Selesaikan Deklarasi-nya dulu sebelum membuat Pengajuan baru.`,
+    );
+  }
+
+  return { eligible: reasons.length === 0, reasons };
+};
+
 /**
  * Membuat Input Pengajuan baru - approval path-nya diambil OTOMATIS dari
  * Template Approval Petty Cash yang auto-terapkan sesuai departemen (lihat
@@ -147,7 +213,21 @@ export const createPettyCashPengajuan = async (
     throw new Error("Minimal harus ada 1 barang di pengajuan.");
   }
 
-  const template = await resolvePcAutoTemplate(payload.department);
+  const eligibility = await checkPengajuanEligibility(
+    userId,
+    payload.department,
+    payload.site,
+    payload.company_code,
+  );
+  if (!eligibility.eligible) {
+    throw new Error(eligibility.reasons.join(" "));
+  }
+
+  const template = await resolvePcAutoTemplate(
+    payload.department,
+    payload.site,
+    payload.company_code,
+  );
   if (!template) {
     throw new Error(
       `Belum ada Template Approval untuk departemen "${payload.department}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
@@ -155,11 +235,19 @@ export const createPettyCashPengajuan = async (
   }
 
   // Auto-isi Budget sesuai departemen & site (mirip resolvePcAutoTemplate di
-  // atas, cuma kuncinya dua kolom) - null kalau belum ada budget aktif utk
-  // kombinasi ini, SENGAJA TIDAK memblokir submit (beda dari Template
-  // Approval yang wajib ada) - baru memblokir nanti pas pembuatan
-  // sub-voucher (lihat komentar PettyCashSubVoucher, type/index.ts).
-  const budget = await resolveAutoBudget(payload.department, payload.site);
+  // atas, cuma kuncinya dua kolom) - wajib ada, lihat checkPengajuanEligibility
+  // di atas utk kenapa (beda dari perilaku lama yang membolehkan budget_id
+  // null sampai tahap pembuatan sub-voucher).
+  const budget = await resolveAutoBudget(
+    payload.department,
+    payload.site,
+    payload.company_code,
+  );
+  if (!budget) {
+    throw new Error(
+      `Departemen "${payload.department}" belum memiliki Budget Petty Cash yang aktif. Hubungi GA/Admin untuk mengatur Budget terlebih dahulu.`,
+    );
+  }
 
   const totalAmount = payload.items.reduce((sum, i) => sum + i.subtotal, 0);
 
@@ -178,8 +266,7 @@ export const createPettyCashPengajuan = async (
       user_id: userId,
       company_code: payload.company_code,
       department: payload.department,
-      cost_center_id: null,
-      budget_id: budget?.id ?? null,
+      budget_id: budget.id,
       needed_date: payload.needed_date,
       week_of_month: payload.week_of_month,
       site: payload.site,
@@ -245,6 +332,31 @@ export const fetchMyPengajuan = async (
 };
 
 /**
+ * Sama seperti fetchMyPengajuan, tapi tiap Pengajuan diikuti SELURUH
+ * turunannya (Voucher -> Sub-Voucher -> Deklarasi) lewat nested select -
+ * dipakai halaman "Pengajuan Saya" (pusat dokumen) supaya modal detail bisa
+ * menampilkan rantai lengkap tanpa query terpisah per dokumen. Lihat
+ * komentar PettyCashPengajuanWithChain (type/index.ts) utk kenapa tipe ini
+ * beda dari petty_cash_voucher?: {id}[] di fetchMyPengajuan biasa.
+ */
+export const fetchMyPengajuanWithChain = async (
+  userId: string,
+): Promise<PettyCashPengajuanWithChain[]> => {
+  const { data, error } = await supabase
+    .from("petty_cash_pengajuan")
+    .select(
+      `*, petty_cash_budget(name, current_budget),
+       petty_cash_voucher(*, petty_cash_budget(name, current_budget),
+         petty_cash_sub_voucher(*, petty_cash_deklarasi(*)))`,
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as PettyCashPengajuanWithChain[];
+};
+
+/**
  * Semua Pengajuan lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_pengajuan_update_admin di
  * supabase/petty-cash-admin-management-setup.sql). Beda dari fetchMyPengajuan
@@ -282,6 +394,51 @@ export const adminUpdatePengajuan = async (
     .eq("id", id);
 
   if (error) throw error;
+};
+
+export interface AdminForceEditPengajuan {
+  needed_date: string;
+  week_of_month: number | null;
+  site: string | null;
+  company_code: string;
+  department: string;
+  budget_id: number | null;
+  notes: string | null;
+  items: PettyCashPengajuanItem[];
+  attachments: Attachment[];
+}
+
+/**
+ * "Edit Paksa" (admin only) - beda dari editAndApprovePengajuanStep,
+ * fungsi ini BISA dipanggil di status apa pun (tidak perlu giliran
+ * approval) & bisa mengubah company_code/department/budget_id sekaligus -
+ * dijamin admin only di dalam RPC (admin_force_update_pengajuan, lihat
+ * supabase/petty-cash-admin-full-management-setup.sql), bukan cuma di
+ * client. total_amount SELALU dihitung ulang dari `items` di server (bukan
+ * dipercaya dari sini). Tidak menyentuh status/approvals/revisions - itu
+ * tetap lewat adminUpdatePengajuan/panel override yang sudah ada.
+ */
+export const adminForceUpdatePengajuan = async (
+  id: number,
+  edits: AdminForceEditPengajuan,
+  reason: string,
+): Promise<PettyCashPengajuan> => {
+  const { data, error } = await supabase.rpc("admin_force_update_pengajuan", {
+    p_id: id,
+    p_needed_date: edits.needed_date,
+    p_week_of_month: edits.week_of_month,
+    p_site: edits.site,
+    p_company_code: edits.company_code,
+    p_department: edits.department,
+    p_budget_id: edits.budget_id,
+    p_notes: edits.notes,
+    p_items: edits.items,
+    p_attachments: edits.attachments,
+    p_reason: reason,
+  });
+
+  if (error) throw error;
+  return data as unknown as PettyCashPengajuan;
 };
 
 export const fetchPengajuanById = async (
@@ -354,8 +511,7 @@ export const approvePengajuanStep = async (
 /**
  * Reject step approval milik `userId` di sebuah Pengajuan - dokumen langsung
  * "Rejected" (tidak lanjut ke approver berikutnya), alasan dicatat sebagai
- * entri diskusi (sama seperti alur PettyCashRequest lama, lihat
- * handleRejectSubmit di petty-cash/[id]/page.tsx).
+ * entri diskusi.
  */
 export const rejectPengajuanStep = async (
   pengajuan: Pick<PettyCashPengajuan, "id" | "approvals" | "discussions">,

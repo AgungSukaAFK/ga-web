@@ -6,7 +6,7 @@ import { GaStock, Profile } from "@/type";
 const supabase = createClient();
 
 const STOCK_SELECT =
-  "*, barang!barang_id ( part_number, part_name, uom, category )";
+  "*, barang!barang_id ( part_number, part_name, uom, coa_gmi, coa_gis )";
 
 /**
  * Ambil daftar Stok GA (join master barang) dengan paginasi, pencarian,

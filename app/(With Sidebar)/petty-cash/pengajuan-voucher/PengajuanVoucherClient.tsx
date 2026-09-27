@@ -16,6 +16,14 @@
 // lalu langsung tarik dana dari tabel yang sama. Tiap tarikan dapat kode
 // unik sendiri (kode_sub_voucher) & wajib dideklarasikan terpisah nanti
 // (lihat /petty-cash/deklarasi, DeklarasiClient.tsx).
+//
+// Tarik Dana dipilih PER-BARIS BARANG (checklist, qty boleh sebagian & bisa
+// di-split ke beberapa tarikan berbeda) - BUKAN input nominal bebas, lihat
+// komentar PettyCashSubVoucherItem (type/index.ts) & createSubVoucher
+// (services/pettyCashSubVoucherService.ts). Sub-Voucher yang baru dibuat
+// BELUM berarti dana diterima - requester wajib menunggu Finance approver
+// menyelesaikan pembayarannya dulu (lihat sesi "Pembayaran Sub-Voucher" di
+// /petty-cash/approval) sebelum bisa dideklarasikan.
 
 "use client";
 
@@ -24,13 +32,14 @@ import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -62,7 +71,10 @@ import {
   fetchMyVouchers,
   createVoucherFromPengajuan,
 } from "@/services/pettyCashVoucherService";
-import { createSubVoucher } from "@/services/pettyCashSubVoucherService";
+import {
+  createSubVoucher,
+  SubVoucherDraw,
+} from "@/services/pettyCashSubVoucherService";
 import {
   Loader2,
   RefreshCcw,
@@ -92,6 +104,46 @@ const StatusBadge = ({ status }: { status: string }) => (
 
 const drawnOf = (v: PettyCashVoucher) =>
   (v.petty_cash_sub_voucher ?? []).reduce((sum, sv) => sum + sv.amount, 0);
+
+// Baris checklist "Tarik Dana" - satu baris per item Voucher yang MASIH
+// punya sisa qty (belum sepenuhnya ditarik di sub-voucher lain). `qty` cuma
+// relevan/bisa diedit selagi `checked` - default full sisa begitu dicentang
+// (lihat toggleRow/toggleAll di bawah), boleh dikurangi manual (tarikan
+// sebagian, sisanya ditarik lagi lain kali).
+type DrawRow = {
+  item_index: number;
+  part_name: string;
+  uom: string | null;
+  unit_price: number;
+  remainingQty: number;
+  checked: boolean;
+  qty: string;
+};
+
+/** Sisa qty tiap baris item Voucher = qty asli - total qty yang sudah dipakai di sub-voucher yang sudah ada. */
+const buildDrawRows = (voucher: PettyCashVoucher): DrawRow[] => {
+  const drawnByIndex = new Map<number, number>();
+  (voucher.petty_cash_sub_voucher ?? []).forEach((sv) => {
+    (sv.items ?? []).forEach((it) => {
+      drawnByIndex.set(
+        it.item_index,
+        (drawnByIndex.get(it.item_index) ?? 0) + it.qty,
+      );
+    });
+  });
+
+  return voucher.items
+    .map((it, idx) => ({
+      item_index: idx,
+      part_name: it.part_name,
+      uom: it.uom,
+      unit_price: it.unit_price,
+      remainingQty: it.qty - (drawnByIndex.get(idx) ?? 0),
+      checked: false,
+      qty: "",
+    }))
+    .filter((row) => row.remainingQty > 0);
+};
 
 /** Bar progress tipis "sudah ditarik / total Voucher" - dipakai kolom Progress. */
 const DrawProgressBar = ({ drawn, total }: { drawn: number; total: number }) => {
@@ -124,7 +176,7 @@ export default function PengajuanVoucherClient() {
 
   const [selected, setSelected] = useState<PettyCashPengajuan | null>(null);
   const [drawTarget, setDrawTarget] = useState<PettyCashVoucher | null>(null);
-  const [drawAmount, setDrawAmount] = useState(0);
+  const [drawRows, setDrawRows] = useState<DrawRow[]>([]);
   const [drawNotes, setDrawNotes] = useState("");
 
   const loadData = async () => {
@@ -172,33 +224,84 @@ export default function PengajuanVoucherClient() {
 
   const openDraw = (v: PettyCashVoucher) => {
     setDrawTarget(v);
-    setDrawAmount(0);
+    setDrawRows(buildDrawRows(v));
     setDrawNotes("");
+  };
+
+  const toggleRow = (itemIndex: number, checked: boolean) => {
+    setDrawRows((prev) =>
+      prev.map((row) =>
+        row.item_index === itemIndex
+          ? { ...row, checked, qty: checked ? String(row.remainingQty) : "" }
+          : row,
+      ),
+    );
+  };
+
+  const updateRowQty = (itemIndex: number, qty: string) => {
+    setDrawRows((prev) =>
+      prev.map((row) => (row.item_index === itemIndex ? { ...row, qty } : row)),
+    );
+  };
+
+  const allRowsChecked = drawRows.length > 0 && drawRows.every((r) => r.checked);
+  const toggleAllRows = (checked: boolean) => {
+    setDrawRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        checked,
+        qty: checked ? String(row.remainingQty) : "",
+      })),
+    );
   };
 
   const remainingVoucher = drawTarget
     ? drawTarget.total_amount - drawnOf(drawTarget)
     : 0;
   const remainingBudget = drawTarget?.petty_cash_budget?.current_budget ?? null;
-  const maxDraw =
-    remainingBudget != null
-      ? Math.min(remainingVoucher, remainingBudget)
-      : remainingVoucher;
+
+  const selectedDrawRows = drawRows.filter(
+    (row) => row.checked && Number(row.qty) > 0,
+  );
+  const drawTotal = selectedDrawRows.reduce(
+    (sum, row) => sum + Number(row.qty) * row.unit_price,
+    0,
+  );
+  const overBudget = remainingBudget != null && drawTotal > remainingBudget;
 
   const handleDraw = async () => {
     if (!drawTarget) return;
-    if (drawAmount <= 0) {
-      return toast.error("Nominal tarikan harus lebih dari 0.");
+    if (selectedDrawRows.length === 0) {
+      return toast.error("Pilih minimal 1 barang untuk ditarik.");
     }
-    if (drawAmount > maxDraw) {
+    if (
+      drawRows.some(
+        (row) =>
+          row.checked &&
+          (!row.qty || Number(row.qty) <= 0 || Number(row.qty) > row.remainingQty),
+      )
+    ) {
       return toast.error(
-        `Nominal melebihi batas maksimal (${formatCurrency(maxDraw)}).`,
+        "Qty tarikan tiap barang wajib lebih dari 0 dan tidak melebihi sisa qty-nya.",
       );
     }
+    if (overBudget) {
+      return toast.error(
+        `Total tarikan melebihi sisa budget departemen (${formatCurrency(
+          remainingBudget ?? 0,
+        )}). Kurangi qty/barang yang dipilih.`,
+      );
+    }
+    const draws: SubVoucherDraw[] = selectedDrawRows.map((row) => ({
+      item_index: row.item_index,
+      qty: Number(row.qty),
+    }));
     setDrawing(true);
     try {
-      const sv = await createSubVoucher(drawTarget, drawAmount, drawNotes);
-      toast.success(`Sub-Voucher ${sv.kode_sub_voucher} berhasil dibuat.`);
+      const sv = await createSubVoucher(drawTarget, draws, drawNotes);
+      toast.success(
+        `Sub-Voucher ${sv.kode_sub_voucher} berhasil dibuat, menunggu pembayaran Finance.`,
+      );
       setDrawTarget(null);
       await loadData();
     } catch (error: any) {
@@ -467,16 +570,19 @@ export default function PengajuanVoucherClient() {
         </DialogContent>
       </Dialog>
 
-      {/* DIALOG TARIK DANA (SUB-VOUCHER) */}
+      {/* DIALOG TARIK DANA (SUB-VOUCHER) - checklist per barang, qty boleh
+          sebagian & di-split ke tarikan lain nanti (lihat buildDrawRows). */}
       <Dialog
         open={!!drawTarget}
         onOpenChange={(open) => !open && setDrawTarget(null)}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Tarik Dana {drawTarget?.kode_voucher}</DialogTitle>
             <DialogDescription>
-              Sisa Voucher {formatCurrency(remainingVoucher)}
+              Pilih barang yang mau ditarik dananya sekarang - qty boleh
+              sebagian, sisanya bisa ditarik lagi lain kali. Sisa Voucher{" "}
+              {formatCurrency(remainingVoucher)}
               {remainingBudget != null &&
                 ` - Sisa Budget departemen ${formatCurrency(remainingBudget)}`}
               .
@@ -484,17 +590,96 @@ export default function PengajuanVoucherClient() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nominal Tarikan</Label>
-              <CurrencyInput
-                value={drawAmount}
-                onValueChange={setDrawAmount}
-                placeholder="Rp 0"
-              />
-              <p className="text-xs text-muted-foreground">
-                Maksimal {formatCurrency(maxDraw)}.
+            {drawRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                Semua barang di Voucher ini sudah habis ditarik.
               </p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table className="min-w-[560px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40px]">
+                        <Checkbox
+                          checked={allRowsChecked}
+                          onCheckedChange={(v) => toggleAllRows(!!v)}
+                          aria-label="Pilih semua"
+                        />
+                      </TableHead>
+                      <TableHead>Nama Barang</TableHead>
+                      <TableHead className="w-[100px] text-right">
+                        Sisa Qty
+                      </TableHead>
+                      <TableHead className="w-[110px]">Qty Ditarik</TableHead>
+                      <TableHead className="w-[120px] text-right">
+                        Subtotal
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {drawRows.map((row) => (
+                      <TableRow key={row.item_index}>
+                        <TableCell>
+                          <Checkbox
+                            checked={row.checked}
+                            onCheckedChange={(v) =>
+                              toggleRow(row.item_index, !!v)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium text-sm">
+                          {row.part_name}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {row.remainingQty} {row.uom || ""}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={row.remainingQty}
+                            value={row.qty}
+                            disabled={!row.checked}
+                            onChange={(e) =>
+                              updateRowQty(row.item_index, e.target.value)
+                            }
+                            className="h-9 w-24"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-mono">
+                          {formatCurrency(
+                            row.checked
+                              ? (Number(row.qty) || 0) * row.unit_price
+                              : 0,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">
+                  Total Tarikan
+                </p>
+                <p
+                  className={`text-xl font-bold ${
+                    overBudget ? "text-destructive" : "text-primary"
+                  }`}
+                >
+                  {formatCurrency(drawTotal)}
+                </p>
+                {overBudget && (
+                  <p className="text-xs text-destructive">
+                    Melebihi sisa budget departemen.
+                  </p>
+                )}
+              </div>
             </div>
+
             <div className="space-y-2">
               <Label>
                 Catatan{" "}
@@ -528,7 +713,10 @@ export default function PengajuanVoucherClient() {
             >
               Batal
             </Button>
-            <Button onClick={handleDraw} disabled={drawing || maxDraw <= 0}>
+            <Button
+              onClick={handleDraw}
+              disabled={drawing || selectedDrawRows.length === 0 || overBudget}
+            >
               {drawing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Tarik Dana
             </Button>
