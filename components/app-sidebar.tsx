@@ -45,6 +45,7 @@ import {
   FileText,
   ShieldAlert,
   PiggyBank,
+  Megaphone,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -120,6 +121,11 @@ const data = {
       title: "Dokumentasi",
       url: "/dokumentasi",
       icon: BookOpen,
+    },
+    {
+      title: "Update Web",
+      url: "/update-web",
+      icon: Megaphone,
     },
     {
       title: "Feedback",

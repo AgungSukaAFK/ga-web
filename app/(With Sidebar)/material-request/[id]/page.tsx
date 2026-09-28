@@ -1460,8 +1460,12 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     ];
 
     if (!mr || !currentUser) return null;
-    if (!activeStatuses.includes(mr.status)) return null;
-    if (myApprovalIndex === -1) return null;
+    if (!activeStatuses.includes(mr.status) || myApprovalIndex === -1)
+      return (
+        <p className="text-sm text-muted-foreground text-center">
+          Tidak ada tindakan yang diperlukan.
+        </p>
+      );
 
     if (!isMyTurnForApproval)
       return (

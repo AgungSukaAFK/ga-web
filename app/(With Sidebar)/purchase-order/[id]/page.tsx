@@ -1855,22 +1855,36 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   };
 
   const ApprovalActions = () => {
+    if (!po || !currentUser) return null;
+
     if (
-      !po ||
-      !currentUser ||
-      (po.status !== "Pending Approval" &&
-        po.status !== "Pending Payment" &&
-        po.status !== PO_STATUS_PENDING_RECEIVE &&
-        po.status !== PO_STATUS_PARTIAL_RECEIVE &&
-        po.status !== PO_STATUS_FULL_RECEIVED)
+      po.status !== "Pending Approval" &&
+      po.status !== "Pending Payment" &&
+      po.status !== PO_STATUS_PENDING_RECEIVE &&
+      po.status !== PO_STATUS_PARTIAL_RECEIVE &&
+      po.status !== PO_STATUS_FULL_RECEIVED
     )
-      return null;
+      return (
+        <p className="text-sm text-muted-foreground text-center">
+          Tidak ada tindakan yang diperlukan.
+        </p>
+      );
+
     // myApprovalIndex hanya nemu row approval yang masih "pending" milik
     // currentUser - jadi kalau po.status sudah kelewat maju (mis. GA pakai
     // tombol "Terima Barang" manual di luar gilirannya sehingga status
     // langsung Full Received padahal masih ada approval lain yang belum
     // approve), approver itu tetap harus bisa lihat & pencet tombol ini.
-    if (myApprovalIndex === -1) return null;
+    if (myApprovalIndex === -1) {
+      // Full Received sudah dapat pesan "PO Selesai" tersendiri di bawah
+      // (lihat JSX pemanggil) - jangan dobel pesan kosong generik di sini.
+      if (po.status === PO_STATUS_FULL_RECEIVED) return null;
+      return (
+        <p className="text-sm text-muted-foreground text-center">
+          Tidak ada tindakan yang diperlukan.
+        </p>
+      );
+    }
     if (!isMyTurnForApproval)
       return (
         <p className="text-sm text-muted-foreground text-center">
