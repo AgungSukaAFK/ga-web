@@ -2376,35 +2376,41 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   <li
                     key={index}
                     className={cn(
-                      "flex items-center justify-between gap-4 p-3 rounded-md transition-all",
+                      "flex flex-col gap-2 p-3 rounded-md transition-all",
                       isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
                     )}
                   >
-                    <div>
-                      <div className="font-semibold flex items-center gap-2">
-                        {approver.nama}
-                        <Badge variant={"outline"}>{approver.department}</Badge>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <div className="font-semibold flex flex-wrap items-center gap-2">
+                          <span className="break-words">{approver.nama}</span>
+                          <Badge variant={"outline"}>
+                            {approver.department}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {approver.type}
+                        </p>
+                        {approver.status !== "pending" &&
+                          approver.processed_at && (
+                            <p className="text-xs text-muted-foreground italic">
+                              {formatDateWithTime(approver.processed_at)}
+                            </p>
+                          )}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {approver.type}
-                      </p>
-                      {approver.status !== "pending" &&
-                        approver.processed_at && (
-                          <p className="text-xs text-muted-foreground italic mt-1">
-                            {formatDateWithTime(approver.processed_at)}
-                          </p>
+                      <div className="flex-shrink-0">
+                        {getApprovalStatusBadge(
+                          approver.status as
+                            | "approved"
+                            | "rejected"
+                            | "pending",
                         )}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      {getApprovalStatusBadge(
-                        approver.status as
-                          | "approved"
-                          | "rejected"
-                          | "pending",
-                      )}
-                      {isMyTurn &&
-                        approver.status === "pending" &&
-                        currentUser?.id !== approver.userid && (
+                    {isMyTurn &&
+                      approver.status === "pending" &&
+                      currentUser?.id !== approver.userid && (
+                        <div className="flex justify-end">
                           <FollowupApprovalButton
                             resourceType="material_request"
                             resourceId={mr.id}
@@ -2420,8 +2426,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               setMr({ ...mr, followup_requests: updated })
                             }
                           />
-                        )}
-                    </div>
+                        </div>
+                      )}
                   </li>
                 );
               })}

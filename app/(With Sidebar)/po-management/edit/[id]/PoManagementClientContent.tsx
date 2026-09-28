@@ -1243,10 +1243,12 @@ export function PoManagementEditClientContent({
               {poForm.approvals.map((approver, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between gap-4 p-3 rounded-md border bg-card"
+                  className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
                 >
-                  <div>
-                    <p className="font-semibold">{approver.nama}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold break-words">
+                      {approver.nama}
+                    </p>
                     <p className="text-sm text-muted-foreground">
                       {approver.type} ({approver.role})
                     </p>
@@ -1260,7 +1262,7 @@ export function PoManagementEditClientContent({
                       )
                     }
                   >
-                    <SelectTrigger className="w-[120px] capitalize">
+                    <SelectTrigger className="w-[120px] flex-shrink-0 capitalize">
                       <SelectValue placeholder="Status..." />
                     </SelectTrigger>
                     <SelectContent>
