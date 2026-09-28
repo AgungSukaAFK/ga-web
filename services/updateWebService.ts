@@ -1,11 +1,12 @@
 // src/services/updateWebService.ts
 //
 // Service untuk fitur "Update Web" (changelog/pengumuman aplikasi internal) -
-// lihat supabase/update-web-setup.sql. Create pakai RPC (hitung versi atomic,
-// lihat komentar create_update_web_post), edit/hapus pakai .update()/.delete()
-// langsung (dilindungi RLS admin only). Reaction pakai .insert()/.delete()
-// langsung (dilindungi RLS user_id = auth.uid()). Komentar pakai RPC yang sama
-// persis polanya dengan services/pcDiscussionService.ts.
+// lihat supabase/update-web-setup.sql & update-web-v2-setup.sql. Create pakai
+// RPC (hitung versi atomic, lihat komentar create_update_web_post), edit/hapus
+// pakai .update()/.delete() langsung (dilindungi RLS admin only). Reaction
+// (1 emoji aktif per user per post, lihat update-web-v2-setup.sql) pakai
+// delete-lalu-insert langsung (dilindungi RLS user_id = auth.uid()). Komentar
+// pakai RPC yang sama persis polanya dengan services/pcDiscussionService.ts.
 
 import { createClient } from "@/lib/supabase/client";
 import { DiscussionSubmitPayload } from "@/type";
@@ -42,9 +43,11 @@ export const fetchUpdateWebPostById = async (
   return data as unknown as UpdateWebPost;
 };
 
-// Ambil semua reaction utk sekumpulan post sekaligus (1 query), lalu
-// diagregasi di JS jadi ringkasan per emoji per post - lebih simpel daripada
-// bikin view/RPC agregasi baru, dan volume reaction internal app ini kecil.
+// Ambil semua reaction utk sekumpulan post sekaligus (1 query, join nama
+// profil buat tooltip "siapa aja yang kasih reaction"), lalu diagregasi di JS
+// jadi ringkasan per emoji per post - lebih simpel daripada bikin view/RPC
+// agregasi baru, dan volume reaction internal app ini kecil. 1 user cuma
+// mungkin muncul di TEPAT SATU emoji per post (lihat update-web-v2-setup.sql).
 export const fetchUpdateWebPostReactions = async (
   postIds: number[],
   currentUserId?: string | null,
@@ -54,14 +57,21 @@ export const fetchUpdateWebPostReactions = async (
 
   const { data, error } = await supabase
     .from("update_web_post_reactions")
-    .select("post_id, user_id, emoji")
+    .select("post_id, emoji, user:profiles(id, nama)")
     .in("post_id", postIds);
   if (error) throw error;
 
-  const byPost = new Map<number, { emoji: string; user_id: string }[]>();
-  for (const row of data ?? []) {
+  const byPost = new Map<
+    number,
+    { emoji: string; id: string; nama: string | null }[]
+  >();
+  for (const row of (data ?? []) as any[]) {
     const list = byPost.get(row.post_id) ?? [];
-    list.push({ emoji: row.emoji, user_id: row.user_id });
+    list.push({
+      emoji: row.emoji,
+      id: row.user?.id ?? "",
+      nama: row.user?.nama ?? null,
+    });
     byPost.set(row.post_id, list);
   }
 
@@ -69,14 +79,17 @@ export const fetchUpdateWebPostReactions = async (
     const counts = new Map<string, UpdateWebPostReactionSummary>();
     for (const row of rows) {
       const existing = counts.get(row.emoji);
+      const reactor = { id: row.id, nama: row.nama };
       if (existing) {
         existing.count += 1;
-        if (row.user_id === currentUserId) existing.reactedByMe = true;
+        existing.reactors.push(reactor);
+        if (row.id === currentUserId) existing.reactedByMe = true;
       } else {
         counts.set(row.emoji, {
           emoji: row.emoji,
           count: 1,
-          reactedByMe: row.user_id === currentUserId,
+          reactedByMe: row.id === currentUserId,
+          reactors: [reactor],
         });
       }
     }
@@ -84,6 +97,45 @@ export const fetchUpdateWebPostReactions = async (
   }
 
   return result;
+};
+
+// Post terbaru (dipakai buat hitung badge "ada update baru" - lihat
+// hooks/use-update-web-badge.ts - & preview di widget Dashboard).
+export const fetchLatestUpdateWebPost = async (): Promise<UpdateWebPost | null> => {
+  const { data, error } = await supabase
+    .from("update_web_posts")
+    .select("*, created_by_profile:profiles(nama, email)")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as UpdateWebPost) ?? null;
+};
+
+// "Sudah lihat sampai post mana" milik user yang login - null kalau belum
+// pernah buka Update Web sama sekali.
+export const fetchUpdateWebSeenState = async (
+  userId: string,
+): Promise<number | null> => {
+  const { data, error } = await supabase
+    .from("update_web_seen")
+    .select("last_seen_post_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.last_seen_post_id ?? null;
+};
+
+export const markUpdateWebSeen = async (
+  userId: string,
+  postId: number,
+): Promise<void> => {
+  const { error } = await supabase.from("update_web_seen").upsert({
+    user_id: userId,
+    last_seen_post_id: postId,
+    last_seen_at: new Date().toISOString(),
+  });
+  if (error) throw error;
 };
 
 export interface CreateUpdateWebPostPayload {
@@ -162,26 +214,27 @@ export const addUpdateWebPostDiscussion = async (
   if (error) throw error;
 };
 
-// Toggle reaction milik user sendiri - insert kalau belum ada, delete kalau
-// sudah ada (unique constraint (post_id,user_id,emoji) mencegah dobel).
-export const toggleUpdateWebPostReaction = async (
+// Set reaction milik user sendiri utk 1 post - `emoji` null berarti hapus
+// reaction (tidak suka lagi). Selalu hapus dulu baris lama (kalau ada) baru
+// insert yang baru - 1 user CUMA BOLEH punya 1 reaction aktif per post (lihat
+// unique constraint (post_id,user_id) di update-web-v2-setup.sql), jadi
+// ganti emoji = ganti baris, bukan nambah baris baru.
+export const setUpdateWebPostReaction = async (
   postId: number,
   userId: string,
-  emoji: UpdateWebReactionEmoji,
-  currentlyReacted: boolean,
+  emoji: UpdateWebReactionEmoji | null,
 ): Promise<void> => {
-  if (currentlyReacted) {
-    const { error } = await supabase
-      .from("update_web_post_reactions")
-      .delete()
-      .eq("post_id", postId)
-      .eq("user_id", userId)
-      .eq("emoji", emoji);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase
+  const { error: deleteError } = await supabase
+    .from("update_web_post_reactions")
+    .delete()
+    .eq("post_id", postId)
+    .eq("user_id", userId);
+  if (deleteError) throw deleteError;
+
+  if (emoji) {
+    const { error: insertError } = await supabase
       .from("update_web_post_reactions")
       .insert({ post_id: postId, user_id: userId, emoji });
-    if (error) throw error;
+    if (insertError) throw insertError;
   }
 };

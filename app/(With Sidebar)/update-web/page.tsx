@@ -15,13 +15,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
 import { UpdatePostCard } from "@/components/update-web/UpdatePostCard";
 import { UpdatePostDetailDialog } from "@/components/update-web/UpdatePostDetailDialog";
 import { UpdatePostFormDialog } from "@/components/update-web/UpdatePostFormDialog";
 import {
   fetchUpdateWebPostReactions,
   fetchUpdateWebPosts,
-  toggleUpdateWebPostReaction,
+  setUpdateWebPostReaction,
 } from "@/services/updateWebService";
 import {
   UpdateWebPost,
@@ -32,6 +33,7 @@ import {
 export default function UpdateWebPage() {
   const supabase = createClient();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [posts, setPosts] = useState<UpdateWebPost[]>([]);
   const [reactionsByPost, setReactionsByPost] = useState<
@@ -46,6 +48,10 @@ export default function UpdateWebPage() {
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [editingPost, setEditingPost] = useState<UpdateWebPost | null>(null);
 
+  // Kunjungan ke halaman ini = "sudah dilihat" - bersihkan badge merah di
+  // sidebar/dashboard (lihat hooks/use-update-web-badge.ts).
+  const { loading: badgeLoading, markSeen } = useUpdateWebBadge(currentUserId);
+
   useEffect(() => {
     const loadUser = async () => {
       const {
@@ -55,13 +61,18 @@ export default function UpdateWebPage() {
       setCurrentUserId(user.id);
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, nama")
         .eq("id", user.id)
         .single();
       setIsAdmin(profile?.role === "admin");
+      setCurrentUserName(profile?.nama ?? null);
     };
     loadUser();
   }, []);
+
+  useEffect(() => {
+    if (currentUserId && !badgeLoading) markSeen();
+  }, [currentUserId, badgeLoading, markSeen]);
 
   const loadPosts = async (userId?: string | null) => {
     setLoading(true);
@@ -89,48 +100,66 @@ export default function UpdateWebPage() {
     setDetailOpen(true);
   };
 
-  const handleToggleReaction = async (
+  // 1 user cuma boleh 1 reaction aktif per post (lihat
+  // supabase/update-web-v2-setup.sql) - klik emoji yang sama dgn reaction
+  // sekarang = hapus, klik emoji lain = ganti (bukan nambah).
+  const handleSetReaction = async (
     postId: number,
     emoji: UpdateWebReactionEmoji,
-    currentlyReacted: boolean,
   ) => {
     if (!currentUserId) {
       toast.error("Anda harus login untuk memberi reaction.");
       return;
     }
+    const me = { id: currentUserId, nama: currentUserName };
+    const current = reactionsByPost.get(postId) ?? [];
+    const previousEmoji = current.find((s) => s.reactedByMe)?.emoji ?? null;
+    const nextEmoji = previousEmoji === emoji ? null : emoji;
+
     // Optimistic update - reaction cuma milik user sendiri, jadi aman
     // langsung ubah state lokal tanpa refetch.
     setReactionsByPost((prev) => {
       const next = new Map(prev);
-      const list = next.get(postId) ?? [];
-      const existing = list.find((s) => s.emoji === emoji);
-      let updatedList: UpdateWebPostReactionSummary[];
-      if (existing) {
-        updatedList = list
+      let list = (next.get(postId) ?? []).map((s) => ({
+        ...s,
+        reactors: [...s.reactors],
+      }));
+
+      if (previousEmoji) {
+        list = list
           .map((s) =>
-            s.emoji === emoji
+            s.emoji === previousEmoji
               ? {
                   ...s,
-                  count: currentlyReacted ? s.count - 1 : s.count + 1,
-                  reactedByMe: !currentlyReacted,
+                  count: s.count - 1,
+                  reactedByMe: false,
+                  reactors: s.reactors.filter((r) => r.id !== me.id),
                 }
               : s,
           )
           .filter((s) => s.count > 0);
-      } else {
-        updatedList = [...list, { emoji, count: 1, reactedByMe: true }];
       }
-      next.set(postId, updatedList);
+
+      if (nextEmoji) {
+        const existing = list.find((s) => s.emoji === nextEmoji);
+        if (existing) {
+          existing.count += 1;
+          existing.reactedByMe = true;
+          existing.reactors = [...existing.reactors, me];
+        } else {
+          list = [
+            ...list,
+            { emoji: nextEmoji, count: 1, reactedByMe: true, reactors: [me] },
+          ];
+        }
+      }
+
+      next.set(postId, list);
       return next;
     });
 
     try {
-      await toggleUpdateWebPostReaction(
-        postId,
-        currentUserId,
-        emoji,
-        currentlyReacted,
-      );
+      await setUpdateWebPostReaction(postId, currentUserId, nextEmoji);
     } catch (error: any) {
       toast.error("Gagal menyimpan reaction", { description: error.message });
       loadPosts(currentUserId);
@@ -199,15 +228,14 @@ export default function UpdateWebPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {posts.map((post) => (
+          {posts.map((post, index) => (
             <UpdatePostCard
               key={post.id}
               post={post}
               reactions={reactionsByPost.get(post.id) ?? []}
+              isLatest={index === 0}
               onOpen={() => handleOpenDetail(post)}
-              onToggleReaction={(emoji, reacted) =>
-                handleToggleReaction(post.id, emoji, reacted)
-              }
+              onToggleReaction={(emoji) => handleSetReaction(post.id, emoji)}
             />
           ))}
         </div>
@@ -220,8 +248,9 @@ export default function UpdateWebPage() {
         reactions={
           selectedPost ? reactionsByPost.get(selectedPost.id) ?? [] : []
         }
-        onToggleReaction={(emoji, reacted) =>
-          selectedPost && handleToggleReaction(selectedPost.id, emoji, reacted)
+        isLatest={!!selectedPost && selectedPost.id === posts[0]?.id}
+        onToggleReaction={(emoji) =>
+          selectedPost && handleSetReaction(selectedPost.id, emoji)
         }
         isAdmin={isAdmin}
         currentUserId={currentUserId}

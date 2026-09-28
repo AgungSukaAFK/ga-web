@@ -19,16 +19,15 @@ import {
 interface UpdatePostCardProps {
   post: UpdateWebPost;
   reactions: UpdateWebPostReactionSummary[];
+  isLatest: boolean;
   onOpen: () => void;
-  onToggleReaction: (
-    emoji: UpdateWebReactionEmoji,
-    currentlyReacted: boolean,
-  ) => void;
+  onToggleReaction: (emoji: UpdateWebReactionEmoji) => void;
 }
 
 export function UpdatePostCard({
   post,
   reactions,
+  isLatest,
   onOpen,
   onToggleReaction,
 }: UpdatePostCardProps) {
@@ -53,8 +52,9 @@ export function UpdatePostCard({
         </div>
       )}
       <div className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">v{post.version}</Badge>
+          {isLatest && <Badge>Versi Saat Ini</Badge>}
           <span className="text-xs text-muted-foreground">
             {new Date(post.created_at).toLocaleDateString("id-ID", {
               day: "numeric",
@@ -79,10 +79,7 @@ export function UpdatePostCard({
           </ul>
         )}
         <div className="flex items-center justify-between pt-1">
-          <UpdatePostReactions
-            summaries={reactions}
-            onToggle={onToggleReaction}
-          />
+          <UpdatePostReactions summaries={reactions} onSelect={onToggleReaction} />
           <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
             <MessageSquare className="h-3.5 w-3.5" />
             {(post.discussions ?? []).length}
