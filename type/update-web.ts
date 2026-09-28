@@ -41,10 +41,18 @@ export interface UpdateWebPostReaction {
   emoji: UpdateWebReactionEmoji;
 }
 
+export interface UpdateWebReactor {
+  id: string;
+  nama: string | null;
+}
+
 // Hasil agregasi reaction per post, dihitung di service layer (bukan view DB)
-// dari daftar UpdateWebPostReaction mentah.
+// dari daftar UpdateWebPostReaction mentah. 1 user cuma boleh 1 emoji aktif
+// per post (lihat supabase/update-web-v2-setup.sql), jadi `reactedByMe`
+// benar-benar unik di antara semua summary 1 post.
 export interface UpdateWebPostReactionSummary {
   emoji: string;
   count: number;
   reactedByMe: boolean;
+  reactors: UpdateWebReactor[]; // buat tooltip "siapa aja yang kasih reaction"
 }

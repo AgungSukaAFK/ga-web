@@ -67,6 +67,7 @@ import { Profile } from "@/type";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatDateFriendly, formatRelativeTime } from "@/lib/utils";
+import { UpdateWebDashboardBanner } from "@/components/update-web/UpdateWebDashboardBanner";
 import {
   Table,
   TableBody,
@@ -367,6 +368,8 @@ export default function Dashboard() {
           </div>
         </Content>
       </div>
+
+      <UpdateWebDashboardBanner userId={profile?.id} />
 
       {/* --- Panel Follow-up Approval (urgent) --- */}
       {!loading && followupSummary.length > 0 && (

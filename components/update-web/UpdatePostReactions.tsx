@@ -1,9 +1,13 @@
 // src/components/update-web/UpdatePostReactions.tsx
 //
-// Baris reaction multi-emoji ala Slack/Discord untuk 1 postingan Update Web.
-// Controlled - caller (list card / detail dialog) yang nyimpen state
-// `summaries` & nanganin toggle lewat `onToggle` (services/updateWebService.ts
-// toggleUpdateWebPostReaction), komponen ini cuma render + trigger callback.
+// Baris reaction untuk 1 postingan Update Web - 1 user cuma boleh punya 1
+// emoji aktif per post (lihat supabase/update-web-v2-setup.sql), jadi klik
+// emoji lain otomatis GANTI reaction (bukan nambah), klik emoji yang sama
+// dgn reaction sekarang = hapus. Controlled - caller (list card / detail
+// dialog) yang nyimpen state `summaries` & nanganin perubahan lewat
+// `onSelect` (services/updateWebService.ts setUpdateWebPostReaction),
+// komponen ini cuma render + trigger callback. Hover pill nampilin nama-nama
+// yang kasih reaction itu (Tooltip).
 
 "use client";
 
@@ -14,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SmilePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -24,14 +29,20 @@ import {
 
 interface UpdatePostReactionsProps {
   summaries: UpdateWebPostReactionSummary[];
-  onToggle: (emoji: UpdateWebReactionEmoji, currentlyReacted: boolean) => void;
+  onSelect: (emoji: UpdateWebReactionEmoji) => void;
   disabled?: boolean;
   className?: string;
 }
 
+function reactorNamesLabel(summary: UpdateWebPostReactionSummary): string {
+  const names = summary.reactors.map((r) => r.nama || "Seseorang");
+  if (names.length <= 3) return names.join(", ");
+  return `${names.slice(0, 3).join(", ")}, dan ${names.length - 3} lainnya`;
+}
+
 export function UpdatePostReactions({
   summaries,
-  onToggle,
+  onSelect,
   disabled,
   className,
 }: UpdatePostReactionsProps) {
@@ -41,24 +52,28 @@ export function UpdatePostReactions({
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {visible.map((s) => (
-        <Button
-          key={s.emoji}
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn(
-            "h-7 gap-1 rounded-full px-2.5 text-xs",
-            s.reactedByMe && "border-primary bg-primary/10",
-          )}
-          disabled={disabled}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle(s.emoji as UpdateWebReactionEmoji, s.reactedByMe);
-          }}
-        >
-          <span>{s.emoji}</span>
-          <span className="text-muted-foreground">{s.count}</span>
-        </Button>
+        <Tooltip key={s.emoji}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-7 gap-1 rounded-full px-2.5 text-xs",
+                s.reactedByMe && "border-primary bg-primary/10",
+              )}
+              disabled={disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(s.emoji as UpdateWebReactionEmoji);
+              }}
+            >
+              <span>{s.emoji}</span>
+              <span className="text-muted-foreground">{s.count}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{reactorNamesLabel(s)}</TooltipContent>
+        </Tooltip>
       ))}
 
       <Popover open={open} onOpenChange={setOpen}>
@@ -93,7 +108,7 @@ export function UpdatePostReactions({
                     existing?.reactedByMe && "bg-accent",
                   )}
                   onClick={() => {
-                    onToggle(emoji, existing?.reactedByMe ?? false);
+                    onSelect(emoji);
                     setOpen(false);
                   }}
                 >

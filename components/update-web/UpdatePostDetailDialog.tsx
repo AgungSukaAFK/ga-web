@@ -54,10 +54,8 @@ interface UpdatePostDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reactions: UpdateWebPostReactionSummary[];
-  onToggleReaction: (
-    emoji: UpdateWebReactionEmoji,
-    currentlyReacted: boolean,
-  ) => void;
+  onToggleReaction: (emoji: UpdateWebReactionEmoji) => void;
+  isLatest: boolean;
   isAdmin: boolean;
   currentUserId?: string | null;
   onPostUpdated: (post: UpdateWebPost) => void;
@@ -71,6 +69,7 @@ export function UpdatePostDetailDialog({
   onOpenChange,
   reactions,
   onToggleReaction,
+  isLatest,
   isAdmin,
   currentUserId,
   onPostUpdated,
@@ -112,6 +111,7 @@ export function UpdatePostDetailDialog({
           <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-xl">
               <Badge variant="secondary">v{post.version}</Badge>
+              {isLatest && <Badge>Versi Saat Ini</Badge>}
               <span>{post.title}</span>
             </DialogTitle>
             <DialogDescription>
@@ -162,10 +162,7 @@ export function UpdatePostDetailDialog({
 
             <UpdatePostContentView content={post.content} />
 
-            <UpdatePostReactions
-              summaries={reactions}
-              onToggle={onToggleReaction}
-            />
+            <UpdatePostReactions summaries={reactions} onSelect={onToggleReaction} />
 
             <DiscussionPanel
               discussions={post.discussions}

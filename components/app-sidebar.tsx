@@ -16,6 +16,7 @@ import {
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
 import { useNotification } from "@/components/providers/NotificationProvider";
+import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
 import {
   GalleryVerticalEnd,
   Bot,
@@ -148,6 +149,10 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const [profile, setProfile] = React.useState<any>(null);
   // Unread count berasal dari NotificationProvider (satu sumber + realtime).
   const { unreadCount } = useNotification();
+  // Badge merah "ada update baru" di menu Update Web - lihat
+  // hooks/use-update-web-badge.ts (per akun, hilang setelah dibuka
+  // /update-web ATAU postingannya sudah lebih dari 7 hari).
+  const { isNew: hasNewUpdateWebPost } = useUpdateWebBadge(user?.id);
 
   React.useEffect(() => {
     const getUser = async () => {
@@ -350,6 +355,15 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     );
   }, [profile, markActive]);
 
+  const navSecondaryItems = React.useMemo(() => {
+    const items = data.navSecondary.map((item) =>
+      item.url === "/update-web"
+        ? { ...item, badge: hasNewUpdateWebPost ? 1 : undefined }
+        : item,
+    );
+    return markActive(items);
+  }, [markActive, hasNewUpdateWebPost]);
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -374,11 +388,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
         <NavMain label="Petty Cash" items={pettyCashItems} />
 
-        <NavMain
-          label="About"
-          items={markActive(data.navSecondary)}
-          hideable={false}
-        />
+        <NavMain label="About" items={navSecondaryItems} hideable={false} />
       </SidebarContent>
 
       <SidebarFooter>
