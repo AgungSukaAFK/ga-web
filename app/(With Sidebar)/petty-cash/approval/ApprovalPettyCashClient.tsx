@@ -73,6 +73,7 @@ import {
 } from "@/services/pettyCashSubVoucherService";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
+import { PcRequesterHistoryDialog } from "@/components/petty-cash/PcRequesterHistoryDialog";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
 import {
   Loader2,
@@ -725,6 +726,15 @@ export default function ApprovalPettyCashClient() {
           </DialogHeader>
 
           {selectedPengajuan && (
+            <div className="flex justify-end">
+              <PcRequesterHistoryDialog
+                userId={selectedPengajuan.user_id}
+                requesterName={selectedPengajuan.users_with_profiles?.nama}
+              />
+            </div>
+          )}
+
+          {selectedPengajuan && (
             <PcDocumentInfoPanel
               requesterName={selectedPengajuan.users_with_profiles?.nama}
               requesterEmail={selectedPengajuan.users_with_profiles?.email}
@@ -805,6 +815,15 @@ export default function ApprovalPettyCashClient() {
           </DialogHeader>
 
           {selectedVoucher && (
+            <div className="flex justify-end">
+              <PcRequesterHistoryDialog
+                userId={selectedVoucher.user_id}
+                requesterName={selectedVoucher.users_with_profiles?.nama}
+              />
+            </div>
+          )}
+
+          {selectedVoucher && (
             <PcDocumentInfoPanel
               requesterName={selectedVoucher.users_with_profiles?.nama}
               requesterEmail={selectedVoucher.users_with_profiles?.email}
@@ -880,6 +899,15 @@ export default function ApprovalPettyCashClient() {
               )}
             </DialogDescription>
           </DialogHeader>
+
+          {selectedDeklarasi && (
+            <div className="flex justify-end">
+              <PcRequesterHistoryDialog
+                userId={selectedDeklarasi.user_id}
+                requesterName={selectedDeklarasi.users_with_profiles?.nama}
+              />
+            </div>
+          )}
 
           {selectedDeklarasi && (
             <PcDocumentInfoPanel
