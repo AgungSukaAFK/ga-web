@@ -368,7 +368,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
         <NavMain label="Petty Cash" items={pettyCashItems} />
 
-        <NavMain label="About" items={markActive(data.navSecondary)} />
+        <NavMain
+          label="About"
+          items={markActive(data.navSecondary)}
+          hideable={false}
+        />
       </SidebarContent>
 
       <SidebarFooter>
