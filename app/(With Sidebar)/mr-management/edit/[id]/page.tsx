@@ -1542,15 +1542,17 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                   {mr.approvals.map((approver, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between gap-4 p-3 rounded-md border bg-card"
+                      className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
                     >
-                      <div>
-                        <p className="font-semibold">{approver.nama}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold break-words">
+                          {approver.nama}
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           {approver.type}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         {approver.status === "pending" && (
                           <Button
                             type="button"

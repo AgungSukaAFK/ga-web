@@ -63,7 +63,10 @@ import {
 } from "@/components/petty-cash/PcItemsEditor";
 import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getSelectableWeeksOfCurrentMonth } from "@/lib/weekOfMonth";
+import {
+  getSelectableWeeksOfCurrentMonth,
+  getWeekOfMonth,
+} from "@/lib/weekOfMonth";
 import { formatCurrency, getLocalDateString } from "@/lib/utils";
 import {
   Loader2,
@@ -76,6 +79,19 @@ import {
   CalendarClock,
   AlertTriangle,
 } from "lucide-react";
+
+// Default value "Minggu ke-" = minggu SETELAH minggu tempat Tanggal
+// Dibutuhkan jatuh (bukan minggu yang sama) - cuma nilai default yang
+// otomatis mengikuti tanggal, requester tetap bebas mengubahnya manual
+// lewat Select di bawah (lihat weekManuallySet).
+const getDefaultWeekForDate = (dateStr: string): number | "" => {
+  const weeks = getSelectableWeeksOfCurrentMonth();
+  if (weeks.length === 0) return "";
+  const date = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return weeks[0];
+  const candidate = getWeekOfMonth(date) + 1;
+  return Math.min(Math.max(candidate, weeks[0]), weeks[weeks.length - 1]);
+};
 
 export default function InputPengajuanClient() {
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
@@ -112,9 +128,17 @@ export default function InputPengajuanClient() {
     setNeededDate((prev) => (prev < minDate ? minDate : prev));
   }, [minDate]);
   const selectableWeeks = getSelectableWeeksOfCurrentMonth();
-  const [weekOfMonth, setWeekOfMonth] = useState<number | "">(
-    selectableWeeks[0] ?? "",
+  const [weekOfMonth, setWeekOfMonth] = useState<number | "">(() =>
+    getDefaultWeekForDate(getLocalDateString()),
   );
+  // Requester bisa ganti manual weekOfMonth-nya kapan saja lewat Select di
+  // bawah - begitu disentuh, berhenti auto-update walau neededDate berubah
+  // lagi, supaya pilihan manual tidak ketiban ulang oleh default.
+  const [weekManuallySet, setWeekManuallySet] = useState(false);
+  useEffect(() => {
+    if (weekManuallySet) return;
+    setWeekOfMonth(getDefaultWeekForDate(neededDate));
+  }, [neededDate, weekManuallySet]);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<PettyCashPengajuanItem[]>([]);
   const [attachments, setAttachments] = useState<
@@ -393,7 +417,10 @@ export default function InputPengajuanClient() {
                   </Label>
                   <Select
                     value={weekOfMonth ? String(weekOfMonth) : ""}
-                    onValueChange={(val) => setWeekOfMonth(Number(val))}
+                    onValueChange={(val) => {
+                      setWeekOfMonth(Number(val));
+                      setWeekManuallySet(true);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Pilih minggu" />
