@@ -19,6 +19,7 @@ import {
   Edit,
   Trash2,
   Camera,
+  ImageIcon,
 } from "lucide-react";
 import { Combobox } from "@/components/combobox";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -29,11 +30,21 @@ import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
 import { NotificationSettings } from "@/components/notification-settings";
 import { BankAccount } from "@/type";
-import { fetchMyBankAccounts, deleteBankAccount } from "@/services/bankAccountService";
+import {
+  fetchMyBankAccounts,
+  deleteBankAccount,
+} from "@/services/bankAccountService";
 import { BankAccountDialog } from "@/components/bank-account-form-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ProfileAvatarDialog } from "@/components/profile-avatar-dialog";
+import { AvatarViewerDialog } from "@/components/avatar-viewer-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { removeAttachmentVps } from "@/services/storageService";
 import { AVATAR_UPDATED_EVENT, getInitials } from "@/lib/avatar";
@@ -84,6 +95,7 @@ export default function Dashboard() {
   // --- Foto Profil ---
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+  const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false);
 
   const router = useRouter();
 
@@ -208,7 +220,7 @@ export default function Dashboard() {
 
       // Update state profile lokal dengan data yang baru disimpan
       setProfile((prevProfile) =>
-        prevProfile ? { ...prevProfile, ...dataToUpdate } : null
+        prevProfile ? { ...prevProfile, ...dataToUpdate } : null,
       );
       setEditMode(false);
       setUpdateSuccess(true);
@@ -360,6 +372,27 @@ export default function Dashboard() {
     }
   };
 
+  // Isi tombol avatar di kartu profil (dipakai 2 varian trigger di bawah).
+  const avatarFace = (
+    <>
+      <Avatar className="h-24 w-24 border">
+        {profile?.avatar_url && (
+          <AvatarImage
+            src={profile.avatar_url}
+            alt={profile?.nama || "Foto profil"}
+            className="object-cover"
+          />
+        )}
+        <AvatarFallback className="text-2xl font-semibold">
+          {getInitials(profile?.nama || user?.email)}
+        </AvatarFallback>
+      </Avatar>
+      <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
+        <Camera className="h-6 w-6" />
+      </span>
+    </>
+  );
+
   if (loading) {
     return (
       <Content size="md" title="Data Profil">
@@ -391,28 +424,38 @@ export default function Dashboard() {
 
         {/* Foto Profil */}
         <div className="mb-6 flex flex-col items-center gap-4 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => setIsAvatarDialogOpen(true)}
-            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            aria-label="Ganti foto profil"
-          >
-            <Avatar className="h-24 w-24 border">
-              {profile?.avatar_url && (
-                <AvatarImage
-                  src={profile.avatar_url}
-                  alt={profile?.nama || "Foto profil"}
-                  className="object-cover"
-                />
-              )}
-              <AvatarFallback className="text-2xl font-semibold">
-                {getInitials(profile?.nama || user?.email)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
-              <Camera className="h-6 w-6" />
-            </span>
-          </button>
+          {/* Belum ada foto -> klik langsung upload. Sudah ada -> menu
+              lihat / ganti. */}
+          {profile?.avatar_url ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label="Foto profil"
+                >
+                  {avatarFace}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={() => setIsAvatarViewerOpen(true)}>
+                  <ImageIcon /> Lihat Foto Profil
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setIsAvatarDialogOpen(true)}>
+                  <Camera /> Ganti Foto
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsAvatarDialogOpen(true)}
+              className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label="Foto profil"
+            >
+              {avatarFace}
+            </button>
+          )}
           <div className="flex flex-col items-center gap-2 sm:items-start">
             <div className="text-center sm:text-left">
               <p className="font-semibold">{profile?.nama || "-"}</p>
@@ -730,6 +773,14 @@ export default function Dashboard() {
         onOpenChange={setIsAvatarDialogOpen}
         onSave={handleSaveAvatar}
       />
+      {profile?.avatar_url && (
+        <AvatarViewerDialog
+          open={isAvatarViewerOpen}
+          onOpenChange={setIsAvatarViewerOpen}
+          src={profile.avatar_url}
+          name={profile.nama}
+        />
+      )}
       <BankAccountDialog
         open={isBankDialogOpen}
         onOpenChange={setIsBankDialogOpen}

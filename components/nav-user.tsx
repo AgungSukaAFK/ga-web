@@ -1,4 +1,9 @@
-import { ChevronsUpDown, LogOut, SquareUserRound } from "lucide-react";
+import {
+  ChevronsUpDown,
+  ImageIcon,
+  LogOut,
+  SquareUserRound,
+} from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -21,6 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { MyAlertDialog } from "./dialog-confirm";
 import { redirect } from "next/navigation";
 import { getInitials } from "@/lib/avatar";
+import { AvatarViewerDialog } from "./avatar-viewer-dialog";
 
 export function NavUser({
   user,
@@ -32,6 +38,7 @@ export function NavUser({
   };
 }) {
   const [logoutDialog, setLogoutDialog] = useState<boolean>(false);
+  const [avatarViewer, setAvatarViewer] = useState(false);
 
   const { isMobile } = useSidebar();
 
@@ -48,6 +55,14 @@ export function NavUser({
         onOpenChange={setLogoutDialog}
         onAction={handleLogout}
       ></MyAlertDialog>
+      {user.avatar && (
+        <AvatarViewerDialog
+          open={avatarViewer}
+          onOpenChange={setAvatarViewer}
+          src={user.avatar}
+          name={user.name !== "-" ? user.name : user.email}
+        />
+      )}
 
       <SidebarMenu>
         <SidebarMenuItem>
@@ -110,6 +125,12 @@ export function NavUser({
                     My Profile
                   </a>
                 </DropdownMenuItem>
+                {user.avatar && (
+                  <DropdownMenuItem onSelect={() => setAvatarViewer(true)}>
+                    <ImageIcon />
+                    Lihat Foto Profil
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setLogoutDialog(true)}>
