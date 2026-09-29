@@ -178,24 +178,35 @@ export function DashboardProfileAvatar({ userId, name, src }: Props) {
       </button>
 
       <Dialog open={eggOpen} onOpenChange={setEggOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader className="items-center text-center sm:text-center">
+        {/* Hanya bisa ditutup lewat tombol, bukan klik di luar / Escape. */}
+        <DialogContent
+          className="p-8 sm:max-w-xl"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="items-center gap-3 text-center sm:text-center">
             <UserAvatar
               userId={userId}
               name={name}
               src={src}
-              className="mb-2 h-24 w-24 border shadow-md"
-              fallbackClassName="text-3xl font-semibold"
+              className="mb-2 h-36 w-36 border shadow-md sm:h-40 sm:w-40"
+              fallbackClassName="text-5xl font-semibold"
               style={radiusStyle}
             />
-            <DialogTitle>{message.title}</DialogTitle>
-            <DialogDescription>{message.desc}</DialogDescription>
+            <DialogTitle className="text-2xl sm:text-3xl">
+              {message.title}
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              {message.desc}
+            </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-center">
-            <Button variant="outline" onClick={celebrate}>
+          <DialogFooter className="mt-2 gap-2 sm:justify-center">
+            <Button size="lg" variant="outline" onClick={celebrate}>
               Lagi! 🎉
             </Button>
-            <Button onClick={() => setEggOpen(false)}>Tutup</Button>
+            <Button size="lg" onClick={() => setEggOpen(false)}>
+              Tutup
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
