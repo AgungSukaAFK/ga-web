@@ -103,6 +103,7 @@ import {
 } from "@/components/ui/command";
 import { searchVendors } from "@/services/vendorService";
 import { isMarketplaceVendor } from "@/type/enum";
+import { UserAvatar } from "@/components/user-avatar";
 
 // --- Komponen Helper Info ---
 const InfoItem = ({
@@ -1245,6 +1246,12 @@ export function PoManagementEditClientContent({
                   key={index}
                   className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
                 >
+                  <UserAvatar
+                    userId={approver.userid}
+                    name={approver.nama}
+                    className="h-9 w-9"
+                    fallbackClassName="text-xs"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold break-words">
                       {approver.nama}

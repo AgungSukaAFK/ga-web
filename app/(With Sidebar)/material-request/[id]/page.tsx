@@ -163,6 +163,7 @@ import { logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
 import { FollowupApprovalButton } from "@/components/followup-approval-button";
+import { UserAvatar } from "@/components/user-avatar";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -2381,7 +2382,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-1">
+                      <UserAvatar
+                        userId={approver.userid}
+                        name={approver.nama}
+                        className="h-9 w-9"
+                        fallbackClassName="text-xs"
+                      />
+                      <div className="min-w-0 flex-1 space-y-1">
                         <div className="font-semibold flex flex-wrap items-center gap-2">
                           <span className="break-words">{approver.nama}</span>
                           <Badge variant={"outline"}>

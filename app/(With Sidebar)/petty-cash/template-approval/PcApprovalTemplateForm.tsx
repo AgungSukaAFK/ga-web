@@ -45,7 +45,6 @@ import {
   Search,
   XCircle,
 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Table,
   TableBody,
@@ -58,6 +57,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/combobox";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
+import { UserAvatar } from "@/components/user-avatar";
 
 interface PcApprovalTemplateFormProps {
   initialData?: PcApprovalTemplate | null;
@@ -369,12 +369,7 @@ export function PcApprovalTemplateForm({
                 key={user.id}
                 className="flex items-center gap-2 p-1 rounded hover:bg-accent"
               >
-                <Avatar className="h-8 w-8">
-                  <AvatarImage
-                    src={`https://ui-avatars.com/api/?name=${user.nama}`}
-                  />
-                  <AvatarFallback>{user.nama?.charAt(0)}</AvatarFallback>
-                </Avatar>
+                <UserAvatar userId={user.id} name={user.nama} className="h-8 w-8" />
                 <div className="flex-grow min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{user.nama}</p>

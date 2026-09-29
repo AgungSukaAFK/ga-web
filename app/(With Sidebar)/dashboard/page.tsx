@@ -81,6 +81,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ClickableStatCard } from "@/components/dashboard/clickable-stat-card";
 import { ScoreStatCard } from "@/components/dashboard/score-stat-card";
+import { DashboardProfileAvatar } from "@/components/dashboard/dashboard-profile-avatar";
 import { createClient } from "@/lib/supabase/client";
 
 // Warna baru yang lebih cerah untuk Pie Chart
@@ -337,15 +338,24 @@ export default function Dashboard() {
       <div className="col-span-12">
         <Content>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold">
-                Selamat {greeting}, {profile?.nama || "..."}!
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {profile?.department || "-"}
-                {profile?.role ? ` · ${profile.role}` : ""}
-                {profile?.company ? ` · ${profile.company}` : ""}
-              </p>
+            <div className="flex items-center gap-4">
+              {profile && (
+                <DashboardProfileAvatar
+                  userId={profile.id}
+                  name={profile.nama || profile.email}
+                  src={profile.avatar_url ?? null}
+                />
+              )}
+              <div>
+                <h1 className="text-2xl font-bold">
+                  Selamat {greeting}, {profile?.nama || "..."}!
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {profile?.department || "-"}
+                  {profile?.role ? ` · ${profile.role}` : ""}
+                  {profile?.company ? ` · ${profile.company}` : ""}
+                </p>
+              </div>
             </div>
             <div className="text-left sm:text-right">
               <div className="flex items-center gap-2 text-2xl font-bold tabular-nums">

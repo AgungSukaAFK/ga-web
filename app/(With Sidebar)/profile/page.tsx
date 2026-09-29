@@ -48,6 +48,7 @@ import {
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { removeAttachmentVps } from "@/services/storageService";
 import { AVATAR_UPDATED_EVENT, getInitials } from "@/lib/avatar";
+import { setCachedAvatar } from "@/lib/avatar-cache";
 
 // REVISI: Tambahkan nrp dan company ke tipe Profile
 type Profile = {
@@ -303,6 +304,7 @@ export default function Dashboard() {
 
     const oldUrl = profile?.avatar_url;
     setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+    setCachedAvatar(user.id, url);
     // Sidebar (NavUser) fetch profil sendiri - kabari supaya ikut update
     // tanpa reload.
     window.dispatchEvent(

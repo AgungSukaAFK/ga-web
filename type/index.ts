@@ -659,6 +659,7 @@ export type NotificationType =
   | "mr_approved_step"
   | "mr_fully_approved"
   | "mr_rejected"
+  | "mr_held"
   | "po_submitted"
   | "po_validated"
   | "po_approved_step"
@@ -682,7 +683,7 @@ export interface Notification {
   title: string;
   message: string;
   resource_id?: string;
-  resource_type?: "material_request" | "purchase_order";
+  resource_type?: "material_request" | "purchase_order" | "petty_cash" | null;
   link: string;
   is_read: boolean;
 }

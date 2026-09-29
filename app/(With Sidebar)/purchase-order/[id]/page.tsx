@@ -156,6 +156,7 @@ import {
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
+import { UserAvatar } from "@/components/user-avatar";
 
 const PPH_LABELS: Record<string, string> = {
   pph21_npwp: "PPH 21 — Dengan NPWP",
@@ -2814,7 +2815,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                         )}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 space-y-1">
+                          <UserAvatar
+                            userId={approver.userid}
+                            name={approver.nama}
+                            className="h-9 w-9"
+                            fallbackClassName="text-xs"
+                          />
+                          <div className="min-w-0 flex-1 space-y-1">
                             <div className="font-semibold flex flex-wrap items-center gap-2">
                               <span className="break-words">
                                 {approver.nama}
