@@ -654,8 +654,10 @@ function NotificationRow({
         <span className="absolute inset-y-0 left-0 w-0.5 bg-primary" />
       )}
 
-      {/* Avatar pelaku + ikon kategori. Notifikasi sistem -> ikon saja. */}
-      <div className="relative mt-0.5 shrink-0">
+      {/* Avatar pelaku + ikon kategori. Notifikasi sistem -> ikon saja.
+          z-10: di atas overlay klik tombol isi, supaya avatar bisa diklik
+          utk membuka kartu profil. */}
+      <div className="relative z-10 mt-0.5 shrink-0">
         {notif.actor_id && notif.actor_name ? (
           <UserAvatar
             userId={notif.actor_id}
