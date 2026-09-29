@@ -1,18 +1,33 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Hasil cek profil lengkap (nrp + company) di-cache di cookie supaya
+// middleware tidak query `profiles` di SETIAP request. Nilainya user id,
+// jadi ganti akun otomatis cek ulang.
+const PROFILE_OK_COOKIE = "ga-profile-ok";
+const PROFILE_OK_MAX_AGE = 60 * 10; // detik
+
+function isPrefetchRequest(request: NextRequest) {
+  const h = request.headers;
+  return (
+    h.get("next-router-prefetch") === "1" ||
+    h.get("purpose") === "prefetch" ||
+    (h.get("sec-purpose") ?? "").includes("prefetch")
+  );
+}
+
 export async function middleware(request: NextRequest) {
+  // Prefetch <Link> (mis. 25 baris tabel MR) dulu bikin 2 request Supabase
+  // per link - puluhan dalam hitungan detik, bikin Log Ingestion jebol.
+  // Aman di-skip: halaman dinamis tetap di-fetch ulang (lewat middleware)
+  // saat benar-benar diklik, dan data tetap dilindungi RLS.
+  if (isPrefetchRequest(request)) {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({
     request: { headers: request.headers },
   });
-
-  // --- DEBUG SEMENTARA - HAPUS SETELAH MASALAH REDIRECT KETEMU ---
-  console.log("[middleware debug env]", {
-    SUPABASE_URL: process.env.SUPABASE_URL,
-    SUPABASE_ANON_KEY_len: process.env.SUPABASE_ANON_KEY?.length,
-    SUPABASE_ANON_KEY_tail: process.env.SUPABASE_ANON_KEY?.slice(-12),
-  });
-  // ----------------------------------------------------------------
 
   const supabase = createServerClient(
     process.env.SUPABASE_URL!,
@@ -47,24 +62,7 @@ export async function middleware(request: NextRequest) {
   // getUser() memvalidasi token ke server auth Supabase
   const {
     data: { user },
-    error: getUserError,
   } = await supabase.auth.getUser();
-
-  // --- DEBUG SEMENTARA - HAPUS SETELAH MASALAH REDIRECT KETEMU ---
-  const rawAuthCookie = request.cookies.get("sb-127-auth-token")?.value;
-  console.log("[middleware debug cookie]", {
-    exists: !!rawAuthCookie,
-    length: rawAuthCookie?.length,
-    startsWithBase64Prefix: rawAuthCookie?.startsWith("base64-"),
-    first30: rawAuthCookie?.slice(0, 30),
-  });
-  console.log("[middleware debug]", {
-    pathname: request.nextUrl.pathname,
-    cookieNames: request.cookies.getAll().map((c) => c.name),
-    hasUser: !!user,
-    getUserError: getUserError?.message,
-  });
-  // ----------------------------------------------------------------
 
   const { pathname } = request.nextUrl;
 
@@ -105,17 +103,33 @@ export async function middleware(request: NextRequest) {
 
   // Jika user terautentikasi
   if (user) {
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("nrp, company")
-      .eq("id", user.id) // Gunakan user.id
-      .maybeSingle();
+    let profileOk =
+      request.cookies.get(PROFILE_OK_COOKIE)?.value === user.id;
 
-    if (profileError && profileError.code !== "PGRST116") {
-      console.error("Middleware profile fetch error:", profileError);
+    if (!profileOk) {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("nrp, company")
+        .eq("id", user.id) // Gunakan user.id
+        .maybeSingle();
+
+      if (profileError && profileError.code !== "PGRST116") {
+        console.error("Middleware profile fetch error:", profileError);
+      }
+
+      profileOk = !!profile?.nrp && !!profile?.company;
+      if (profileOk) {
+        response.cookies.set(PROFILE_OK_COOKIE, user.id, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+          maxAge: PROFILE_OK_MAX_AGE,
+        });
+      }
     }
 
-    if (!profile?.nrp || !profile?.company) {
+    if (!profileOk) {
       if (!isPendingPath) {
         return NextResponse.redirect(new URL("/pending-approval", request.url));
       }
