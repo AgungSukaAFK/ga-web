@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+import { AVATAR_UPDATED_EVENT } from "@/lib/avatar";
 import { useNotification } from "@/components/providers/NotificationProvider";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
 import {
@@ -173,6 +174,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     getUser();
   }, [supabase]);
 
+  React.useEffect(() => {
+    const onAvatarUpdated = (e: Event) => {
+      const url = (e as CustomEvent<string | null>).detail;
+      setProfile((prev: any) => (prev ? { ...prev, avatar_url: url } : prev));
+    };
+    window.addEventListener(AVATAR_UPDATED_EVENT, onAvatarUpdated);
+    return () =>
+      window.removeEventListener(AVATAR_UPDATED_EVENT, onAvatarUpdated);
+  }, []);
+
   // LOGIKA BARU ANTI-DOUBLE ACTIVE (Longest Match Routing)
   const markActive = React.useCallback(
     (items: any[]): any[] => {
@@ -201,7 +212,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   );
 
   const mainNavItems = React.useMemo(() => {
-    const baseNav: { title: string; url: string; icon: any; badge?: number }[] = [...data.navMain];
+    const baseNav: { title: string; url: string; icon: any; badge?: number }[] =
+      [...data.navMain];
 
     baseNav.splice(1, 0, {
       title: "Notifikasi",
@@ -395,9 +407,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         {user && (
           <NavUser
             user={{
-              avatar: `https://ui-avatars.com/api/?name=${
-                profile?.nama || user.email
-              }`,
+              avatar: profile?.avatar_url || "",
               email: user.email || "",
               name: profile?.nama || "-",
             }}

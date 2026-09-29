@@ -18,6 +18,7 @@ import {
   Plus,
   Edit,
   Trash2,
+  Camera,
 } from "lucide-react";
 import { Combobox } from "@/components/combobox";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -31,6 +32,11 @@ import { BankAccount } from "@/type";
 import { fetchMyBankAccounts, deleteBankAccount } from "@/services/bankAccountService";
 import { BankAccountDialog } from "@/components/bank-account-form-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ProfileAvatarDialog } from "@/components/profile-avatar-dialog";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
+import { removeAttachmentVps } from "@/services/storageService";
+import { AVATAR_UPDATED_EVENT, getInitials } from "@/lib/avatar";
 
 // REVISI: Tambahkan nrp dan company ke tipe Profile
 type Profile = {
@@ -40,6 +46,7 @@ type Profile = {
   department: string | null;
   nrp: string | null; // Tambahkan NRP
   company: string | null; // Tambahkan Company
+  avatar_url?: string | null;
 };
 
 export default function Dashboard() {
@@ -74,6 +81,10 @@ export default function Dashboard() {
   const [selectedBankAccount, setSelectedBankAccount] =
     useState<BankAccount | null>(null);
 
+  // --- Foto Profil ---
+  const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
+  const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+
   const router = useRouter();
 
   useEffect(() => {
@@ -95,7 +106,7 @@ export default function Dashboard() {
         // REVISI: Ambil nrp dan company
         const { data: profileRes, error: profileError } = await supabase
           .from("profiles")
-          .select("nama, role, lokasi, department, nrp, company") // Ambil field baru
+          .select("nama, role, lokasi, department, nrp, company, avatar_url")
           .eq("id", user.id)
           .single();
 
@@ -269,6 +280,58 @@ export default function Dashboard() {
     }
   };
 
+  const applyAvatarUrl = async (url: string | null) => {
+    if (!user) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ avatar_url: url })
+      .eq("id", user.id);
+    if (error) throw error;
+
+    const oldUrl = profile?.avatar_url;
+    setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+    // Sidebar (NavUser) fetch profil sendiri - kabari supaya ikut update
+    // tanpa reload.
+    window.dispatchEvent(
+      new CustomEvent(AVATAR_UPDATED_EVENT, { detail: url }),
+    );
+    // File lama dihapus best-effort, tidak memblok UI kalau gagal.
+    if (oldUrl && oldUrl !== url) removeAttachmentVps(oldUrl);
+  };
+
+  // Blob sudah di-crop 1:1 & dikompres di dialog (512px WebP/JPEG).
+  const handleSaveAvatar = async (blob: Blob) => {
+    if (!user) return;
+    const ext = blob.type === "image/webp" ? "webp" : "jpg";
+    const file = new File([blob], `avatar.${ext}`, { type: blob.type });
+    const res = await uploadAttachmentDirect(
+      file,
+      `avatars/${user.id}/${Date.now()}.${ext}`,
+    );
+    if (!res.success) throw new Error(res.message);
+
+    try {
+      await applyAvatarUrl(res.url);
+    } catch (err) {
+      removeAttachmentVps(res.url);
+      throw err;
+    }
+    toast.success("Foto profil berhasil diperbarui.");
+  };
+
+  const handleRemoveAvatar = async () => {
+    setIsRemovingAvatar(true);
+    try {
+      await applyAvatarUrl(null);
+      toast.success("Foto profil dihapus.");
+    } catch (err: any) {
+      toast.error("Gagal menghapus foto profil", { description: err.message });
+    } finally {
+      setIsRemovingAvatar(false);
+    }
+  };
+
   const handleOpenAddBank = () => {
     setSelectedBankAccount(null);
     setIsBankDialogOpen(true);
@@ -325,6 +388,65 @@ export default function Dashboard() {
             <AlertDescription>{updateError}</AlertDescription>
           </Alert>
         )}
+
+        {/* Foto Profil */}
+        <div className="mb-6 flex flex-col items-center gap-4 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => setIsAvatarDialogOpen(true)}
+            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label="Ganti foto profil"
+          >
+            <Avatar className="h-24 w-24 border">
+              {profile?.avatar_url && (
+                <AvatarImage
+                  src={profile.avatar_url}
+                  alt={profile?.nama || "Foto profil"}
+                  className="object-cover"
+                />
+              )}
+              <AvatarFallback className="text-2xl font-semibold">
+                {getInitials(profile?.nama || user?.email)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <Camera className="h-6 w-6" />
+            </span>
+          </button>
+          <div className="flex flex-col items-center gap-2 sm:items-start">
+            <div className="text-center sm:text-left">
+              <p className="font-semibold">{profile?.nama || "-"}</p>
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG, atau WebP. Maksimal 10 MB.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => setIsAvatarDialogOpen(true)}>
+                <Camera className="mr-2 h-4 w-4" />
+                {profile?.avatar_url ? "Ganti Foto" : "Upload Foto"}
+              </Button>
+              {profile?.avatar_url && (
+                <ConfirmDialog
+                  title="Hapus Foto Profil"
+                  description="Foto profil akan dihapus dan diganti inisial nama Anda."
+                  onConfirm={handleRemoveAvatar}
+                >
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isRemovingAvatar}
+                  >
+                    {isRemovingAvatar ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Hapus"
+                    )}
+                  </Button>
+                </ConfirmDialog>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Bagian Form */}
         <div className="space-y-4">
@@ -603,6 +725,11 @@ export default function Dashboard() {
           )}
         </Content>
       </div>
+      <ProfileAvatarDialog
+        open={isAvatarDialogOpen}
+        onOpenChange={setIsAvatarDialogOpen}
+        onSave={handleSaveAvatar}
+      />
       <BankAccountDialog
         open={isBankDialogOpen}
         onOpenChange={setIsBankDialogOpen}

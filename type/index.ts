@@ -194,6 +194,7 @@ export interface Profile {
   company?: string | null;
   email?: string | null;
   is_active?: boolean | null;
+  avatar_url?: string | null;
 }
 
 export type User = Profile;
