@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
@@ -38,12 +38,19 @@ export default function UpdateWebPage() {
   const router = useRouter();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  // Tandai auth sudah selesai dicek - fetch reaction HARUS nunggu ini, kalau
+  // tidak `reactedByMe` dihitung dgn userId null (semua false) & user bisa
+  // kasih reaction dobel.
+  const [userLoaded, setUserLoaded] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [posts, setPosts] = useState<UpdateWebPost[]>([]);
   const [reactionsByPost, setReactionsByPost] = useState<
     Map<number, UpdateWebPostReactionSummary[]>
   >(new Map());
   const [loading, setLoading] = useState(true);
+  // Id request loadPosts terakhir - response dari request lama diabaikan biar
+  // tidak menimpa state yang lebih baru (race saat balik dari halaman lain).
+  const loadRequestId = useRef(0);
 
   const [selectedPost, setSelectedPost] = useState<UpdateWebPost | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -54,18 +61,22 @@ export default function UpdateWebPage() {
 
   useEffect(() => {
     const loadUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, nama")
-        .eq("id", user.id)
-        .single();
-      setIsAdmin(profile?.role === "admin");
-      setCurrentUserName(profile?.nama ?? null);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        setCurrentUserId(user.id);
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, nama")
+          .eq("id", user.id)
+          .single();
+        setIsAdmin(profile?.role === "admin");
+        setCurrentUserName(profile?.nama ?? null);
+      } finally {
+        setUserLoaded(true);
+      }
     };
     loadUser();
   }, []);
@@ -75,25 +86,29 @@ export default function UpdateWebPage() {
   }, [currentUserId, badgeLoading, markSeen]);
 
   const loadPosts = async (userId?: string | null) => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     try {
       const data = await fetchUpdateWebPosts();
-      setPosts(data);
       const reactions = await fetchUpdateWebPostReactions(
         data.map((p) => p.id),
         userId ?? currentUserId,
       );
+      if (requestId !== loadRequestId.current) return;
+      setPosts(data);
       setReactionsByPost(reactions);
     } catch (error: any) {
+      if (requestId !== loadRequestId.current) return;
       toast.error("Gagal memuat Update Web", { description: error.message });
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!userLoaded) return;
     loadPosts(currentUserId);
-  }, [currentUserId]);
+  }, [userLoaded, currentUserId]);
 
   const handleOpenDetail = (post: UpdateWebPost) => {
     setSelectedPost(post);
