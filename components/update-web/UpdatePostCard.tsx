@@ -43,11 +43,11 @@ export function UpdatePostCard({
         <img
           src={post.thumbnail_url}
           alt={post.title}
-          className="h-40 w-full object-cover"
+          className="aspect-video w-full object-cover"
           loading="lazy"
         />
       ) : (
-        <div className="flex h-40 w-full items-center justify-center bg-muted text-muted-foreground text-sm">
+        <div className="flex aspect-video w-full items-center justify-center bg-muted text-muted-foreground text-sm">
           Tidak ada thumbnail
         </div>
       )}

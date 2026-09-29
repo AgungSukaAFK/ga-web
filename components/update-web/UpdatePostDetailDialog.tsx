@@ -36,8 +36,8 @@ import { Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { DiscussionSubmitPayload } from "@/type";
-import { UpdatePostContentView } from "@/components/tiptap/update-post-content-view";
 import { UpdatePostReactions } from "./UpdatePostReactions";
+import { UpdatePostArticle } from "./UpdatePostArticle";
 import {
   addUpdateWebPostDiscussion,
   deleteUpdateWebPost,
@@ -143,24 +143,12 @@ export function UpdatePostDetailDialog({
               </div>
             )}
 
-            {post.thumbnail_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={post.thumbnail_url}
-                alt={post.title}
-                className="max-h-80 w-full rounded-md object-cover"
-              />
-            )}
-
-            {post.highlights.length > 0 && (
-              <ul className="list-disc space-y-1 pl-5 text-sm">
-                {post.highlights.map((h, i) => (
-                  <li key={i}>{h}</li>
-                ))}
-              </ul>
-            )}
-
-            <UpdatePostContentView content={post.content} />
+            <UpdatePostArticle
+              title={post.title}
+              thumbnailUrl={post.thumbnail_url}
+              highlights={post.highlights}
+              content={post.content}
+            />
 
             <UpdatePostReactions summaries={reactions} onSelect={onToggleReaction} />
 

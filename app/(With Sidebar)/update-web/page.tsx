@@ -2,13 +2,16 @@
 //
 // Halaman utama "Update Web" - changelog/pengumuman aplikasi internal. Semua
 // user login bisa lihat daftar & buka detail (modal besar), komentar, & kasih
-// reaction. Admin (profile.role === "admin") dapat tombol "Buat Update" +
-// aksi Edit/Hapus di dalam modal detail. Lihat supabase/update-web-setup.sql
+// reaction (+ konfetti emoji, lib/emoji-confetti.ts). Admin (profile.role ===
+// "admin") dapat tombol "Buat Update" (/update-web/buat) + aksi Edit
+// (/update-web/edit/[id]) / Hapus di dalam modal detail. Lihat supabase/update-web-setup.sql
 // untuk skema & RLS, services/updateWebService.ts untuk semua query.
 
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,9 +19,9 @@ import { Plus, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
+import { fireEmojiConfetti } from "@/lib/emoji-confetti";
 import { UpdatePostCard } from "@/components/update-web/UpdatePostCard";
 import { UpdatePostDetailDialog } from "@/components/update-web/UpdatePostDetailDialog";
-import { UpdatePostFormDialog } from "@/components/update-web/UpdatePostFormDialog";
 import {
   fetchUpdateWebPostReactions,
   fetchUpdateWebPosts,
@@ -32,6 +35,7 @@ import {
 
 export default function UpdateWebPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -43,10 +47,6 @@ export default function UpdateWebPage() {
 
   const [selectedPost, setSelectedPost] = useState<UpdateWebPost | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-
-  const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"create" | "edit">("create");
-  const [editingPost, setEditingPost] = useState<UpdateWebPost | null>(null);
 
   // Kunjungan ke halaman ini = "sudah dilihat" - bersihkan badge merah di
   // sidebar/dashboard (lihat hooks/use-update-web-badge.ts).
@@ -115,6 +115,7 @@ export default function UpdateWebPage() {
     const current = reactionsByPost.get(postId) ?? [];
     const previousEmoji = current.find((s) => s.reactedByMe)?.emoji ?? null;
     const nextEmoji = previousEmoji === emoji ? null : emoji;
+    if (nextEmoji) fireEmojiConfetti(nextEmoji);
 
     // Optimistic update - reaction cuma milik user sendiri, jadi aman
     // langsung ubah state lokal tanpa refetch.
@@ -166,19 +167,6 @@ export default function UpdateWebPage() {
     }
   };
 
-  const handlePostSaved = (post: UpdateWebPost) => {
-    setPosts((prev) => {
-      const exists = prev.some((p) => p.id === post.id);
-      const merged = exists
-        ? prev.map((p) => (p.id === post.id ? { ...p, ...post } : p))
-        : [post, ...prev];
-      return [...merged].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-    });
-  };
-
   const handlePostUpdated = (post: UpdateWebPost) => {
     setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
     setSelectedPost(post);
@@ -188,29 +176,16 @@ export default function UpdateWebPage() {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
-  const latestVersion =
-    posts.length > 0
-      ? {
-          major: posts[0].version_major,
-          minor: posts[0].version_minor,
-          patch: posts[0].version_patch,
-        }
-      : null;
-
   return (
     <Content
       title="Update Web"
       description="Daftar pembaruan & pengumuman aplikasi."
       cardAction={
         isAdmin ? (
-          <Button
-            onClick={() => {
-              setFormMode("create");
-              setEditingPost(null);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" /> Buat Update
+          <Button asChild>
+            <Link href="/update-web/buat">
+              <Plus className="h-4 w-4" /> Buat Update
+            </Link>
           </Button>
         ) : undefined
       }
@@ -255,22 +230,8 @@ export default function UpdateWebPage() {
         isAdmin={isAdmin}
         currentUserId={currentUserId}
         onPostUpdated={handlePostUpdated}
-        onEdit={(post) => {
-          setFormMode("edit");
-          setEditingPost(post);
-          setDetailOpen(false);
-          setFormOpen(true);
-        }}
+        onEdit={(post) => router.push(`/update-web/edit/${post.id}`)}
         onDeleted={handleDeleted}
-      />
-
-      <UpdatePostFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        mode={formMode}
-        initialPost={editingPost}
-        latestVersion={latestVersion}
-        onSaved={handlePostSaved}
       />
     </Content>
   );

@@ -8,6 +8,7 @@
 
 "use client";
 
+import { useEffect } from "react";
 import { useEditor, EditorContent, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TiptapImage from "@tiptap/extension-image";
@@ -28,7 +29,7 @@ export function UpdatePostContentView({
     immediatelyRender: false,
     editable: false,
     extensions: [
-      StarterKit.configure({ heading: { levels: [2, 3] } }),
+      StarterKit.configure({ heading: { levels: [2, 3] }, link: false }),
       TiptapImage.configure({
         HTMLAttributes: { class: "rounded-md max-w-full" },
       }),
@@ -55,6 +56,15 @@ export function UpdatePostContentView({
       },
     },
   });
+
+  // Konten bisa berubah setelah mount (mis. preview live di halaman
+  // buat/edit update) - sinkronkan tanpa remount editor.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const next = (content as JSONContent) ?? { type: "doc", content: [] };
+    if (JSON.stringify(editor.getJSON()) === JSON.stringify(next)) return;
+    editor.commands.setContent(next, { emitUpdate: false });
+  }, [editor, content]);
 
   if (!editor) return null;
 
