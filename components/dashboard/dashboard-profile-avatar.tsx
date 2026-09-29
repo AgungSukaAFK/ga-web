@@ -174,6 +174,7 @@ export function DashboardProfileAvatar({ userId, name, src }: Props) {
           className="h-14 w-14 border shadow-sm sm:h-16 sm:w-16"
           fallbackClassName="text-lg font-semibold"
           style={radiusStyle}
+          profileCard={false}
         />
       </button>
 
@@ -192,6 +193,7 @@ export function DashboardProfileAvatar({ userId, name, src }: Props) {
               className="mb-2 h-36 w-36 border shadow-md sm:h-40 sm:w-40"
               fallbackClassName="text-5xl font-semibold"
               style={radiusStyle}
+              profileCard={false}
             />
             <DialogTitle className="text-2xl sm:text-3xl">
               {message.title}
