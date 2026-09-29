@@ -36,6 +36,11 @@ import { PicGaPopover } from "@/components/pic-ga-popover";
 import { CreatePOModal } from "./CreatePOModal";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import {
   Newspaper,
   Search,
   Loader2,
@@ -91,6 +96,16 @@ import {
   isDpBpPaymentTerm,
   getLastApprovedApprover,
 } from "@/type/enum";
+
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "created_at.desc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  kode_po: { column: "kode_po" },
+  status: { column: "status" },
+  umur: { column: "created_at", invert: true },
+  total_price: { column: "total_price" },
+  created_at: { column: "created_at" },
+};
 
 const STATUS_OPTIONS = [
   "Pending Validation",
@@ -233,6 +248,7 @@ function PurchaseOrderPageContent() {
   const paymentFilter = searchParams.get("payment_status") || "";
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
   const assetTypeFilter = searchParams.get("asset_type") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
 
   const [searchInput, setSearchInput] = useState(searchTerm);
   const [startDateInput, setStartDateInput] = useState(startDate);
@@ -395,7 +411,10 @@ function PurchaseOrderPageContent() {
         }
 
         // Eksekusi Query
-        query = query.order("created_at", { ascending: false }).range(from, to);
+        const sort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
+        query = query
+          .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+          .range(from, to);
 
         const { data, count, error } = await query;
 
@@ -455,6 +474,7 @@ function PurchaseOrderPageContent() {
     paymentFilter,
     paymentTermFilter,
     assetTypeFilter,
+    sortFilter,
   ]);
 
   useEffect(() => {
@@ -496,6 +516,7 @@ function PurchaseOrderPageContent() {
     if (!userProfile) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
+    const exportSort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
 
     try {
       // Penambahan query department dan cost_centers untuk data Excel
@@ -561,8 +582,9 @@ function PurchaseOrderPageContent() {
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
 
-      const { data, error } = await query.order("created_at", {
-        ascending: false,
+      const { data, error } = await query.order(exportSort.column, {
+        ascending: exportSort.ascending,
+        nullsFirst: false,
       });
 
       if (error) throw error;
@@ -918,16 +940,51 @@ function PurchaseOrderPageContent() {
             <Table className="min-w-[1600px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Kode PO</TableHead>
+                  <SortableTableHead
+                    sortKey="kode_po"
+                    defaultDirection="asc"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                  >
+                    Kode PO
+                  </SortableTableHead>
                   <TableHead>Ref. Kode MR</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>Pembuat PO</TableHead>
                   <TableHead>Perusahaan</TableHead>
-                  <TableHead>Status PO</TableHead>
-                  <TableHead>Umur</TableHead>
+                  <SortableTableHead
+                    sortKey="status"
+                    defaultDirection="asc"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                  >
+                    Status PO
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="umur"
+                    defaultDirection="desc"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                  >
+                    Umur
+                  </SortableTableHead>
                   <TableHead>Payment</TableHead>
-                  <TableHead className="text-right">Total Harga</TableHead>
-                  <TableHead>Tanggal Dibuat</TableHead>
+                  <SortableTableHead
+                    sortKey="total_price"
+                    defaultDirection="desc"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })} className="text-right"
+                  >
+                    Total Harga
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="created_at"
+                    defaultDirection="desc"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                  >
+                    Tanggal Dibuat
+                  </SortableTableHead>
                   <TableHead className="text-right no-print">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
