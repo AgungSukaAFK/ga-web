@@ -31,6 +31,7 @@ import Link from "next/link";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type
 import { formatDateFriendly } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 
@@ -488,7 +489,15 @@ export function UserManagementClientContent() {
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
                   <TableCell className="font-semibold">
-                    {user.nama || "-"}
+                    <div className="flex items-center gap-2">
+                      <UserAvatar
+                        userId={user.id}
+                        name={user.nama || user.email}
+                        className="h-8 w-8"
+                        fallbackClassName="text-xs"
+                      />
+                      <span>{user.nama || "-"}</span>
+                    </div>
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.nrp || "-"}</TableCell>
