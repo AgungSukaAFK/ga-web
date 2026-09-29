@@ -15,6 +15,7 @@ import {
   Terminal,
   Power,
   PowerOff,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,6 +34,9 @@ import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label"; // Impor Label
 import { toast } from "sonner";
+import { UserAvatar } from "@/components/user-avatar";
+import { AvatarViewerDialog } from "@/components/avatar-viewer-dialog";
+import { setCachedAvatar } from "@/lib/avatar-cache";
 
 // REVISI: Tipe Profile diperbarui sesuai skema database
 type Profile = {
@@ -55,6 +59,7 @@ type UserWithProfile = {
   company: string | null;
   nrp: string | null;
   is_active: boolean;
+  avatar_url: string | null;
 };
 
 const dataLokasi: ComboboxData = [
@@ -115,6 +120,8 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
   const [updateSuccess, setUpdateSuccess] = useState<boolean>(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false);
+  const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
   const router = useRouter();
   const { userid } = params;
 
@@ -130,7 +137,8 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         } = await supabase.auth.getUser();
         setCurrentUserId(authUser?.id ?? null);
 
-        // REVISI: Mengambil semua kolom dari view + status aktif dari tabel profiles.
+        // REVISI: Mengambil semua kolom dari view + status aktif & foto profil
+        // dari tabel profiles.
         const [{ data, error }, { data: statusData }] = await Promise.all([
           supabase
             .from("users_with_profiles")
@@ -139,7 +147,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
             .single(),
           supabase
             .from("profiles")
-            .select("is_active")
+            .select("is_active, avatar_url")
             .eq("id", userid)
             .single(),
         ]);
@@ -152,7 +160,11 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         }
 
         // is_active default true bila kolom belum diisi (kompatibilitas).
-        setUser({ ...data, is_active: statusData?.is_active ?? true });
+        setUser({
+          ...data,
+          is_active: statusData?.is_active ?? true,
+          avatar_url: statusData?.avatar_url ?? null,
+        });
         setFormData({
           // Set semua data ke form
           nama: data.nama,
@@ -237,6 +249,34 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
     setUpdateSuccess(false);
   };
 
+  // Admin hanya bisa menghapus foto profil (mis. foto tidak pantas), bukan
+  // menggantinya - upload foto tetap dilakukan user sendiri di /profile.
+  const handleRemoveAvatar = async () => {
+    if (!user) return;
+    setIsRemovingAvatar(true);
+    const supabase = createClient();
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: null })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      setUser((prev) => (prev ? { ...prev, avatar_url: null } : prev));
+      setCachedAvatar(user.id, null);
+      toast.success("Foto profil berhasil dihapus.");
+    } catch (error: any) {
+      console.error("Error removing avatar:", error.message);
+      toast.error("Gagal menghapus foto profil", {
+        description: error.message,
+      });
+    } finally {
+      setIsRemovingAvatar(false);
+    }
+  };
+
   const handleToggleActive = async () => {
     if (!user) return;
     const nextActive = !user.is_active;
@@ -306,6 +346,72 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         )}
 
         <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            {user.avatar_url ? (
+              <button
+                type="button"
+                onClick={() => setIsAvatarViewerOpen(true)}
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title="Lihat foto profil"
+              >
+                <UserAvatar
+                  src={user.avatar_url}
+                  name={user.nama || user.email}
+                  className="h-20 w-20 border"
+                  fallbackClassName="text-xl font-semibold"
+                />
+              </button>
+            ) : (
+              <UserAvatar
+                src={null}
+                name={user.nama || user.email}
+                className="h-20 w-20 border"
+                fallbackClassName="text-xl font-semibold"
+              />
+            )}
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold truncate">{user.nama || "-"}</p>
+              <p className="text-sm text-muted-foreground">
+                {user.avatar_url
+                  ? "Klik foto untuk melihat ukuran penuh."
+                  : "User ini belum mengunggah foto profil."}
+              </p>
+              {user.avatar_url && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive"
+                      disabled={isRemovingAvatar}
+                    >
+                      {isRemovingAvatar ? (
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-2 h-3 w-3" />
+                      )}
+                      Hapus Foto
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Hapus foto profil?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {`Foto profil "${user.nama || user.email}" akan dihapus dan diganti inisial nama. User tetap bisa mengunggah foto baru dari halaman profilnya.`}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleRemoveAvatar}>
+                        Ya, Hapus
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+          </div>
+
           <div>
             <Label className="mb-2 block font-medium">Nama</Label>
             {!editMode ? (
@@ -501,6 +607,15 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
           )}
         </div>
       </Content>
+
+      {user.avatar_url && (
+        <AvatarViewerDialog
+          open={isAvatarViewerOpen}
+          onOpenChange={setIsAvatarViewerOpen}
+          src={user.avatar_url}
+          name={user.nama}
+        />
+      )}
     </>
   );
 }
