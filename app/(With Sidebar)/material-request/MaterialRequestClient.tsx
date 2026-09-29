@@ -69,6 +69,11 @@ import {
   PO_REF_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
@@ -127,6 +132,17 @@ const SORT_OPTIONS = [
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "created_at.desc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  kode_mr: { column: "kode_mr" },
+  prioritas: { column: "prioritas" },
+  umur: { column: "created_at", invert: true },
+  created_at: { column: "created_at" },
+  due_date: { column: "due_date" },
+  cost_estimation: { column: "cost_estimation" },
+};
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
 
 export function MaterialRequestContent({
@@ -175,7 +191,7 @@ export function MaterialRequestContent({
   const endDate = searchParams.get("endDate") || "";
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
-  const sortFilter = searchParams.get("sort") || "created_at.desc";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const levelFilter = searchParams.get("level") || "";
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
@@ -349,9 +365,9 @@ export function MaterialRequestContent({
           }
         }
 
-        const [sortBy, sortOrder] = sortFilter.split(".");
+        const sort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
         query = query
-          .order(sortBy, { ascending: sortOrder === "asc" })
+          .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
           .range(from, to);
 
         const { data, error, count } = await query;
@@ -464,6 +480,7 @@ export function MaterialRequestContent({
     if (!currentUser) return;
     setIsExporting(true);
     toast.info("Mempersiapkan data lengkap untuk diunduh...");
+    const exportSort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
 
     try {
       let query = s.from("material_requests").select(`
@@ -542,7 +559,10 @@ export function MaterialRequestContent({
       }
 
       const { data, error } = await query
-        .order("created_at", { ascending: false })
+        .order(exportSort.column, {
+          ascending: exportSort.ascending,
+          nullsFirst: false,
+        })
         .limit(2500); // Batas aman untuk excel
 
       if (error) throw error;
@@ -1053,8 +1073,22 @@ export function MaterialRequestContent({
           <TableHeader className="bg-muted/50">
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
-              <TableHead>Kode MR</TableHead>
-              <TableHead>Priority</TableHead>
+              <SortableTableHead
+                sortKey="kode_mr"
+                defaultDirection="asc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Kode MR
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="prioritas"
+                defaultDirection="asc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Priority
+              </SortableTableHead>
               <TableHead>Cost Center</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Kategori</TableHead>
@@ -1062,11 +1096,39 @@ export function MaterialRequestContent({
               <TableHead>Tujuan Site</TableHead>
               <TableHead>Requester</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Umur</TableHead>
+              <SortableTableHead
+                sortKey="umur"
+                defaultDirection="desc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Umur
+              </SortableTableHead>
               <TableHead>Company</TableHead>
-              <TableHead>Tanggal Dibuat</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead className="text-right">Total Estimasi</TableHead>
+              <SortableTableHead
+                sortKey="created_at"
+                defaultDirection="desc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Tanggal Dibuat
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="due_date"
+                defaultDirection="asc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Due Date
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="cost_estimation"
+                defaultDirection="desc"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })} className="text-right"
+              >
+                Total Estimasi
+              </SortableTableHead>
               <TableHead className="text-right no-print">Aksi</TableHead>
             </TableRow>
           </TableHeader>
