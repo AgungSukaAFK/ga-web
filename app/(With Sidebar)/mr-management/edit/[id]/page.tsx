@@ -119,6 +119,7 @@ import {
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
+import { UserAvatar } from "@/components/user-avatar";
 
 // --- Data Konstanta Lokal ---
 const kategoriData: ComboboxData = [
@@ -1544,6 +1545,12 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       key={index}
                       className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
                     >
+                      <UserAvatar
+                        userId={approver.userid}
+                        name={approver.nama}
+                        className="h-9 w-9"
+                        fallbackClassName="text-xs"
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold break-words">
                           {approver.nama}

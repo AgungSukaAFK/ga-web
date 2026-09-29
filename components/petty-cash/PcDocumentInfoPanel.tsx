@@ -36,6 +36,7 @@ import {
   Wallet,
   XCircle,
 } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 
 const formatDate = (d: string | Date) =>
   new Date(d).toLocaleDateString("id-ID", {
@@ -179,10 +180,18 @@ export function PcDocumentInfoPanel({
               key={i}
               className="flex items-center justify-between text-sm border rounded-md px-3 py-1.5"
             >
-              <span>
-                {i + 1}. {app.nama}{" "}
-                <span className="text-xs text-muted-foreground">
-                  ({app.department})
+              <span className="flex min-w-0 items-center gap-2">
+                <UserAvatar
+                  userId={app.userid}
+                  name={app.nama}
+                  className="h-6 w-6"
+                  fallbackClassName="text-[10px]"
+                />
+                <span>
+                  {i + 1}. {app.nama}{" "}
+                  <span className="text-xs text-muted-foreground">
+                    ({app.department})
+                  </span>
                 </span>
               </span>
               <div className="flex items-center gap-2">

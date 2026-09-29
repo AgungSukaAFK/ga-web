@@ -131,6 +131,7 @@ export function DiscussionPanel({
                 <DiscussionMessageBubble
                   key={index}
                   isMine={!!currentUserId && chat.user_id === currentUserId}
+                  userId={chat.user_id}
                   userName={chat.user_name}
                   timestamp={chat.timestamp}
                 >

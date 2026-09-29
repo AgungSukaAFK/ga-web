@@ -116,7 +116,7 @@ function teardown() {
   particles = [];
 }
 
-function spawn(side: Side, sprite: HTMLCanvasElement) {
+function spawn(side: Side, sprites: HTMLCanvasElement[]) {
   const W = window.innerWidth;
   const H = window.innerHeight;
   // Layar lebar -> sebaran horizontal lebih jauh; HP portrait -> lebih tegak.
@@ -131,7 +131,9 @@ function spawn(side: Side, sprite: HTMLCanvasElement) {
     const isEmoji = kind === "emoji";
     return {
       kind,
-      sprite: isEmoji ? sprite : undefined,
+      sprite: isEmoji
+        ? sprites[Math.floor(Math.random() * sprites.length)]
+        : undefined,
       color: isEmoji
         ? undefined
         : PAPER_COLORS[Math.floor(Math.random() * PAPER_COLORS.length)],
@@ -251,14 +253,15 @@ function step(now: number) {
   rafId = requestAnimationFrame(step);
 }
 
-export function fireEmojiConfetti(emoji: string) {
+// `emoji` boleh array -> tiap stiker diambil acak dari daftar itu.
+export function fireEmojiConfetti(emoji: string | string[]) {
   if (typeof window === "undefined") return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
   ensureCanvas();
-  const sprite = getSprite(emoji);
-  spawn("left", sprite);
-  spawn("right", sprite);
+  const sprites = (Array.isArray(emoji) ? emoji : [emoji]).map(getSprite);
+  spawn("left", sprites);
+  spawn("right", sprites);
 
   if (rafId === null) {
     lastTime = performance.now();

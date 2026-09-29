@@ -5,11 +5,12 @@
 // bubble ngikutin isi (bukan selalu full width) dengan batas maksimal 70%
 // container di desktop, boleh sampai 100% di mobile.
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 
 interface DiscussionMessageBubbleProps {
   isMine: boolean;
+  userId?: string | null;
   userName: string | null | undefined;
   timestamp: string;
   compact?: boolean;
@@ -18,6 +19,7 @@ interface DiscussionMessageBubbleProps {
 
 export function DiscussionMessageBubble({
   isMine,
+  userId,
   userName,
   timestamp,
   compact = false,
@@ -25,11 +27,12 @@ export function DiscussionMessageBubble({
 }: DiscussionMessageBubbleProps) {
   return (
     <div className={cn("flex items-start gap-3", isMine && "flex-row-reverse")}>
-      <Avatar className={cn("shrink-0", compact && "w-8 h-8")}>
-        <AvatarFallback className={compact ? "text-xs" : undefined}>
-          {(userName || "?").substring(0, 2).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
+      <UserAvatar
+        userId={userId}
+        name={userName}
+        className={cn(compact && "w-8 h-8")}
+        fallbackClassName={compact ? "text-xs" : undefined}
+      />
       <div
         className={cn(
           "w-fit max-w-full md:max-w-[70%] rounded-lg border p-3",
