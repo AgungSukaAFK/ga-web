@@ -373,6 +373,15 @@ function PurchaseOrderPageContent() {
           const matchingMrIds = matchingMRs
             ? matchingMRs.map((mr) => mr.id)
             : [];
+
+          const { data: matchingUsers } = await s
+            .from("users_with_profiles")
+            .select("id")
+            .ilike("nama", `%${searchTerm}%`);
+
+          const matchingUserIds = matchingUsers
+            ? matchingUsers.map((u) => u.id)
+            : [];
           const searchTermLike = `"%${searchTerm}%"`;
           let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
           orFilter += `,vendor_details->>nama_vendor.ilike.${searchTermLike}`;
@@ -380,6 +389,9 @@ function PurchaseOrderPageContent() {
 
           if (matchingMrIds.length > 0) {
             orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+          }
+          if (matchingUserIds.length > 0) {
+            orFilter += `,user_id.in.(${matchingUserIds.join(",")})`;
           }
           query = query.or(orFilter);
         }
@@ -563,6 +575,15 @@ function PurchaseOrderPageContent() {
           .ilike("kode_mr", `%${searchTerm}%`);
 
         const matchingMrIds = matchingMRs ? matchingMRs.map((mr) => mr.id) : [];
+
+        const { data: matchingUsers } = await s
+          .from("users_with_profiles")
+          .select("id")
+          .ilike("nama", `%${searchTerm}%`);
+
+        const matchingUserIds = matchingUsers
+          ? matchingUsers.map((u) => u.id)
+          : [];
         const searchTermLike = `"%${searchTerm}%"`;
         let orFilter = `kode_po.ilike.${searchTermLike},status.ilike.${searchTermLike}`;
         orFilter += `,vendor_details->>nama_vendor.ilike.${searchTermLike}`;
@@ -570,6 +591,9 @@ function PurchaseOrderPageContent() {
 
         if (matchingMrIds.length > 0) {
           orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
+        }
+        if (matchingUserIds.length > 0) {
+          orFilter += `,user_id.in.(${matchingUserIds.join(",")})`;
         }
         query = query.or(orFilter);
       }
@@ -710,7 +734,7 @@ function PurchaseOrderPageContent() {
               <div className="relative flex-grow">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
-                  placeholder="Cari Kode PO, Nama Vendor, Kode MR..."
+                  placeholder="Cari Kode PO, Nama Vendor, Kode MR, Pembuat PO..."
                   className="pl-10"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
