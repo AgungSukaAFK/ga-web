@@ -13,6 +13,7 @@ import {
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
+import { RichContentView } from "@/components/rich-content-view";
 import {
   Table,
   TableBody,
@@ -124,7 +125,7 @@ const InfoItem = ({
 }: {
   icon: React.ElementType;
   label: string;
-  value: string;
+  value: React.ReactNode;
   isBlock?: boolean;
 }) => (
   <div className={isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2"}>
@@ -886,7 +887,15 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 <InfoItem
                   icon={Info}
                   label="Remarks MR"
-                  value={poForm.material_requests.remarks}
+                  value={
+                    poForm.material_requests.remarks ? (
+                      <RichContentView
+                        content={parseRichValue(poForm.material_requests.remarks)}
+                      />
+                    ) : (
+                      "-"
+                    )
+                  }
                   isBlock
                 />
               </div>
