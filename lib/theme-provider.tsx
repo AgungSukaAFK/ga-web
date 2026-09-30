@@ -11,7 +11,7 @@ import {
 // swatch di AccentThemeSwitcher. `group: "company"` = warna khusus
 // perusahaan, ditampilkan terpisah di atas.
 export const accentThemes = [
-  { name: "gmi", label: "GMI", color: "hsl(215 75% 32%)", group: "company" },
+  { name: "gmi", label: "GMI", color: "#242365", group: "company" },
   { name: "gis", label: "GIS", color: "rgb(23 88 49)", group: "company" },
   { name: "zinc", label: "Zinc (Default)", color: "hsl(240 5.9% 10%)", group: "general" },
   { name: "blue", label: "Blue", color: "hsl(217.2 91.2% 59.8%)", group: "general" },

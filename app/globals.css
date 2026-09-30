@@ -222,16 +222,16 @@
   /* teks primary tetap kontras dengan background gelap.  */
   /* ---------------------------------------------------- */
 
-  /* Tema GMI - biru agak gelap */
+  /* Tema GMI - navy, #242365 / RGB(36, 35, 101) */
   .theme-gmi {
-    --primary: 215 75% 32%;
-    --primary-foreground: 210 40% 98%;
-    --ring: 215 75% 32%;
+    --primary: 240.9 48.6% 26.7%;
+    --primary-foreground: 240 40% 98%;
+    --ring: 240.9 48.6% 26.7%;
   }
   .dark.theme-gmi {
-    --primary: 215 70% 58%;
-    --primary-foreground: 215 75% 12%;
-    --ring: 215 70% 58%;
+    --primary: 241 50% 66%;
+    --primary-foreground: 241 50% 10%;
+    --ring: 241 50% 66%;
   }
 
   /* Tema GIS - hijau, RGB(23, 88, 49) */
