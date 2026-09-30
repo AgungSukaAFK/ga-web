@@ -210,6 +210,9 @@ export const addUpdateWebPostDiscussion = async (
     p_content: payload.content ?? null,
     p_mentions: payload.mentions ?? [],
     p_attachment: payload.attachment ?? null,
+    // Cuma dikirim kalau memang membalas - komentar biasa tetap jalan walau
+    // migration discussion_reply_setup.sql belum diterapkan.
+    ...(payload.reply_to ? { p_reply_to: payload.reply_to } : {}),
   });
   if (error) throw error;
 };

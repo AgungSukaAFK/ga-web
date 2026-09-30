@@ -155,6 +155,16 @@ export type DiscussionAttachment =
   | { type: "image"; url: string; name?: string }
   | { type: "sticker"; emoji: string };
 
+// Snapshot singkat pesan yang dibalas - disimpan sebagai salinan (bukan
+// referensi id) karena entri diskusi lama tidak punya id. Pesan asli
+// dicari lewat pasangan user_id + timestamp (dipakai buat scroll ke pesan).
+export interface DiscussionReplyRef {
+  user_id: string;
+  user_name: string;
+  timestamp: string;
+  excerpt: string;
+}
+
 export interface Discussion {
   user_id: string;
   user_name: string;
@@ -169,6 +179,7 @@ export interface Discussion {
   timestamp: string;
   mentions?: DiscussionMention[];
   attachment?: DiscussionAttachment;
+  reply_to?: DiscussionReplyRef;
 }
 
 // Payload yang dikirim komponen `DiscussionPanel` (components/discussion-panel.tsx)
@@ -181,6 +192,7 @@ export interface DiscussionSubmitPayload {
   content?: Record<string, unknown>;
   mentions?: DiscussionMention[];
   attachment?: DiscussionAttachment;
+  reply_to?: DiscussionReplyRef;
 }
 
 export interface Profile {
@@ -651,6 +663,7 @@ export interface ItemRequest {
 
 export type NotificationType =
   | "mention"
+  | "reply"
   | "approval_mr"
   | "approval_po"
   | "info"

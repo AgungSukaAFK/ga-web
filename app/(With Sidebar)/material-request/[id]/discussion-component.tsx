@@ -61,9 +61,15 @@ export function DiscussionSection({
       { message: payload.message },
     );
 
-    const userMentions = (payload.mentions ?? []).filter((m) => m.type === "user");
-    await Promise.all(
-      userMentions
+    const userMentions = (payload.mentions ?? []).filter(
+      (m) => m.type === "user",
+    );
+    const mentionedIds = new Set(userMentions.map((m) => m.id));
+    // Pemilik pesan yang dibalas dapat notifikasi "reply" - kecuali balas
+    // pesan sendiri, atau dia sudah di-tag di pesan ini (cukup notif mention).
+    const replyRecipient = payload.reply_to?.user_id;
+    await Promise.all([
+      ...userMentions
         .filter((m) => m.id !== user.id)
         .map((m) =>
           sendNotification({
@@ -77,7 +83,23 @@ export function DiscussionSection({
             resourceType: "material_request",
           }),
         ),
-    );
+      ...(replyRecipient &&
+      replyRecipient !== user.id &&
+      !mentionedIds.has(replyRecipient)
+        ? [
+            sendNotification({
+              userId: replyRecipient,
+              actorId: user.id,
+              type: "reply",
+              title: "Pesan Anda dibalas",
+              message: `${userName} membalas pesan Anda dalam diskusi MR.`,
+              link: `/material-request/${mrId}`,
+              resourceId: String(mrId),
+              resourceType: "material_request",
+            }),
+          ]
+        : []),
+    ]);
 
     setDiscussions(updatedDiscussions);
     router.refresh();
@@ -88,6 +110,7 @@ export function DiscussionSection({
       discussions={discussions}
       onSubmit={submit}
       storagePathPrefix={`discussions/material-request/${mrId}`}
+      allowReply
     />
   );
 }

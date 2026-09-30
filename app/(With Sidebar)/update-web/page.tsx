@@ -115,6 +115,19 @@ export default function UpdateWebPage() {
     setDetailOpen(true);
   };
 
+  // Deep-link dari notifikasi balasan komentar (/update-web?post=<id>) -
+  // buka modal detail postingan itu sekali setelah daftar termuat.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (loading || deepLinkHandled.current || posts.length === 0) return;
+    deepLinkHandled.current = true;
+    const postId = Number(
+      new URLSearchParams(window.location.search).get("post"),
+    );
+    const target = postId ? posts.find((p) => p.id === postId) : undefined;
+    if (target) handleOpenDetail(target);
+  }, [loading, posts]);
+
   // 1 user cuma boleh 1 reaction aktif per post (lihat
   // supabase/update-web-v2-setup.sql) - klik emoji yang sama dgn reaction
   // sekarang = hapus, klik emoji lain = ganti (bukan nambah).
@@ -244,6 +257,7 @@ export default function UpdateWebPage() {
         }
         isAdmin={isAdmin}
         currentUserId={currentUserId}
+        currentUserName={currentUserName}
         onPostUpdated={handlePostUpdated}
         onEdit={(post) => router.push(`/update-web/edit/${post.id}`)}
         onDeleted={handleDeleted}

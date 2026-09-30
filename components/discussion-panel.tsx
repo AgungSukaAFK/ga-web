@@ -8,6 +8,11 @@
 // nentuin cara persist lewat `onSubmit` (langsung .update() kolom `discussions`
 // untuk MR/PO, atau RPC untuk Petty Cash), lalu re-render dengan `discussions`
 // yang sudah ter-update (optimistic append atau refetch, terserah caller).
+//
+// Fitur "balas pesan" opt-in lewat `allowReply` - payload `reply_to` baru
+// ikut tersimpan kalau caller-nya meneruskan field itu (MR/PO langsung dari
+// payload, Update Web lewat p_reply_to di RPC). Petty Cash belum, karena RPC-nya
+// belum menerima reply_to.
 
 "use client";
 
@@ -17,8 +22,13 @@ import { Button } from "@/components/ui/button";
 import { DiscussionMessageBubble } from "@/components/discussion-message-bubble";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { Send } from "lucide-react";
-import { Discussion, DiscussionAttachment, DiscussionSubmitPayload } from "@/type";
+import { Reply, Send, X } from "lucide-react";
+import {
+  Discussion,
+  DiscussionAttachment,
+  DiscussionSubmitPayload,
+} from "@/type";
+import { buildReplyRef, isReplyTarget } from "@/lib/discussion-reply";
 import {
   RichMentionEditor,
   RichMentionEditorHandle,
@@ -38,6 +48,7 @@ interface DiscussionPanelProps {
   placeholder?: string;
   emptyText?: string;
   className?: string;
+  allowReply?: boolean;
 }
 
 export function DiscussionPanel({
@@ -49,6 +60,7 @@ export function DiscussionPanel({
   placeholder = "Tulis pesan Anda di sini... (bisa drag & drop atau paste gambar)",
   emptyText = "Belum ada diskusi.",
   className,
+  allowReply = false,
 }: DiscussionPanelProps) {
   const [fetchedUserId, setFetchedUserId] = useState<string | null>(null);
   const editorRef = useRef<RichMentionEditorHandle>(null);
@@ -57,6 +69,10 @@ export function DiscussionPanel({
     useState<DiscussionAttachment | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<Discussion | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { uploading, uploadFile } = useImageAttachmentUpload(storagePathPrefix);
 
@@ -69,6 +85,27 @@ export function DiscussionPanel({
       setFetchedUserId(data.user?.id ?? null);
     });
   }, [currentUserIdProp]);
+
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    },
+    [],
+  );
+
+  const handleReply = (chat: Discussion) => {
+    setReplyTarget(chat);
+    editorRef.current?.focus();
+  };
+
+  const scrollToMessage = (index: number) => {
+    const el = messageRefs.current[index];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setHighlightedIndex(index);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedIndex(null), 1500);
+  };
 
   const handleUploadFile = async (file: File) => {
     const attachment = await uploadFile(file);
@@ -94,10 +131,12 @@ export function DiscussionPanel({
         ...(content ? { content } : {}),
         ...(mentions.length > 0 ? { mentions } : {}),
         ...(attachment ? { attachment } : {}),
+        ...(replyTarget ? { reply_to: buildReplyRef(replyTarget) } : {}),
       });
 
       editorRef.current?.clear();
       setIsMessageEmpty(true);
+      setReplyTarget(null);
       if (!attachmentOverride) setPendingAttachment(null);
       toast.success("Pesan berhasil terkirim!");
     } catch (error: any) {
@@ -127,26 +166,48 @@ export function DiscussionPanel({
         <div className="space-y-4">
           <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
             {list.length > 0 ? (
-              list.map((chat, index) => (
-                <DiscussionMessageBubble
-                  key={index}
-                  isMine={!!currentUserId && chat.user_id === currentUserId}
-                  userId={chat.user_id}
-                  userName={chat.user_name}
-                  timestamp={chat.timestamp}
-                >
-                  {(chat.content || chat.message) && (
-                    <RichContentView
-                      content={chat.content}
-                      text={chat.message}
-                      mentions={chat.mentions}
-                    />
-                  )}
-                  {chat.attachment && (
-                    <DiscussionAttachmentView attachment={chat.attachment} />
-                  )}
-                </DiscussionMessageBubble>
-              ))
+              list.map((chat, index) => {
+                const replyTo = chat.reply_to;
+                const replyIndex = replyTo
+                  ? list.findIndex((c) => isReplyTarget(c, replyTo))
+                  : -1;
+                return (
+                  <div
+                    key={index}
+                    ref={(el) => {
+                      messageRefs.current[index] = el;
+                    }}
+                  >
+                    <DiscussionMessageBubble
+                      isMine={!!currentUserId && chat.user_id === currentUserId}
+                      userId={chat.user_id}
+                      userName={chat.user_name}
+                      timestamp={chat.timestamp}
+                      replyTo={replyTo}
+                      onReplyQuoteClick={
+                        replyIndex >= 0
+                          ? () => scrollToMessage(replyIndex)
+                          : undefined
+                      }
+                      onReply={allowReply ? () => handleReply(chat) : undefined}
+                      highlighted={highlightedIndex === index}
+                    >
+                      {(chat.content || chat.message) && (
+                        <RichContentView
+                          content={chat.content}
+                          text={chat.message}
+                          mentions={chat.mentions}
+                        />
+                      )}
+                      {chat.attachment && (
+                        <DiscussionAttachmentView
+                          attachment={chat.attachment}
+                        />
+                      )}
+                    </DiscussionMessageBubble>
+                  </div>
+                );
+              })
             ) : (
               <p className="text-sm text-center text-muted-foreground">
                 {emptyText}
@@ -154,6 +215,27 @@ export function DiscussionPanel({
             )}
           </div>
           <form onSubmit={handleSubmit} className="pt-4 border-t space-y-2">
+            {replyTarget && (
+              <div className="flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted/50 px-3 py-2 text-xs">
+                <Reply className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">
+                    Membalas {replyTarget.user_name || "-"}
+                  </p>
+                  <p className="truncate text-muted-foreground">
+                    {buildReplyRef(replyTarget).excerpt || "(pesan)"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyTarget(null)}
+                  aria-label="Batal membalas"
+                  className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             <div
               className={cn(
                 "rounded-md",
