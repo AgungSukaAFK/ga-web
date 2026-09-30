@@ -14,6 +14,7 @@ import {
   Barang,
   Discussion,
   DiscussionSubmitPayload,
+  MrTemplate,
 } from "@/type";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { Combobox, ComboboxData } from "@/components/combobox";
@@ -22,7 +23,11 @@ import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import { stringifyRichContent } from "@/lib/rich-content";
+import {
+  extractPlainText,
+  parseRichValue,
+  stringifyRichContent,
+} from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -38,6 +43,9 @@ import {
   Building2,
   AlertTriangle,
   ExternalLink,
+  FileStack,
+  Search,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -71,13 +79,14 @@ import { logActivity } from "@/services/logService";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
+import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
+import {
+  applyMrTemplate,
+  fetchMrTemplateById,
+  fetchMrTemplates,
+} from "@/services/mrTemplateService";
 
-const kategoriData: ComboboxData = [
-  { label: "New Item", value: "New Item" },
-  { label: "Replace Item", value: "Replace Item" },
-  { label: "Fix & Repair", value: "Fix & Repair" },
-  { label: "Upgrade", value: "Upgrade" },
-];
+const kategoriData: ComboboxData = MR_KATEGORI_OPTIONS;
 
 const dataLokasi: ComboboxData = [
   { label: "Head Office", value: "Head Office" },
@@ -163,6 +172,98 @@ export default function BuatMRPage() {
       setCurrentUserId(data.user?.id ?? null);
     });
   }, []);
+
+  // --- Template MR (disediakan GA, lihat mr-template/MrTemplateClient.tsx) ---
+  // Template yang terakhir diterapkan - dicatat di activity log saat MR
+  // diajukan. `formKey` dipakai remount Combobox Kategori & editor Remarks
+  // (keduanya uncontrolled) supaya nilai dari template ikut tampil.
+  const [appliedTemplate, setAppliedTemplate] = useState<{
+    id: number;
+    nama: string;
+  } | null>(null);
+  const [formKey, setFormKey] = useState(0);
+  const [openTemplateDialog, setOpenTemplateDialog] = useState(false);
+  const [mrTemplates, setMrTemplates] = useState<MrTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [applyingTemplateId, setApplyingTemplateId] = useState<number | null>(
+    null,
+  );
+  const [templateSearch, setTemplateSearch] = useState("");
+
+  const handleApplyTemplate = async (template: MrTemplate) => {
+    setApplyingTemplateId(template.id);
+    try {
+      const { orders, missing } = await applyMrTemplate(template);
+      if (orders.length === 0) {
+        toast.error("Template tidak bisa dipakai", {
+          description:
+            "Semua barang di template ini sudah tidak ada di database barang.",
+        });
+        return;
+      }
+
+      setFormCreateMR((prev) => ({
+        ...prev,
+        orders,
+        kategori: template.kategori || prev.kategori,
+        // Remarks yang sudah diketik requester tidak ditimpa.
+        remarks: prev.remarks || template.remarks || "",
+      }));
+      setAppliedTemplate({ id: template.id, nama: template.nama_template });
+      setFormKey((k) => k + 1);
+      setOpenTemplateDialog(false);
+
+      toast.success(`Template "${template.nama_template}" diterapkan.`, {
+        description: `${orders.length} barang dimuat. Silakan cek & sesuaikan sebelum mengajukan.`,
+      });
+      if (missing.length > 0) {
+        toast.warning(
+          `${missing.length} barang dilewati karena sudah tidak ada di database`,
+          { description: missing.join(", ") },
+        );
+      }
+    } catch (error: any) {
+      toast.error("Gagal menerapkan template", { description: error.message });
+    } finally {
+      setApplyingTemplateId(null);
+    }
+  };
+
+  const handleOpenTemplateDialog = async () => {
+    setTemplateSearch("");
+    setOpenTemplateDialog(true);
+    setLoadingTemplates(true);
+    try {
+      setMrTemplates(await fetchMrTemplates());
+    } catch (error: any) {
+      toast.error("Gagal memuat template MR", { description: error.message });
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  // Terapkan template dari ?template=<id> (tombol "Gunakan" di halaman
+  // Template MR). Pakai window.location, bukan useSearchParams, supaya
+  // halaman ini tidak perlu dibungkus Suspense.
+  useEffect(() => {
+    const templateId = Number(
+      new URLSearchParams(window.location.search).get("template"),
+    );
+    if (!templateId) return;
+    fetchMrTemplateById(templateId)
+      .then(handleApplyTemplate)
+      .catch(() => toast.error("Template MR tidak ditemukan."));
+  }, []);
+
+  const filteredMrTemplates = mrTemplates.filter((t) => {
+    const q = templateSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      t.nama_template.toLowerCase().includes(q) ||
+      (t.deskripsi || "").toLowerCase().includes(q) ||
+      (t.orders || []).some((o) => o.name.toLowerCase().includes(q))
+    );
+  });
 
   const handleDraftDiscussionSubmit = (payload: DiscussionSubmitPayload) => {
     const entry: Discussion = {
@@ -595,7 +696,7 @@ export default function BuatMRPage() {
         "CREATE_MR",
         "material_request",
         String(mrId),
-        `Requester ${userProfile?.nama || "Unknown"} membuat MR ${freshKodeMr} dengan ${finalPayload.orders.length} barang. Estimasi biaya: ${formatCurrency(finalPayload.cost_estimation)}`,
+        `Requester ${userProfile?.nama || "Unknown"} membuat MR ${freshKodeMr} dengan ${finalPayload.orders.length} barang${appliedTemplate ? ` menggunakan Template MR "${appliedTemplate.nama}"` : ""}. Estimasi biaya: ${formatCurrency(finalPayload.cost_estimation)}`,
         {
           kode_mr: freshKodeMr,
           company_code,
@@ -604,6 +705,8 @@ export default function BuatMRPage() {
           kategori: finalPayload.kategori,
           total_items: finalPayload.orders.length,
           cost_estimation: finalPayload.cost_estimation,
+          template_id: appliedTemplate?.id ?? null,
+          template_nama: appliedTemplate?.nama ?? null,
         },
       );
 
@@ -750,6 +853,44 @@ export default function BuatMRPage() {
         description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
       >
         <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+            {appliedTemplate ? (
+              <div className="flex items-center gap-2 text-sm">
+                <FileStack className="h-4 w-4 shrink-0 text-primary" />
+                <span>
+                  Menggunakan template{" "}
+                  <strong>{appliedTemplate.nama}</strong>. Semua isian tetap
+                  bisa diedit.
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  title="Lepas keterangan template"
+                  onClick={() => setAppliedTemplate(null)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileStack className="h-4 w-4 shrink-0" />
+                MR rutin? Pakai template dari GA supaya tidak perlu input
+                barang satu per satu.
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenTemplateDialog}
+              disabled={loading}
+            >
+              {appliedTemplate ? "Ganti Template" : "Gunakan Template MR"}
+            </Button>
+          </div>
+
           {isLourdes && (
             <div className="col-span-12 flex flex-col gap-2">
               <Label className="flex items-center gap-2">
@@ -810,6 +951,7 @@ export default function BuatMRPage() {
           <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
             <Label>Kategori</Label>
             <Combobox
+              key={`kategori-${formKey}`}
               data={kategoriData}
               onChange={handleCBKategori}
               placeholder="Pilih kategori..."
@@ -893,7 +1035,9 @@ export default function BuatMRPage() {
           <div className="flex flex-col gap-2 col-span-12">
             <Label>Remarks (Tujuan & Latar Belakang)</Label>
             <RichMentionEditor
+              key={`remarks-${formKey}`}
               ref={remarksEditorRef}
+              initialContent={parseRichValue(formCreateMR.remarks)}
               placeholder="Contoh: Laptop lama rusak layar, dibutuhkan untuk kerja harian tim IT..."
               onChange={() =>
                 setFormCreateMR({
@@ -1142,6 +1286,96 @@ export default function BuatMRPage() {
           </Button>
         </div>
       </Content>
+
+      {/* MODAL: Pilih Template MR */}
+      <Dialog open={openTemplateDialog} onOpenChange={setOpenTemplateDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileStack className="h-5 w-5" />
+              Pilih Template MR
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Barang di template akan <strong>mengganti</strong> daftar Order
+            Item saat ini. Kategori ikut terisi dari template, remarks hanya
+            terisi kalau masih kosong.
+          </p>
+
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={templateSearch}
+              onChange={(e) => setTemplateSearch(e.target.value)}
+              placeholder="Cari template atau nama barang..."
+              className="pl-8"
+            />
+          </div>
+
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+            {loadingTemplates ? (
+              <div className="flex h-24 items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : filteredMrTemplates.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {mrTemplates.length === 0
+                  ? "Belum ada template MR dari GA."
+                  : "Tidak ada template yang cocok."}
+              </p>
+            ) : (
+              filteredMrTemplates.map((t) => (
+                <div
+                  key={t.id}
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-lg border p-3",
+                    appliedTemplate?.id === t.id && "border-primary",
+                  )}
+                >
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold">{t.nama_template}</p>
+                    {t.deskripsi && (
+                      <p className="text-xs text-muted-foreground">
+                        {t.deskripsi}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {t.kategori && (
+                        <Badge variant="outline">{t.kategori}</Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {t.orders?.length ?? 0} barang
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {(t.orders || [])
+                        .map((o) => `${o.name} (${o.qty} ${o.uom})`)
+                        .join(", ")}
+                    </p>
+                    {t.remarks && (
+                      <p className="text-xs italic text-muted-foreground line-clamp-1">
+                        Remarks: {extractPlainText(t.remarks)}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => handleApplyTemplate(t)}
+                    disabled={applyingTemplateId !== null}
+                  >
+                    {applyingTemplateId === t.id && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Gunakan
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL: Notifikasi MR Duplikat */}
       <Dialog open={openDuplicateDialog} onOpenChange={setOpenDuplicateDialog}>
