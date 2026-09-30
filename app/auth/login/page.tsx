@@ -5,19 +5,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Building2, Headset } from "lucide-react";
-import { signInWithEmailOrNrp } from "@/services/userService";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Loader2,
+  Building2,
+  Headset,
+  LockKeyhole,
+  LogIn,
+  UserRound,
+} from "lucide-react";
+import { signInWithEmailOrNrp } from "@/services/userService";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { AuthInput } from "@/components/auth/auth-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
@@ -70,65 +71,71 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Login</CardTitle>
-          <CardDescription className="text-center">
-            Masukkan Email atau NRP Anda untuk masuk.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="identifier">Email atau NRP</Label>
-              <Input
-                id="identifier"
-                name="identifier"
-                type="text"
-                required
-                placeholder="email@example.com atau 123456"
-                disabled={loading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                disabled={loading}
-              />
-            </div>
-            <div className="w-full flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsForgotPasswordOpen(true)}
-                className="text-end text-sm underline-offset-4 hover:underline"
-              >
-                Lupa password?
-              </button>
-            </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertTitle>Login Gagal</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Login
-            </Button>
-          </form>
-          <div className="mt-4 text-center text-sm">
-            Belum punya akun?{" "}
-            <Link href="/auth/sign-up" className="underline underline-offset-4">
-              Daftar di sini
-            </Link>
+    <AuthShell
+      title="Selamat datang kembali"
+      description="Masuk dengan Email atau NRP Anda untuk melanjutkan."
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="identifier">Email atau NRP</Label>
+          <AuthInput
+            icon={UserRound}
+            id="identifier"
+            name="identifier"
+            type="text"
+            required
+            autoComplete="username"
+            autoFocus
+            placeholder="email@example.com atau 123456"
+            disabled={loading}
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <button
+              type="button"
+              onClick={() => setIsForgotPasswordOpen(true)}
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Lupa password?
+            </button>
           </div>
-        </CardContent>
-      </Card>
+          <AuthInput
+            icon={LockKeyhole}
+            id="password"
+            name="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            placeholder="••••••••"
+            disabled={loading}
+          />
+        </div>
+        {error && (
+          <Alert variant="destructive">
+            <AlertTitle>Login Gagal</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <Button type="submit" disabled={loading} className="h-11 w-full">
+          {loading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <LogIn className="mr-2 h-4 w-4" />
+          )}
+          {loading ? "Memproses..." : "Masuk"}
+        </Button>
+      </form>
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        Belum punya akun?{" "}
+        <Link
+          href="/auth/sign-up"
+          className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+        >
+          Daftar di sini
+        </Link>
+      </p>
 
       <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
         <DialogContent className="sm:max-w-md">
@@ -163,6 +170,6 @@ export default function LoginPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AuthShell>
   );
 }
