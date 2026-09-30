@@ -412,3 +412,25 @@
   pointer-events: none;
   height: 0;
 }
+
+/* Halaman auth: efek Ken Burns pada slideshow latar. Arah geser tiap slide
+   diatur lewat --kb-from / --kb-to (lihat components/auth/auth-shell.tsx). */
+@keyframes auth-kenburns {
+  from {
+    transform: scale(1.04) translate3d(var(--kb-from, 0, 0), 0);
+  }
+  to {
+    transform: scale(1.16) translate3d(var(--kb-to, 0, 0), 0);
+  }
+}
+
+.auth-kenburns {
+  animation: auth-kenburns var(--kb-duration, 9s) ease-out forwards;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-kenburns {
+    animation: none;
+  }
+}
