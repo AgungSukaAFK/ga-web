@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -26,6 +28,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useNotifSettings } from "@/lib/notifications/settings";
 import {
   SOUND_PRESETS,
+  SOUND_PRESET_GROUPS,
   playSound,
   playCustomSound,
   unlockAudio,
@@ -219,19 +222,36 @@ export function NotificationSettings() {
           <div className="flex items-center gap-2">
             <Select
               value={settings.soundType}
-              onValueChange={(v) =>
-                update({ soundType: v as typeof settings.soundType })
-              }
+              onValueChange={(v) => {
+                const soundType = v as typeof settings.soundType;
+                update({ soundType });
+                // Langsung putar supaya user bisa bandingkan tanpa klik "Coba".
+                unlockAudio();
+                if (soundType === "custom") {
+                  playCustomSound(settings.volume);
+                } else {
+                  playSound(soundType, settings.volume);
+                }
+              }}
               disabled={soundDisabled}
             >
               <SelectTrigger className="min-w-0 flex-1">
                 <SelectValue placeholder="Pilih suara" />
               </SelectTrigger>
-              <SelectContent>
-                {SOUND_PRESETS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.label}
-                  </SelectItem>
+              <SelectContent className="max-h-80">
+                {SOUND_PRESET_GROUPS.map((group) => (
+                  <SelectGroup key={group}>
+                    <SelectLabel className="text-xs text-muted-foreground">
+                      {group}
+                    </SelectLabel>
+                    {SOUND_PRESETS.filter((p) => p.group === group).map(
+                      (p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.label}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>

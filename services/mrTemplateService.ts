@@ -7,6 +7,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { MrTemplate, Order } from "@/type";
+import { normalizeMrOrders } from "@/services/mrService";
 
 const supabase = createClient();
 
@@ -83,18 +84,18 @@ export const deleteMrTemplate = async (id: number): Promise<void> => {
 };
 
 /**
- * Siapkan orders template untuk dimuat ke form Buat MR: data barang
- * (nama, part number, UoM, harga) di-refresh dari tabel `barang` supaya
- * ikut perubahan master barang sejak template dibuat. Barang yang sudah
- * tidak ada di database dibuang & dilaporkan lewat `missing`.
+ * Siapkan orders (dari template / MR lama) untuk dimuat ke form Buat MR:
+ * data barang (nama, part number, UoM, harga) di-refresh dari tabel
+ * `barang` supaya ikut perubahan master barang. Barang yang sudah tidak ada
+ * di database (atau item lama tanpa barang_id) dibuang & dilaporkan lewat
+ * `missing`.
  */
-export const applyMrTemplate = async (
-  template: MrTemplate,
+const refreshOrdersFromBarang = async (
+  sourceOrders: Order[],
 ): Promise<{ orders: Order[]; missing: string[] }> => {
-  const templateOrders = template.orders ?? [];
   const ids = [
     ...new Set(
-      templateOrders
+      sourceOrders
         .map((o) => o.barang_id)
         .filter((id): id is number => !!id),
     ),
@@ -120,12 +121,17 @@ export const applyMrTemplate = async (
 
   const missing: string[] = [];
   const orders: Order[] = [];
-  for (const o of templateOrders) {
+  const seen = new Set<number>();
+  for (const o of sourceOrders) {
     const b = o.barang_id ? barangMap.get(o.barang_id) : undefined;
-    if (!b) {
+    if (!b || !o.barang_id) {
       missing.push(o.name);
       continue;
     }
+    // Barang sama muncul 2x (bisa terjadi di MR lama) - form Buat MR
+    // melarang duplikat, ambil yang pertama saja.
+    if (seen.has(o.barang_id)) continue;
+    seen.add(o.barang_id);
     orders.push({
       ...toTemplateOrder(o),
       name: b.part_name || o.name,
@@ -141,3 +147,65 @@ export const applyMrTemplate = async (
 
   return { orders, missing };
 };
+
+export const applyMrTemplate = (template: MrTemplate) =>
+  refreshOrdersFromBarang(template.orders ?? []);
+
+// --- History MR: pakai MR lama sebagai template ---
+
+export type MrHistoryItem = {
+  id: number;
+  kode_mr: string;
+  kategori: string | null;
+  remarks: string | null;
+  status: string | null;
+  department: string | null;
+  company_code: string | null;
+  created_at: string;
+  orders: Order[];
+  requester_name: string | null;
+};
+
+export const MR_HISTORY_SEARCH_LIMIT = 5;
+
+/**
+ * Cari MR lama dari departemen yang sama untuk dipakai ulang sebagai
+ * template di Buat MR - cocok ke kode MR, teks remarks, nama barang, atau
+ * part number. Lewat RPC `search_mr_history` (lihat
+ * supabase/migrations/20260930010000_mr_history_search_setup.sql) karena
+ * perlu cari di dalam kolom json `orders`. Dibatasi MR_HISTORY_SEARCH_LIMIT
+ * hasil supaya hemat query. `companyCode` null = tanpa filter perusahaan
+ * (user LOURDES).
+ */
+export const searchMrHistory = async (
+  searchQuery: string,
+  department: string,
+  companyCode: string | null,
+): Promise<MrHistoryItem[]> => {
+  const q = searchQuery.trim();
+  if (!q) return [];
+
+  const { data, error } = await supabase.rpc("search_mr_history", {
+    p_query: q,
+    p_department: department,
+    p_company_code: companyCode,
+    p_limit: MR_HISTORY_SEARCH_LIMIT,
+  });
+
+  if (error) throw error;
+  return ((data as any[]) ?? []).map((mr) => ({
+    id: mr.id,
+    kode_mr: mr.kode_mr,
+    kategori: mr.kategori,
+    remarks: mr.remarks,
+    status: mr.status,
+    department: mr.department,
+    company_code: mr.company_code,
+    created_at: mr.created_at,
+    orders: normalizeMrOrders((mr.orders as any[]) ?? []),
+    requester_name: mr.requester_nama ?? null,
+  }));
+};
+
+export const applyMrHistory = (mr: MrHistoryItem) =>
+  refreshOrdersFromBarang(mr.orders);
