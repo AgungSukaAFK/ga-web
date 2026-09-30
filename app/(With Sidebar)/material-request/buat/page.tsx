@@ -23,11 +23,7 @@ import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import {
-  extractPlainText,
-  parseRichValue,
-  stringifyRichContent,
-} from "@/lib/rich-content";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -44,7 +40,6 @@ import {
   AlertTriangle,
   ExternalLink,
   FileStack,
-  Search,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -83,8 +78,8 @@ import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
 import {
   applyMrTemplate,
   fetchMrTemplateById,
-  fetchMrTemplates,
 } from "@/services/mrTemplateService";
+import { MrTemplatePickerDialog } from "./MrTemplatePickerDialog";
 
 const kategoriData: ComboboxData = MR_KATEGORI_OPTIONS;
 
@@ -183,12 +178,9 @@ export default function BuatMRPage() {
   } | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [openTemplateDialog, setOpenTemplateDialog] = useState(false);
-  const [mrTemplates, setMrTemplates] = useState<MrTemplate[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [applyingTemplateId, setApplyingTemplateId] = useState<number | null>(
     null,
   );
-  const [templateSearch, setTemplateSearch] = useState("");
 
   const handleApplyTemplate = async (template: MrTemplate) => {
     setApplyingTemplateId(template.id);
@@ -229,19 +221,6 @@ export default function BuatMRPage() {
     }
   };
 
-  const handleOpenTemplateDialog = async () => {
-    setTemplateSearch("");
-    setOpenTemplateDialog(true);
-    setLoadingTemplates(true);
-    try {
-      setMrTemplates(await fetchMrTemplates());
-    } catch (error: any) {
-      toast.error("Gagal memuat template MR", { description: error.message });
-    } finally {
-      setLoadingTemplates(false);
-    }
-  };
-
   // Terapkan template dari ?template=<id> (tombol "Gunakan" di halaman
   // Template MR). Pakai window.location, bukan useSearchParams, supaya
   // halaman ini tidak perlu dibungkus Suspense.
@@ -254,16 +233,6 @@ export default function BuatMRPage() {
       .then(handleApplyTemplate)
       .catch(() => toast.error("Template MR tidak ditemukan."));
   }, []);
-
-  const filteredMrTemplates = mrTemplates.filter((t) => {
-    const q = templateSearch.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      t.nama_template.toLowerCase().includes(q) ||
-      (t.deskripsi || "").toLowerCase().includes(q) ||
-      (t.orders || []).some((o) => o.name.toLowerCase().includes(q))
-    );
-  });
 
   const handleDraftDiscussionSubmit = (payload: DiscussionSubmitPayload) => {
     const entry: Discussion = {
@@ -884,7 +853,7 @@ export default function BuatMRPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleOpenTemplateDialog}
+              onClick={() => setOpenTemplateDialog(true)}
               disabled={loading}
             >
               {appliedTemplate ? "Ganti Template" : "Gunakan Template MR"}
@@ -1288,94 +1257,13 @@ export default function BuatMRPage() {
       </Content>
 
       {/* MODAL: Pilih Template MR */}
-      <Dialog open={openTemplateDialog} onOpenChange={setOpenTemplateDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileStack className="h-5 w-5" />
-              Pilih Template MR
-            </DialogTitle>
-          </DialogHeader>
-
-          <p className="text-sm text-muted-foreground">
-            Barang di template akan <strong>mengganti</strong> daftar Order
-            Item saat ini. Kategori ikut terisi dari template, remarks hanya
-            terisi kalau masih kosong.
-          </p>
-
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={templateSearch}
-              onChange={(e) => setTemplateSearch(e.target.value)}
-              placeholder="Cari template atau nama barang..."
-              className="pl-8"
-            />
-          </div>
-
-          <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-            {loadingTemplates ? (
-              <div className="flex h-24 items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : filteredMrTemplates.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {mrTemplates.length === 0
-                  ? "Belum ada template MR dari GA."
-                  : "Tidak ada template yang cocok."}
-              </p>
-            ) : (
-              filteredMrTemplates.map((t) => (
-                <div
-                  key={t.id}
-                  className={cn(
-                    "flex items-start justify-between gap-3 rounded-lg border p-3",
-                    appliedTemplate?.id === t.id && "border-primary",
-                  )}
-                >
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-semibold">{t.nama_template}</p>
-                    {t.deskripsi && (
-                      <p className="text-xs text-muted-foreground">
-                        {t.deskripsi}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {t.kategori && (
-                        <Badge variant="outline">{t.kategori}</Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {t.orders?.length ?? 0} barang
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {(t.orders || [])
-                        .map((o) => `${o.name} (${o.qty} ${o.uom})`)
-                        .join(", ")}
-                    </p>
-                    {t.remarks && (
-                      <p className="text-xs italic text-muted-foreground line-clamp-1">
-                        Remarks: {extractPlainText(t.remarks)}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => handleApplyTemplate(t)}
-                    disabled={applyingTemplateId !== null}
-                  >
-                    {applyingTemplateId === t.id && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Gunakan
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MrTemplatePickerDialog
+        open={openTemplateDialog}
+        onOpenChange={setOpenTemplateDialog}
+        appliedTemplateId={appliedTemplate?.id ?? null}
+        applyingTemplateId={applyingTemplateId}
+        onApply={handleApplyTemplate}
+      />
 
       {/* MODAL: Notifikasi MR Duplikat */}
       <Dialog open={openDuplicateDialog} onOpenChange={setOpenDuplicateDialog}>
