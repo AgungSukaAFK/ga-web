@@ -12,7 +12,12 @@ import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import { stringifyRichContent } from "@/lib/rich-content";
+import {
+  extractPlainText,
+  parseRichValue,
+  stringifyRichContent,
+} from "@/lib/rich-content";
+import { RichContentView } from "@/components/rich-content-view";
 import {
   Table,
   TableBody,
@@ -1161,7 +1166,13 @@ function CreatePOPageContent() {
                 <InfoItem
                   icon={Info}
                   label="Remarks"
-                  value={mrData.remarks}
+                  value={
+                    mrData.remarks ? (
+                      <RichContentView content={parseRichValue(mrData.remarks)} />
+                    ) : (
+                      "-"
+                    )
+                  }
                   isBlock
                 />
               </div>
@@ -2031,9 +2042,9 @@ function CreatePOPageContent() {
                         </TableCell>
                         <TableCell
                           className="text-xs text-muted-foreground max-w-[200px] truncate"
-                          title={mr.remarks}
+                          title={extractPlainText(mr.remarks)}
                         >
-                          {mr.remarks || "-"}
+                          {extractPlainText(mr.remarks) || "-"}
                         </TableCell>
                         <TableCell>
                           {formatCurrency(mr.cost_estimation)}

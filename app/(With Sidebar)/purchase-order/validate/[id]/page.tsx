@@ -83,7 +83,7 @@ const InfoItem = ({
 }: {
   icon: React.ElementType;
   label: string;
-  value: string;
+  value: React.ReactNode;
   isBlock?: boolean;
 }) => (
   <div
@@ -617,7 +617,15 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
                 <InfoItem
                   icon={Info}
                   label="Remarks MR"
-                  value={po.material_requests.remarks}
+                  value={
+                    po.material_requests.remarks ? (
+                      <RichContentView
+                        content={parseRichValue(po.material_requests.remarks)}
+                      />
+                    ) : (
+                      "-"
+                    )
+                  }
                   isBlock
                 />
               </div>
