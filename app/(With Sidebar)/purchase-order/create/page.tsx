@@ -44,6 +44,12 @@ import {
   generatePoCode,
 } from "@/services/purchaseOrderService";
 import { fetchAvailableMRsForPO } from "@/services/mrService";
+import {
+  fetchItemVendorHistory,
+  getItemVendorHistoryKey,
+  ItemVendorHistory,
+} from "@/services/itemVendorHistoryService";
+import { ItemVendorHistoryPopover } from "@/components/item-vendor-history-popover";
 import { logActivity } from "@/services/logService";
 import { removeAttachmentVps } from "@/services/storageService";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
@@ -320,6 +326,14 @@ function CreatePOPageContent() {
   const [isNotesEmpty, setIsNotesEmpty] = useState(true);
 
   const [mrData, setMrData] = useState<MaterialRequest | null>(null);
+  // History vendor per item MR (lihat ItemVendorHistoryPopover) - di-fetch
+  // sekali (batch semua item) tiap MR berganti, di-cache di service.
+  const [vendorHistory, setVendorHistory] = useState<
+    Record<string, ItemVendorHistory>
+  >({});
+  const [vendorHistoryLoading, setVendorHistoryLoading] = useState(false);
+  const [vendorHistoryError, setVendorHistoryError] = useState(false);
+  const [vendorHistoryReloadKey, setVendorHistoryReloadKey] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -944,6 +958,31 @@ function CreatePOPageContent() {
     }
   };
 
+  useEffect(() => {
+    const orders = mrData?.orders ?? [];
+    if (!mrData || orders.length === 0) {
+      setVendorHistory({});
+      return;
+    }
+    let cancelled = false;
+    setVendorHistoryLoading(true);
+    setVendorHistoryError(false);
+    fetchItemVendorHistory(orders, Number(mrData.id) || null)
+      .then((data) => {
+        if (!cancelled) setVendorHistory(data);
+      })
+      .catch((err) => {
+        console.error("Gagal memuat history vendor:", err);
+        if (!cancelled) setVendorHistoryError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setVendorHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mrData?.id, vendorHistoryReloadKey]);
+
   const getOrderIsAsset = (order: any): boolean =>
     order.barang_id ? !!barangAssetMap[order.barang_id] : false;
 
@@ -1234,6 +1273,9 @@ function CreatePOPageContent() {
                     <TableHead>Nama Barang</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Info MR</TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      History Vendor
+                    </TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Est. Harga</TableHead>
                   </TableRow>
@@ -1270,9 +1312,11 @@ function CreatePOPageContent() {
                             onCheckedChange={() => toggleSelection(index)}
                           />
                         </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{order.name}</div>
-                          <div className="text-xs text-muted-foreground font-mono">
+                        <TableCell className="min-w-[160px] max-w-[280px] whitespace-normal">
+                          <div className="font-medium break-words">
+                            {order.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono break-all">
                             {order.part_number || "-"}
                           </div>
                         </TableCell>
@@ -1338,9 +1382,31 @@ function CreatePOPageContent() {
                         </div>
                       </TableCell>
                         <TableCell>
+                          {(() => {
+                            const historyKey = getItemVendorHistoryKey(order);
+                            return (
+                              <ItemVendorHistoryPopover
+                                itemName={order.name}
+                                partNumber={order.part_number}
+                                searchable={!!historyKey}
+                                history={
+                                  historyKey
+                                    ? vendorHistory[historyKey]
+                                    : undefined
+                                }
+                                loading={vendorHistoryLoading}
+                                error={vendorHistoryError}
+                                onRetry={() =>
+                                  setVendorHistoryReloadKey((k) => k + 1)
+                                }
+                              />
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {order.qty} {order.uom}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {formatCurrency(order.estimasi_harga)}
                         </TableCell>
                       </TableRow>
