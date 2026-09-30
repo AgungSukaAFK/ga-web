@@ -21,6 +21,8 @@ import {
   Download,
   CheckCircle2,
   Share,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -151,6 +153,35 @@ export function NotificationSettings() {
     }
   };
 
+  // Pilih suara + langsung putar supaya user bisa bandingkan tanpa klik
+  // "Coba" - dipakai dropdown & tombol prev/next.
+  const selectSound = (soundType: typeof settings.soundType) => {
+    update({ soundType });
+    unlockAudio();
+    if (soundType === "custom") {
+      playCustomSound(settings.volume);
+    } else {
+      playSound(soundType, settings.volume);
+    }
+  };
+
+  // Urutan prev/next = urutan di dropdown (SOUND_PRESETS sudah urut per
+  // grup), berputar di ujung. Kalau yang aktif ringtone custom (tidak ada
+  // di daftar), next mulai dari awal & prev dari akhir.
+  const presetIndex = SOUND_PRESETS.findIndex(
+    (p) => p.id === settings.soundType,
+  );
+  const stepSound = (dir: 1 | -1) => {
+    const n = SOUND_PRESETS.length;
+    const next =
+      presetIndex === -1
+        ? dir === 1
+          ? 0
+          : n - 1
+        : (presetIndex + dir + n) % n;
+    selectSound(SOUND_PRESETS[next].id);
+  };
+
   const handleBrowserToggle = (v: boolean) => {
     update({ browser: v });
     // Saat dinyalakan, minta izin browser (butuh gesture — ini dari klik).
@@ -218,21 +249,31 @@ export function NotificationSettings() {
 
         {/* Pilihan sound + preview */}
         <div className="space-y-2">
-          <p className="text-sm font-medium">Pilihan suara</p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">Pilihan suara</p>
+            {presetIndex !== -1 && (
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {SOUND_PRESETS[presetIndex].group} · {presetIndex + 1}/
+                {SOUND_PRESETS.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => stepSound(-1)}
+              disabled={soundDisabled}
+              className="h-9 w-9 shrink-0"
+              title="Suara sebelumnya"
+              aria-label="Suara sebelumnya"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
             <Select
               value={settings.soundType}
-              onValueChange={(v) => {
-                const soundType = v as typeof settings.soundType;
-                update({ soundType });
-                // Langsung putar supaya user bisa bandingkan tanpa klik "Coba".
-                unlockAudio();
-                if (soundType === "custom") {
-                  playCustomSound(settings.volume);
-                } else {
-                  playSound(soundType, settings.volume);
-                }
-              }}
+              onValueChange={(v) => selectSound(v as typeof settings.soundType)}
               disabled={soundDisabled}
             >
               <SelectTrigger className="min-w-0 flex-1">
@@ -255,6 +296,18 @@ export function NotificationSettings() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => stepSound(1)}
+              disabled={soundDisabled}
+              className="h-9 w-9 shrink-0"
+              title="Suara berikutnya"
+              aria-label="Suara berikutnya"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
             <Button
               type="button"
               variant="outline"
