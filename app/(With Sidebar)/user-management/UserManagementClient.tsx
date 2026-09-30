@@ -34,6 +34,7 @@ import { formatDateFriendly } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // Tipe data spesifik untuk tabel ini
 interface UserForTable extends Profile {
@@ -90,7 +91,14 @@ export function UserManagementClientContent() {
   const limit = Number(searchParams.get("limit") || 25);
 
   // State untuk input form
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -228,19 +236,6 @@ export function UserManagementClientContent() {
     limit,
   ]); // Tambahkan adminProfile sebagai dependency jika perlu
 
-  // Efek untuk debounce pencarian judul
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   // Handler untuk filter
   const handleFilterChange = (

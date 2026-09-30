@@ -63,6 +63,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 const DOC_TYPE_OPTIONS: { value: AttachmentDocType | "all"; label: string }[] = [
   { value: "all", label: "Semua Tipe" },
@@ -151,7 +152,12 @@ export function FileManagementClientContent() {
   // Default "asc" = file terlama dulu, sesuai tujuan awal fitur ini (cleanup storage).
   const sortDir = (searchParams.get("sort_dir") || "asc") as "asc" | "desc";
 
-  const [searchInput, setSearchInput] = useState(search);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    search,
+    (value) =>
+      handleFilterChange({ search: value }),
+  );
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
 
@@ -186,12 +192,6 @@ export function FileManagementClientContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== search) handleFilterChange({ search: searchInput });
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput]);
 
   useEffect(() => {
     async function checkAccess() {

@@ -16,11 +16,13 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { createClient } from "@/lib/supabase/client";
-import { redirect, usePathname } from "next/navigation";
+import { redirect, usePathname, useRouter } from "next/navigation";
 import { Fragment, ReactNode, useEffect } from "react";
 import { toast } from "sonner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  const router = useRouter();
+
   function urlToBreadcrumb(pathname: string) {
     const parts = pathname.split("/").filter(Boolean);
 
@@ -70,9 +72,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         toast.warning("Anda belum melengkapi informasi akun.", {
           action: {
             label: "Lengkapi Profil",
-            onClick: () => {
-              redirect("/profile");
-            },
+            // router.push (bukan redirect()) supaya halaman ini tetap ada di
+            // history - redirect() di sisi klien bersifat replace.
+            onClick: () => router.push("/profile"),
           },
         });
       }

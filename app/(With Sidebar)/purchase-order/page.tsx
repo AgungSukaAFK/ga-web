@@ -96,6 +96,7 @@ import {
   isDpBpPaymentTerm,
   getLastApprovedApprover,
 } from "@/type/enum";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
 const DEFAULT_SORT = "created_at.desc";
@@ -250,7 +251,14 @@ function PurchaseOrderPageContent() {
   const assetTypeFilter = searchParams.get("asset_type") || "";
   const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
 
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
@@ -488,19 +496,6 @@ function PurchaseOrderPageContent() {
     assetTypeFilter,
     sortFilter,
   ]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== (searchTerm || "")) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>,

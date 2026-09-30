@@ -98,6 +98,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // --- Konstanta Filter ---
 const dataLokasi: ComboboxData = [
@@ -199,7 +200,14 @@ export function MaterialRequestContent({
   const prioritasFilter = searchParams.get("prioritas") || "";
 
   // Local Input State
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
@@ -419,19 +427,6 @@ export function MaterialRequestContent({
     selectedCompanies,
   ]);
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, createQueryString, pathname, router]);
-
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>,
   ) => {
@@ -450,7 +445,7 @@ export function MaterialRequestContent({
   };
 
   const clearFilters = () => {
-    setSearchInput("");
+    resetSearchInput();
     setStartDateInput("");
     setEndDateInput("");
     setMinEstimasiInput("");
