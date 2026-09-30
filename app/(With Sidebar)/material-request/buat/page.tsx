@@ -40,6 +40,7 @@ import {
   AlertTriangle,
   ExternalLink,
   FileStack,
+  History,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,10 +77,13 @@ import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
 import {
+  applyMrHistory,
   applyMrTemplate,
   fetchMrTemplateById,
+  type MrHistoryItem,
 } from "@/services/mrTemplateService";
 import { MrTemplatePickerDialog } from "./MrTemplatePickerDialog";
+import { MrHistoryPickerDialog } from "./MrHistoryPickerDialog";
 
 const kategoriData: ComboboxData = MR_KATEGORI_OPTIONS;
 
@@ -168,28 +172,41 @@ export default function BuatMRPage() {
     });
   }, []);
 
-  // --- Template MR (disediakan GA, lihat mr-template/MrTemplateClient.tsx) ---
-  // Template yang terakhir diterapkan - dicatat di activity log saat MR
+  // --- Template MR (disediakan GA, lihat mr-template/MrTemplateClient.tsx)
+  // & History MR (MR lama departemen sama) ---
+  // Sumber yang terakhir diterapkan - dicatat di activity log saat MR
   // diajukan. `formKey` dipakai remount Combobox Kategori & editor Remarks
   // (keduanya uncontrolled) supaya nilai dari template ikut tampil.
   const [appliedTemplate, setAppliedTemplate] = useState<{
+    source: "template" | "history";
     id: number;
     nama: string;
   } | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [openTemplateDialog, setOpenTemplateDialog] = useState(false);
-  const [applyingTemplateId, setApplyingTemplateId] = useState<number | null>(
-    null,
-  );
+  const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
+  // Key "template-<id>" / "history-<id>" yang sedang diproses.
+  const [applyingKey, setApplyingKey] = useState<string | null>(null);
 
-  const handleApplyTemplate = async (template: MrTemplate) => {
-    setApplyingTemplateId(template.id);
+  const applyOrdersSource = async (source: {
+    type: "template" | "history";
+    id: number;
+    nama: string;
+    kategori: string | null;
+    remarks: string | null;
+    load: () => Promise<{ orders: Order[]; missing: string[] }>;
+  }) => {
+    const label =
+      source.type === "template"
+        ? `Template "${source.nama}"`
+        : `MR ${source.nama}`;
+    setApplyingKey(`${source.type}-${source.id}`);
     try {
-      const { orders, missing } = await applyMrTemplate(template);
+      const { orders, missing } = await source.load();
       if (orders.length === 0) {
-        toast.error("Template tidak bisa dipakai", {
+        toast.error(`${label} tidak bisa dipakai`, {
           description:
-            "Semua barang di template ini sudah tidak ada di database barang.",
+            "Semua barangnya sudah tidak ada di database barang (atau bukan dari database).",
         });
         return;
       }
@@ -197,29 +214,61 @@ export default function BuatMRPage() {
       setFormCreateMR((prev) => ({
         ...prev,
         orders,
-        kategori: template.kategori || prev.kategori,
+        kategori: source.kategori || prev.kategori,
         // Remarks yang sudah diketik requester tidak ditimpa.
-        remarks: prev.remarks || template.remarks || "",
+        remarks: prev.remarks || source.remarks || "",
       }));
-      setAppliedTemplate({ id: template.id, nama: template.nama_template });
+      setAppliedTemplate({
+        source: source.type,
+        id: source.id,
+        nama: source.nama,
+      });
       setFormKey((k) => k + 1);
       setOpenTemplateDialog(false);
+      setOpenHistoryDialog(false);
 
-      toast.success(`Template "${template.nama_template}" diterapkan.`, {
+      toast.success(`${label} diterapkan.`, {
         description: `${orders.length} barang dimuat. Silakan cek & sesuaikan sebelum mengajukan.`,
       });
       if (missing.length > 0) {
         toast.warning(
-          `${missing.length} barang dilewati karena sudah tidak ada di database`,
+          `${missing.length} barang dilewati karena tidak ada di database barang`,
           { description: missing.join(", ") },
         );
       }
     } catch (error: any) {
-      toast.error("Gagal menerapkan template", { description: error.message });
+      toast.error(`Gagal menerapkan ${label}`, { description: error.message });
     } finally {
-      setApplyingTemplateId(null);
+      setApplyingKey(null);
     }
   };
+
+  const handleApplyTemplate = (template: MrTemplate) =>
+    applyOrdersSource({
+      type: "template",
+      id: template.id,
+      nama: template.nama_template,
+      kategori: template.kategori,
+      remarks: template.remarks,
+      load: () => applyMrTemplate(template),
+    });
+
+  const handleApplyHistory = (mr: MrHistoryItem) =>
+    applyOrdersSource({
+      type: "history",
+      id: mr.id,
+      nama: mr.kode_mr,
+      kategori: mr.kategori,
+      remarks: mr.remarks,
+      load: () => applyMrHistory(mr),
+    });
+
+  const applyingId = (type: "template" | "history") =>
+    applyingKey === null
+      ? null
+      : applyingKey.startsWith(`${type}-`)
+        ? Number(applyingKey.slice(type.length + 1))
+        : -1; // sumber lain sedang diproses - tetap disable tombol
 
   // Terapkan template dari ?template=<id> (tombol "Gunakan" di halaman
   // Template MR). Pakai window.location, bukan useSearchParams, supaya
@@ -665,7 +714,7 @@ export default function BuatMRPage() {
         "CREATE_MR",
         "material_request",
         String(mrId),
-        `Requester ${userProfile?.nama || "Unknown"} membuat MR ${freshKodeMr} dengan ${finalPayload.orders.length} barang${appliedTemplate ? ` menggunakan Template MR "${appliedTemplate.nama}"` : ""}. Estimasi biaya: ${formatCurrency(finalPayload.cost_estimation)}`,
+        `Requester ${userProfile?.nama || "Unknown"} membuat MR ${freshKodeMr} dengan ${finalPayload.orders.length} barang${appliedTemplate ? (appliedTemplate.source === "template" ? ` menggunakan Template MR "${appliedTemplate.nama}"` : ` menggunakan History MR ${appliedTemplate.nama}`) : ""}. Estimasi biaya: ${formatCurrency(finalPayload.cost_estimation)}`,
         {
           kode_mr: freshKodeMr,
           company_code,
@@ -674,8 +723,14 @@ export default function BuatMRPage() {
           kategori: finalPayload.kategori,
           total_items: finalPayload.orders.length,
           cost_estimation: finalPayload.cost_estimation,
-          template_id: appliedTemplate?.id ?? null,
-          template_nama: appliedTemplate?.nama ?? null,
+          template_id:
+            appliedTemplate?.source === "template" ? appliedTemplate.id : null,
+          template_nama:
+            appliedTemplate?.source === "template" ? appliedTemplate.nama : null,
+          source_mr_id:
+            appliedTemplate?.source === "history" ? appliedTemplate.id : null,
+          source_kode_mr:
+            appliedTemplate?.source === "history" ? appliedTemplate.nama : null,
         },
       );
 
@@ -824,10 +879,16 @@ export default function BuatMRPage() {
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
             {appliedTemplate ? (
-              <div className="flex items-center gap-2 text-sm">
-                <FileStack className="h-4 w-4 shrink-0 text-primary" />
-                <span>
-                  Menggunakan template{" "}
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                {appliedTemplate.source === "template" ? (
+                  <FileStack className="h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <History className="h-4 w-4 shrink-0 text-primary" />
+                )}
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                  {appliedTemplate.source === "template"
+                    ? "Menggunakan template "
+                    : "Menggunakan History MR "}
                   <strong>{appliedTemplate.nama}</strong>. Semua isian tetap
                   bisa diedit.
                 </span>
@@ -835,7 +896,7 @@ export default function BuatMRPage() {
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="h-6 w-6"
+                  className="h-6 w-6 shrink-0"
                   title="Lepas keterangan template"
                   onClick={() => setAppliedTemplate(null)}
                 >
@@ -845,19 +906,32 @@ export default function BuatMRPage() {
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <FileStack className="h-4 w-4 shrink-0" />
-                MR rutin? Pakai template dari GA supaya tidak perlu input
-                barang satu per satu.
+                MR rutin? Pakai template dari GA atau MR lama supaya tidak
+                perlu input barang satu per satu.
               </div>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setOpenTemplateDialog(true)}
-              disabled={loading}
-            >
-              {appliedTemplate ? "Ganti Template" : "Gunakan Template MR"}
-            </Button>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                onClick={() => setOpenTemplateDialog(true)}
+                disabled={loading}
+              >
+                <FileStack className="mr-1 h-4 w-4" /> Template MR
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                onClick={() => setOpenHistoryDialog(true)}
+                disabled={loading || !formCreateMR.department}
+              >
+                <History className="mr-1 h-4 w-4" /> History MR
+              </Button>
+            </div>
           </div>
 
           {isLourdes && (
@@ -1260,9 +1334,24 @@ export default function BuatMRPage() {
       <MrTemplatePickerDialog
         open={openTemplateDialog}
         onOpenChange={setOpenTemplateDialog}
-        appliedTemplateId={appliedTemplate?.id ?? null}
-        applyingTemplateId={applyingTemplateId}
+        appliedTemplateId={
+          appliedTemplate?.source === "template" ? appliedTemplate.id : null
+        }
+        applyingTemplateId={applyingId("template")}
         onApply={handleApplyTemplate}
+      />
+
+      {/* MODAL: Pilih History MR */}
+      <MrHistoryPickerDialog
+        open={openHistoryDialog}
+        onOpenChange={setOpenHistoryDialog}
+        department={formCreateMR.department}
+        companyCode={isLourdes ? null : userProfile?.company || null}
+        appliedMrId={
+          appliedTemplate?.source === "history" ? appliedTemplate.id : null
+        }
+        applyingMrId={applyingId("history")}
+        onApply={handleApplyHistory}
       />
 
       {/* MODAL: Notifikasi MR Duplikat */}

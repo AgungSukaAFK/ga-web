@@ -9,7 +9,7 @@
  *
  * MENAMBAH SOUND BARU:
  *   1. Tambahkan id di SoundPresetId
- *   2. Daftarkan label di SOUND_PRESETS
+ *   2. Daftarkan label & grup di SOUND_PRESETS
  *   3. Tambahkan case-nya di playSound()
  *
  * RINGTONE CUSTOM ("custom"): BEDA dari preset di atas - bukan disintesis,
@@ -49,15 +49,53 @@ export type SoundPresetId =
   | "marimba"
   | "ding"
   | "pop"
+  | "softbell"
+  | "harp"
+  | "kalimba"
+  | "droplet"
+  | "twinkle"
+  | "success"
+  | "bubble"
+  | "retro"
+  | "whistle"
+  | "doorbell"
+  | "piano"
+  | "alert"
+  | "urgent"
   | "custom";
 
-export const SOUND_PRESETS: { id: SoundPresetId; label: string }[] = [
-  { id: "tritone", label: "Tri-tone (premium)" },
-  { id: "crystal", label: "Crystal" },
-  { id: "chime", label: "Chime" },
-  { id: "marimba", label: "Marimba" },
-  { id: "ding", label: "Ding" },
-  { id: "pop", label: "Pop" },
+export type SoundPresetGroup = "Lembut" | "Ceria" | "Tegas";
+
+export const SOUND_PRESET_GROUPS: SoundPresetGroup[] = [
+  "Lembut",
+  "Ceria",
+  "Tegas",
+];
+
+export const SOUND_PRESETS: {
+  id: SoundPresetId;
+  label: string;
+  group: SoundPresetGroup;
+}[] = [
+  { id: "chime", label: "Chime", group: "Lembut" },
+  { id: "crystal", label: "Crystal", group: "Lembut" },
+  { id: "ding", label: "Ding", group: "Lembut" },
+  { id: "softbell", label: "Soft Bell", group: "Lembut" },
+  { id: "harp", label: "Harp", group: "Lembut" },
+  { id: "kalimba", label: "Kalimba", group: "Lembut" },
+  { id: "droplet", label: "Droplet", group: "Lembut" },
+  { id: "tritone", label: "Tri-tone (premium)", group: "Ceria" },
+  { id: "marimba", label: "Marimba", group: "Ceria" },
+  { id: "pop", label: "Pop", group: "Ceria" },
+  { id: "twinkle", label: "Twinkle", group: "Ceria" },
+  { id: "success", label: "Success", group: "Ceria" },
+  { id: "bubble", label: "Bubble", group: "Ceria" },
+  { id: "retro", label: "Retro 8-bit", group: "Ceria" },
+  { id: "whistle", label: "Whistle", group: "Ceria" },
+  { id: "doorbell", label: "Doorbell", group: "Tegas" },
+  { id: "piano", label: "Piano Chord", group: "Tegas" },
+  { id: "alert", label: "Alert", group: "Tegas" },
+  { id: "urgent", label: "Urgent", group: "Tegas" },
 ];
 
 /** Satu nada dengan envelope attack-decay yang halus. */
@@ -198,6 +236,244 @@ export function playSound(preset: SoundPresetId, volume = 0.6) {
           peak: 0.6 * v,
           glideTo: 900,
         });
+        break;
+      }
+
+      // Soft Bell — bell rendah yang hangat, decay panjang & pelan.
+      case "softbell": {
+        tone(ctx, {
+          freq: 392,
+          start: now,
+          dur: 1.1,
+          type: "sine",
+          peak: 0.5 * v,
+        });
+        tone(ctx, {
+          freq: 784,
+          start: now,
+          dur: 0.8,
+          type: "sine",
+          peak: 0.16 * v,
+        });
+        tone(ctx, {
+          freq: 1176,
+          start: now,
+          dur: 0.5,
+          type: "sine",
+          peak: 0.06 * v,
+        });
+        break;
+      }
+
+      // Harp — glissando pentatonik menaik yang cepat & lembut.
+      case "harp": {
+        [523.25, 587.33, 659.25, 783.99, 880].forEach((f, i) =>
+          tone(ctx, {
+            freq: f,
+            start: now + i * 0.055,
+            dur: 0.55,
+            type: "sine",
+            peak: 0.38 * v,
+          }),
+        );
+        break;
+      }
+
+      // Kalimba — petikan logam kecil: nada dasar + harmonik tinggi tipis.
+      case "kalimba": {
+        [659.25, 987.77].forEach((f, i) => {
+          const start = now + i * 0.13;
+          tone(ctx, {
+            freq: f,
+            start,
+            dur: 0.35,
+            type: "triangle",
+            peak: 0.5 * v,
+          });
+          tone(ctx, {
+            freq: f * 3,
+            start,
+            dur: 0.12,
+            type: "sine",
+            peak: 0.08 * v,
+          });
+        });
+        break;
+      }
+
+      // Droplet — dua tetes air (sweep turun cepat).
+      case "droplet": {
+        tone(ctx, {
+          freq: 1400,
+          start: now,
+          dur: 0.12,
+          type: "sine",
+          peak: 0.55 * v,
+          glideTo: 600,
+        });
+        tone(ctx, {
+          freq: 1800,
+          start: now + 0.15,
+          dur: 0.1,
+          type: "sine",
+          peak: 0.35 * v,
+          glideTo: 850,
+        });
+        break;
+      }
+
+      // Twinkle — arpeggio tinggi 4 nada yang berkilau.
+      case "twinkle": {
+        [1046.5, 1318.51, 1567.98, 2093].forEach((f, i) =>
+          tone(ctx, {
+            freq: f,
+            start: now + i * 0.07,
+            dur: 0.35,
+            type: "sine",
+            peak: 0.4 * v,
+          }),
+        );
+        break;
+      }
+
+      // Success — akor mayor naik, nada terakhir ditahan.
+      case "success": {
+        [523.25, 659.25, 783.99].forEach((f, i) =>
+          tone(ctx, {
+            freq: f,
+            start: now + i * 0.09,
+            dur: 0.2,
+            type: "triangle",
+            peak: 0.5 * v,
+          }),
+        );
+        tone(ctx, {
+          freq: 1046.5,
+          start: now + 0.27,
+          dur: 0.55,
+          type: "triangle",
+          peak: 0.55 * v,
+        });
+        break;
+      }
+
+      // Bubble — tiga gelembung "pop" yang makin tinggi.
+      case "bubble": {
+        [
+          [300, 700],
+          [400, 900],
+          [520, 1150],
+        ].forEach(([from, to], i) =>
+          tone(ctx, {
+            freq: from,
+            start: now + i * 0.09,
+            dur: 0.1,
+            type: "sine",
+            peak: 0.5 * v,
+            glideTo: to,
+          }),
+        );
+        break;
+      }
+
+      // Retro 8-bit — arpeggio square ala game jadul (volume ditekan,
+      // gelombang square jauh lebih "keras" dari sine).
+      case "retro": {
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+          tone(ctx, {
+            freq: f,
+            start: now + i * 0.07,
+            dur: 0.09,
+            type: "square",
+            peak: 0.22 * v,
+          }),
+        );
+        break;
+      }
+
+      // Whistle — siulan naik lalu turun sedikit.
+      case "whistle": {
+        tone(ctx, {
+          freq: 900,
+          start: now,
+          dur: 0.15,
+          type: "sine",
+          peak: 0.45 * v,
+          glideTo: 1500,
+        });
+        tone(ctx, {
+          freq: 1500,
+          start: now + 0.17,
+          dur: 0.2,
+          type: "sine",
+          peak: 0.45 * v,
+          glideTo: 1100,
+        });
+        break;
+      }
+
+      // Doorbell — "ding-dong" klasik (E5 lalu C5).
+      case "doorbell": {
+        [659.25, 523.25].forEach((f, i) => {
+          const start = now + i * 0.38;
+          tone(ctx, { freq: f, start, dur: 0.8, type: "sine", peak: 0.55 * v });
+          tone(ctx, {
+            freq: f * 2,
+            start,
+            dur: 0.4,
+            type: "sine",
+            peak: 0.15 * v,
+          });
+        });
+        break;
+      }
+
+      // Piano Chord — akor C mayor dibunyikan bersamaan.
+      case "piano": {
+        [523.25, 659.25, 783.99].forEach((f) => {
+          tone(ctx, {
+            freq: f,
+            start: now,
+            dur: 0.9,
+            type: "triangle",
+            peak: 0.3 * v,
+          });
+          tone(ctx, {
+            freq: f * 2,
+            start: now,
+            dur: 0.35,
+            type: "sine",
+            peak: 0.06 * v,
+          });
+        });
+        break;
+      }
+
+      // Alert — dua beep tegas, cocok untuk yang sering lewat notif.
+      case "alert": {
+        [0, 0.2].forEach((offset) =>
+          tone(ctx, {
+            freq: 880,
+            start: now + offset,
+            dur: 0.13,
+            type: "square",
+            peak: 0.25 * v,
+          }),
+        );
+        break;
+      }
+
+      // Urgent — tiga beep cepat bernada tinggi.
+      case "urgent": {
+        [0, 0.12, 0.24].forEach((offset) =>
+          tone(ctx, {
+            freq: 1174.66,
+            start: now + offset,
+            dur: 0.08,
+            type: "triangle",
+            peak: 0.55 * v,
+          }),
+        );
         break;
       }
     }

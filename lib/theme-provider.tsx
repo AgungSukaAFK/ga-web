@@ -6,13 +6,30 @@ import {
   ThemeProviderProps,
 } from "next-themes";
 
-// Definisikan tema aksen yang tersedia (sesuai CSS di globals.css)
+// Definisikan tema aksen yang tersedia (sesuai CSS .theme-<name> di
+// globals.css). `color` = warna primary mode terang, dipakai untuk preview
+// swatch di AccentThemeSwitcher. `group: "company"` = warna khusus
+// perusahaan, ditampilkan terpisah di atas.
 export const accentThemes = [
-  { name: "zinc", label: "Zinc (Default)" },
-  { name: "blue", label: "Blue" },
-  { name: "rose", label: "Rose" },
-  { name: "green", label: "Green" },
-];
+  { name: "gmi", label: "GMI", color: "hsl(215 75% 32%)", group: "company" },
+  { name: "gis", label: "GIS", color: "rgb(23 88 49)", group: "company" },
+  { name: "zinc", label: "Zinc (Default)", color: "hsl(240 5.9% 10%)", group: "general" },
+  { name: "blue", label: "Blue", color: "hsl(217.2 91.2% 59.8%)", group: "general" },
+  { name: "sky", label: "Sky", color: "hsl(200.4 98% 39.4%)", group: "general" },
+  { name: "cyan", label: "Cyan", color: "hsl(191.6 91.4% 36.5%)", group: "general" },
+  { name: "teal", label: "Teal", color: "hsl(174.7 83.9% 31.6%)", group: "general" },
+  { name: "emerald", label: "Emerald", color: "hsl(161.4 93.5% 30.4%)", group: "general" },
+  { name: "green", label: "Green", color: "hsl(142.1 76.2% 36.3%)", group: "general" },
+  { name: "amber", label: "Amber", color: "hsl(37.7 92.1% 50.2%)", group: "general" },
+  { name: "orange", label: "Orange", color: "hsl(20.5 90.2% 48.2%)", group: "general" },
+  { name: "red", label: "Red", color: "hsl(0 72.2% 50.6%)", group: "general" },
+  { name: "rose", label: "Rose", color: "hsl(346.8 77.2% 49.8%)", group: "general" },
+  { name: "pink", label: "Pink", color: "hsl(333.3 71.4% 50.6%)", group: "general" },
+  { name: "fuchsia", label: "Fuchsia", color: "hsl(292.2 84.1% 60.6%)", group: "general" },
+  { name: "purple", label: "Purple", color: "hsl(271.5 81.3% 55.9%)", group: "general" },
+  { name: "violet", label: "Violet", color: "hsl(262.1 83.3% 57.8%)", group: "general" },
+  { name: "indigo", label: "Indigo", color: "hsl(243.4 75.4% 58.6%)", group: "general" },
+] as const;
 
 type AccentTheme = (typeof accentThemes)[number]["name"];
 

@@ -132,6 +132,120 @@
     --ring: 142.1 76.2% 36.3%;
   }
 
+  /* Tema Red */
+  .theme-red {
+    --primary: 0 72.2% 50.6%;
+    --primary-foreground: 0 85.7% 97.3%;
+    --ring: 0 72.2% 50.6%;
+  }
+
+  /* Tema Orange */
+  .theme-orange {
+    --primary: 20.5 90.2% 48.2%;
+    --primary-foreground: 33.3 100% 96.5%;
+    --ring: 20.5 90.2% 48.2%;
+  }
+
+  /* Tema Amber */
+  .theme-amber {
+    --primary: 37.7 92.1% 50.2%;
+    --primary-foreground: 26 83.3% 14.1%;
+    --ring: 37.7 92.1% 50.2%;
+  }
+
+  /* Tema Emerald */
+  .theme-emerald {
+    --primary: 161.4 93.5% 30.4%;
+    --primary-foreground: 151.8 81% 95.9%;
+    --ring: 161.4 93.5% 30.4%;
+  }
+
+  /* Tema Teal */
+  .theme-teal {
+    --primary: 174.7 83.9% 31.6%;
+    --primary-foreground: 166.2 76.5% 96.7%;
+    --ring: 174.7 83.9% 31.6%;
+  }
+
+  /* Tema Cyan */
+  .theme-cyan {
+    --primary: 191.6 91.4% 36.5%;
+    --primary-foreground: 183.2 100% 96.3%;
+    --ring: 191.6 91.4% 36.5%;
+  }
+
+  /* Tema Sky */
+  .theme-sky {
+    --primary: 200.4 98% 39.4%;
+    --primary-foreground: 204 100% 97.1%;
+    --ring: 200.4 98% 39.4%;
+  }
+
+  /* Tema Indigo */
+  .theme-indigo {
+    --primary: 243.4 75.4% 58.6%;
+    --primary-foreground: 226.5 100% 96.9%;
+    --ring: 243.4 75.4% 58.6%;
+  }
+
+  /* Tema Violet */
+  .theme-violet {
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 250 100% 97.6%;
+    --ring: 262.1 83.3% 57.8%;
+  }
+
+  /* Tema Purple */
+  .theme-purple {
+    --primary: 271.5 81.3% 55.9%;
+    --primary-foreground: 270 100% 98%;
+    --ring: 271.5 81.3% 55.9%;
+  }
+
+  /* Tema Fuchsia */
+  .theme-fuchsia {
+    --primary: 292.2 84.1% 60.6%;
+    --primary-foreground: 289.1 100% 97.8%;
+    --ring: 292.2 84.1% 60.6%;
+  }
+
+  /* Tema Pink */
+  .theme-pink {
+    --primary: 333.3 71.4% 50.6%;
+    --primary-foreground: 327.3 73.3% 97.1%;
+    --ring: 333.3 71.4% 50.6%;
+  }
+
+  /* ---------------------------------------------------- */
+  /* Tema warna perusahaan. Warna aslinya gelap, jadi di  */
+  /* dark mode dipakai versi lebih terang supaya tombol & */
+  /* teks primary tetap kontras dengan background gelap.  */
+  /* ---------------------------------------------------- */
+
+  /* Tema GMI - biru agak gelap */
+  .theme-gmi {
+    --primary: 215 75% 32%;
+    --primary-foreground: 210 40% 98%;
+    --ring: 215 75% 32%;
+  }
+  .dark.theme-gmi {
+    --primary: 215 70% 58%;
+    --primary-foreground: 215 75% 12%;
+    --ring: 215 70% 58%;
+  }
+
+  /* Tema GIS - hijau, RGB(23, 88, 49) */
+  .theme-gis {
+    --primary: 144 58.6% 21.8%;
+    --primary-foreground: 144 60% 97%;
+    --ring: 144 58.6% 21.8%;
+  }
+  .dark.theme-gis {
+    --primary: 144 45% 45%;
+    --primary-foreground: 144 60% 8%;
+    --ring: 144 45% 45%;
+  }
+
   /* Global styles */
   * {
     @apply border-border outline-ring/50;
