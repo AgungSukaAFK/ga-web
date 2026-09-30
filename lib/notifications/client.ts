@@ -19,6 +19,7 @@ import { GA_DEPARTMENTS } from "@/lib/constants/departments";
 
 export type NotificationEventType =
   | "mention"
+  | "reply"
   | "mr_submitted"
   | "mr_validated"
   | "mr_approved_step"

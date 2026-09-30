@@ -5,7 +5,7 @@
 // sudah ada di purchase-order/page.tsx & MrManagementClient.tsx
 // (max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[85vh] overflow-y-auto).
 //
-// Komentar pakai DiscussionPanel apa adanya (tidak dimodifikasi) - setelah
+// Komentar pakai DiscussionPanel (dengan allowReply) - setelah
 // submit, RPC add_update_web_post_discussion cuma return void, jadi post
 // di-refetch ulang (pola sama seperti handlePostDiscussion di
 // petty-cash/pengajuan/[id]/page.tsx), bukan optimistic append di client.
@@ -36,6 +36,7 @@ import { Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { DiscussionSubmitPayload } from "@/type";
+import { sendNotification } from "@/lib/notifications/client";
 import { UpdatePostReactions } from "./UpdatePostReactions";
 import { UpdatePostArticle } from "./UpdatePostArticle";
 import {
@@ -58,6 +59,7 @@ interface UpdatePostDetailDialogProps {
   isLatest: boolean;
   isAdmin: boolean;
   currentUserId?: string | null;
+  currentUserName?: string | null;
   onPostUpdated: (post: UpdateWebPost) => void;
   onEdit: (post: UpdateWebPost) => void;
   onDeleted: (postId: number) => void;
@@ -72,6 +74,7 @@ export function UpdatePostDetailDialog({
   isLatest,
   isAdmin,
   currentUserId,
+  currentUserName,
   onPostUpdated,
   onEdit,
   onDeleted,
@@ -83,6 +86,25 @@ export function UpdatePostDetailDialog({
 
   const handleSubmitDiscussion = async (payload: DiscussionSubmitPayload) => {
     await addUpdateWebPostDiscussion(post.id, payload);
+
+    // Pemilik komentar yang dibalas dapat notifikasi - kecuali balas komentar
+    // sendiri, atau dia sudah di-tag di komentar ini.
+    const replyRecipient = payload.reply_to?.user_id;
+    const mentioned = (payload.mentions ?? []).some(
+      (m) => m.type === "user" && m.id === replyRecipient,
+    );
+    if (replyRecipient && replyRecipient !== currentUserId && !mentioned) {
+      await sendNotification({
+        userId: replyRecipient,
+        actorId: currentUserId ?? undefined,
+        type: "reply",
+        title: "Komentar Anda dibalas",
+        message: `${currentUserName || "Seseorang"} membalas komentar Anda di Update Web v${post.version}.`,
+        link: `/update-web?post=${post.id}`,
+        resourceId: String(post.id),
+      });
+    }
+
     const refreshed = await fetchUpdateWebPostById(post.id);
     onPostUpdated(refreshed);
   };
@@ -160,6 +182,7 @@ export function UpdatePostDetailDialog({
               title="Komentar"
               placeholder="Tulis komentar Anda..."
               emptyText="Belum ada komentar."
+              allowReply
             />
           </div>
         </DialogContent>
