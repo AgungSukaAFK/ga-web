@@ -771,6 +771,21 @@ export interface PettyCashPengajuanItem {
 // InputPengajuanClient.tsx. `coa` tiap item di sini SELALU null/diabaikan -
 // diresolusi ulang ke COA yang berlaku SAAT template diterapkan (bukan
 // dibekukan dari saat dibuat).
+// "Template MR" - katalog bersama barang MR rutin yang disediakan GA
+// (tabel `mr_templates`, lihat supabase/migrations/20260930000000_mr_template_setup.sql).
+export interface MrTemplate {
+  id: number;
+  nama_template: string;
+  deskripsi: string | null;
+  kategori: string | null;
+  remarks: string | null;
+  orders: Order[];
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
 export interface PettyCashPengajuanTemplate {
   id: number;
   user_id: string;

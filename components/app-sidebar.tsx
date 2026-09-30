@@ -5,7 +5,10 @@
 import * as React from "react";
 import { redirect, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { isGADepartment } from "@/lib/constants/departments";
+import {
+  canManageMrTemplate,
+  isGADepartment,
+} from "@/lib/constants/departments";
 import {
   Sidebar,
   SidebarContent,
@@ -48,6 +51,7 @@ import {
   ShieldAlert,
   PiggyBank,
   Megaphone,
+  FileStack,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -260,6 +264,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         title: "Template Approval",
         url: "/approval-validation/templates",
         icon: Workflow,
+      });
+    }
+
+    // Template MR: GA level approver / Admin - tepat di bawah "Template
+    // Approval".
+    if (canManageMrTemplate(profile)) {
+      const templateIdx = baseNav.findIndex(
+        (item) => item.title === "Template Approval",
+      );
+      baseNav.splice(templateIdx !== -1 ? templateIdx + 1 : 1, 0, {
+        title: "Template MR",
+        url: "/mr-template",
+        icon: FileStack,
       });
     }
 
