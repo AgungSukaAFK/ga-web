@@ -58,6 +58,7 @@ import { LIMIT_OPTIONS, VENDOR_TIPE_OPTIONS, VENDOR_TIPE_LABELS } from "@/type/e
 import { PaginationComponent } from "@/components/pagination-components";
 import { Badge } from "@/components/ui/badge";
 import { exportStyledExcel } from "@/lib/excel-export";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // --- Komponen Dialog CRUD Vendor ---
 function VendorDialog({
@@ -272,7 +273,14 @@ export function VendorManagementClientContent() {
   const limit = Number(searchParams.get("limit") || 25);
 
   // State untuk input form
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | number | undefined>) => {
@@ -320,19 +328,6 @@ export function VendorManagementClientContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleOpenNew = () => {
     setSelectedVendor(null);

@@ -59,6 +59,7 @@ import {
 import { User } from "@supabase/supabase-js";
 import { CurrencyInput } from "@/components/ui/currency-input"; // <-- IMPORT KOMPONEN BARU
 import { LIMIT_OPTIONS } from "@/type/enum";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // --- Komponen Dialog untuk Create/Edit ---
 function CostCenterDialog({
@@ -380,7 +381,14 @@ export function CostCenterClientContent() {
   const searchTerm = searchParams.get("search") || "";
   const companyFilter = searchParams.get("company") || "";
 
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -461,19 +469,6 @@ export function CostCenterClientContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>

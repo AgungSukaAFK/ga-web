@@ -39,6 +39,7 @@ import {
   isDpBpPaymentTerm,
   getLastApprovedApprover,
 } from "@/type/enum";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // --- CONSTANTS ---
 const PAYMENT_TERM_OPTIONS = [
@@ -77,7 +78,14 @@ export function PoManagementClientContent() {
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
 
   // --- LOCAL STATE UNTUK INPUT (Debounce/Apply Manual) ---
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
@@ -124,19 +132,6 @@ export function PoManagementClientContent() {
     });
   };
 
-  // Debounce Search Text
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   // --- MAIN FETCH EFFECT ---
   useEffect(() => {

@@ -48,6 +48,7 @@ import {
   fetchGaStocks,
   updateGaStock,
 } from "@/services/gaStockService";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 const COMPANY_OPTIONS = ["GMI", "GIS", "LOURDES"];
 
@@ -277,7 +278,14 @@ export function GaStockClientContent() {
   const searchTerm = searchParams.get("search") || "";
   const companyFilter = searchParams.get("company") || "";
 
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedStock, setSelectedStock] = useState<GaStock | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -351,17 +359,6 @@ export function GaStockClientContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(`${pathname}?${createQueryString({ search: searchInput })}`);
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>,

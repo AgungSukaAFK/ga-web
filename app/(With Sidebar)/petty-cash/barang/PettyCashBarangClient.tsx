@@ -58,6 +58,7 @@ import {
 import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // Kategori RELATIF terhadap COA (lihat komentar
 // PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA, type/enum.ts) - gabungkan
@@ -387,7 +388,14 @@ export default function PettyCashBarangClient() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
 
   const canModify =
     !!profile &&
@@ -450,19 +458,6 @@ export default function PettyCashBarangClient() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, pathname, router, createQueryString]);
 
   const handleOpenNew = () => {
     setSelectedItem(null);

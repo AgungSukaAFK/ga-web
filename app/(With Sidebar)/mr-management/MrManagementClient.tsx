@@ -112,6 +112,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { extractPlainText } from "@/lib/rich-content";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
 // --- Konstanta Filter ---
 const dataLokasi: ComboboxData = [
@@ -189,7 +190,14 @@ export default function MrManagementClient() {
   const costCenterFilter = searchParams.get("cost_center") || "all";
 
   // Local Input State
-  const [searchInput, setSearchInput] = useState(searchTerm);
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
   const [startDateInput, setStartDateInput] = useState(startDate);
   const [endDateInput, setEndDateInput] = useState(endDate);
   const [minEstimasiInput, setMinEstimasiInput] = useState(minEstimasi);
@@ -402,20 +410,6 @@ export default function MrManagementClient() {
     selectedCompanies,
   ]);
 
-  // Debounce Search
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (searchInput !== searchTerm) {
-        startTransition(() => {
-          router.push(
-            `${pathname}?${createQueryString({ search: searchInput })}`,
-          );
-        });
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchInput, searchTerm, createQueryString, pathname, router]);
-
   // Handlers
   const handleFilterChange = (
     updates: Record<string, string | number | undefined>,
@@ -435,7 +429,7 @@ export default function MrManagementClient() {
   };
 
   const clearFilters = () => {
-    setSearchInput("");
+    resetSearchInput();
     setStartDateInput("");
     setEndDateInput("");
     setMinEstimasiInput("");
