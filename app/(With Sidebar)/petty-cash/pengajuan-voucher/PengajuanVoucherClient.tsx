@@ -27,7 +27,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -61,10 +61,18 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
-import { PettyCashPengajuan, PettyCashVoucher } from "@/type";
+import {
+  PettyCashPengajuan,
+  PettyCashVoucher,
+  PettyCashVoucherWithChain,
+} from "@/type";
 import {
   PC_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_COLOR_DEFAULT,
+  PC_SUB_VOUCHER_STATUS_COLORS,
+  PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
+  PC_DEKLARASI_STATUS_COLORS,
+  PC_DEKLARASI_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import {
   fetchApprovedPengajuanForVoucher,
@@ -83,6 +91,8 @@ import {
   CalendarDays,
   Eye,
   Wallet,
+  CornerDownRight,
+  Clock,
 } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
@@ -92,13 +102,32 @@ const formatDate = (dateStr: string | Date) =>
     year: "numeric",
   });
 
-const StatusBadge = ({ status }: { status: string }) => (
+const StatusBadge = ({
+  status,
+  colors = PC_VOUCHER_STATUS_COLORS,
+  fallback = PC_VOUCHER_STATUS_COLOR_DEFAULT,
+}: {
+  status: string;
+  colors?: Record<string, string>;
+  fallback?: string;
+}) => (
+  <Badge className={`whitespace-nowrap ${colors[status] || fallback}`}>
+    {status}
+  </Badge>
+);
+
+// Label jenis dokumen di tabel "Voucher Saya" - Voucher induk & Sub-Voucher
+// (tarikan) tampil di tabel yang sama, jadi wajib dibedakan jelas.
+const DocTypeBadge = ({ sub }: { sub?: boolean }) => (
   <Badge
-    className={`whitespace-nowrap ${
-      PC_VOUCHER_STATUS_COLORS[status] || PC_VOUCHER_STATUS_COLOR_DEFAULT
+    variant="outline"
+    className={`text-[10px] px-1.5 py-0 font-medium ${
+      sub
+        ? "border-sky-300 text-sky-700 dark:border-sky-800 dark:text-sky-300"
+        : "border-primary/40 text-primary"
     }`}
   >
-    {status}
+    {sub ? "Sub-Voucher" : "Voucher"}
   </Badge>
 );
 
@@ -146,7 +175,13 @@ const buildDrawRows = (voucher: PettyCashVoucher): DrawRow[] => {
 };
 
 /** Bar progress tipis "sudah ditarik / total Voucher" - dipakai kolom Progress. */
-const DrawProgressBar = ({ drawn, total }: { drawn: number; total: number }) => {
+const DrawProgressBar = ({
+  drawn,
+  total,
+}: {
+  drawn: number;
+  total: number;
+}) => {
   const pct = total > 0 ? Math.min(100, Math.round((drawn / total) * 100)) : 0;
   return (
     <div className="space-y-1 min-w-[140px]">
@@ -169,7 +204,7 @@ export default function PengajuanVoucherClient() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [eligible, setEligible] = useState<PettyCashPengajuan[]>([]);
-  const [vouchers, setVouchers] = useState<PettyCashVoucher[]>([]);
+  const [vouchers, setVouchers] = useState<PettyCashVoucherWithChain[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [drawing, setDrawing] = useState(false);
@@ -244,7 +279,8 @@ export default function PengajuanVoucherClient() {
     );
   };
 
-  const allRowsChecked = drawRows.length > 0 && drawRows.every((r) => r.checked);
+  const allRowsChecked =
+    drawRows.length > 0 && drawRows.every((r) => r.checked);
   const toggleAllRows = (checked: boolean) => {
     setDrawRows((prev) =>
       prev.map((row) => ({
@@ -254,6 +290,12 @@ export default function PengajuanVoucherClient() {
       })),
     );
   };
+
+  const pendingFinance = vouchers.flatMap((v) =>
+    (v.petty_cash_sub_voucher ?? []).filter(
+      (sv) => sv.status === "Menunggu Pembayaran",
+    ),
+  );
 
   const remainingVoucher = drawTarget
     ? drawTarget.total_amount - drawnOf(drawTarget)
@@ -278,7 +320,9 @@ export default function PengajuanVoucherClient() {
       drawRows.some(
         (row) =>
           row.checked &&
-          (!row.qty || Number(row.qty) <= 0 || Number(row.qty) > row.remainingQty),
+          (!row.qty ||
+            Number(row.qty) <= 0 ||
+            Number(row.qty) > row.remainingQty),
       )
     ) {
       return toast.error(
@@ -395,16 +439,36 @@ export default function PengajuanVoucherClient() {
           <div>
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
               <ReceiptText className="h-4 w-4 text-primary" />
-              Voucher Saya
+              Voucher & Sub-Voucher Saya
             </h3>
+            {!loading && pendingFinance.length > 0 && (
+              <div className="mb-3 flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
+                <Clock className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    {pendingFinance.length} tarikan dana menunggu pembayaran
+                    Finance (total{" "}
+                    {formatCurrency(
+                      pendingFinance.reduce((sum, sv) => sum + sv.amount, 0),
+                    )}
+                    )
+                  </p>
+                  <p className="text-xs">
+                    {pendingFinance.map((sv) => sv.kode_sub_voucher).join(", ")}{" "}
+                    - dana belum ditransfer. Deklarasi baru bisa dibuat setelah
+                    Finance menyelesaikan pembayaran.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[860px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[180px]">Kode Voucher</TableHead>
-                    <TableHead className="w-[180px]">Dari Pengajuan</TableHead>
+                    <TableHead className="w-[220px]">Kode</TableHead>
+                    <TableHead className="w-[180px]">Asal Dokumen</TableHead>
                     <TableHead className="w-[170px]">
-                      Progress Tarikan
+                      Progress / Nominal
                     </TableHead>
                     <TableHead className="w-[140px]">Status</TableHead>
                     <TableHead className="w-[190px] text-center">
@@ -433,43 +497,137 @@ export default function PengajuanVoucherClient() {
                       const drawn = drawnOf(v);
                       const remaining = v.total_amount - drawn;
                       const canDraw = v.status === "Approved" && remaining > 0;
+                      const subs = v.petty_cash_sub_voucher ?? [];
                       return (
-                        <TableRow key={v.id}>
-                          <TableCell className="font-semibold text-sm">
-                            {v.kode_voucher}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
-                          </TableCell>
-                          <TableCell>
-                            <DrawProgressBar
-                              drawn={drawn}
-                              total={v.total_amount}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge status={v.status} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              {canDraw && (
-                                <Button size="sm" onClick={() => openDraw(v)}>
-                                  <Wallet className="h-3.5 w-3.5 mr-1" />{" "}
-                                  Tarik Dana
-                                </Button>
-                              )}
-                              <Link href={`/petty-cash/voucher/${v.id}`}>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                        <Fragment key={v.id}>
+                          <TableRow>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <DocTypeBadge />
+                                <span className="font-semibold text-sm">
+                                  {v.kode_voucher}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              <span className="block text-[11px]">
+                                Pengajuan
+                              </span>
+                              {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <DrawProgressBar
+                                drawn={drawn}
+                                total={v.total_amount}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={v.status} />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-1">
+                                {canDraw && (
+                                  <Button size="sm" onClick={() => openDraw(v)}>
+                                    <Wallet className="h-3.5 w-3.5 mr-1" />{" "}
+                                    Tarik Dana
+                                  </Button>
+                                )}
+                                <Link href={`/petty-cash/voucher/${v.id}`}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {subs.map((sv) => {
+                            const dek = sv.petty_cash_deklarasi?.[0];
+                            return (
+                              <TableRow
+                                key={`sv-${sv.id}`}
+                                className="bg-muted/30"
+                              >
+                                <TableCell>
+                                  <div className="flex items-start gap-1.5 pl-3">
+                                    <CornerDownRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                    <div className="flex flex-col gap-1">
+                                      <DocTypeBadge sub />
+                                      <span className="font-medium text-sm">
+                                        {sv.kode_sub_voucher}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  <span className="block text-[11px]">
+                                    Tarikan dari Voucher
+                                  </span>
+                                  {v.kode_voucher}
+                                  <span className="block text-[11px]">
+                                    {formatDate(sv.created_at)}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-sm font-medium">
+                                  {formatCurrency(sv.amount)}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col items-start gap-1">
+                                    <StatusBadge
+                                      status={sv.status}
+                                      colors={PC_SUB_VOUCHER_STATUS_COLORS}
+                                      fallback={
+                                        PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT
+                                      }
+                                    />
+                                    {sv.status === "Menunggu Pembayaran" ? (
+                                      <span className="text-[11px] text-yellow-700 dark:text-yellow-300 flex items-center gap-1">
+                                        <Clock className="h-3 w-3 shrink-0" />
+                                        Dana belum ditransfer, menunggu Finance
+                                      </span>
+                                    ) : dek ? (
+                                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                        Deklarasi:
+                                        <StatusBadge
+                                          status={dek.status}
+                                          colors={PC_DEKLARASI_STATUS_COLORS}
+                                          fallback={
+                                            PC_DEKLARASI_STATUS_COLOR_DEFAULT
+                                          }
+                                        />
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] text-muted-foreground">
+                                        {sv.paid_at
+                                          ? `Dibayar ${formatDate(sv.paid_at)} - `
+                                          : ""}
+                                        Belum dideklarasikan
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center justify-center">
+                                    <Link
+                                      href={`/petty-cash/sub-voucher/${sv.id}`}
+                                    >
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                      >
+                                        <Eye className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </Fragment>
                       );
                     })
                   )}
@@ -487,10 +645,12 @@ export default function PengajuanVoucherClient() {
       >
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Buat Voucher dari {selected?.kode_pengajuan}</DialogTitle>
+            <DialogTitle>
+              Buat Voucher dari {selected?.kode_pengajuan}
+            </DialogTitle>
             <DialogDescription>
-              Item dan nominal di bawah adalah salinan persis dari Pengajuan
-              ini - tidak bisa diubah.{" "}
+              Item dan nominal di bawah adalah salinan persis dari Pengajuan ini
+              - tidak bisa diubah.{" "}
               {selected && (
                 <span className="inline-flex items-center gap-1">
                   <CalendarDays className="h-3 w-3" />
@@ -543,9 +703,7 @@ export default function PengajuanVoucherClient() {
               </div>
               <div className="flex justify-end">
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">
-                    Total Voucher
-                  </p>
+                  <p className="text-xs text-muted-foreground">Total Voucher</p>
                   <p className="text-xl font-bold text-primary">
                     {formatCurrency(selected.total_amount)}
                   </p>
@@ -662,9 +820,7 @@ export default function PengajuanVoucherClient() {
 
             <div className="flex justify-end">
               <div className="text-right">
-                <p className="text-xs text-muted-foreground">
-                  Total Tarikan
-                </p>
+                <p className="text-xs text-muted-foreground">Total Tarikan</p>
                 <p
                   className={`text-xl font-bold ${
                     overBudget ? "text-destructive" : "text-primary"

@@ -22,6 +22,7 @@ import {
   PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
   PettyCashVoucher,
+  PettyCashVoucherWithChain,
 } from "@/type";
 import { PC_APPROVAL_TYPE_VOUCHER } from "@/type/enum";
 import { resolvePcAutoTemplate } from "@/services/pcApprovalTemplateService";
@@ -156,19 +157,24 @@ export const fetchApprovedPengajuanForVoucher = async (
  */
 export const fetchMyVouchers = async (
   userId: string,
-): Promise<PettyCashVoucher[]> => {
+): Promise<PettyCashVoucherWithChain[]> => {
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
       `*, petty_cash_pengajuan(kode_pengajuan),
-       petty_cash_sub_voucher(id, amount, items, status),
+       petty_cash_sub_voucher(id, kode_sub_voucher, amount, items, status, paid_at, created_at,
+         petty_cash_deklarasi(id, kode_deklarasi, status)),
        petty_cash_budget(name, current_budget)`,
     )
     .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("created_at", {
+      referencedTable: "petty_cash_sub_voucher",
+      ascending: true,
+    });
 
   if (error) throw error;
-  return (data ?? []) as unknown as PettyCashVoucher[];
+  return (data ?? []) as unknown as PettyCashVoucherWithChain[];
 };
 
 /**
