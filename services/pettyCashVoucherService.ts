@@ -300,7 +300,7 @@ export const createVoucherFromPengajuan = async (
   );
   if (!template) {
     throw new Error(
-      `Belum ada Template Approval "Approval Voucher" untuk departemen "${pengajuan.department}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
+      `Belum ada Template Approval "Approval Voucher" untuk departemen "${pengajuan.department}", site "${pengajuan.site ?? "-"}", perusahaan "${pengajuan.company_code}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
     );
   }
 
