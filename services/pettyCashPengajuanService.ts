@@ -179,7 +179,7 @@ export const checkPengajuanEligibility = async (
 
   if (!template) {
     reasons.push(
-      `Departemen "${department}" belum memiliki Template Approval Pengajuan yang aktif. Hubungi GA/Admin untuk mengaturnya terlebih dahulu.`,
+      `Departemen "${department}" (site "${site ?? "-"}", perusahaan "${companyCode}") belum memiliki Template Approval Pengajuan yang aktif. Hubungi GA/Admin untuk mengaturnya terlebih dahulu.`,
     );
   }
   if (!budget) {
@@ -230,7 +230,7 @@ export const createPettyCashPengajuan = async (
   );
   if (!template) {
     throw new Error(
-      `Belum ada Template Approval untuk departemen "${payload.department}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
+      `Belum ada Template Approval untuk departemen "${payload.department}", site "${payload.site ?? "-"}", perusahaan "${payload.company_code}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
     );
   }
 

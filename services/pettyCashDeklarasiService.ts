@@ -285,7 +285,7 @@ export const createDeklarasiFromSubVoucher = async (
   );
   if (!template) {
     throw new Error(
-      `Belum ada Template Approval "Approval Deklarasi" untuk departemen "${payload.department}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
+      `Belum ada Template Approval "Approval Deklarasi" untuk departemen "${payload.department}", site "${payload.site ?? "-"}", perusahaan "${payload.company_code}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
     );
   }
 
