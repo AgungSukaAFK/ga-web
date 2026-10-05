@@ -25,6 +25,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock, X } from "lucide-react";
+import {
+  usePcVerifyAccess,
+  useHighlightedStep,
+  PcVerifyLoading,
+  PcVerifyDenied,
+  PcVerifyDetailButton,
+} from "@/components/petty-cash/usePcVerifyAccess";
 
 type VoucherApprovalDetail = Pick<
   PettyCashVoucher,
@@ -36,6 +43,7 @@ type VoucherApprovalDetail = Pick<
   | "total_amount"
   | "status"
   | "approvals"
+  | "user_id"
   | "items"
   | "created_at"
 > & {
@@ -87,7 +95,7 @@ export default function ApprovalPcVoucherPage() {
         .from("petty_cash_voucher")
         .select(
           `
-            kode_voucher, department, site, needed_date, week_of_month,
+            user_id, kode_voucher, department, site, needed_date, week_of_month,
             total_amount, status, approvals, items, created_at,
             users_with_profiles:profiles!user_id (nama)
           `,
@@ -114,6 +122,12 @@ export default function ApprovalPcVoucherPage() {
     };
     fetchData();
   }, [id]);
+
+  const access = usePcVerifyAccess({
+    doc,
+    detailHref: `/petty-cash/voucher/${id}`,
+  });
+  const highlightStep = useHighlightedStep();
 
   if (loading) {
     return (
@@ -142,6 +156,14 @@ export default function ApprovalPcVoucherPage() {
     );
   }
 
+  if (access.state === "loading") return <PcVerifyLoading />;
+  if (access.state === "redirecting") {
+    return <PcVerifyLoading message="Mengarahkan ke halaman approval..." />;
+  }
+  if (access.state === "denied") {
+    return <PcVerifyDenied docLabel="voucher petty cash" />;
+  }
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="mx-auto max-w-3xl rounded-lg border shadow-lg">
@@ -150,6 +172,9 @@ export default function ApprovalPcVoucherPage() {
             Verifikasi Petty Cash - Pengajuan Voucher
           </h1>
           <p className="text-lg">{doc.kode_voucher}</p>
+          {access.canOpenDetail && (
+            <PcVerifyDetailButton href={`/petty-cash/voucher/${id}`} label="Lihat Detail Voucher" />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
@@ -246,7 +271,14 @@ export default function ApprovalPcVoucherPage() {
                 ) : (
                   (doc.approvals as PettyCashPengajuanApprover[]).map(
                     (app, index) => (
-                      <TableRow key={index}>
+                      <TableRow
+                        key={index}
+                        className={
+                          highlightStep === index + 1
+                            ? "bg-primary/10 font-semibold"
+                            : undefined
+                        }
+                      >
                         <TableCell className="font-medium">
                           {app.nama}
                         </TableCell>

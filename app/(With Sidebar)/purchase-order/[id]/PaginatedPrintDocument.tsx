@@ -22,10 +22,12 @@
 import {
   Fragment,
   ReactNode,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 // 1mm = 96/25.4 px, referensi CSS absolute-unit standar (dipakai browser
@@ -33,6 +35,7 @@ import { cn } from "@/lib/utils";
 // biasa bisa dipercaya buat estimasi hasil cetak).
 const MM_TO_PX = 96 / 25.4;
 const A4_HEIGHT_MM = 297;
+const A4_WIDTH_MM = 210;
 const PAGE_MARGIN_MM = 15; // samain sama @page margin di globals.css
 const PAGE_CONTENT_HEIGHT_PX = (A4_HEIGHT_MM - PAGE_MARGIN_MM * 2) * MM_TO_PX;
 // Cuma pakai ~90% dari budget teoretis - nyisain buffer buat perbedaan
@@ -66,7 +69,11 @@ function useMeasuredPagination<T>({
   enabled,
   hasIntro,
   hasOutro,
-}: UseMeasuredPaginationArgs<T>): { pages: PrintPage<T>[] | null; refs: MeasureRefs } {
+  measureReady,
+}: UseMeasuredPaginationArgs<T> & { measureReady: boolean }): {
+  pages: PrintPage<T>[] | null;
+  refs: MeasureRefs;
+} {
   const [pages, setPages] = useState<PrintPage<T>[] | null>(null);
 
   const headerRef = useRef<HTMLDivElement>(null);
@@ -76,7 +83,7 @@ function useMeasuredPagination<T>({
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
 
   useLayoutEffect(() => {
-    if (!enabled) {
+    if (!enabled || !measureReady) {
       setPages(null);
       return;
     }
@@ -146,7 +153,7 @@ function useMeasuredPagination<T>({
     // closure), bukan dijadikan dependency, karena kontennya JSX (objek
     // baru tiap render) - kalau dimasukin ke deps, efek ini jalan ulang
     // TIAP render lalu setPages bikin render baru lagi -> infinite loop.
-  }, [enabled]);
+  }, [enabled, measureReady]);
 
   return { pages, refs: { headerRef, footerRef, introRef, outroRef, rowRefs } };
 }
@@ -184,11 +191,19 @@ export function PaginatedPrintDocument<T>({
   const introNode = renderIntro?.();
   const outroNode = renderOutro?.();
 
+  // Kontainer pengukuran di-portal ke <body>: halaman pemakai menaruh
+  // dokumen ini di dalam blok `.print-only` yang display:none di layar -
+  // kalau kontainer ikut di dalamnya, semua tinggi terukur 0 & pagination
+  // diam-diam jatuh ke fallback 1 halaman (dipecah browser tanpa kop/footer).
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => setPortalTarget(document.body), []);
+
   const { pages, refs } = useMeasuredPagination({
     rows,
     enabled,
     hasIntro: !!renderIntro,
     hasOutro: !!renderOutro,
+    measureReady: !!portalTarget,
   });
 
   // Ukuran font DIBAKUKAN di sini (bukan digantung ke @media print lagi -
@@ -206,30 +221,48 @@ export function PaginatedPrintDocument<T>({
           display:none, jadi getBoundingClientRect() masih baca tinggi
           asli. Pakai className yang SAMA persis dengan halaman cetak
           sungguhan supaya tinggi yang terukur representatif. */}
-      <div
-        aria-hidden
-        style={{ position: "fixed", top: 0, left: "-9999px", width: "210mm" }}
-      >
-        <div className={pageClassName}>
-          <div ref={refs.headerRef}>
-            {renderHeader({ pageIndex: 0, pageCount: 1 })}
+      {portalTarget &&
+        createPortal(
+        <div
+          aria-hidden
+          className="no-print"
+          // Lebar = area konten cetak (A4 dikurangi @page margin kiri-kanan),
+          // BUKAN lebar kertas penuh - kalau diukur di 210mm, teks melipat
+          // lebih sedikit daripada saat dicetak (180mm) sehingga tinggi baris
+          // terukur lebih kecil & isi halaman bisa meluber.
+          style={{
+            position: "fixed",
+            top: 0,
+            left: "-9999px",
+            width: `${A4_WIDTH_MM - PAGE_MARGIN_MM * 2}mm`,
+          }}
+        >
+          <div id="printable-po-a4" className={pageClassName}>
+            <div ref={refs.headerRef}>
+              {renderHeader({ pageIndex: 0, pageCount: 1 })}
+            </div>
+            {introNode && <div ref={refs.introRef}>{introNode}</div>}
+            {outroNode && <div ref={refs.outroRef}>{outroNode}</div>}
+            <div ref={refs.footerRef}>
+              {renderFooter({ pageIndex: 0, pageCount: 1 })}
+            </div>
+            {/* thead ikut dirender: dgn table-layout:fixed lebar kolom diambil
+                dari baris PERTAMA - tanpa thead (yg membawa w-[..%]) semua
+                kolom jadi sama lebar & tinggi baris terukur salah. */}
+            <table className={cn("w-full border-collapse text-xs", tableClassName)}>
+              <thead>{renderTableHead()}</thead>
+              <tbody>
+                {rows.map((row, i) =>
+                  renderRow(row, i, (el) => {
+                    refs.rowRefs.current[i] = el;
+                  }),
+                )}
+              </tbody>
+            </table>
           </div>
-          {introNode && <div ref={refs.introRef}>{introNode}</div>}
-          {outroNode && <div ref={refs.outroRef}>{outroNode}</div>}
-          <div ref={refs.footerRef}>
-            {renderFooter({ pageIndex: 0, pageCount: 1 })}
-          </div>
-          <table className={cn("w-full border-collapse text-xs", tableClassName)}>
-            <tbody>
-              {rows.map((row, i) =>
-                renderRow(row, i, (el) => {
-                  refs.rowRefs.current[i] = el;
-                }),
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        </div>,
+          portalTarget,
+        )}
 
       {pages === null ? (
         // Belum terukur (atau enabled=false) - fallback 1 halaman apa
@@ -270,16 +303,20 @@ export function PaginatedPrintDocument<T>({
             >
               {renderHeader({ pageIndex, pageCount: pages.length })}
               {page.hasIntro && introNode}
-              <table
-                className={cn("w-full border-collapse text-xs", tableClassName)}
-              >
-                <thead>{renderTableHead()}</thead>
-                <tbody>
-                  {page.rows.map((row, i) => (
-                    <Fragment key={i}>{renderRow(row, rowOffset + i)}</Fragment>
-                  ))}
-                </tbody>
-              </table>
+              {/* Halaman yang cuma berisi outro (tidak muat di halaman
+                  terakhir tabel) tidak perlu header tabel kosong. */}
+              {page.rows.length > 0 && (
+                <table
+                  className={cn("w-full border-collapse text-xs", tableClassName)}
+                >
+                  <thead>{renderTableHead()}</thead>
+                  <tbody>
+                    {page.rows.map((row, i) => (
+                      <Fragment key={i}>{renderRow(row, rowOffset + i)}</Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )}
               {page.hasOutro && outroNode}
               <div className="mt-auto">
                 {renderFooter({ pageIndex, pageCount: pages.length })}
