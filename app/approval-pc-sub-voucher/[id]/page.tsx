@@ -27,8 +27,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock } from "lucide-react";
+import {
+  usePcVerifyAccess,
+  PcVerifyLoading,
+  PcVerifyDenied,
+  PcVerifyDetailButton,
+} from "@/components/petty-cash/usePcVerifyAccess";
 
 type SubVoucherApprovalDetail = {
+  user_id: string;
+  paid_by: string | null;
   kode_sub_voucher: string;
   amount: number;
   status: string;
@@ -41,6 +49,7 @@ type SubVoucherApprovalDetail = {
     kode_voucher: string;
     department: string;
     site: string | null;
+    approvals: { userid: string }[] | null;
     petty_cash_pengajuan: { kode_pengajuan: string } | null;
   } | null;
 };
@@ -62,10 +71,10 @@ export default function ApprovalPcSubVoucherPage() {
         .from("petty_cash_sub_voucher")
         .select(
           `
-            kode_sub_voucher, amount, status, items, created_at, paid_at,
+            user_id, paid_by, kode_sub_voucher, amount, status, items, created_at, paid_at,
             users_with_profiles:profiles!user_id (nama),
             paid_by_profile:profiles!paid_by (nama),
-            petty_cash_voucher (kode_voucher, department, site,
+            petty_cash_voucher (kode_voucher, department, site, approvals,
               petty_cash_pengajuan (kode_pengajuan))
           `,
         )
@@ -92,6 +101,25 @@ export default function ApprovalPcSubVoucherPage() {
     };
     fetchData();
   }, [id]);
+
+  // Sub-Voucher tidak punya jalur approval sendiri - yang "terlibat" adalah
+  // penarik dana, Finance pembayar, & approver Voucher induknya. Finance
+  // approver yang memindai saat dana belum dibayar langsung dibawa ke
+  // halaman detail (form penyelesaian pembayaran ada di sana).
+  const access = usePcVerifyAccess({
+    doc: doc && {
+      user_id: doc.user_id,
+      relatedUserIds: [
+        doc.paid_by,
+        ...(doc.petty_cash_voucher?.approvals ?? []).map((a) => a.userid),
+      ],
+    },
+    detailHref: `/petty-cash/sub-voucher/${id}`,
+    needsActionFrom: (viewer) =>
+      doc?.status === "Menunggu Pembayaran" &&
+      viewer.role === "approver" &&
+      viewer.department === "Finance",
+  });
 
   if (loading) {
     return (
@@ -120,6 +148,14 @@ export default function ApprovalPcSubVoucherPage() {
     );
   }
 
+  if (access.state === "loading") return <PcVerifyLoading />;
+  if (access.state === "redirecting") {
+    return <PcVerifyLoading message="Mengarahkan ke halaman pembayaran..." />;
+  }
+  if (access.state === "denied") {
+    return <PcVerifyDenied docLabel="sub-voucher petty cash" />;
+  }
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="mx-auto max-w-3xl rounded-lg border shadow-lg">
@@ -128,6 +164,12 @@ export default function ApprovalPcSubVoucherPage() {
             Verifikasi Petty Cash - Sub-Voucher (Tarik Dana)
           </h1>
           <p className="text-lg">{doc.kode_sub_voucher}</p>
+          {access.canOpenDetail && (
+            <PcVerifyDetailButton
+              href={`/petty-cash/sub-voucher/${id}`}
+              label="Lihat Detail Sub-Voucher"
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">

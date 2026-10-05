@@ -19,6 +19,7 @@ import {
 import { signInWithEmailOrNrp } from "@/services/userService";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { AuthInput } from "@/components/auth/auth-input";
+import { getSafeNextPath } from "@/lib/safe-next-path";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
@@ -58,9 +59,18 @@ export default function LoginPage() {
     try {
       await signInWithEmailOrNrp(identifier, password);
 
-      toast.success("Login berhasil! Mengarahkan ke dashboard...");
-      // Refresh state server dan arahkan ke root (middleware akan handle sisanya)
-      router.push("/dashboard");
+      // Kembali ke halaman yang tadi dicegat login (mis. hasil scan QR
+      // dokumen cetak) - dibawa middleware lewat ?next=. Tanpa itu baru ke
+      // dashboard.
+      const next = getSafeNextPath(
+        new URLSearchParams(window.location.search).get("next"),
+      );
+      toast.success(
+        next
+          ? "Login berhasil! Melanjutkan ke halaman tujuan..."
+          : "Login berhasil! Mengarahkan ke dashboard...",
+      );
+      router.replace(next ?? "/dashboard");
       router.refresh();
     } catch (error: any) {
       setError(error.message);

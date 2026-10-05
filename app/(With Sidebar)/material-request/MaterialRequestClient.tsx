@@ -39,6 +39,9 @@ import {
   DollarSign,
   AlertCircle,
   Plus,
+  ChevronDown,
+  Filter,
+  Database,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -47,7 +50,7 @@ import { toast } from "sonner";
 import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
-import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -86,6 +89,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -470,59 +474,39 @@ export function MaterialRequestContent({
     return [myCompany || ""];
   };
 
-  // --- Fungsi EXCEL (Sudah Diperbaiki Logika Izin Aksesnya) ---
-  const handleDownloadExcel = async () => {
+  // --- Fungsi EXCEL ---
+  // mode "all"      : semua MR yang boleh dilihat user (hak akses company / MR Saya tetap berlaku)
+  // mode "filtered" : sesuai filter, pencarian & urutan yang sedang diterapkan di tabel
+  const handleDownloadExcel = async (mode: "all" | "filtered") => {
     if (!currentUser) return;
+    const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap untuk diunduh...");
-    const exportSort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
+    toast.info(
+      useFilters
+        ? "Mempersiapkan data sesuai filter untuk diunduh..."
+        : "Mempersiapkan semua data untuk diunduh...",
+    );
+    const exportSort = useFilters
+      ? resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT)
+      : { column: "created_at", ascending: false };
 
     try {
-      let query = s.from("material_requests").select(`
-          kode_mr, kategori, department, status, remarks, cost_estimation,
-          tujuan_site, company_code, created_at, due_date,
-          prioritas, level, orders, approvals,
-          users_with_profiles!userid (nama),
-          cost_centers (code)
-      `);
-
-      if (onlyMine) query = query.eq("userid", currentUser.id);
-
       // FILTER PENCARIAN (Sama persis dengan tabel)
-      if (searchTerm) {
+      let searchOrFilter = "";
+      if (useFilters && searchTerm) {
         const { data: matchingUsers } = await s
           .from("users_with_profiles")
           .select("id")
           .ilike("nama", `%${searchTerm}%`);
 
         const userIds = matchingUsers?.map((u) => u.id) || [];
-        let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+        searchOrFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
         if (userIds.length > 0) {
-          orFilter += `,userid.in.(${userIds.join(",")})`;
+          searchOrFilter += `,userid.in.(${userIds.join(",")})`;
         }
-        query = query.or(orFilter);
       }
 
-      if (statusFilter && statusFilter !== "all")
-        query = query.eq("status", statusFilter);
-      if (startDate) query = query.gte("created_at", startDate);
-      if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-      if (departmentFilter && departmentFilter !== "all")
-        query = query.eq("department", departmentFilter);
-      if (siteFilter && siteFilter !== "all")
-        query = query.eq("tujuan_site", siteFilter);
-      if (prioritasFilter && prioritasFilter !== "all")
-        query = query.eq("prioritas", prioritasFilter);
-      if (levelFilter && levelFilter !== "all")
-        query = query.eq("level", levelFilter);
-      if (costCenterFilter && costCenterFilter !== "all")
-        query = query.eq("cost_center_id", costCenterFilter);
-      if (minEstimasiInput)
-        query = query.gte("cost_estimation", Number(minEstimasiInput));
-      if (maxEstimasiInput)
-        query = query.lte("cost_estimation", Number(maxEstimasiInput));
-
-      // FILTER PERUSAHAAN UNTUK EXCEL (Mengembalikan Hak Akses yg Benar)
+      // HAK AKSES PERUSAHAAN (selalu berlaku, termasuk mode "all")
       const userCompany = currentUser.company;
       let allowedScope: string[] = [];
 
@@ -534,35 +518,73 @@ export function MaterialRequestContent({
         allowedScope = userCompany ? [userCompany] : [];
       }
 
-      if (selectedCompanies.length > 0) {
-        if (allowedScope.includes("ALL")) {
-          query = query.in("company_code", selectedCompanies);
-        } else {
-          const validFilters = selectedCompanies.filter((c) =>
-            allowedScope.includes(c),
-          );
-          if (validFilters.length > 0) {
-            query = query.in("company_code", validFilters);
-          } else {
-            query = query.eq("id", -1);
-          }
+      const buildQuery = () => {
+        let query = s.from("material_requests").select(`
+          kode_mr, kategori, department, status, remarks, cost_estimation,
+          tujuan_site, company_code, created_at, due_date,
+          prioritas, level, orders, approvals,
+          users_with_profiles!userid (nama),
+          cost_centers (code)
+      `);
+
+        if (onlyMine) query = query.eq("userid", currentUser.id);
+
+        if (useFilters) {
+          if (searchOrFilter) query = query.or(searchOrFilter);
+          if (statusFilter && statusFilter !== "all")
+            query = query.eq("status", statusFilter);
+          if (startDate) query = query.gte("created_at", startDate);
+          if (endDate)
+            query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+          if (departmentFilter && departmentFilter !== "all")
+            query = query.eq("department", departmentFilter);
+          if (siteFilter && siteFilter !== "all")
+            query = query.eq("tujuan_site", siteFilter);
+          if (prioritasFilter && prioritasFilter !== "all")
+            query = query.eq("prioritas", prioritasFilter);
+          if (levelFilter && levelFilter !== "all")
+            query = query.eq("level", levelFilter);
+          if (costCenterFilter && costCenterFilter !== "all")
+            query = query.eq("cost_center_id", costCenterFilter);
+          if (minEstimasi)
+            query = query.gte("cost_estimation", Number(minEstimasi));
+          if (maxEstimasi)
+            query = query.lte("cost_estimation", Number(maxEstimasi));
         }
-      } else {
-        if (!allowedScope.includes("ALL")) {
+
+        if (useFilters && selectedCompanies.length > 0) {
+          if (allowedScope.includes("ALL")) {
+            query = query.in("company_code", selectedCompanies);
+          } else {
+            const validFilters = selectedCompanies.filter((c) =>
+              allowedScope.includes(c),
+            );
+            if (validFilters.length > 0) {
+              query = query.in("company_code", validFilters);
+            } else {
+              query = query.eq("id", -1);
+            }
+          }
+        } else if (!allowedScope.includes("ALL")) {
           query = query.in("company_code", allowedScope);
         }
-      }
 
-      const { data, error } = await query
-        .order(exportSort.column, {
-          ascending: exportSort.ascending,
-          nullsFirst: false,
-        })
-        .limit(2500); // Batas aman untuk excel
+        return query
+          .order(exportSort.column, {
+            ascending: exportSort.ascending,
+            nullsFirst: false,
+          })
+          .order("id", { ascending: true }); // urutan stabil antar halaman
+      };
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        toast.warning("Tidak ada data untuk diekspor sesuai filter.");
+      const data = await fetchAllRows(buildQuery);
+
+      if (data.length === 0) {
+        toast.warning(
+          useFilters
+            ? "Tidak ada data untuk diekspor sesuai filter."
+            : "Tidak ada data untuk diekspor.",
+        );
         setIsExporting(false);
         return;
       }
@@ -647,7 +669,7 @@ export function MaterialRequestContent({
 
       await exportStyledExcel(
         formattedData,
-        `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}${useFilters ? "_Filter" : "_Semua"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
         "Data MR & Tracking",
       );
       toast.success("Download berhasil!");
@@ -822,19 +844,37 @@ export function MaterialRequestContent({
             />
           </div>
           <div className="flex gap-2">
-            <Button
-              onClick={handleDownloadExcel}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full md:w-auto"
-            >
-              {isExporting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Newspaper className="mr-2 h-4 w-4" />
-              )}{" "}
-              Excel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  disabled={isExporting}
+                  variant="outline"
+                  className="w-full md:w-auto"
+                >
+                  {isExporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Newspaper className="mr-2 h-4 w-4" />
+                  )}{" "}
+                  Excel
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel>Export ke Excel</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => handleDownloadExcel("filtered")}
+                >
+                  <Filter className="mr-2 h-4 w-4" />
+                  Sesuai filter ({totalItems} MR)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadExcel("all")}>
+                  <Database className="mr-2 h-4 w-4" />
+                  Semua data
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               onClick={handlePrint}
               variant="outline"
