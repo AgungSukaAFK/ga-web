@@ -27,6 +27,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock, X } from "lucide-react";
+import {
+  usePcVerifyAccess,
+  useHighlightedStep,
+  PcVerifyLoading,
+  PcVerifyDenied,
+  PcVerifyDetailButton,
+} from "@/components/petty-cash/usePcVerifyAccess";
 
 type DeklarasiApprovalDetail = Pick<
   PettyCashDeklarasi,
@@ -36,6 +43,7 @@ type DeklarasiApprovalDetail = Pick<
   | "total_amount"
   | "status"
   | "approvals"
+  | "user_id"
   | "items"
   | "created_at"
 > & {
@@ -91,7 +99,7 @@ export default function ApprovalPcDeklarasiPage() {
         .from("petty_cash_deklarasi")
         .select(
           `
-            kode_deklarasi, department, site, total_amount, status, approvals,
+            user_id, kode_deklarasi, department, site, total_amount, status, approvals,
             items, created_at,
             users_with_profiles:profiles!user_id (nama),
             petty_cash_voucher (kode_voucher, petty_cash_pengajuan (kode_pengajuan))
@@ -123,6 +131,12 @@ export default function ApprovalPcDeklarasiPage() {
     fetchData();
   }, [id]);
 
+  const access = usePcVerifyAccess({
+    doc,
+    detailHref: `/petty-cash/deklarasi/${id}`,
+  });
+  const highlightStep = useHighlightedStep();
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
@@ -150,12 +164,23 @@ export default function ApprovalPcDeklarasiPage() {
     );
   }
 
+  if (access.state === "loading") return <PcVerifyLoading />;
+  if (access.state === "redirecting") {
+    return <PcVerifyLoading message="Mengarahkan ke halaman approval..." />;
+  }
+  if (access.state === "denied") {
+    return <PcVerifyDenied docLabel="deklarasi petty cash" />;
+  }
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="mx-auto max-w-3xl rounded-lg border shadow-lg">
         <div className="border-b p-6">
           <h1 className="text-3xl font-bold">Verifikasi Petty Cash - Deklarasi</h1>
           <p className="text-lg">{doc.kode_deklarasi}</p>
+          {access.canOpenDetail && (
+            <PcVerifyDetailButton href={`/petty-cash/deklarasi/${id}`} label="Lihat Detail Deklarasi" />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
@@ -251,7 +276,14 @@ export default function ApprovalPcDeklarasiPage() {
                 ) : (
                   (doc.approvals as PettyCashPengajuanApprover[]).map(
                     (app, index) => (
-                      <TableRow key={index}>
+                      <TableRow
+                        key={index}
+                        className={
+                          highlightStep === index + 1
+                            ? "bg-primary/10 font-semibold"
+                            : undefined
+                        }
+                      >
                         <TableCell className="font-medium">
                           {app.nama}
                         </TableCell>

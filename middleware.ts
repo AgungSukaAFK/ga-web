@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSafeNextPath } from "@/lib/safe-next-path";
 
 // Hasil cek profil lengkap (nrp + company) di-cache di cookie supaya
 // middleware tidak query `profiles` di SETIAP request. Nilainya user id,
@@ -98,7 +99,13 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    // Bawa halaman tujuan (mis. hasil scan QR /approval-pc-*/[id]?step=1)
+    // ke halaman login, supaya setelah login user kembali ke sana - bukan
+    // terdampar di dashboard.
+    const loginUrl = new URL("/auth/login", request.url);
+    const next = getSafeNextPath(pathname + request.nextUrl.search);
+    if (next && next !== "/") loginUrl.searchParams.set("next", next);
+    return NextResponse.redirect(loginUrl);
   }
 
   // Jika user terautentikasi
@@ -135,7 +142,8 @@ export async function middleware(request: NextRequest) {
       }
     } else {
       if (isAuthPath || isPendingPath) {
-        return NextResponse.redirect(new URL("/", request.url));
+        const next = getSafeNextPath(request.nextUrl.searchParams.get("next"));
+        return NextResponse.redirect(new URL(next ?? "/", request.url));
       }
     }
   }

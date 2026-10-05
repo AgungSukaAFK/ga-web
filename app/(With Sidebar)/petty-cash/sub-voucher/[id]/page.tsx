@@ -48,9 +48,10 @@ import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPay
 import { PcAdminSubVoucherPanel } from "@/components/petty-cash/PcAdminSubVoucherPanel";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
+import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
   <Content className="col-span-12">
@@ -65,6 +66,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printMode, setPrintMode] = useState<PcPrintMode>("qr");
   const [qrUrl, setQrUrl] = useState("");
   const [viewer, setViewer] = useState<{
     isFinanceApprover: boolean;
@@ -115,7 +117,10 @@ function SubVoucherDetailContent({ id }: { id: string }) {
     }
   }, [id]);
 
-  const handlePrint = () => setIsPrinting(true);
+  const handlePrint = (mode: PcPrintMode) => {
+    setPrintMode(mode);
+    setIsPrinting(true);
+  };
 
   useEffect(() => {
     if (!isPrinting || !doc) return;
@@ -214,9 +219,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
-            <Button size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" /> Cetak
-            </Button>
+            <PcPrintMenu onPrint={handlePrint} />
           </div>
         }
       >
@@ -352,10 +355,28 @@ function SubVoucherDetailContent({ id }: { id: string }) {
           department={voucher?.department || "-"}
           site={voucher?.site}
           showNeededDate={false}
+          budgetName={voucher?.petty_cash_budget?.name}
+          references={[
+            { label: "Ref. Voucher", value: voucher?.kode_voucher },
+            {
+              label: "Ref. Pengajuan",
+              value: voucher?.petty_cash_pengajuan?.kode_pengajuan,
+            },
+          ]}
+          extraSignatures={[
+            {
+              label: "Dibayar Oleh",
+              name: doc.paid_by_profile?.nama || "Finance",
+              subtitle: "Finance",
+              state: doc.paid_at ? "done" : "pending",
+              date: doc.paid_at,
+            },
+          ]}
           notes={doc.notes}
           items={doc.items}
           totalAmount={doc.amount}
           qrUrl={qrUrl}
+          signatureMode={printMode}
           printTrigger={isPrinting}
         />
       </div>

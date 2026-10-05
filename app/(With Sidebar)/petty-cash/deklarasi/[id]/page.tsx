@@ -50,9 +50,10 @@ import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
+import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
   <Content className="col-span-12">
@@ -67,6 +68,7 @@ function DeklarasiDetailContent({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printMode, setPrintMode] = useState<PcPrintMode>("qr");
   const [qrUrl, setQrUrl] = useState("");
   const [viewer, setViewer] = useState<{
     id: string;
@@ -117,7 +119,10 @@ function DeklarasiDetailContent({ id }: { id: string }) {
     }
   }, [id]);
 
-  const handlePrint = () => setIsPrinting(true);
+  const handlePrint = (mode: PcPrintMode) => {
+    setPrintMode(mode);
+    setIsPrinting(true);
+  };
 
   useEffect(() => {
     if (!isPrinting || !doc) return;
@@ -253,9 +258,7 @@ function DeklarasiDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
-            <Button size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" /> Cetak
-            </Button>
+            <PcPrintMenu onPrint={handlePrint} />
           </div>
         }
       >
@@ -357,6 +360,7 @@ function DeklarasiDetailContent({ id }: { id: string }) {
 
       <div className="print-only">
         <PrintablePettyCashDocument
+          variant="deklarasi"
           docTitle="Deklarasi"
           kode={doc.kode_deklarasi}
           companyCode={doc.company_code}
@@ -365,10 +369,25 @@ function DeklarasiDetailContent({ id }: { id: string }) {
           department={doc.department}
           site={doc.site}
           showNeededDate={false}
+          fpNo={doc.petty_cash_voucher?.petty_cash_pengajuan?.kode_pengajuan}
+          references={[
+            {
+              label: "Ref. Voucher",
+              value: doc.petty_cash_voucher?.kode_voucher,
+            },
+          ]}
+          cashReceived={doc.petty_cash_sub_voucher?.amount ?? null}
+          cashReceivedLabel={
+            doc.petty_cash_sub_voucher
+              ? `Terima Uang (Sub-Voucher ${doc.petty_cash_sub_voucher.kode_sub_voucher})`
+              : undefined
+          }
+          approvals={doc.approvals}
           notes={doc.notes}
           items={doc.items}
           totalAmount={doc.total_amount}
           qrUrl={qrUrl}
+          signatureMode={printMode}
           printTrigger={isPrinting}
         />
       </div>
