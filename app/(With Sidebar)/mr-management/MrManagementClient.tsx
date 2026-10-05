@@ -40,6 +40,9 @@ import {
   DollarSign,
   MoreHorizontal,
   Upload,
+  ChevronDown,
+  Filter,
+  Database,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -53,7 +56,7 @@ import {
 import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
-import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -453,13 +456,44 @@ export default function MrManagementClient() {
     return [myCompany || ""];
   };
 
-  const handleDownloadExcel = async () => {
+  // mode "all"      : semua MR yang boleh dilihat user (hak akses company tetap berlaku)
+  // mode "filtered" : sesuai filter & pencarian yang sedang diterapkan di tabel
+  const handleDownloadExcel = async (mode: "all" | "filtered") => {
     if (!currentUser) return;
+    const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap...");
+    toast.info(
+      useFilters
+        ? "Mempersiapkan data sesuai filter..."
+        : "Mempersiapkan semua data...",
+    );
 
     try {
-      let query = s.from("material_requests").select(`
+      // Pencarian sama persis dengan tabel (kode MR, remarks, nama requester)
+      let searchOrFilter = "";
+      if (useFilters && searchTerm) {
+        const { data: matchingUsers } = await s
+          .from("users_with_profiles")
+          .select("id")
+          .ilike("nama", `%${searchTerm}%`);
+
+        const userIds = matchingUsers?.map((u) => u.id) || [];
+        searchOrFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
+        if (userIds.length > 0) {
+          searchOrFilter += `,userid.in.(${userIds.join(",")})`;
+        }
+      }
+
+      const userCompany = currentUser.company;
+      const allowed =
+        userCompany === "LOURDES"
+          ? null
+          : ["GMI", "GIS"].includes(userCompany || "")
+            ? [userCompany!, "LOURDES"]
+            : [userCompany!];
+
+      const buildQuery = () => {
+        let query = s.from("material_requests").select(`
             kode_mr, kategori, department, status, remarks, cost_estimation, 
             tujuan_site, company_code, created_at, due_date,
             prioritas, level, orders, 
@@ -467,38 +501,51 @@ export default function MrManagementClient() {
             cost_centers (code)
         `);
 
-      // Re-apply same filters as fetch logic...
-      if (searchTerm) query = query.or(`kode_mr.ilike.%${searchTerm}%`);
-      if (statusFilter) query = query.eq("status", statusFilter);
-      if (startDate) query = query.gte("created_at", startDate);
-      if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-      if (departmentFilter) query = query.eq("department", departmentFilter);
-      if (siteFilter) query = query.eq("tujuan_site", siteFilter);
-      if (levelFilter) query = query.eq("level", levelFilter);
-
-      const userCompany = currentUser.company;
-      if (userCompany !== "LOURDES") {
-        const allowed = ["GMI", "GIS"].includes(userCompany || "")
-          ? [userCompany!, "LOURDES"]
-          : [userCompany!];
-        if (selectedCompanies.length > 0) {
-          const valid = selectedCompanies.filter((c) => allowed.includes(c));
-          if (valid.length > 0) query = query.in("company_code", valid);
-          else query = query.eq("id", -1);
-        } else {
-          query = query.in("company_code", allowed);
+        if (useFilters) {
+          if (searchOrFilter) query = query.or(searchOrFilter);
+          if (statusFilter) query = query.eq("status", statusFilter);
+          if (startDate) query = query.gte("created_at", startDate);
+          if (endDate)
+            query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+          if (departmentFilter)
+            query = query.eq("department", departmentFilter);
+          if (siteFilter) query = query.eq("tujuan_site", siteFilter);
+          if (levelFilter) query = query.eq("level", levelFilter);
+          if (costCenterFilter && costCenterFilter !== "all")
+            query = query.eq("cost_center_id", costCenterFilter);
+          if (minEstimasi)
+            query = query.gte("cost_estimation", Number(minEstimasi));
+          if (maxEstimasi)
+            query = query.lte("cost_estimation", Number(maxEstimasi));
         }
-      } else if (selectedCompanies.length > 0) {
-        query = query.in("company_code", selectedCompanies);
-      }
 
-      const { data, error } = await query
-        .order("created_at", { ascending: false })
-        .limit(2000);
+        // Hak akses company selalu berlaku, filter company hanya di mode "filtered"
+        const companyFilter = useFilters ? selectedCompanies : [];
+        if (allowed) {
+          if (companyFilter.length > 0) {
+            const valid = companyFilter.filter((c) => allowed.includes(c));
+            if (valid.length > 0) query = query.in("company_code", valid);
+            else query = query.eq("id", -1);
+          } else {
+            query = query.in("company_code", allowed);
+          }
+        } else if (companyFilter.length > 0) {
+          query = query.in("company_code", companyFilter);
+        }
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        toast.warning("Tidak ada data untuk diekspor.");
+        return query
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true }); // urutan stabil antar halaman
+      };
+
+      const data = await fetchAllRows(buildQuery);
+
+      if (data.length === 0) {
+        toast.warning(
+          useFilters
+            ? "Tidak ada data untuk diekspor sesuai filter."
+            : "Tidak ada data untuk diekspor.",
+        );
         setIsExporting(false);
         return;
       }
@@ -547,7 +594,7 @@ export default function MrManagementClient() {
 
       await exportStyledExcel(
         formattedData,
-        `Rekap_MR_Admin_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        `Rekap_MR_Admin${useFilters ? "_Filter" : "_Semua"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
         "Data MR & Tracking",
       );
       toast.success("Download berhasil!");
@@ -834,19 +881,37 @@ export default function MrManagementClient() {
             />
           </div>
           <div className="flex gap-2">
-            <Button
-              onClick={handleDownloadExcel}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full md:w-auto"
-            >
-              {isExporting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Newspaper className="mr-2 h-4 w-4" />
-              )}{" "}
-              Excel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  disabled={isExporting}
+                  variant="outline"
+                  className="w-full md:w-auto"
+                >
+                  {isExporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Newspaper className="mr-2 h-4 w-4" />
+                  )}{" "}
+                  Excel
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel>Export ke Excel</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => handleDownloadExcel("filtered")}
+                >
+                  <Filter className="mr-2 h-4 w-4" />
+                  Sesuai filter ({totalItems} MR)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadExcel("all")}>
+                  <Database className="mr-2 h-4 w-4" />
+                  Semua data
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               onClick={handlePrint}
               variant="outline"

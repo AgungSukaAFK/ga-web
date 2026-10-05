@@ -62,9 +62,10 @@ import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
+import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
   <Content className="col-span-12">
@@ -79,6 +80,7 @@ function VoucherDetailContent({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printMode, setPrintMode] = useState<PcPrintMode>("qr");
   const [qrUrl, setQrUrl] = useState("");
   const [viewer, setViewer] = useState<{
     id: string;
@@ -129,7 +131,10 @@ function VoucherDetailContent({ id }: { id: string }) {
     }
   }, [id]);
 
-  const handlePrint = () => setIsPrinting(true);
+  const handlePrint = (mode: PcPrintMode) => {
+    setPrintMode(mode);
+    setIsPrinting(true);
+  };
 
   useEffect(() => {
     if (!isPrinting || !doc) return;
@@ -277,9 +282,7 @@ function VoucherDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
-            <Button size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" /> Cetak
-            </Button>
+            <PcPrintMenu onPrint={handlePrint} />
           </div>
         }
       >
@@ -472,10 +475,19 @@ function VoucherDetailContent({ id }: { id: string }) {
           site={doc.site}
           neededDate={doc.needed_date}
           weekOfMonth={doc.week_of_month}
+          budgetName={doc.petty_cash_budget?.name}
+          references={[
+            {
+              label: "Ref. Pengajuan",
+              value: doc.petty_cash_pengajuan?.kode_pengajuan,
+            },
+          ]}
+          approvals={doc.approvals}
           notes={doc.notes}
           items={doc.items}
           totalAmount={doc.total_amount}
           qrUrl={qrUrl}
+          signatureMode={printMode}
           printTrigger={isPrinting}
         />
       </div>

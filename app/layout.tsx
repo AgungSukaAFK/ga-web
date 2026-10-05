@@ -18,7 +18,11 @@ export const metadata: Metadata = {
   // iOS/Safari - lihat lib/notifications/push.ts).
   manifest: "/manifest.json",
   icons: {
-    icon: "/icons/icon-192.png",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    // iOS belum support SVG untuk apple-touch-icon, tetap pakai PNG
     apple: "/icons/icon-192.png",
   },
 };
