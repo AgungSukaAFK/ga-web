@@ -7,6 +7,7 @@ import { Headset } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
+import { FontSwitcher } from "@/components/font-switcher";
 import { cn } from "@/lib/utils";
 
 // Foto latar halaman auth (public/slide*.webp). kbFrom/kbTo = arah geser
@@ -204,6 +205,7 @@ export function AuthShell({
               <Headset className="text-muted-foreground" size={16} />
             </Button>
             <AccentThemeSwitcher />
+            <FontSwitcher />
             <ThemeSwitcher />
           </div>
         </div>

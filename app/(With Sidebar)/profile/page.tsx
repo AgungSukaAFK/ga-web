@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
+import { FontSwitcher } from "@/components/font-switcher";
 import { NotificationSettings } from "@/components/notification-settings";
 import { BankAccount } from "@/type";
 import {
@@ -708,6 +709,7 @@ export default function Dashboard() {
             <Label className="text-base font-bold">Pengaturan Tema</Label>
             <div className="flex items-center gap-1">
               <AccentThemeSwitcher />
+              <FontSwitcher />
               <ThemeSwitcher />
             </div>
           </div>

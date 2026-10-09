@@ -36,7 +36,6 @@ import {
   Package,
   PackageCheck,
   Printer,
-  Send,
   ShieldAlert,
   Truck,
   Users,
@@ -44,7 +43,6 @@ import {
   WalletCards,
   Workflow,
 } from "lucide-react";
-import Link from "next/link";
 
 // Komponen helper kecil untuk styling
 const Step = ({
@@ -60,7 +58,7 @@ const Step = ({
     <Icon className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
     <div className="flex-1">
       <h4 className="font-semibold text-lg">{title}</h4>
-      <p className="text-muted-foreground">{children}</p>
+      <div className="text-muted-foreground">{children}</div>
     </div>
   </div>
 );
