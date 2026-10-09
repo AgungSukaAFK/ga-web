@@ -50,6 +50,7 @@ export default function RootLayout({
           attribute="class"
           defaultTheme="system"
           enableSystem
+          themes={["light", "dark", "soft-light", "soft-dark"]}
           disableTransitionOnChange
         >
           <NotificationProvider>{children}</NotificationProvider>

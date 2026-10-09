@@ -45,15 +45,20 @@ import {
   PC_VOUCHER_STATUS_OPTIONS,
 } from "@/type/enum";
 import { Content } from "@/components/content";
+import {
+  ActiveFilter,
+  FilterPanel,
+  formatFilterRange,
+} from "@/components/filter-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -229,13 +234,6 @@ export default function PengajuanSayaClient() {
     setDateTo(undefined);
   };
 
-  const hasActiveFilters =
-    search.trim() !== "" ||
-    statusFilter !== "all" ||
-    companyFilter !== "all" ||
-    !!dateFrom ||
-    !!dateTo;
-
   // ===== Data turunan dari `chain` (satu sumber data utk 3 mode) =====
 
   const voucherRows: VoucherRow[] = useMemo(
@@ -386,67 +384,124 @@ export default function PengajuanSayaClient() {
     deklarasi: PC_DEKLARASI_STATUS_OPTIONS,
   };
 
-  const FilterBar = () => (
+  // --- Chip filter aktif ---
+  const formatChipDate = (d: Date) =>
+    d.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  const activeFilters: ActiveFilter[] = [];
+  if (search.trim())
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: search.trim(),
+      onRemove: () => setSearch(""),
+    });
+  if (statusFilter !== "all")
+    activeFilters.push({
+      key: "status",
+      label: "Status",
+      value: statusFilter,
+      onRemove: () => setStatusFilter("all"),
+    });
+  if (companyFilter !== "all")
+    activeFilters.push({
+      key: "company",
+      label: "Company",
+      value: companyFilter,
+      onRemove: () => setCompanyFilter("all"),
+    });
+  if (dateFrom || dateTo)
+    activeFilters.push({
+      key: "tanggal",
+      label: "Tanggal",
+      value: formatFilterRange(
+        dateFrom ? formatChipDate(dateFrom) : "",
+        dateTo ? formatChipDate(dateTo) : "",
+      ),
+      onRemove: () => {
+        setDateFrom(undefined);
+        setDateTo(undefined);
+      },
+    });
+
+  // Dipanggil sebagai fungsi (bukan <FilterBar />) supaya tidak di-mount
+  // ulang tiap render - state buka/tutup panel & fokus input tetap terjaga.
+  const renderFilterBar = () => (
     <div className="flex flex-col gap-2 mb-4">
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari kode, departemen, catatan, atau nama/keterangan barang..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="sm:w-[170px]">
-            <SelectValue placeholder="Semua Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            {statusOptionsByMode[mode].map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={companyFilter} onValueChange={setCompanyFilter}>
-          <SelectTrigger className="sm:w-[120px]">
-            <SelectValue placeholder="Company" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Company</SelectItem>
-            {PC_COA_OPTIONS.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Cari kode, departemen, catatan, atau nama/keterangan barang..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+        />
       </div>
-      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-        <div className="flex items-center gap-2 flex-1">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Dari
-          </span>
-          <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Tanggal mulai" />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            s/d
-          </span>
-          <DatePicker value={dateTo} onChange={setDateTo} placeholder="Tanggal akhir" />
+      <FilterPanel activeFilters={activeFilters} onReset={resetFilters}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Status</label>
+            <SearchableSelect
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+            >
+              <SearchableSelectTrigger>
+                <SearchableSelectValue placeholder="Semua Status" />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
+                <SearchableSelectItem value="all">
+                  Semua Status
+                </SearchableSelectItem>
+                {statusOptionsByMode[mode].map((s) => (
+                  <SearchableSelectItem key={s} value={s}>
+                    {s}
+                  </SearchableSelectItem>
+                ))}
+              </SearchableSelectContent>
+            </SearchableSelect>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Company</label>
+            <SearchableSelect
+              value={companyFilter}
+              onValueChange={setCompanyFilter}
+            >
+              <SearchableSelectTrigger>
+                <SearchableSelectValue placeholder="Company" />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
+                <SearchableSelectItem value="all">
+                  Semua Company
+                </SearchableSelectItem>
+                {PC_COA_OPTIONS.map((c) => (
+                  <SearchableSelectItem key={c} value={c}>
+                    {c}
+                  </SearchableSelectItem>
+                ))}
+              </SearchableSelectContent>
+            </SearchableSelect>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Dari Tanggal</label>
+            <DatePicker
+              value={dateFrom}
+              onChange={setDateFrom}
+              placeholder="Tanggal mulai"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Sampai Tanggal</label>
+            <DatePicker
+              value={dateTo}
+              onChange={setDateTo}
+              placeholder="Tanggal akhir"
+            />
+          </div>
         </div>
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetFilters}
-            className="text-muted-foreground"
-          >
-            <X className="h-3.5 w-3.5 mr-1" /> Reset Filter
-          </Button>
-        )}
-      </div>
+      </FilterPanel>
     </div>
   );
 
@@ -498,7 +553,7 @@ export default function PengajuanSayaClient() {
                 <PlusCircle className="h-4 w-4 mr-1" /> {modeMeta.pengajuan.createLabel}
               </Button>
             </div>
-            <FilterBar />
+            {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[950px] table-fixed">
                 <TableHeader>
@@ -584,7 +639,7 @@ export default function PengajuanSayaClient() {
                 <PlusCircle className="h-4 w-4 mr-1" /> {modeMeta.voucher.createLabel}
               </Button>
             </div>
-            <FilterBar />
+            {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[950px] table-fixed">
                 <TableHeader>
@@ -677,7 +732,7 @@ export default function PengajuanSayaClient() {
                 <PlusCircle className="h-4 w-4 mr-1" /> {modeMeta.deklarasi.createLabel}
               </Button>
             </div>
-            <FilterBar />
+            {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
               <Table className="min-w-[950px] table-fixed">
                 <TableHeader>

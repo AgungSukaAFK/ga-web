@@ -123,11 +123,14 @@ import {
 } from "@/components/ui/dialog";
 import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
@@ -2980,7 +2983,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       Tambah Lampiran Purchasing (Quotation/Invoice)
                     </Label>
                     <div className="mt-1 flex flex-col sm:flex-row gap-2">
-                      <Select
+                      <SearchableSelect
                         value={purchasingAttachmentType}
                         onValueChange={(v) =>
                           setPurchasingAttachmentType(
@@ -2988,14 +2991,14 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           )
                         }
                       >
-                        <SelectTrigger className="w-full sm:w-40">
-                          <SelectValue placeholder="Jenis lampiran" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="quotation">Quotation</SelectItem>
-                          <SelectItem value="invoice">Invoice</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <SearchableSelectTrigger className="w-full sm:w-40">
+                          <SearchableSelectValue placeholder="Jenis lampiran" />
+                        </SearchableSelectTrigger>
+                        <SearchableSelectContent>
+                          <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
+                          <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
+                        </SearchableSelectContent>
+                      </SearchableSelect>
                       <Input
                         id="purchasing-attachment-upload"
                         type="file"
@@ -3753,26 +3756,26 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       </Button>
                     )}
                   <div className="flex gap-2">
-                    <Select
+                    <SearchableSelect
                       value={manualLinkPoCode}
                       onValueChange={setManualLinkPoCode}
                     >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Pilih PO..." />
-                      </SelectTrigger>
-                      <SelectContent>
+                      <SearchableSelectTrigger className="flex-1">
+                        <SearchableSelectValue placeholder="Pilih PO..." />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
                         {posForMr.length === 0 && (
                           <div className="px-2 py-1.5 text-xs text-muted-foreground">
                             Belum ada PO di MR ini.
                           </div>
                         )}
                         {posForMr.map((poOption) => (
-                          <SelectItem key={poOption.id} value={poOption.kode_po}>
+                          <SearchableSelectItem key={poOption.id} value={poOption.kode_po}>
                             {poOption.kode_po} ({poOption.status})
-                          </SelectItem>
+                          </SearchableSelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                     <Input
                       type="number"
                       min="1"
@@ -3798,25 +3801,25 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
               <div className="grid gap-2">
                 <Label htmlFor="status">Status Barang</Label>
-                <Select
+                <SearchableSelect
                   value={editForm.status}
                   onValueChange={(val) =>
                     setEditForm({ ...editForm, status: val })
                   }
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih Status" />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <SearchableSelectTrigger>
+                    <SearchableSelectValue placeholder="Pilih Status" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
                     {Object.entries(MR_ITEM_STATUS_LABELS).map(
                       ([key, label]) => (
-                        <SelectItem key={key} value={key}>
+                        <SearchableSelectItem key={key} value={key}>
                           {label}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ),
                     )}
-                  </SelectContent>
-                </Select>
+                  </SearchableSelectContent>
+                </SearchableSelect>
               </div>
 
               <div className="grid gap-2">
@@ -4146,7 +4149,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="delivery-type">Jenis Pengiriman</Label>
-                  <Select
+                  <SearchableSelect
                     value={deliveryType}
                     onValueChange={(v) => {
                       setDeliveryType(v as DeliveryType);
@@ -4161,17 +4164,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       }
                     }}
                   >
-                    <SelectTrigger id="delivery-type" className="mt-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger id="delivery-type" className="mt-2">
+                      <SearchableSelectValue />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {DELIVERY_TYPE_OPTIONS.map((opt) => (
-                        <SelectItem key={opt} value={opt}>
+                        <SearchableSelectItem key={opt} value={opt}>
                           {opt}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
                 {deliveryType !== "Dikirim ke KM 10" && (
                   <>

@@ -31,12 +31,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
@@ -469,25 +469,25 @@ export default function MrTemplateClient() {
               </div>
               <div className="space-y-2">
                 <Label>Kategori (Opsional)</Label>
-                <Select
+                <SearchableSelect
                   value={kategori || NO_KATEGORI}
                   onValueChange={(v) => setKategori(v === NO_KATEGORI ? "" : v)}
                   disabled={saving}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pilih kategori..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_KATEGORI}>
+                  <SearchableSelectTrigger className="w-full">
+                    <SearchableSelectValue placeholder="Pilih kategori..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value={NO_KATEGORI}>
                       - Biarkan requester memilih -
-                    </SelectItem>
+                    </SearchableSelectItem>
                     {MR_KATEGORI_OPTIONS.map((k) => (
-                      <SelectItem key={k.value} value={k.value}>
+                      <SearchableSelectItem key={k.value} value={k.value}>
                         {k.label}
-                      </SelectItem>
+                      </SearchableSelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </SearchableSelectContent>
+                </SearchableSelect>
               </div>
             </div>
 

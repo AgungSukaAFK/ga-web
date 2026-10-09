@@ -69,11 +69,18 @@ import {
 import { exportStyledExcel } from "@/lib/excel-export";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -97,6 +104,14 @@ import {
   getLastApprovedApprover,
 } from "@/type/enum";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import {
+  ActiveFilter,
+  FilterPanel,
+  filterOptionLabel,
+  formatFilterDate,
+  formatFilterRange,
+  formatFilterRupiah,
+} from "@/components/filter-panel";
 
 // Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
 const DEFAULT_SORT = "created_at.desc";
@@ -705,6 +720,97 @@ function PurchaseOrderPageContent() {
       userProfile?.department === "Purchasing") ||
     userProfile?.role === "admin";
 
+  const clearFilters = () => {
+    resetSearchInput();
+    setStartDateInput("");
+    setEndDateInput("");
+    setMinPriceInput("");
+    setMaxPriceInput("");
+    startTransition(() => {
+      router.push(pathname);
+    });
+  };
+
+  // --- Chip filter aktif (dari URL, bukan input yang belum diterapkan) ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (statusFilter && statusFilter !== "all")
+    activeFilters.push({
+      key: "status",
+      label: "Status PO",
+      value: statusFilter,
+      onRemove: () => handleFilterChange({ status: undefined }),
+    });
+  if (paymentFilter && paymentFilter !== "all")
+    activeFilters.push({
+      key: "payment_status",
+      label: "Pembayaran",
+      value:
+        paymentFilter === "paid"
+          ? "Paid"
+          : paymentFilter === "unpaid"
+            ? "Unpaid"
+            : paymentFilter,
+      onRemove: () => handleFilterChange({ payment_status: undefined }),
+    });
+  if (paymentTermFilter && paymentTermFilter !== "all")
+    activeFilters.push({
+      key: "payment_term_filter",
+      label: "Jenis Pembayaran",
+      value: filterOptionLabel(PAYMENT_TERM_OPTIONS, paymentTermFilter),
+      onRemove: () => handleFilterChange({ payment_term_filter: undefined }),
+    });
+  if (assetTypeFilter && assetTypeFilter !== "all")
+    activeFilters.push({
+      key: "asset_type",
+      label: "Jenis PO",
+      value:
+        assetTypeFilter === "asset"
+          ? "Asset"
+          : assetTypeFilter === "goods"
+            ? "Barang (Non-Asset)"
+            : assetTypeFilter,
+      onRemove: () => handleFilterChange({ asset_type: undefined }),
+    });
+  if (companyFilter && companyFilter !== "all")
+    activeFilters.push({
+      key: "company",
+      label: "Perusahaan",
+      value: companyFilter,
+      onRemove: () => handleFilterChange({ company: undefined }),
+    });
+  if (startDate || endDate)
+    activeFilters.push({
+      key: "tanggal",
+      label: "Tanggal",
+      value: formatFilterRange(startDate, endDate, formatFilterDate),
+      onRemove: () => {
+        setStartDateInput("");
+        setEndDateInput("");
+        handleFilterChange({ start_date: undefined, end_date: undefined });
+      },
+    });
+  if (minPrice || maxPrice)
+    activeFilters.push({
+      key: "harga",
+      label: "Total Harga",
+      value: formatFilterRange(minPrice, maxPrice, formatFilterRupiah),
+      onRemove: () => {
+        setMinPriceInput("");
+        setMaxPriceInput("");
+        handleFilterChange({ min_price: undefined, max_price: undefined });
+      },
+    });
+
   return (
     <>
       <Content
@@ -751,100 +857,114 @@ function PurchaseOrderPageContent() {
               </Button>
             </div>
 
-            <div className="p-4 border rounded-lg bg-muted/50">
+            <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Status PO</label>
-                  <Select
+                  <SearchableSelect
                     onValueChange={(value) =>
                       handleFilterChange({
                         status: value === "all" ? undefined : value,
                       })
                     }
-                    defaultValue={statusFilter || "all"}
+                    value={statusFilter || "all"}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Status</SelectItem>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter status" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua Status
+                      </SearchableSelectItem>
                       {STATUS_OPTIONS.map((status) => (
-                        <SelectItem key={status} value={status}>
+                        <SearchableSelectItem key={status} value={status}>
                           {status}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">
                     Status Pembayaran
                   </label>
-                  <Select
+                  <SearchableSelect
                     onValueChange={(value) =>
                       handleFilterChange({
                         payment_status: value === "all" ? undefined : value,
                       })
                     }
-                    defaultValue={paymentFilter || "all"}
+                    value={paymentFilter || "all"}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter pembayaran..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="unpaid">Unpaid</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter pembayaran..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua
+                      </SearchableSelectItem>
+                      <SearchableSelectItem value="paid">
+                        Paid
+                      </SearchableSelectItem>
+                      <SearchableSelectItem value="unpaid">
+                        Unpaid
+                      </SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">
                     Jenis Pembayaran
                   </label>
-                  <Select
+                  <SearchableSelect
                     onValueChange={(value) =>
                       handleFilterChange({
                         payment_term_filter:
                           value === "all" ? undefined : value,
                       })
                     }
-                    defaultValue={paymentTermFilter || "all"}
+                    value={paymentTermFilter || "all"}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter jenis..." />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter jenis..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {PAYMENT_TERM_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
+                        <SearchableSelectItem key={opt.value} value={opt.value}>
                           {opt.label}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Jenis PO</label>
-                  <Select
+                  <SearchableSelect
                     onValueChange={(value) =>
                       handleFilterChange({
                         asset_type: value === "all" ? undefined : value,
                       })
                     }
-                    defaultValue={assetTypeFilter || "all"}
+                    value={assetTypeFilter || "all"}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter jenis PO..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua</SelectItem>
-                      <SelectItem value="asset">Asset</SelectItem>
-                      <SelectItem value="goods">Barang (Non-Asset)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter jenis PO..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua
+                      </SearchableSelectItem>
+                      <SearchableSelectItem value="asset">
+                        Asset
+                      </SearchableSelectItem>
+                      <SearchableSelectItem value="goods">
+                        Barang (Non-Asset)
+                      </SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
 
                 {/* FILTER COMPANY DINAMIS */}
@@ -853,48 +973,62 @@ function PurchaseOrderPageContent() {
                   userProfile?.company === "GIS") && (
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Perusahaan</label>
-                    <Select
+                    <SearchableSelect
                       onValueChange={(value) =>
                         handleFilterChange({
                           company: value === "all" ? undefined : value,
                         })
                       }
-                      defaultValue={companyFilter || "all"}
+                      value={companyFilter || "all"}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filter perusahaan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
+                      <SearchableSelectTrigger>
+                        <SearchableSelectValue placeholder="Filter perusahaan" />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
+                        <SearchableSelectItem value="all">
                           Semua (Sesuai Akses)
-                        </SelectItem>
+                        </SearchableSelectItem>
 
                         {/* LOURDES: Bisa lihat GMI & GIS */}
                         {userProfile.company === "LOURDES" && (
                           <>
-                            <SelectItem value="GMI">GMI</SelectItem>
-                            <SelectItem value="GIS">GIS</SelectItem>
-                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                            <SearchableSelectItem value="GMI">
+                              GMI
+                            </SearchableSelectItem>
+                            <SearchableSelectItem value="GIS">
+                              GIS
+                            </SearchableSelectItem>
+                            <SearchableSelectItem value="LOURDES">
+                              LOURDES
+                            </SearchableSelectItem>
                           </>
                         )}
 
                         {/* GMI: Bisa lihat LOURDES */}
                         {userProfile.company === "GMI" && (
                           <>
-                            <SelectItem value="GMI">GMI</SelectItem>
-                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                            <SearchableSelectItem value="GMI">
+                              GMI
+                            </SearchableSelectItem>
+                            <SearchableSelectItem value="LOURDES">
+                              LOURDES
+                            </SearchableSelectItem>
                           </>
                         )}
 
                         {/* GIS: Bisa lihat LOURDES */}
                         {userProfile.company === "GIS" && (
                           <>
-                            <SelectItem value="GIS">GIS</SelectItem>
-                            <SelectItem value="LOURDES">LOURDES</SelectItem>
+                            <SearchableSelectItem value="GIS">
+                              GIS
+                            </SearchableSelectItem>
+                            <SearchableSelectItem value="LOURDES">
+                              LOURDES
+                            </SearchableSelectItem>
                           </>
                         )}
-                      </SelectContent>
-                    </Select>
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                   </div>
                 )}
               </div>
@@ -954,7 +1088,7 @@ function PurchaseOrderPageContent() {
                   </Button>
                 </div>
               </div>
-            </div>
+            </FilterPanel>
           </div>
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[1600px]">

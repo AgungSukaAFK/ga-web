@@ -28,11 +28,14 @@ import {
 } from "@/components/ui/table";
 import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -1614,23 +1617,23 @@ function CreatePOPageContent() {
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
               <div className="flex flex-col gap-3 mt-1">
-                <Select
+                <SearchableSelect
                   value={paymentTermType}
                   onValueChange={setPaymentTermType}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pilih Metode Pembayaran" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Termin">
+                  <SearchableSelectTrigger className="w-full">
+                    <SearchableSelectValue placeholder="Pilih Metode Pembayaran" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="Termin">
                       Termin (Jangka Waktu)
-                    </SelectItem>
-                    <SelectItem value="Cash">Cash (Tunai)</SelectItem>
-                    <SelectItem value="DP_BP">
+                    </SearchableSelectItem>
+                    <SearchableSelectItem value="Cash">Cash (Tunai)</SearchableSelectItem>
+                    <SearchableSelectItem value="DP_BP">
                       DP & Pelunasan (DP & Balance)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                    </SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
 
                 {paymentTermType === "Termin" && (
                   <div className="relative">
@@ -1653,24 +1656,24 @@ function CreatePOPageContent() {
                       <Label className="text-xs text-muted-foreground mb-1 block">
                         Kapan Barang Dikirim?
                       </Label>
-                      <Select
+                      <SearchableSelect
                         value={dpBpShippingType}
                         onValueChange={(v) =>
                           setDpBpShippingType(v as typeof dpBpShippingType)
                         }
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ship_after_dp">
+                        <SearchableSelectTrigger className="w-full">
+                          <SearchableSelectValue />
+                        </SearchableSelectTrigger>
+                        <SearchableSelectContent>
+                          <SearchableSelectItem value="ship_after_dp">
                             Kirim Setelah DP
-                          </SelectItem>
-                          <SelectItem value="ship_after_full_payment">
+                          </SearchableSelectItem>
+                          <SearchableSelectItem value="ship_after_full_payment">
                             Kirim Setelah Pelunasan
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                          </SearchableSelectItem>
+                        </SearchableSelectContent>
+                      </SearchableSelect>
                       <p className="text-xs text-muted-foreground mt-1">
                         {dpBpShippingType === "ship_after_dp"
                           ? "Vendor kirim barang begitu DP dibayar. Pelunasan (BP) menyusul belakangan, dilacak terpisah setelah PO berjalan."
@@ -1809,20 +1812,20 @@ function CreatePOPageContent() {
                 filenya.
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
-                <Select
+                <SearchableSelect
                   value={purchasingAttachmentType}
                   onValueChange={(v) =>
                     setPurchasingAttachmentType(v as "quotation" | "invoice")
                   }
                 >
-                  <SelectTrigger className="w-full sm:w-40">
-                    <SelectValue placeholder="Jenis lampiran" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quotation">Quotation</SelectItem>
-                    <SelectItem value="invoice">Invoice</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <SearchableSelectTrigger className="w-full sm:w-40">
+                    <SearchableSelectValue placeholder="Jenis lampiran" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
+                    <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
                 <Input
                   type="file"
                   onChange={handlePurchasingAttachmentUpload}
@@ -1898,21 +1901,21 @@ function CreatePOPageContent() {
               {!isTaxIncluded && (
                 <div className="pl-6 space-y-3 pt-2">
                   <div className="flex gap-2">
-                    <Select
+                    <SearchableSelect
                       value={taxMode}
                       onValueChange={(v) => setTaxMode(v as any)}
                       disabled={loading}
                     >
-                      <SelectTrigger className="w-full h-9 text-xs">
-                        <SelectValue placeholder="Pilih metode..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="percentage">
+                      <SearchableSelectTrigger className="w-full h-9 text-xs">
+                        <SearchableSelectValue placeholder="Pilih metode..." />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
+                        <SearchableSelectItem value="percentage">
                           Persentase (%)
-                        </SelectItem>
-                        <SelectItem value="manual">Manual (Rp)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        </SearchableSelectItem>
+                        <SearchableSelectItem value="manual">Manual (Rp)</SearchableSelectItem>
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                     {taxMode === "percentage" && (
                       <div className="relative w-20">
                         <Input
@@ -1979,18 +1982,18 @@ function CreatePOPageContent() {
               <Label className="text-xs font-semibold">
                 PPH (Pajak Penghasilan)
               </Label>
-              <Select value={pphType} onValueChange={setPphType}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Pilih PPH..." />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={pphType} onValueChange={setPphType}>
+                <SearchableSelectTrigger className="h-9 text-xs">
+                  <SearchableSelectValue placeholder="Pilih PPH..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {PPH_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
+                    <SearchableSelectItem key={opt.value} value={opt.value}>
                       {opt.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
 
             {/* Input Ongkir */}

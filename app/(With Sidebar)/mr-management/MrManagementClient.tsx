@@ -7,11 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -116,6 +123,14 @@ import {
 } from "@/components/ui/dialog";
 import { extractPlainText } from "@/lib/rich-content";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import {
+  ActiveFilter,
+  FilterPanel,
+  filterOptionLabel,
+  formatFilterDate,
+  formatFilterRange,
+  formatFilterRupiah,
+} from "@/components/filter-panel";
 
 // --- Konstanta Filter ---
 const dataLokasi: ComboboxData = [
@@ -863,6 +878,91 @@ export default function MrManagementClient() {
     );
   };
 
+  // --- Chip filter aktif (dari URL, bukan input yang belum diterapkan) ---
+  const availableCompanies = getAvailableCompanyOptions();
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (statusFilter && statusFilter !== "all")
+    activeFilters.push({
+      key: "status",
+      label: "Status",
+      value: statusFilter,
+      onRemove: () => handleFilterChange({ status: undefined }),
+    });
+  if (costCenterFilter && costCenterFilter !== "all")
+    activeFilters.push({
+      key: "cost_center",
+      label: "Cost Center",
+      value: filterOptionLabel(costCenterList, costCenterFilter),
+      onRemove: () => handleFilterChange({ cost_center: undefined }),
+    });
+  if (levelFilter && levelFilter !== "all")
+    activeFilters.push({
+      key: "level",
+      label: "Level",
+      value: filterOptionLabel(MR_LEVELS, levelFilter),
+      onRemove: () => handleFilterChange({ level: undefined }),
+    });
+  if (departmentFilter && departmentFilter !== "all")
+    activeFilters.push({
+      key: "department",
+      label: "Departemen",
+      value: filterOptionLabel(dataDepartment, departmentFilter),
+      onRemove: () => handleFilterChange({ department: undefined }),
+    });
+  if (siteFilter && siteFilter !== "all")
+    activeFilters.push({
+      key: "tujuan_site",
+      label: "Tujuan Site",
+      value: filterOptionLabel(dataLokasi, siteFilter),
+      onRemove: () => handleFilterChange({ tujuan_site: undefined }),
+    });
+  if (minEstimasi || maxEstimasi)
+    activeFilters.push({
+      key: "estimasi",
+      label: "Estimasi",
+      value: formatFilterRange(minEstimasi, maxEstimasi, formatFilterRupiah),
+      onRemove: () => {
+        setMinEstimasiInput("");
+        setMaxEstimasiInput("");
+        handleFilterChange({ min_estimasi: undefined, max_estimasi: undefined });
+      },
+    });
+  if (startDate || endDate)
+    activeFilters.push({
+      key: "tanggal",
+      label: "Tanggal",
+      value: formatFilterRange(startDate, endDate, formatFilterDate),
+      onRemove: () => {
+        setStartDateInput("");
+        setEndDateInput("");
+        handleFilterChange({ startDate: undefined, endDate: undefined });
+      },
+    });
+  if (
+    currentUser?.company &&
+    selectedCompanies.length !== availableCompanies.length
+  )
+    activeFilters.push({
+      key: "company",
+      label: "Perusahaan",
+      value:
+        selectedCompanies.length > 0 ? selectedCompanies.join(", ") : "Tidak ada",
+      onRemove: () => {
+        setSelectedCompanies(availableCompanies);
+        handleFilterChange({ page: 1 });
+      },
+    });
+
   return (
     <Content
       title="Manajemen Material Request"
@@ -923,72 +1023,72 @@ export default function MrManagementClient() {
         </div>
 
         {/* Row 2: Filter Grid */}
-        <div className="p-4 border rounded-lg bg-muted/50">
+        <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
-              <Select
+              <SearchableSelect
                 value={statusFilter || "all"}
                 onValueChange={(v) =>
                   handleFilterChange({ status: v === "all" ? undefined : v })
                 }
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Status</SelectItem>
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Status" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Status</SearchableSelectItem>
                   {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s}>
+                    <SearchableSelectItem key={s} value={s}>
                       {s}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Cost Center</label>
-              <Select
+              <SearchableSelect
                 value={costCenterFilter}
                 onValueChange={(v) => handleFilterChange({ cost_center: v })}
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Cost Center" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua CC</SelectItem>
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Cost Center" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua CC</SearchableSelectItem>
                   {costCenterList.map((cc) => (
-                    <SelectItem key={cc.value} value={cc.value}>
+                    <SearchableSelectItem key={cc.value} value={cc.value}>
                       {cc.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Level</label>
-              <Select
+              <SearchableSelect
                 value={levelFilter || "all"}
                 onValueChange={(v) =>
                   handleFilterChange({ level: v === "all" ? undefined : v })
                 }
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Level" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Level</SelectItem>
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Level" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Level</SearchableSelectItem>
                   {MR_LEVELS.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
+                    <SearchableSelectItem key={l.value} value={l.value}>
                       {l.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Departemen</label>
-              <Select
+              <SearchableSelect
                 value={departmentFilter || "all"}
                 onValueChange={(v) =>
                   handleFilterChange({
@@ -996,25 +1096,25 @@ export default function MrManagementClient() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Departemen" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Dept</SelectItem>
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Departemen" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Dept</SearchableSelectItem>
                   {dataDepartment.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
+                    <SearchableSelectItem key={d.value} value={d.value}>
                       {d.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Tujuan Site</label>
-              <Select
+              <SearchableSelect
                 value={siteFilter || "all"}
                 onValueChange={(v) =>
                   handleFilterChange({
@@ -1022,18 +1122,18 @@ export default function MrManagementClient() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Site" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Site</SelectItem>
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Site" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Site</SearchableSelectItem>
                   {dataLokasi.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
+                    <SearchableSelectItem key={l.value} value={l.value}>
                       {l.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Min Estimasi</label>
@@ -1133,7 +1233,7 @@ export default function MrManagementClient() {
               </Button>
             </div>
           </div>
-        </div>
+        </FilterPanel>
       </div>
 
       {/* --- Table Data --- */}

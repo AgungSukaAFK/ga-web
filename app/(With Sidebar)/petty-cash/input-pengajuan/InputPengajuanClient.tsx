@@ -30,11 +30,14 @@ import {
 import { stringifyRichContent } from "@/lib/rich-content";
 import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Card,
   CardContent,
@@ -415,24 +418,24 @@ export default function InputPengajuanClient() {
                     Minggu ke- (bulan ini){" "}
                     <span className="text-red-500">*</span>
                   </Label>
-                  <Select
+                  <SearchableSelect
                     value={weekOfMonth ? String(weekOfMonth) : ""}
                     onValueChange={(val) => {
                       setWeekOfMonth(Number(val));
                       setWeekManuallySet(true);
                     }}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih minggu" />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Pilih minggu" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {selectableWeeks.map((w) => (
-                        <SelectItem key={w} value={String(w)}>
+                        <SearchableSelectItem key={w} value={String(w)}>
                           Minggu ke-{w}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                   <p className="text-xs text-muted-foreground">
                     Cuma minggu ini atau minggu berikutnya di bulan berjalan -
                     minggu yang sudah lewat tidak bisa dipilih.
@@ -484,20 +487,20 @@ export default function InputPengajuanClient() {
                   <Label>
                     COA Pengajuan <span className="text-red-500">*</span>
                   </Label>
-                  <Select
+                  <SearchableSelect
                     value={lourdesCoa ?? ""}
                     onValueChange={(val) =>
                       setLourdesCoa(val as "GMI" | "GIS")
                     }
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih GMI/GIS" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GMI">GMI</SelectItem>
-                      <SelectItem value="GIS">GIS</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Pilih GMI/GIS" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="GMI">GMI</SearchableSelectItem>
+                      <SearchableSelectItem value="GIS">GIS</SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
               )}
               {templateLoading ? (

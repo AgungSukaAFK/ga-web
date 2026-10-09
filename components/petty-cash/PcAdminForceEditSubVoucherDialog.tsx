@@ -27,12 +27,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -226,22 +226,22 @@ export function PcAdminForceEditSubVoucherDialog({
 
           <div className="space-y-2">
             <Label>Status Pembayaran</Label>
-            <Select
+            <SearchableSelect
               value={status}
               onValueChange={(v) =>
                 setStatus(v as "Menunggu Pembayaran" | "Selesai")
               }
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Menunggu Pembayaran">
+              <SearchableSelectTrigger>
+                <SearchableSelectValue />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
+                <SearchableSelectItem value="Menunggu Pembayaran">
                   Menunggu Pembayaran
-                </SelectItem>
-                <SelectItem value="Selesai">Selesai</SelectItem>
-              </SelectContent>
-            </Select>
+                </SearchableSelectItem>
+                <SearchableSelectItem value="Selesai">Selesai</SearchableSelectItem>
+              </SearchableSelectContent>
+            </SearchableSelect>
           </div>
 
           <div className="space-y-2 border-t pt-4">

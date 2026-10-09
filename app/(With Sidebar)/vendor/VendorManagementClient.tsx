@@ -7,11 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -161,7 +168,7 @@ function VendorDialog({
             <Label htmlFor="tipe_vendor" className="text-right">
               Tipe Vendor
             </Label>
-            <Select
+            <SearchableSelect
               value={formData.tipe_vendor || undefined}
               onValueChange={(value) =>
                 setFormData((prev) => ({
@@ -171,17 +178,17 @@ function VendorDialog({
               }
               disabled={loading}
             >
-              <SelectTrigger className="col-span-3">
-                <SelectValue placeholder="Pilih tipe vendor..." />
-              </SelectTrigger>
-              <SelectContent>
+              <SearchableSelectTrigger className="col-span-3">
+                <SearchableSelectValue placeholder="Pilih tipe vendor..." />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
                 {VENDOR_TIPE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
+                  <SearchableSelectItem key={opt} value={opt}>
                     {VENDOR_TIPE_LABELS[opt]}
-                  </SelectItem>
+                  </SearchableSelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </SearchableSelectContent>
+            </SearchableSelect>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="pic_contact_person" className="text-right">

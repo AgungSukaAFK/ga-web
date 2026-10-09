@@ -33,12 +33,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { UserAvatar } from "@/components/user-avatar";
 import { useNotification } from "@/components/providers/NotificationProvider";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -474,25 +474,25 @@ export default function NotificationsPage() {
                 </button>
               ))}
             </div>
-            <Select
+            <SearchableSelect
               value={moduleFilter}
               onValueChange={(v) => setModuleFilter(v as ModuleKey | "all")}
             >
-              <SelectTrigger
+              <SearchableSelectTrigger
                 className="min-w-0 flex-1 sm:w-44 sm:flex-none"
                 aria-label="Filter modul"
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua modul</SelectItem>
+                <SearchableSelectValue />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
+                <SearchableSelectItem value="all">Semua modul</SearchableSelectItem>
                 {(Object.keys(MODULES) as ModuleKey[]).map((key) => (
-                  <SelectItem key={key} value={key}>
+                  <SearchableSelectItem key={key} value={key}>
                     {MODULES[key].label}
-                  </SelectItem>
+                  </SearchableSelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </SearchableSelectContent>
+            </SearchableSelect>
           </div>
         </div>
 

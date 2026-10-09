@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -276,22 +276,22 @@ export default function FeedbackPage() {
 
           <div className="space-y-2">
             <Label>Kategori Feedback</Label>
-            <Select
+            <SearchableSelect
               onValueChange={setCategory}
               value={category}
               disabled={loading}
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih kategori feedback..." />
-              </SelectTrigger>
-              <SelectContent>
+              <SearchableSelectTrigger>
+                <SearchableSelectValue placeholder="Pilih kategori feedback..." />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
                 {kategoriFeedback.map((kat) => (
-                  <SelectItem key={kat} value={kat}>
+                  <SearchableSelectItem key={kat} value={kat}>
                     {kat}
-                  </SelectItem>
+                  </SearchableSelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </SearchableSelectContent>
+            </SearchableSelect>
           </div>
 
           {category === "Lainnya" && (

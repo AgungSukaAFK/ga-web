@@ -8,11 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -35,6 +42,11 @@ import { UserAvatar } from "@/components/user-avatar";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import {
+  ActiveFilter,
+  FilterPanel,
+} from "@/components/filter-panel";
+import { CreateUserDialog } from "./CreateUserDialog";
 
 // Tipe data spesifik untuk tabel ini
 interface UserForTable extends Profile {
@@ -80,6 +92,7 @@ export function UserManagementClientContent() {
   const [totalItems, setTotalItems] = useState<number>(0);
   const [isPending, startTransition] = useTransition();
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null); // State untuk profil admin
+  const [reloadKey, setReloadKey] = useState(0); // Dinaikkan untuk refetch setelah tambah user
 
   // State dari URL
   const currentPage = Number(searchParams.get("page") || "1");
@@ -234,6 +247,7 @@ export function UserManagementClientContent() {
     statusFilter,
     fetchIdsByStatus,
     limit,
+    reloadKey,
   ]); // Tambahkan adminProfile sebagai dependency jika perlu
 
 
@@ -323,6 +337,59 @@ export function UserManagementClientContent() {
     }
   };
 
+  const clearFilters = () => {
+    resetSearchInput();
+    startTransition(() => {
+      router.push(pathname);
+    });
+  };
+
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (roleFilter && roleFilter !== "all")
+    activeFilters.push({
+      key: "role",
+      label: "Role",
+      value: roleFilter,
+      onRemove: () => handleFilterChange({ role: undefined }),
+    });
+  if (lokasiFilter && lokasiFilter !== "all")
+    activeFilters.push({
+      key: "lokasi",
+      label: "Lokasi",
+      value: lokasiFilter,
+      onRemove: () => handleFilterChange({ lokasi: undefined }),
+    });
+  if (departmentFilter && departmentFilter !== "all")
+    activeFilters.push({
+      key: "department",
+      label: "Departemen",
+      value: departmentFilter,
+      onRemove: () => handleFilterChange({ department: undefined }),
+    });
+  if (statusFilter && statusFilter !== "all")
+    activeFilters.push({
+      key: "status",
+      label: "Status",
+      value:
+        statusFilter === "active"
+          ? "Aktif"
+          : statusFilter === "inactive"
+            ? "Nonaktif"
+            : statusFilter,
+      onRemove: () => handleFilterChange({ status: undefined }),
+    });
+
   return (
     <Content title="Manajemen User" size="lg" className="col-span-12">
       {/* --- Filter Section --- */}
@@ -337,6 +404,13 @@ export function UserManagementClientContent() {
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
+          <CreateUserDialog
+            roles={dataRole}
+            lokasiOptions={dataLokasi}
+            departmentOptions={dataDepartment}
+            adminCompany={adminProfile?.company}
+            onCreated={() => setReloadKey((k) => k + 1)}
+          />
           <Button
             onClick={handleDownloadExcel}
             disabled={isExporting}
@@ -351,99 +425,99 @@ export function UserManagementClientContent() {
           </Button>
         </div>
 
-        <div className="p-4 border rounded-lg bg-muted/50">
+        <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Role</label>
-              <Select
+              <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
                     role: value === "all" ? undefined : value,
                   })
                 }
-                defaultValue={roleFilter || "all"}
+                value={roleFilter || "all"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Role</SelectItem>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Filter role" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Role</SearchableSelectItem>
                   {dataRole.map((role) => (
-                    <SelectItem key={role} value={role}>
+                    <SearchableSelectItem key={role} value={role}>
                       {role}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Lokasi</label>
-              <Select
+              <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
                     lokasi: value === "all" ? undefined : value,
                   })
                 }
-                defaultValue={lokasiFilter || "all"}
+                value={lokasiFilter || "all"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter lokasi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Lokasi</SelectItem>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Filter lokasi" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Lokasi</SearchableSelectItem>
                   {dataLokasi.map((lok) => (
-                    <SelectItem key={lok} value={lok}>
+                    <SearchableSelectItem key={lok} value={lok}>
                       {lok}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Departemen</label>
-              <Select
+              <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
                     department: value === "all" ? undefined : value,
                   })
                 }
-                defaultValue={departmentFilter || "all"}
+                value={departmentFilter || "all"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter departemen" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Departemen</SelectItem>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Filter departemen" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Departemen</SearchableSelectItem>
                   {dataDepartment.map((dept) => (
-                    <SelectItem key={dept} value={dept}>
+                    <SearchableSelectItem key={dept} value={dept}>
                       {dept}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Status</label>
-              <Select
+              <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
                     status: value === "all" ? undefined : value,
                   })
                 }
-                defaultValue={statusFilter || "all"}
+                value={statusFilter || "all"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Status</SelectItem>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="inactive">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Filter status" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Status</SearchableSelectItem>
+                  <SearchableSelectItem value="active">Aktif</SearchableSelectItem>
+                  <SearchableSelectItem value="inactive">Nonaktif</SearchableSelectItem>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
           </div>
-        </div>
+        </FilterPanel>
       </div>
 
       {/* --- Table Section --- */}

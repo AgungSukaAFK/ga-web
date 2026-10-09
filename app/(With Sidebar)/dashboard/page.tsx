@@ -328,7 +328,7 @@ export default function Dashboard() {
           --color-mr: hsl(221 83% 53%);
           --color-po: hsl(142 71% 45%);
         }
-        .dark {
+        .dark, .soft-dark {
           --color-mr: hsl(221 83% 63%);
           --color-po: hsl(142 71% 55%);
         }

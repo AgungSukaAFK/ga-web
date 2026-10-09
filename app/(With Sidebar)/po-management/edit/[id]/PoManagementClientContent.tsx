@@ -23,12 +23,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -789,21 +789,21 @@ export function PoManagementEditClientContent({
             </Button>
             <div className="flex items-center gap-1">
               <Label className="text-sm font-medium">Status PO:</Label>
-              <Select
+              <SearchableSelect
                 value={poForm.status}
                 onValueChange={handlePoStatusChange}
               >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Ubah Status PO..." />
-                </SelectTrigger>
-                <SelectContent>
+                <SearchableSelectTrigger className="w-[180px]">
+                  <SearchableSelectValue placeholder="Ubah Status PO..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {PO_STATUS_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
+                    <SearchableSelectItem key={status} value={status}>
                       {status}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
           </div>
         </div>
@@ -1072,18 +1072,18 @@ export function PoManagementEditClientContent({
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
               <div className="flex gap-2 mt-1">
-                <Select
+                <SearchableSelect
                   value={paymentTermType}
                   onValueChange={(value) => setPaymentTermType(value)}
                 >
-                  <SelectTrigger className="w-1/2">
-                    <SelectValue placeholder="Pilih tipe..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Termin">Termin</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <SearchableSelectTrigger className="w-1/2">
+                    <SearchableSelectValue placeholder="Pilih tipe..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="Termin">Termin</SearchableSelectItem>
+                    <SearchableSelectItem value="Cash">Cash</SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
                 {paymentTermType === "Termin" && (
                   <div className="w-1/2 relative">
                     <Input
@@ -1260,7 +1260,7 @@ export function PoManagementEditClientContent({
                       {approver.type} ({approver.role})
                     </p>
                   </div>
-                  <Select
+                  <SearchableSelect
                     value={approver.status}
                     onValueChange={(newStatus) =>
                       handleApprovalStatusChange(
@@ -1269,21 +1269,21 @@ export function PoManagementEditClientContent({
                       )
                     }
                   >
-                    <SelectTrigger className="w-[120px] flex-shrink-0 capitalize">
-                      <SelectValue placeholder="Status..." />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger className="w-[120px] flex-shrink-0 capitalize">
+                      <SearchableSelectValue placeholder="Status..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {APPROVAL_STATUS_OPTIONS.map((opt) => (
-                        <SelectItem
+                        <SearchableSelectItem
                           key={opt}
                           value={opt}
                           className="capitalize"
                         >
                           {opt}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
               ))}
             </div>
@@ -1333,21 +1333,21 @@ export function PoManagementEditClientContent({
                   <Label className="text-sm font-medium">
                     Metode Pajak (PPN)
                   </Label>
-                  <Select
+                  <SearchableSelect
                     value={taxMode}
                     onValueChange={(v) => setTaxMode(v as any)}
                     disabled={
                       actionLoading || isUploadingPO || isUploadingFinance
                     }
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih metode..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percentage">Persentase (%)</SelectItem>
-                      <SelectItem value="manual">Manual (Rp)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <SearchableSelectTrigger className="w-full">
+                      <SearchableSelectValue placeholder="Pilih metode..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="percentage">Persentase (%)</SearchableSelectItem>
+                      <SearchableSelectItem value="manual">Manual (Rp)</SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                   {taxMode === "percentage" && (
                     <div className="relative animate-in fade-in">
                       <Input

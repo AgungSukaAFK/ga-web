@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+  SearchableSelectGroup,
+  SearchableSelectLabel,
+} from "@/components/ui/searchable-select";
 import {
   Bell,
   Volume2,
@@ -271,31 +271,31 @@ export function NotificationSettings() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Select
+            <SearchableSelect
               value={settings.soundType}
               onValueChange={(v) => selectSound(v as typeof settings.soundType)}
               disabled={soundDisabled}
             >
-              <SelectTrigger className="min-w-0 flex-1">
-                <SelectValue placeholder="Pilih suara" />
-              </SelectTrigger>
-              <SelectContent className="max-h-80">
+              <SearchableSelectTrigger className="min-w-0 flex-1">
+                <SearchableSelectValue placeholder="Pilih suara" />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent className="max-h-80">
                 {SOUND_PRESET_GROUPS.map((group) => (
-                  <SelectGroup key={group}>
-                    <SelectLabel className="text-xs text-muted-foreground">
+                  <SearchableSelectGroup key={group}>
+                    <SearchableSelectLabel className="text-xs text-muted-foreground">
                       {group}
-                    </SelectLabel>
+                    </SearchableSelectLabel>
                     {SOUND_PRESETS.filter((p) => p.group === group).map(
                       (p) => (
-                        <SelectItem key={p.id} value={p.id}>
+                        <SearchableSelectItem key={p.id} value={p.id}>
                           {p.label}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ),
                     )}
-                  </SelectGroup>
+                  </SearchableSelectGroup>
                 ))}
-              </SelectContent>
-            </Select>
+              </SearchableSelectContent>
+            </SearchableSelect>
             <Button
               type="button"
               variant="outline"
