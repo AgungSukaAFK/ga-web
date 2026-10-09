@@ -6,6 +6,8 @@
     "dev:prod": "dotenv -e .env -- next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "build:local": "dotenv -e .env.development.local -e .env -- next build",
+    "start:local": "dotenv -e .env.development.local -e .env -- next start",
     "lint": "next lint"
   },
   "dependencies": {

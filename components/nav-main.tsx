@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { type LucideIcon } from "lucide-react";
 
 import {
@@ -43,6 +44,13 @@ export function NavMain({
   hideable?: boolean;
 }) {
   const { hiddenUrls, toggleUrl } = useSidebarGroupVisibility(label);
+  // Popover Radix baru dirender setelah mount: id aria-controls dari useId
+  // bisa beda antara SSR & klien (hydration mismatch), jadi sebelum mount
+  // cukup tampilkan tombol biasa yang tampilannya sama.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const aturButtonClass =
+    "group-data-[collapsible=icon]:hidden mr-1 h-6 shrink-0 px-2 text-[11px] font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
   const visibleItems = hideable
     ? items.filter((item) => !hiddenUrls.includes(item.url))
     : items;
@@ -51,13 +59,18 @@ export function NavMain({
     <SidebarGroup>
       <div className="flex items-center justify-between">
         <SidebarGroupLabel>{label}</SidebarGroupLabel>
-        {hideable && items.length > 0 && (
+        {hideable && items.length > 0 && !mounted && (
+          <Button variant="ghost" size="sm" className={aturButtonClass}>
+            Atur
+          </Button>
+        )}
+        {hideable && items.length > 0 && mounted && (
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="group-data-[collapsible=icon]:hidden mr-1 h-6 shrink-0 px-2 text-[11px] font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                className={aturButtonClass}
               >
                 Atur
               </Button>
