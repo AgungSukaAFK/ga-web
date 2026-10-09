@@ -198,6 +198,21 @@ export function PaginatedPrintDocument<T>({
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => setPortalTarget(document.body), []);
 
+  // Ukuran font pilihan user (FontSwitcher) diskalakan lewat font-size
+  // <html>, sedangkan padding/teks dokumen ini banyak yang berbasis rem.
+  // Selama pengukuran+cetak, kembalikan root ke 100% (html[data-printing]
+  // di globals.css) supaya hasil cetak & tinggi terukur selalu standar.
+  // Harus useLayoutEffect & SEBELUM useMeasuredPagination, biar sudah
+  // terpasang saat pengukuran jalan.
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const root = document.documentElement;
+    root.dataset.printing = "";
+    return () => {
+      delete root.dataset.printing;
+    };
+  }, [enabled]);
+
   const { pages, refs } = useMeasuredPagination({
     rows,
     enabled,

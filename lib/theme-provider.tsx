@@ -5,6 +5,16 @@ import {
   ThemeProvider as NextThemesProvider,
   ThemeProviderProps,
 } from "next-themes";
+import {
+  DEFAULT_FONT_FAMILY,
+  DEFAULT_FONT_SIZE,
+  FONT_FAMILY_STORAGE_KEY,
+  FONT_SIZE_STORAGE_KEY,
+  fontFamilies,
+  fontSizes,
+  type FontFamily,
+  type FontSize,
+} from "@/lib/font-options";
 
 // Definisikan tema aksen yang tersedia (sesuai CSS .theme-<name> di
 // globals.css). `color` = warna primary mode terang, dipakai untuk preview
@@ -36,6 +46,10 @@ type AccentTheme = (typeof accentThemes)[number]["name"];
 interface CustomThemeContextType {
   accent: AccentTheme;
   setAccent: (accent: AccentTheme) => void;
+  fontFamily: FontFamily;
+  setFontFamily: (font: FontFamily) => void;
+  fontSize: FontSize;
+  setFontSize: (size: FontSize) => void;
 }
 
 // Konteks untuk menyimpan tema aksen
@@ -48,6 +62,10 @@ export function CustomThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [accent, setAccent] = useState<AccentTheme>("zinc"); // Default ke zinc
+  // null = belum dibaca dari localStorage, supaya nilai yang sudah dipasang
+  // script anti-flash (lib/font-options.ts) tidak tertimpa default dulu.
+  const [fontFamily, setFontFamily] = useState<FontFamily | null>(null);
+  const [fontSize, setFontSize] = useState<FontSize | null>(null);
 
   // Saat komponen dimuat, cek local storage untuk tema aksen yang disimpan
   useEffect(() => {
@@ -55,7 +73,34 @@ export function CustomThemeProvider({
     if (storedAccent && accentThemes.find((t) => t.name === storedAccent)) {
       setAccent(storedAccent);
     }
+
+    const storedFont = localStorage.getItem(FONT_FAMILY_STORAGE_KEY);
+    setFontFamily(
+      fontFamilies.find((f) => f.name === storedFont)?.name ??
+        DEFAULT_FONT_FAMILY,
+    );
+    const storedSize = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
+    setFontSize(
+      fontSizes.find((s) => s.name === storedSize)?.name ?? DEFAULT_FONT_SIZE,
+    );
   }, []);
+
+  // Terapkan font & ukuran ke <html> (dipetakan di globals.css)
+  useEffect(() => {
+    if (!fontFamily) return;
+    const root = window.document.documentElement;
+    if (fontFamily === DEFAULT_FONT_FAMILY) delete root.dataset.font;
+    else root.dataset.font = fontFamily;
+    localStorage.setItem(FONT_FAMILY_STORAGE_KEY, fontFamily);
+  }, [fontFamily]);
+
+  useEffect(() => {
+    if (!fontSize) return;
+    const root = window.document.documentElement;
+    if (fontSize === DEFAULT_FONT_SIZE) delete root.dataset.fontSize;
+    else root.dataset.fontSize = fontSize;
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, fontSize);
+  }, [fontSize]);
 
   // Saat tema aksen berubah, terapkan kelas CSS ke tag <html>
   useEffect(() => {
@@ -76,7 +121,16 @@ export function CustomThemeProvider({
   }, [accent]);
 
   return (
-    <CustomThemeContext.Provider value={{ accent, setAccent }}>
+    <CustomThemeContext.Provider
+      value={{
+        accent,
+        setAccent,
+        fontFamily: fontFamily ?? DEFAULT_FONT_FAMILY,
+        setFontFamily,
+        fontSize: fontSize ?? DEFAULT_FONT_SIZE,
+        setFontSize,
+      }}
+    >
       <NextThemesProvider {...props}>{children}</NextThemesProvider>
     </CustomThemeContext.Provider>
   );
