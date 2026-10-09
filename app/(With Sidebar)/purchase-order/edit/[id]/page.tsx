@@ -24,11 +24,14 @@ import {
 } from "@/components/ui/table";
 import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -1144,21 +1147,21 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             <div>
               <Label className="text-sm font-medium">Payment Term</Label>
               <div className="flex flex-col gap-3 mt-1">
-                <Select
+                <SearchableSelect
                   value={paymentTermType}
                   onValueChange={(value) => setPaymentTermType(value)}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pilih tipe..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Termin">Termin</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="DP_BP">
+                  <SearchableSelectTrigger className="w-full">
+                    <SearchableSelectValue placeholder="Pilih tipe..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="Termin">Termin</SearchableSelectItem>
+                    <SearchableSelectItem value="Cash">Cash</SearchableSelectItem>
+                    <SearchableSelectItem value="DP_BP">
                       DP & Pelunasan (DP & Balance)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                    </SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
 
                 {paymentTermType === "Termin" && (
                   <div className="relative">
@@ -1381,20 +1384,20 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           <div className="space-y-4">
             <Label>Tambah Lampiran Purchasing (Quotation/Invoice)</Label>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Select
+              <SearchableSelect
                 value={purchasingAttachmentType}
                 onValueChange={(v) =>
                   setPurchasingAttachmentType(v as "quotation" | "invoice")
                 }
               >
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Jenis lampiran" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="quotation">Quotation</SelectItem>
-                  <SelectItem value="invoice">Invoice</SelectItem>
-                </SelectContent>
-              </Select>
+                <SearchableSelectTrigger className="w-full sm:w-40">
+                  <SearchableSelectValue placeholder="Jenis lampiran" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
+                  <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
+                </SearchableSelectContent>
+              </SearchableSelect>
               <Input
                 id="purchasing-attachment-upload"
                 type="file"
@@ -1506,21 +1509,21 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               {!isTaxIncluded && (
                 <div className="pl-6 space-y-3 pt-2 animate-in fade-in">
                   <div className="flex gap-2">
-                    <Select
+                    <SearchableSelect
                       value={taxMode}
                       onValueChange={(v) => setTaxMode(v as any)}
                       disabled={actionLoading}
                     >
-                      <SelectTrigger className="w-full h-9 text-xs">
-                        <SelectValue placeholder="Metode PPN" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="percentage">
+                      <SearchableSelectTrigger className="w-full h-9 text-xs">
+                        <SearchableSelectValue placeholder="Metode PPN" />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
+                        <SearchableSelectItem value="percentage">
                           Persentase (%)
-                        </SelectItem>
-                        <SelectItem value="manual">Manual (Rp)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        </SearchableSelectItem>
+                        <SearchableSelectItem value="manual">Manual (Rp)</SearchableSelectItem>
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                     {taxMode === "percentage" && (
                       <div className="relative w-20">
                         <Input
@@ -1587,18 +1590,18 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
               <Label className="text-xs font-semibold">
                 PPH (Pajak Penghasilan)
               </Label>
-              <Select value={pphType} onValueChange={setPphType}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Pilih PPH..." />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={pphType} onValueChange={setPphType}>
+                <SearchableSelectTrigger className="h-9 text-xs">
+                  <SearchableSelectValue placeholder="Pilih PPH..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {PPH_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
+                    <SearchableSelectItem key={opt.value} value={opt.value}>
                       {opt.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
 
             {/* Input Ongkir */}

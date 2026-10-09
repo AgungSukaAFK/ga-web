@@ -8,11 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -49,6 +56,7 @@ import {
   updateGaStock,
 } from "@/services/gaStockService";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 
 const COMPANY_OPTIONS = ["GMI", "GIS", "LOURDES"];
 
@@ -190,18 +198,21 @@ function StockDialog({
           <div className="grid gap-2">
             <Label>Perusahaan</Label>
             {isCreate && isLourdes ? (
-              <Select value={companyCode} onValueChange={setCompanyCode}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih perusahaan..." />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect
+                value={companyCode}
+                onValueChange={setCompanyCode}
+              >
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Pilih perusahaan..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {COMPANY_OPTIONS.map((c) => (
-                    <SelectItem key={c} value={c}>
+                    <SearchableSelectItem key={c} value={c}>
                       {c}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             ) : (
               <div className="flex h-10 w-full items-center rounded-md border bg-muted/40 px-3 py-2 text-sm">
                 {companyCode || "-"}
@@ -294,7 +305,11 @@ export function GaStockClientContent() {
     (paramsToUpdate: Record<string, string | number | undefined>) => {
       const params = new URLSearchParams(searchParams.toString());
       Object.entries(paramsToUpdate).forEach(([name, value]) => {
-        if (value !== undefined && value !== null && String(value).trim() !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          String(value).trim() !== ""
+        ) {
           params.set(name, String(value));
         } else {
           params.delete(name);
@@ -397,6 +412,31 @@ export function GaStockClientContent() {
     }
   };
 
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (companyFilter && companyFilter !== "all")
+    activeFilters.push({
+      key: "company",
+      label: "Perusahaan",
+      value: companyFilter,
+      onRemove: () => handleFilterChange({ company: undefined }),
+    });
+
+  const clearFilters = () => {
+    resetSearchInput();
+    handleFilterChange({ search: undefined, company: undefined });
+  };
+
   return (
     <>
       <Content
@@ -409,7 +449,7 @@ export function GaStockClientContent() {
         }
         className="col-span-12"
       >
-        <div className="flex flex-col gap-4 mb-6 md:flex-row md:items-end">
+        <div className="flex flex-col gap-4 mb-6">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
@@ -420,29 +460,35 @@ export function GaStockClientContent() {
             />
           </div>
           {adminProfile?.company === "LOURDES" && (
-            <div className="flex flex-col gap-2 md:w-56">
-              <Label className="text-sm font-medium">Perusahaan</Label>
-              <Select
-                onValueChange={(value) =>
-                  handleFilterChange({
-                    company: value === "all" ? undefined : value,
-                  })
-                }
-                defaultValue={companyFilter || "all"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter perusahaan" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Perusahaan</SelectItem>
-                  {COMPANY_OPTIONS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label className="text-sm font-medium">Perusahaan</Label>
+                  <SearchableSelect
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        company: value === "all" ? undefined : value,
+                      })
+                    }
+                    value={companyFilter || "all"}
+                  >
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter perusahaan" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua Perusahaan
+                      </SearchableSelectItem>
+                      {COMPANY_OPTIONS.map((c) => (
+                        <SearchableSelectItem key={c} value={c}>
+                          {c}
+                        </SearchableSelectItem>
+                      ))}
+                    </SearchableSelectContent>
+                  </SearchableSelect>
+                </div>
+              </div>
+            </FilterPanel>
           )}
         </div>
 

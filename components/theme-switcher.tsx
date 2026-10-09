@@ -8,9 +8,17 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Laptop, Moon, Sun } from "lucide-react";
+import { CloudMoon, Laptop, Moon, Sun, SunDim } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+
+const THEME_OPTIONS = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "soft-light", label: "Soft Light", icon: SunDim },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "soft-dark", label: "Soft Dark", icon: CloudMoon },
+  { value: "system", label: "System", icon: Laptop },
+] as const;
 
 const ThemeSwitcher = () => {
   const [mounted, setMounted] = useState(false);
@@ -26,30 +34,18 @@ const ThemeSwitcher = () => {
   }
 
   const ICON_SIZE = 16;
+  const ActiveIcon =
+    THEME_OPTIONS.find((o) => o.value === theme)?.icon ?? Laptop;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size={"sm"}>
-          {theme === "light" ? (
-            <Sun
-              key="light"
-              size={ICON_SIZE}
-              className={"text-muted-foreground"}
-            />
-          ) : theme === "dark" ? (
-            <Moon
-              key="dark"
-              size={ICON_SIZE}
-              className={"text-muted-foreground"}
-            />
-          ) : (
-            <Laptop
-              key="system"
-              size={ICON_SIZE}
-              className={"text-muted-foreground"}
-            />
-          )}
+          <ActiveIcon
+            key={theme}
+            size={ICON_SIZE}
+            className={"text-muted-foreground"}
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-content" align="start">
@@ -57,18 +53,16 @@ const ThemeSwitcher = () => {
           value={theme}
           onValueChange={(e) => setTheme(e)}
         >
-          <DropdownMenuRadioItem className="flex gap-2" value="light">
-            <Sun size={ICON_SIZE} className="text-muted-foreground" />{" "}
-            <span>Light</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem className="flex gap-2" value="dark">
-            <Moon size={ICON_SIZE} className="text-muted-foreground" />{" "}
-            <span>Dark</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem className="flex gap-2" value="system">
-            <Laptop size={ICON_SIZE} className="text-muted-foreground" />{" "}
-            <span>System</span>
-          </DropdownMenuRadioItem>
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <DropdownMenuRadioItem
+              key={value}
+              className="flex gap-2"
+              value={value}
+            >
+              <Icon size={ICON_SIZE} className="text-muted-foreground" />{" "}
+              <span>{label}</span>
+            </DropdownMenuRadioItem>
+          ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>

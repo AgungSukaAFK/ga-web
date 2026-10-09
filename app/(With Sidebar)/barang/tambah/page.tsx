@@ -322,7 +322,7 @@ export default function TambahBarangPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    className="h-6 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/40"
                     onClick={handleDownloadTemplate}
                   >
                     <Download className="mr-1 h-3 w-3" /> Download Template

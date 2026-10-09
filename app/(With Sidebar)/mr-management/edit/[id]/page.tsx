@@ -102,12 +102,12 @@ import {
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { fetchActiveCostCenters, convertMrCompany } from "@/services/mrService";
 import { format } from "date-fns";
 import { DATA_LEVEL, STATUS_OPTIONS } from "@/type/enum";
@@ -1054,18 +1054,18 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             {/* Direct Status Changer */}
             <div className="flex items-center gap-1">
               <Label className="text-sm font-medium">Status MR:</Label>
-              <Select value={mr.status} onValueChange={handleMrStatusChange}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Ubah Status MR..." />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={mr.status} onValueChange={handleMrStatusChange}>
+                <SearchableSelectTrigger className="w-[180px]">
+                  <SearchableSelectValue placeholder="Ubah Status MR..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {STATUS_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
+                    <SearchableSelectItem key={status} value={status}>
                       {status}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
           </div>
         </div>
@@ -1221,22 +1221,22 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                     </Button>
                   </div>
                   {isEditing ? (
-                    <Select
+                    <SearchableSelect
                       onValueChange={handleLevelChange}
                       defaultValue={mr.level || ""}
                       disabled={actionLoading}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih level..." />
-                      </SelectTrigger>
-                      <SelectContent>
+                      <SearchableSelectTrigger>
+                        <SearchableSelectValue placeholder="Pilih level..." />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
                         {DATA_LEVEL.map((lvl) => (
-                          <SelectItem key={lvl.value} value={lvl.value}>
+                          <SearchableSelectItem key={lvl.value} value={lvl.value}>
                             {lvl.label}
-                          </SelectItem>
+                          </SearchableSelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                   ) : (
                     <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
                       <Layers className="h-4 w-4" /> {mr.level || "N/A"}
@@ -1572,7 +1572,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                             <UserCog className="h-4 w-4" />
                           </Button>
                         )}
-                        <Select
+                        <SearchableSelect
                           value={approver.status}
                           onValueChange={(newStatus) =>
                             handleApprovalStatusChange(
@@ -1581,21 +1581,21 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                             )
                           }
                         >
-                          <SelectTrigger className="w-[120px] capitalize">
-                            <SelectValue placeholder="Status..." />
-                          </SelectTrigger>
-                          <SelectContent>
+                          <SearchableSelectTrigger className="w-[120px] capitalize">
+                            <SearchableSelectValue placeholder="Status..." />
+                          </SearchableSelectTrigger>
+                          <SearchableSelectContent>
                             {APPROVAL_STATUS_OPTIONS.map((opt) => (
-                              <SelectItem
+                              <SearchableSelectItem
                                 key={opt}
                                 value={opt}
                                 className="capitalize"
                               >
                                 {opt}
-                              </SelectItem>
+                              </SearchableSelectItem>
                             ))}
-                          </SelectContent>
-                        </Select>
+                          </SearchableSelectContent>
+                        </SearchableSelect>
                       </div>
                     </div>
                   ))}
@@ -1977,18 +1977,18 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             </div>
             <div className="space-y-2">
               <Label>Konversi ke Company</Label>
-              <Select value={targetCompany} onValueChange={setTargetCompany}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih company tujuan..." />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={targetCompany} onValueChange={setTargetCompany}>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Pilih company tujuan..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {["GMI", "GIS", "LOURDES"]
                     .filter((c) => c !== mr?.company_code)
                     .map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                      <SearchableSelectItem key={c} value={c}>{c}</SearchableSelectItem>
                     ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">Yang akan berubah:</p>

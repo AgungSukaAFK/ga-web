@@ -35,12 +35,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Attachment,
   PcDocType,
@@ -177,18 +177,18 @@ export function PcAdminOverridePanel({
           <p className="text-xs font-medium text-muted-foreground">
             Status Dokumen (override)
           </p>
-          <Select value={editStatus} onValueChange={setEditStatus}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+          <SearchableSelect value={editStatus} onValueChange={setEditStatus}>
+            <SearchableSelectTrigger>
+              <SearchableSelectValue />
+            </SearchableSelectTrigger>
+            <SearchableSelectContent>
               {statusOptions.map((s) => (
-                <SelectItem key={s} value={s}>
+                <SearchableSelectItem key={s} value={s}>
                   {s}
-                </SelectItem>
+                </SearchableSelectItem>
               ))}
-            </SelectContent>
-          </Select>
+            </SearchableSelectContent>
+          </SearchableSelect>
         </div>
 
         <div className="space-y-2">
@@ -207,7 +207,7 @@ export function PcAdminOverridePanel({
                     ({app.department})
                   </span>
                 </span>
-                <Select
+                <SearchableSelect
                   value={app.status}
                   onValueChange={(v) =>
                     updateApprovalStatus(
@@ -216,17 +216,17 @@ export function PcAdminOverridePanel({
                     )
                   }
                 >
-                  <SelectTrigger className="w-[130px] h-8 shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <SearchableSelectTrigger className="w-[130px] h-8 shrink-0">
+                    <SearchableSelectValue />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
                     {APPROVAL_STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s}>
+                      <SearchableSelectItem key={s} value={s}>
                         {s}
-                      </SelectItem>
+                      </SearchableSelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </SearchableSelectContent>
+                </SearchableSelect>
               </div>
             ))}
             {editApprovals.length === 0 && (

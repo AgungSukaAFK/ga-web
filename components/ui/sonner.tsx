@@ -5,10 +5,13 @@ import { Toaster as Sonner, ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
+  // Sonner hanya kenal light/dark/system, jadi tema soft dipetakan ke basisnya
+  const sonnerTheme =
+    theme === "soft-light" ? "light" : theme === "soft-dark" ? "dark" : theme
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={sonnerTheme as ToasterProps["theme"]}
       className="toaster group"
       style={
         {

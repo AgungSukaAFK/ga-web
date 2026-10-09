@@ -105,12 +105,12 @@ import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1883,22 +1883,22 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-muted-foreground" />
                 {isEditing ? (
-                  <Select
+                  <SearchableSelect
                     onValueChange={(v) => setMr({ ...mr, level: v as any })}
                     value={mr.level || ""}
                     disabled={actionLoading}
                   >
-                    <SelectTrigger className="w-full bg-background">
-                      <SelectValue placeholder="Pilih level..." />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger className="w-full bg-background">
+                      <SearchableSelectValue placeholder="Pilih level..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {MR_LEVELS.map((lvl) => (
-                        <SelectItem key={lvl.value} value={lvl.value}>
+                        <SearchableSelectItem key={lvl.value} value={lvl.value}>
                           {lvl.label}
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 ) : (
                   <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
                     {mr.level || "N/A"}
@@ -2300,7 +2300,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50"
+                                className="h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:text-amber-200 dark:hover:bg-amber-950/40"
                                 onClick={() => setDeliveryDetailItem(item)}
                               >
                                 <Truck className="mr-1 h-3 w-3" /> Lihat Detail
@@ -2329,7 +2329,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs border-emerald-200 text-emerald-700 hover:text-emerald-700 hover:bg-emerald-50"
+                                  className="h-7 text-xs border-emerald-200 text-emerald-700 hover:text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200 dark:hover:bg-emerald-950/40"
                                   onClick={() => setBastDetailItem(item)}
                                 >
                                   <FileText className="mr-1 h-3 w-3" /> Lihat
@@ -3031,26 +3031,26 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                   sehingga tidak ke-detect otomatis.
                 </p>
                 <div className="flex gap-2">
-                  <Select
+                  <SearchableSelect
                     value={manualLinkPoCode}
                     onValueChange={setManualLinkPoCode}
                   >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Pilih PO..." />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <SearchableSelectTrigger className="flex-1">
+                      <SearchableSelectValue placeholder="Pilih PO..." />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
                       {posForMr.length === 0 && (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
                           Belum ada PO di MR ini.
                         </div>
                       )}
                       {posForMr.map((po) => (
-                        <SelectItem key={po.id} value={po.kode_po}>
+                        <SearchableSelectItem key={po.id} value={po.kode_po}>
                           {po.kode_po} ({po.status})
-                        </SelectItem>
+                        </SearchableSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                   <Input
                     type="number"
                     min="1"
@@ -3076,25 +3076,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
             <div className="grid gap-2">
               <Label htmlFor="item-status">Status Barang</Label>
-              <Select
+              <SearchableSelect
                 value={itemStatusForm.status}
                 onValueChange={(val) =>
                   setItemStatusForm({ ...itemStatusForm, status: val })
                 }
               >
-                <SelectTrigger id="item-status">
-                  <SelectValue placeholder="Pilih Status" />
-                </SelectTrigger>
-                <SelectContent>
+                <SearchableSelectTrigger id="item-status">
+                  <SearchableSelectValue placeholder="Pilih Status" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {Object.entries(MR_ITEM_STATUS_LABELS).map(
                     ([key, label]) => (
-                      <SelectItem key={key} value={key}>
+                      <SearchableSelectItem key={key} value={key}>
                         {label}
-                      </SelectItem>
+                      </SearchableSelectItem>
                     ),
                   )}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
 
             <div className="grid gap-2">

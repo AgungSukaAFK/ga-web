@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Content } from "@/components/content";
+import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,12 +39,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -344,13 +345,33 @@ export default function PettyCashManagementClient() {
       >
         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-2">
           <ShieldAlert className="h-10 w-10" />
-          <p className="text-sm">
-            Anda tidak memiliki akses ke halaman ini.
-          </p>
+          <p className="text-sm">Anda tidak memiliki akses ke halaman ini.</p>
         </div>
       </Content>
     );
   }
+
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (search.trim())
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: search.trim(),
+      onRemove: () => setSearch(""),
+    });
+  if (statusFilter !== "all")
+    activeFilters.push({
+      key: "status",
+      label: "Status",
+      value: statusFilter,
+      onRemove: () => setStatusFilter("all"),
+    });
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+  };
 
   return (
     <>
@@ -358,7 +379,12 @@ export default function PettyCashManagementClient() {
         title="Management Petty Cash"
         description="Pantau, ganti kode, edit paksa, & hapus (dgn cascade + refund budget otomatis) semua dokumen Petty Cash lintas departemen (admin only)."
         cardAction={
-          <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadData}
+            disabled={loading}
+          >
             <RefreshCcw
               className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
             />
@@ -368,7 +394,7 @@ export default function PettyCashManagementClient() {
       >
         <div className="space-y-4">
           <Tabs value={stage} onValueChange={(v) => setStage(v as StageKey)}>
-            <TabsList>
+            <TabsList className="max-w-full justify-start overflow-x-auto">
               <TabsTrigger value="pengajuan">Pengajuan</TabsTrigger>
               <TabsTrigger value="voucher">Voucher</TabsTrigger>
               <TabsTrigger value="sub_voucher">Sub-Voucher</TabsTrigger>
@@ -376,30 +402,41 @@ export default function PettyCashManagementClient() {
             </TabsList>
           </Tabs>
 
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari kode, departemen, atau nama pemohon..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="sm:w-[200px]">
-                <SelectValue placeholder="Semua Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                {config.statusOptions.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari kode, departemen, atau nama pemohon..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
           </div>
+
+          <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Status</label>
+                <SearchableSelect
+                  value={statusFilter}
+                  onValueChange={setStatusFilter}
+                >
+                  <SearchableSelectTrigger>
+                    <SearchableSelectValue placeholder="Semua Status" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="all">
+                      Semua Status
+                    </SearchableSelectItem>
+                    {config.statusOptions.map((s) => (
+                      <SearchableSelectItem key={s} value={s}>
+                        {s}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
+            </div>
+          </FilterPanel>
 
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[900px]">
@@ -534,9 +571,9 @@ export default function PettyCashManagementClient() {
               <p className="text-xs text-muted-foreground text-center">
                 Ini preview ringkas & read-only - untuk approve/reject/edit
                 dokumen, ganti kode, edit paksa, atau override status/jalur
-                approval, buka &quot;Lihat Detail Lengkap&quot; di bawah
-                (akses aksi tetap mengikuti role Anda - approver giliran
-                berjalan atau admin).
+                approval, buka &quot;Lihat Detail Lengkap&quot; di bawah (akses
+                aksi tetap mengikuti role Anda - approver giliran berjalan atau
+                admin).
               </p>
             </div>
           )}
@@ -547,9 +584,7 @@ export default function PettyCashManagementClient() {
             </Button>
             {selected && (
               <Button asChild>
-                <Link
-                  href={`/petty-cash/${DETAIL_PATH[stage]}/${selected.id}`}
-                >
+                <Link href={`/petty-cash/${DETAIL_PATH[stage]}/${selected.id}`}>
                   <Eye className="mr-2 h-4 w-4" /> Lihat Detail Lengkap
                 </Link>
               </Button>

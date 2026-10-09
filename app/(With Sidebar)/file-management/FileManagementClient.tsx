@@ -11,11 +11,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -64,6 +71,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import {
+  ActiveFilter,
+  FilterPanel,
+  filterOptionLabel,
+  formatFilterDate,
+  formatFilterRange,
+} from "@/components/filter-panel";
 
 const DOC_TYPE_OPTIONS: { value: AttachmentDocType | "all"; label: string }[] = [
   { value: "all", label: "Semua Tipe" },
@@ -335,6 +349,61 @@ export function FileManagementClientContent() {
     );
   }
 
+  const clearFilters = () => {
+    resetSearchInput();
+    setStartDateInput("");
+    setEndDateInput("");
+    router.push(pathname);
+  };
+
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (search)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: search,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (docType !== "all")
+    activeFilters.push({
+      key: "doc_type",
+      label: "Tipe Dokumen",
+      value: filterOptionLabel(DOC_TYPE_OPTIONS, docType),
+      onRemove: () => handleFilterChange({ doc_type: undefined }),
+    });
+  if (bucket !== "all")
+    activeFilters.push({
+      key: "bucket",
+      label: "Storage",
+      value: filterOptionLabel(BUCKET_OPTIONS, bucket),
+      onRemove: () => handleFilterChange({ bucket: undefined }),
+    });
+  if (sortBy !== "date" || sortDir !== "asc")
+    activeFilters.push({
+      key: "sort",
+      label: "Urutan",
+      value: `${filterOptionLabel(SORT_OPTIONS, sortBy)} (${
+        sortDir === "asc" ? "Terlama / Terkecil dulu" : "Terbaru / Terbesar dulu"
+      })`,
+      onRemove: () =>
+        handleFilterChange({ sort_by: undefined, sort_dir: undefined }),
+    });
+  if (startDate || endDate)
+    activeFilters.push({
+      key: "tanggal",
+      label: "Tanggal",
+      value: formatFilterRange(startDate, endDate, formatFilterDate),
+      onRemove: () => {
+        setStartDateInput("");
+        setEndDateInput("");
+        handleFilterChange({ start_date: undefined, end_date: undefined });
+      },
+    });
+
   return (
     <Content
       title="File Management (Admin)"
@@ -385,51 +454,51 @@ export function FileManagementClientContent() {
           />
         </div>
 
-        <div className="p-4 border rounded-lg bg-muted/50">
+        <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <FilterField label="Tipe Dokumen">
-              <Select value={docType} onValueChange={(v) => handleFilterChange({ doc_type: v === "all" ? undefined : v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={docType} onValueChange={(v) => handleFilterChange({ doc_type: v === "all" ? undefined : v })}>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {DOC_TYPE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
+                    <SearchableSelectItem key={o.value} value={o.value}>
                       {o.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </FilterField>
 
             <FilterField label="Storage Source">
-              <Select value={bucket} onValueChange={(v) => handleFilterChange({ bucket: v === "all" ? undefined : v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={bucket} onValueChange={(v) => handleFilterChange({ bucket: v === "all" ? undefined : v })}>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {BUCKET_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
+                    <SearchableSelectItem key={o.value} value={o.value}>
                       {o.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </FilterField>
 
             <FilterField label="Urutkan Berdasarkan">
-              <Select value={sortBy} onValueChange={(v) => handleFilterChange({ sort_by: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+              <SearchableSelect value={sortBy} onValueChange={(v) => handleFilterChange({ sort_by: v })}>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {SORT_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
+                    <SearchableSelectItem key={o.value} value={o.value}>
                       {o.label}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </FilterField>
 
             <FilterField label="Arah">
@@ -467,7 +536,7 @@ export function FileManagementClientContent() {
               </Button>
             </div>
           </div>
-        </div>
+        </FilterPanel>
       </div>
 
       {selected.size > 0 && (

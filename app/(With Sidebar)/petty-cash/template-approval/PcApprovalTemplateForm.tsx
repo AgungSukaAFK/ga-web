@@ -30,12 +30,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import {
   ArrowDown,
@@ -248,21 +248,21 @@ export function PcApprovalTemplateForm({
       </div>
       <div className="space-y-2">
         <Label htmlFor="pc-template-approval-type">Tipe Approval</Label>
-        <Select
+        <SearchableSelect
           value={approvalType}
           onValueChange={(value) => setApprovalType(value as PcApprovalType)}
         >
-          <SelectTrigger id="pc-template-approval-type">
-            <SelectValue placeholder="Pilih tipe approval..." />
-          </SelectTrigger>
-          <SelectContent>
+          <SearchableSelectTrigger id="pc-template-approval-type">
+            <SearchableSelectValue placeholder="Pilih tipe approval..." />
+          </SearchableSelectTrigger>
+          <SearchableSelectContent>
             {PC_APPROVAL_TYPE_OPTIONS.map((type) => (
-              <SelectItem key={type} value={type}>
+              <SearchableSelectItem key={type} value={type}>
                 {type}
-              </SelectItem>
+              </SearchableSelectItem>
             ))}
-          </SelectContent>
-        </Select>
+          </SearchableSelectContent>
+        </SearchableSelect>
         <p className="text-xs text-muted-foreground">
           Menandakan template ini dipakai untuk tahap apa: Approval Pengajuan,
           Approval Voucher, atau Approval Deklarasi.
@@ -310,21 +310,21 @@ export function PcApprovalTemplateForm({
                   defaultValue={rule.site || ""}
                   placeholder="Site/Lokasi..."
                 />
-                <Select
+                <SearchableSelect
                   value={rule.company_code || ""}
                   onValueChange={(value) =>
                     updateAutoRule(rule._rowKey, "company_code", value)
                   }
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Perusahaan..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GMI">GMI</SelectItem>
-                    <SelectItem value="GIS">GIS</SelectItem>
-                    <SelectItem value="LOURDES">LOURDES</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <SearchableSelectTrigger className="w-full">
+                    <SearchableSelectValue placeholder="Perusahaan..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="GMI">GMI</SearchableSelectItem>
+                    <SearchableSelectItem value="GIS">GIS</SearchableSelectItem>
+                    <SearchableSelectItem value="LOURDES">LOURDES</SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
                 <Button
                   type="button"
                   size="icon"

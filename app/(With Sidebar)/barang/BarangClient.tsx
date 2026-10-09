@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -23,12 +24,12 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -196,9 +197,7 @@ export default function BarangClient() {
       if (isAssetFilter === "true") matchesAsset = item.is_asset === true;
       if (isAssetFilter === "false") matchesAsset = item.is_asset === false;
 
-      return (
-        matchesSearch && matchesCoaGmi && matchesCoaGis && matchesAsset
-      );
+      return matchesSearch && matchesCoaGmi && matchesCoaGis && matchesAsset;
     });
   }, [data, searchTerm, selectedCoaGmi, selectedCoaGis, isAssetFilter]);
 
@@ -275,6 +274,46 @@ export default function BarangClient() {
     "General Affair",
   ].includes(userRole);
 
+  const coaLabel = (v: string) => (v === EMPTY_COA ? "Nonaktif (kosong)" : v);
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSelectedCoaGmi("all");
+    setSelectedCoaGis("all");
+    setIsAssetFilter("all");
+  };
+
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => setSearchTerm(""),
+    });
+  if (selectedCoaGmi !== "all")
+    activeFilters.push({
+      key: "coa_gmi",
+      label: "COA GMI",
+      value: coaLabel(selectedCoaGmi),
+      onRemove: () => setSelectedCoaGmi("all"),
+    });
+  if (selectedCoaGis !== "all")
+    activeFilters.push({
+      key: "coa_gis",
+      label: "COA GIS",
+      value: coaLabel(selectedCoaGis),
+      onRemove: () => setSelectedCoaGis("all"),
+    });
+  if (isAssetFilter !== "all")
+    activeFilters.push({
+      key: "is_asset",
+      label: "Tipe Aset",
+      value: isAssetFilter === "true" ? "Asset" : "Barang",
+      onRemove: () => setIsAssetFilter("all"),
+    });
+
   return (
     <>
       <Content
@@ -302,68 +341,89 @@ export default function BarangClient() {
       >
         <div className="space-y-4">
           {/* --- FILTER BAR --- */}
-          <div className="flex flex-col lg:flex-row gap-4 bg-muted/20 p-4 rounded-lg border">
-            <div className="flex-1 relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari PN, Nama, atau Vendor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 bg-background"
-              />
-            </div>
-            <div className="w-full lg:w-[180px]">
-              <Select value={selectedCoaGmi} onValueChange={setSelectedCoaGmi}>
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="COA GMI" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua COA GMI</SelectItem>
-                  <SelectItem value={EMPTY_COA}>
-                    Nonaktif (kosong)
-                  </SelectItem>
-                  {uniqueCoaGmiValues.map((val) => (
-                    <SelectItem key={val} value={val}>
-                      {val}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-full lg:w-[180px]">
-              <Select value={selectedCoaGis} onValueChange={setSelectedCoaGis}>
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="COA GIS" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua COA GIS</SelectItem>
-                  <SelectItem value={EMPTY_COA}>
-                    Nonaktif (kosong)
-                  </SelectItem>
-                  {uniqueCoaGisValues.map((val) => (
-                    <SelectItem key={val} value={val}>
-                      {val}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-full lg:w-[150px]">
-              <Select
-                value={isAssetFilter}
-                onValueChange={(val: any) => setIsAssetFilter(val)}
-              >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Tipe Aset" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua</SelectItem>
-                  <SelectItem value="true">Asset</SelectItem>
-                  <SelectItem value="false">Barang</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari PN, Nama, atau Vendor..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 bg-background"
+            />
           </div>
+          <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">COA GMI</label>
+                <SearchableSelect
+                  value={selectedCoaGmi}
+                  onValueChange={setSelectedCoaGmi}
+                >
+                  <SearchableSelectTrigger className="bg-background">
+                    <SearchableSelectValue placeholder="COA GMI" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="all">
+                      Semua COA GMI
+                    </SearchableSelectItem>
+                    <SearchableSelectItem value={EMPTY_COA}>
+                      Nonaktif (kosong)
+                    </SearchableSelectItem>
+                    {uniqueCoaGmiValues.map((val) => (
+                      <SearchableSelectItem key={val} value={val}>
+                        {val}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">COA GIS</label>
+                <SearchableSelect
+                  value={selectedCoaGis}
+                  onValueChange={setSelectedCoaGis}
+                >
+                  <SearchableSelectTrigger className="bg-background">
+                    <SearchableSelectValue placeholder="COA GIS" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="all">
+                      Semua COA GIS
+                    </SearchableSelectItem>
+                    <SearchableSelectItem value={EMPTY_COA}>
+                      Nonaktif (kosong)
+                    </SearchableSelectItem>
+                    {uniqueCoaGisValues.map((val) => (
+                      <SearchableSelectItem key={val} value={val}>
+                        {val}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Tipe Aset</label>
+                <SearchableSelect
+                  value={isAssetFilter}
+                  onValueChange={(val: any) => setIsAssetFilter(val)}
+                >
+                  <SearchableSelectTrigger className="bg-background">
+                    <SearchableSelectValue placeholder="Tipe Aset" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="all">
+                      Semua
+                    </SearchableSelectItem>
+                    <SearchableSelectItem value="true">
+                      Asset
+                    </SearchableSelectItem>
+                    <SearchableSelectItem value="false">
+                      Barang
+                    </SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
+            </div>
+          </FilterPanel>
 
           {/* --- TABLE --- */}
           <div className="rounded-md border bg-card">
@@ -427,11 +487,17 @@ export default function BarangClient() {
                       </TableCell>
 
                       <TableCell>
-                        <CoaValue text={item.coa_gmi} className="max-w-[110px]" />
+                        <CoaValue
+                          text={item.coa_gmi}
+                          className="max-w-[110px]"
+                        />
                       </TableCell>
 
                       <TableCell>
-                        <CoaValue text={item.coa_gis} className="max-w-[110px]" />
+                        <CoaValue
+                          text={item.coa_gis}
+                          className="max-w-[110px]"
+                        />
                       </TableCell>
 
                       <TableCell>
@@ -471,7 +537,7 @@ export default function BarangClient() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/40"
                               onClick={(e) => {
                                 e.stopPropagation(); // Mencegah popup detail terbuka
                                 router.push(`/barang/edit/${item.id}`);
@@ -482,7 +548,7 @@ export default function BarangClient() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-destructive hover:text-red-700 hover:bg-red-50"
+                              className="h-8 w-8 text-destructive hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/40"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (

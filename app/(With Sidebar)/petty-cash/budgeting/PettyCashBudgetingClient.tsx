@@ -26,11 +26,18 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -73,6 +80,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { User } from "@supabase/supabase-js";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 
 function BudgetDialog({
   open,
@@ -210,20 +218,20 @@ function BudgetDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Perusahaan</Label>
-              <Select
+              <SearchableSelect
                 onValueChange={setCompanyCode}
                 value={companyCode}
                 disabled={!isCreateMode}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pilih Perusahaan..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GMI">GMI</SelectItem>
-                  <SelectItem value="GIS">GIS</SelectItem>
-                  <SelectItem value="LOURDES">LOURDES</SelectItem>
-                </SelectContent>
-              </Select>
+                <SearchableSelectTrigger className="w-full">
+                  <SearchableSelectValue placeholder="Pilih Perusahaan..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="GMI">GMI</SearchableSelectItem>
+                  <SearchableSelectItem value="GIS">GIS</SearchableSelectItem>
+                  <SearchableSelectItem value="LOURDES">LOURDES</SearchableSelectItem>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
             <div className="space-y-2">
               <Label htmlFor="budget">
@@ -517,6 +525,31 @@ export function PettyCashBudgetingClientContent() {
     }
   };
 
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchTerm)
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
+    });
+  if (companyFilter && companyFilter !== "all")
+    activeFilters.push({
+      key: "company",
+      label: "Perusahaan",
+      value: companyFilter,
+      onRemove: () => handleFilterChange({ company: undefined }),
+    });
+
+  const clearFilters = () => {
+    resetSearchInput();
+    handleFilterChange({ search: undefined, company: undefined });
+  };
+
   return (
     <>
       <Content
@@ -540,31 +573,31 @@ export function PettyCashBudgetingClientContent() {
             />
           </div>
           {adminProfile?.company === "LOURDES" && (
-            <div className="p-4 border rounded-lg bg-muted/50">
+            <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Perusahaan</label>
-                  <Select
+                  <SearchableSelect
                     onValueChange={(value) =>
                       handleFilterChange({
                         company: value === "all" ? undefined : value,
                       })
                     }
-                    defaultValue={companyFilter || "all"}
+                    value={companyFilter || "all"}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter perusahaan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Perusahaan</SelectItem>
-                      <SelectItem value="GMI">GMI</SelectItem>
-                      <SelectItem value="GIS">GIS</SelectItem>
-                      <SelectItem value="LOURDES">LOURDES</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Filter perusahaan" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">Semua Perusahaan</SearchableSelectItem>
+                      <SearchableSelectItem value="GMI">GMI</SearchableSelectItem>
+                      <SearchableSelectItem value="GIS">GIS</SearchableSelectItem>
+                      <SearchableSelectItem value="LOURDES">LOURDES</SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
                 </div>
               </div>
-            </div>
+            </FilterPanel>
           )}
         </div>
 

@@ -24,11 +24,14 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Combobox } from "@/components/combobox";
 import {
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -190,25 +193,25 @@ export function PcItemsEditor({
     const options = row.catalogCoa?.length ? row.catalogCoa : PC_COA_OPTIONS;
     if (options.length === 1) return <PcCoaBadge coa={options[0]} />;
     return (
-      <Select
+      <SearchableSelect
         value={row.coa ?? ""}
         onValueChange={(val) =>
           updateRow(row._rowKey, { coa: val as "GMI" | "GIS" })
         }
       >
-        <SelectTrigger
+        <SearchableSelectTrigger
           className={`h-9 w-[90px] ${!row.coa ? "border-red-400" : ""}`}
         >
-          <SelectValue placeholder="Pilih COA" />
-        </SelectTrigger>
-        <SelectContent>
+          <SearchableSelectValue placeholder="Pilih COA" />
+        </SearchableSelectTrigger>
+        <SearchableSelectContent>
           {options.map((opt) => (
-            <SelectItem key={opt} value={opt}>
+            <SearchableSelectItem key={opt} value={opt}>
               {opt}
-            </SelectItem>
+            </SearchableSelectItem>
           ))}
-        </SelectContent>
-      </Select>
+        </SearchableSelectContent>
+      </SearchableSelect>
     );
   };
 

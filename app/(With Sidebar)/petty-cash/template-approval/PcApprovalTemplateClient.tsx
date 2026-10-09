@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
+import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,12 +61,12 @@ import {
   PC_APPROVAL_TYPE_COLOR_DEFAULT,
 } from "@/type/enum";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import { PcApprovalTemplateForm } from "./PcApprovalTemplateForm";
 import { Loader2, Plus, Trash2, Edit, Search, Copy } from "lucide-react";
 import { format } from "date-fns";
@@ -260,6 +261,28 @@ export default function PcApprovalTemplateClient() {
     );
   }
 
+  // --- Chip filter aktif ---
+  const activeFilters: ActiveFilter[] = [];
+  if (searchQuery.trim())
+    activeFilters.push({
+      key: "search",
+      label: "Cari",
+      value: searchQuery.trim(),
+      onRemove: () => setSearchQuery(""),
+    });
+  if (typeFilter !== "all")
+    activeFilters.push({
+      key: "type",
+      label: "Tipe Approval",
+      value: typeFilter,
+      onRemove: () => setTypeFilter("all"),
+    });
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setTypeFilter("all");
+  };
+
   return (
     <>
       <Content
@@ -271,8 +294,8 @@ export default function PcApprovalTemplateClient() {
           </Button>
         }
       >
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative max-w-sm flex-1">
+        <div className="mb-4 flex flex-col gap-2">
+          <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={searchQuery}
@@ -281,24 +304,33 @@ export default function PcApprovalTemplateClient() {
               className="pl-8"
             />
           </div>
-          <Select
-            value={typeFilter}
-            onValueChange={(value) =>
-              setTypeFilter(value as PcApprovalType | "all")
-            }
-          >
-            <SelectTrigger className="sm:w-[220px]">
-              <SelectValue placeholder="Filter tipe approval" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Tipe Approval</SelectItem>
-              {PC_APPROVAL_TYPE_OPTIONS.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Tipe Approval</label>
+                <SearchableSelect
+                  value={typeFilter}
+                  onValueChange={(value) =>
+                    setTypeFilter(value as PcApprovalType | "all")
+                  }
+                >
+                  <SearchableSelectTrigger>
+                    <SearchableSelectValue placeholder="Filter tipe approval" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="all">
+                      Semua Tipe Approval
+                    </SearchableSelectItem>
+                    {PC_APPROVAL_TYPE_OPTIONS.map((type) => (
+                      <SearchableSelectItem key={type} value={type}>
+                        {type}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
+            </div>
+          </FilterPanel>
         </div>
         <div className="border rounded-md overflow-x-auto">
           <Table>
@@ -517,9 +549,7 @@ export default function PcApprovalTemplateClient() {
                 <Copy className="mr-2 h-4 w-4" /> Duplikat
               </Button>
               <Button
-                onClick={() =>
-                  detailTemplate && handleOpenEdit(detailTemplate)
-                }
+                onClick={() => detailTemplate && handleOpenEdit(detailTemplate)}
               >
                 <Edit className="mr-2 h-4 w-4" /> Edit Template
               </Button>
@@ -539,9 +569,9 @@ export default function PcApprovalTemplateClient() {
             <DialogTitle>Duplikat Template</DialogTitle>
             <DialogDescription>
               Membuat template baru dengan jalur approval yang sama seperti
-              &quot;{duplicateSource?.template_name}&quot;. Auto-terapkan
-              TIDAK ikut disalin (atur ulang sendiri supaya tidak bentrok).
-              Nama wajib berbeda dari template asal.
+              &quot;{duplicateSource?.template_name}&quot;. Auto-terapkan TIDAK
+              ikut disalin (atur ulang sendiri supaya tidak bentrok). Nama wajib
+              berbeda dari template asal.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -577,8 +607,8 @@ export default function PcApprovalTemplateClient() {
           <AlertDialogHeader>
             <AlertDialogTitle>Apakah Anda Yakin?</AlertDialogTitle>
             <AlertDialogDescription>
-              Tindakan ini tidak dapat dibatalkan. Template akan dihapus
-              secara permanen.
+              Tindakan ini tidak dapat dibatalkan. Template akan dihapus secara
+              permanen.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

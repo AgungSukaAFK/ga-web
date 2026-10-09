@@ -31,12 +31,12 @@ import {
 } from "@/components/rich-mention-editor";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  SearchableSelectTrigger,
+  SearchableSelectValue,
+  SearchableSelectContent,
+  SearchableSelectItem,
+} from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -292,21 +292,21 @@ export function PcAdminForceEditDialog({
               </div>
               <div className="space-y-2">
                 <Label>Minggu ke-</Label>
-                <Select
+                <SearchableSelect
                   value={weekOfMonth ? String(weekOfMonth) : ""}
                   onValueChange={(val) => setWeekOfMonth(Number(val))}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih minggu" />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <SearchableSelectTrigger>
+                    <SearchableSelectValue placeholder="Pilih minggu" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
                     {[1, 2, 3, 4, 5].map((w) => (
-                      <SelectItem key={w} value={String(w)}>
+                      <SearchableSelectItem key={w} value={String(w)}>
                         Minggu ke-{w}
-                      </SelectItem>
+                      </SearchableSelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </SearchableSelectContent>
+                </SearchableSelect>
               </div>
             </div>
           )}
@@ -331,23 +331,23 @@ export function PcAdminForceEditDialog({
           {showBudget && (
             <div className="space-y-2">
               <Label>Budget</Label>
-              <Select
+              <SearchableSelect
                 value={budgetId ? String(budgetId) : ""}
                 onValueChange={(val) => setBudgetId(Number(val))}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih budget..." />
-                </SelectTrigger>
-                <SelectContent>
+                <SearchableSelectTrigger>
+                  <SearchableSelectValue placeholder="Pilih budget..." />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
                   {budgetOptions.map((b) => (
-                    <SelectItem key={b.id} value={String(b.id)}>
+                    <SearchableSelectItem key={b.id} value={String(b.id)}>
                       {b.name} ({b.department}
                       {b.site ? ` - ${b.site}` : ""}) - Sisa{" "}
                       {b.current_budget.toLocaleString("id-ID")}
-                    </SelectItem>
+                    </SearchableSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </SearchableSelectContent>
+              </SearchableSelect>
             </div>
           )}
 
