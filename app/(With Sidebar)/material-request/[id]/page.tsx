@@ -1050,7 +1050,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- UPLOAD BAST PER ITEM (REQUESTER) ---
-  // `item` di-pre-select kalau dibuka dari tombol per-baris; dialog tetap
+  // `items` di-pre-select (1 barang dari tombol per-baris, semua barang dari
+  // banner "Konfirmasi Barang Diterima"); dialog tetap
   // nampilin semua barang berstatus "On Delivery" (atau "Pending BAST" utk
   // data lama) biar bisa nambah barang lain (utk kasus 1 foto BAST yg sama
   // dipakai buat beberapa barang).
@@ -1060,8 +1061,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       o.part_number,
   );
 
-  const handleOpenBastUpload = (item?: Order) => {
-    setSelectedItemsForBast(item ? [item] : []);
+  const handleOpenBastUpload = (items: Order[] = []) => {
+    setSelectedItemsForBast(items);
     setBastFiles(null);
     setIsBastUploadOpen(true);
   };
@@ -1709,6 +1710,35 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
           </div>
         </div>
+
+        {/* Requester bisa langsung menyelesaikan barang yang masih dalam
+            pengiriman dari sini (boleh upload file/galeri) - tanpa harus
+            scan QR dari cetakan BAST. Tombol per-baris di tabel barang
+            tetap ada, tapi gampang kelewat (tabel lebar, harus geser di HP). */}
+        {isOwner && !isEditing && bastEligibleItems.length > 0 && (
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+            <div className="flex items-start gap-3">
+              <Truck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium">
+                  {bastEligibleItems.length} barang sedang dalam pengiriman ke
+                  Anda
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Sudah terima barangnya? Konfirmasi di sini dengan unggah
+                  bukti penerimaan, tidak perlu scan QR dari cetakan BAST.
+                </p>
+              </div>
+            </div>
+            <Button
+              className="shrink-0"
+              onClick={() => handleOpenBastUpload(bastEligibleItems)}
+            >
+              <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang
+              Diterima
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="col-span-12 lg:col-span-8 space-y-6">
@@ -2287,7 +2317,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                   size="sm"
                                   variant="outline"
                                   className="h-7 text-xs"
-                                  onClick={() => handleOpenBastUpload(item)}
+                                  onClick={() => handleOpenBastUpload([item])}
                                 >
                                   <Upload className="mr-1 h-3 w-3" /> Upload
                                   Bukti Terima

@@ -340,10 +340,25 @@ export interface PurchaseOrderPayload {
 // requester. Per-PO (bukan per-item MR) karena satu item MR bisa dipecah ke
 // >1 PO - qty & foto yang dikonfirmasi di sini spesifik utk pengiriman PO
 // ini saja.
+// Info yang ditempel sistem saat foto barang diambil dari kamera di halaman
+// scan QR (/goods-receipt/[token]) - dicetak sebagai watermark di fotonya
+// DAN disimpan di sini supaya tetap ada walau fotonya di-crop. Waktu pakai
+// jam server (dikoreksi offset di client), bukan jam HP yang bisa diubah user.
+export interface PhotoCaptureMeta {
+  captured_at: string;
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+  address: string | null;
+  device: string;
+}
+
 export interface GoodsReceiptItem {
   part_number: string;
   qty_received: number;
   photos: Attachment[];
+  // Kosong utk data lama (sebelum foto wajib dari kamera + timestamp).
+  capture_meta?: PhotoCaptureMeta;
 }
 
 export interface GoodsReceipt {

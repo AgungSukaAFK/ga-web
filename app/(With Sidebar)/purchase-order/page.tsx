@@ -594,8 +594,7 @@ function PurchaseOrderPageContent() {
       }
       if (statusFilter) query = query.eq("status", statusFilter);
       if (assetTypeFilter === "asset") query = query.eq("is_asset", true);
-      else if (assetTypeFilter === "goods")
-        query = query.eq("is_asset", false);
+      else if (assetTypeFilter === "goods") query = query.eq("is_asset", false);
       if (minPrice) query = query.gte("total_price", Number(minPrice));
       if (maxPrice) query = query.lte("total_price", Number(maxPrice));
       if (startDate) query = query.gte("created_at", startDate);
@@ -615,7 +614,9 @@ function PurchaseOrderPageContent() {
 
       const formattedData = data.flatMap((po: any) => {
         const isPaid = isPoPaid(po.approvals as Approval[]);
-        const lastApprover = getLastApprovedApprover(po.approvals as Approval[]);
+        const lastApprover = getLastApprovedApprover(
+          po.approvals as Approval[],
+        );
         const hasInvoice =
           Array.isArray(po.attachments) &&
           po.attachments.some((att: any) => att.type === "invoice");
@@ -992,7 +993,8 @@ function PurchaseOrderPageContent() {
                     sortKey="total_price"
                     defaultDirection="desc"
                     currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })} className="text-right"
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    className="text-right"
                   >
                     Total Harga
                   </SortableTableHead>
@@ -1067,9 +1069,7 @@ function PurchaseOrderPageContent() {
                           <Badge variant="secondary">{po.status}</Badge>
                           {po.status === "Pending Approval" &&
                             (() => {
-                              const approver = getCurrentApprover(
-                                po.approvals,
-                              );
+                              const approver = getCurrentApprover(po.approvals);
                               return approver ? (
                                 <span className="text-[11px] text-muted-foreground">
                                   Menunggu: {approver.nama}

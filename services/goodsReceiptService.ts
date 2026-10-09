@@ -10,7 +10,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { normalizeMrOrders, uploadBastForMrItem } from "./mrService";
-import { Attachment, GoodsReceipt, GoodsReceiptItem, Order } from "@/type";
+import {
+  Attachment,
+  GoodsReceipt,
+  GoodsReceiptItem,
+  Order,
+  PhotoCaptureMeta,
+} from "@/type";
 import { MR_ITEM_STATUSES } from "@/type/enum";
 
 const GOODS_RECEIPT_CODE_KEY = "goods_receipt_global_code";
@@ -118,6 +124,44 @@ export async function ensureReceiptToken(poId: number): Promise<string> {
 }
 
 // --- HALAMAN PUBLIK /goods-receipt/[token] ---
+
+// Jam server - dipakai halaman scan buat hitung offset jam HP, supaya
+// timestamp di watermark foto gak bisa dimanipulasi dengan ganti jam HP.
+export async function getServerTime(): Promise<string> {
+  return new Date().toISOString();
+}
+
+// Metadata foto datang dari client - dibersihkan & dibatasi di sini, bukan
+// dipercaya mentah-mentah. Return null kalau koordinatnya gak valid (lokasi
+// wajib utk foto dari scan QR).
+function sanitizeCaptureMeta(raw: unknown): PhotoCaptureMeta | null {
+  if (!raw || typeof raw !== "object") return null;
+  const m = raw as Record<string, unknown>;
+  const lat = Number(m.latitude);
+  const lng = Number(m.longitude);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lng) > 180
+  ) {
+    return null;
+  }
+  const capturedAt = new Date(String(m.captured_at || ""));
+  const accuracy = Number(m.accuracy_m);
+  const str = (v: unknown, max: number) =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+  return {
+    captured_at: Number.isNaN(capturedAt.getTime())
+      ? new Date().toISOString()
+      : capturedAt.toISOString(),
+    latitude: lat,
+    longitude: lng,
+    accuracy_m: Number.isFinite(accuracy) ? Math.round(accuracy) : null,
+    address: str(m.address, 500),
+    device: str(m.device, 200) || "Tidak diketahui",
+  };
+}
 
 export async function verifyGoodsReceiptCode(code: string): Promise<boolean> {
   const admin = createAdminClient();
@@ -331,7 +375,10 @@ export async function submitGoodsReceipt(
   // digabung jadi satu FormData besar (pola lama), gampang kelewat limit itu.
   const photosJson = formData.get("photos_json");
   if (!photosJson) return { success: false, message: "Data foto tidak lengkap." };
-  let submittedPhotos: Record<string, { url: string; name: string }>;
+  let submittedPhotos: Record<
+    string,
+    { url: string; name: string; meta?: unknown }
+  >;
   try {
     submittedPhotos = JSON.parse(String(photosJson));
   } catch {
@@ -348,6 +395,12 @@ export async function submitGoodsReceipt(
     }
     if (!submittedPhotos[pn]?.url) {
       return { success: false, message: `Foto untuk item ${pn} wajib diunggah.` };
+    }
+    if (!sanitizeCaptureMeta(submittedPhotos[pn].meta)) {
+      return {
+        success: false,
+        message: `Lokasi foto item ${pn} tidak valid. Aktifkan lokasi lalu foto ulang.`,
+      };
     }
   }
 
@@ -375,6 +428,7 @@ export async function submitGoodsReceipt(
       part_number: item.part_number,
       qty_received: item.qty_received,
       photos: [photoAttachment],
+      capture_meta: sanitizeCaptureMeta(photo.meta) ?? undefined,
     });
   }
 
@@ -403,6 +457,7 @@ export async function submitGoodsReceipt(
     items: goodsReceiptItems.map((i) => ({
       part_number: i.part_number,
       qty_received: i.qty_received,
+      capture_meta: i.capture_meta,
     })),
     confirmed_via: confirmedVia,
   };

@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   fetchGoodsReceiptView,
   verifyGoodsReceiptCode,
   submitGoodsReceipt,
+  getServerTime,
   GoodsReceiptView,
 } from "@/services/goodsReceiptService";
+import { PhotoCaptureMeta } from "@/type";
+import {
+  formatStampTime,
+  getDeviceLabel,
+  reverseGeocode,
+} from "@/lib/photoStamp";
+import { CameraCaptureDialog } from "@/components/goods-receipt/CameraCaptureDialog";
 import { getAttachmentSizeError } from "@/lib/attachments";
 import { uploadAttachmentDirectPublic } from "@/lib/uploadDirect";
 import { Button } from "@/components/ui/button";
@@ -16,7 +24,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, PackageCheck, ScanLine } from "lucide-react";
+import {
+  Camera,
+  CheckCircle2,
+  Loader2,
+  MapPin,
+  PackageCheck,
+  RefreshCw,
+  ScanLine,
+} from "lucide-react";
 
 type Phase =
   | "loading"
@@ -29,7 +45,20 @@ type Phase =
 interface ItemInput {
   qty: string;
   photo: File | null;
+  photoMeta: PhotoCaptureMeta | null;
+  previewUrl: string | null;
 }
+
+type LocationState =
+  | { status: "pending" }
+  | { status: "error"; message: string }
+  | {
+      status: "ok";
+      latitude: number;
+      longitude: number;
+      accuracy_m: number | null;
+      address: string | null;
+    };
 
 export default function GoodsReceiptPage() {
   const params = useParams();
@@ -47,6 +76,13 @@ export default function GoodsReceiptPage() {
 
   const [itemInputs, setItemInputs] = useState<Record<string, ItemInput>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  // Data "timestamp" sistem utk watermark foto - lokasi WAJIB (tanpa
+  // lokasi tombol kamera dikunci), jam pakai jam server + offset.
+  const [location, setLocation] = useState<LocationState>({ status: "pending" });
+  const [deviceLabel, setDeviceLabel] = useState("");
+  const [serverTimeOffset, setServerTimeOffset] = useState(0);
+  const [cameraFor, setCameraFor] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -66,7 +102,12 @@ export default function GoodsReceiptPage() {
         Object.fromEntries(
           result.items.map((item) => [
             item.part_number,
-            { qty: String(item.qty_dikirim), photo: null },
+            {
+              qty: String(item.qty_dikirim),
+              photo: null,
+              photoMeta: null,
+              previewUrl: null,
+            },
           ]),
         ),
       );
@@ -90,6 +131,65 @@ export default function GoodsReceiptPage() {
     };
     load();
   }, [token]);
+
+  const requestLocation = () => {
+    setLocation({ status: "pending" });
+    if (!navigator.geolocation) {
+      setLocation({
+        status: "error",
+        message: "Browser ini tidak mendukung lokasi.",
+      });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        const address = await reverseGeocode(latitude, longitude);
+        setLocation({
+          status: "ok",
+          latitude,
+          longitude,
+          accuracy_m: Number.isFinite(accuracy) ? Math.round(accuracy) : null,
+          address,
+        });
+      },
+      (err) => {
+        setLocation({
+          status: "error",
+          message:
+            err.code === err.PERMISSION_DENIED
+              ? "Izin lokasi ditolak. Izinkan akses lokasi di pengaturan browser, lalu klik Coba Lagi."
+              : "Lokasi tidak bisa didapat. Pastikan GPS aktif, lalu klik Coba Lagi.",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
+  };
+
+  useEffect(() => {
+    if (phase !== "form") return;
+    requestLocation();
+    getDeviceLabel().then(setDeviceLabel);
+    const t0 = Date.now();
+    getServerTime()
+      .then((serverIso) => {
+        const t1 = Date.now();
+        setServerTimeOffset(Date.parse(serverIso) - (t0 + t1) / 2);
+      })
+      .catch(() => {});
+  }, [phase]);
+
+  // Object URL preview foto dilepas saat halaman ditinggal.
+  const itemInputsRef = useRef(itemInputs);
+  itemInputsRef.current = itemInputs;
+  useEffect(
+    () => () => {
+      Object.values(itemInputsRef.current).forEach(
+        (i) => i.previewUrl && URL.revokeObjectURL(i.previewUrl),
+      );
+    },
+    [],
+  );
 
   const handleVerifyCode = async () => {
     setAuthError(null);
@@ -118,18 +218,51 @@ export default function GoodsReceiptPage() {
     setItemInputs((prev) => ({ ...prev, [partNumber]: { ...prev[partNumber], qty } }));
   };
 
-  const updateItemPhoto = (partNumber: string, file: File | null) => {
-    if (file) {
-      const sizeError = getAttachmentSizeError(file);
-      if (sizeError) {
-        toast.error("Ukuran foto terlalu besar", { description: sizeError });
-        return;
-      }
+  // Dipanggil dialog kamera TEPAT saat jepret - meta yang sama ini juga
+  // yang disimpan ke server, jadi watermark & data selalu cocok.
+  const pendingMetaRef = useRef<PhotoCaptureMeta | null>(null);
+  const buildStampLines = (): string[] => {
+    if (location.status !== "ok") return [];
+    const meta: PhotoCaptureMeta = {
+      captured_at: new Date(Date.now() + serverTimeOffset).toISOString(),
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy_m: location.accuracy_m,
+      address: location.address,
+      device: deviceLabel || "Tidak diketahui",
+    };
+    pendingMetaRef.current = meta;
+    return [
+      formatStampTime(new Date(meta.captured_at)),
+      meta.address || "Alamat tidak tersedia",
+      `${meta.latitude.toFixed(6)}, ${meta.longitude.toFixed(6)}${
+        meta.accuracy_m !== null ? ` (±${meta.accuracy_m} m)` : ""
+      }`,
+      `Device: ${meta.device}`,
+      `PO ${view?.kode_po} · MR ${view?.kode_mr}`,
+    ];
+  };
+
+  const handlePhotoCaptured = (partNumber: string, file: File) => {
+    const sizeError = getAttachmentSizeError(file);
+    if (sizeError) {
+      toast.error("Ukuran foto terlalu besar", { description: sizeError });
+      return;
     }
-    setItemInputs((prev) => ({
-      ...prev,
-      [partNumber]: { ...prev[partNumber], photo: file },
-    }));
+    const meta = pendingMetaRef.current;
+    setItemInputs((prev) => {
+      const old = prev[partNumber];
+      if (old?.previewUrl) URL.revokeObjectURL(old.previewUrl);
+      return {
+        ...prev,
+        [partNumber]: {
+          ...old,
+          photo: file,
+          photoMeta: meta,
+          previewUrl: URL.createObjectURL(file),
+        },
+      };
+    });
   };
 
   const isFormComplete =
@@ -139,7 +272,8 @@ export default function GoodsReceiptPage() {
         input &&
         input.qty.trim() !== "" &&
         Number(input.qty) >= 0 &&
-        !!input.photo
+        !!input.photo &&
+        !!input.photoMeta
       );
     }) ?? false;
 
@@ -152,7 +286,10 @@ export default function GoodsReceiptPage() {
       // Serverless Functions punya hard limit body request 4.5MB yang gampang
       // kelewat kalau beberapa foto item digabung jadi satu request.
       const safeKode = view.kode_po.replace(/\//g, "-");
-      const photos: Record<string, { url: string; name: string }> = {};
+      const photos: Record<
+        string,
+        { url: string; name: string; meta: PhotoCaptureMeta | null }
+      > = {};
       for (const item of view.items) {
         const photo = itemInputs[item.part_number].photo;
         if (!photo) continue;
@@ -164,7 +301,11 @@ export default function GoodsReceiptPage() {
           });
           return;
         }
-        photos[item.part_number] = { url: uploadResult.url, name: photo.name };
+        photos[item.part_number] = {
+          url: uploadResult.url,
+          name: photo.name,
+          meta: itemInputs[item.part_number].photoMeta,
+        };
       }
 
       const formData = new FormData();
@@ -328,9 +469,62 @@ export default function GoodsReceiptPage() {
           </p>
         </div>
 
+        <div
+          className={`mb-4 flex items-start gap-3 rounded-lg border p-3 text-sm ${
+            location.status === "error"
+              ? "border-destructive/50 bg-destructive/5"
+              : ""
+          }`}
+        >
+          <MapPin
+            className={`mt-0.5 h-4 w-4 shrink-0 ${
+              location.status === "error" ? "text-destructive" : "text-primary"
+            }`}
+          />
+          <div className="flex-1 min-w-0">
+            {location.status === "pending" && (
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Mengambil lokasi...
+              </p>
+            )}
+            {location.status === "error" && (
+              <p className="text-destructive">{location.message}</p>
+            )}
+            {location.status === "ok" && (
+              <>
+                <p className="break-words">
+                  {location.address || "Alamat tidak tersedia"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                  {location.accuracy_m !== null &&
+                    ` (±${location.accuracy_m} m)`}
+                  {deviceLabel && ` · ${deviceLabel}`}
+                </p>
+              </>
+            )}
+          </div>
+          {location.status !== "pending" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0"
+              onClick={requestLocation}
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              {location.status === "error" ? "Coba Lagi" : "Perbarui"}
+            </Button>
+          )}
+        </div>
+
         <div className="space-y-4">
           {view?.items.map((item) => {
-            const input = itemInputs[item.part_number] || { qty: "", photo: null };
+            const input = itemInputs[item.part_number] || {
+              qty: "",
+              photo: null,
+              photoMeta: null,
+              previewUrl: null,
+            };
             return (
               <div key={item.part_number} className="rounded-lg border p-4 space-y-3">
                 <div>
@@ -353,17 +547,27 @@ export default function GoodsReceiptPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Foto Barang (wajib)</Label>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={(e) =>
-                        updateItemPhoto(item.part_number, e.target.files?.[0] || null)
-                      }
-                    />
+                    <Label className="text-xs">Foto Barang (wajib, dari kamera)</Label>
+                    <Button
+                      type="button"
+                      variant={input.photo ? "outline" : "default"}
+                      className="w-full"
+                      disabled={location.status !== "ok"}
+                      onClick={() => setCameraFor(item.part_number)}
+                    >
+                      <Camera className="mr-2 h-4 w-4" />
+                      {input.photo ? "Foto Ulang" : "Ambil Foto"}
+                    </Button>
                   </div>
                 </div>
+                {input.previewUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={input.previewUrl}
+                    alt={`Foto ${item.name}`}
+                    className="w-full rounded-md border"
+                  />
+                )}
               </div>
             );
           })}
@@ -378,6 +582,17 @@ export default function GoodsReceiptPage() {
           Kirim Konfirmasi Penerimaan
         </Button>
       </div>
+
+      <CameraCaptureDialog
+        open={cameraFor !== null}
+        onOpenChange={(open) => !open && setCameraFor(null)}
+        title={
+          view?.items.find((i) => i.part_number === cameraFor)?.name ||
+          "Foto Barang"
+        }
+        getStampLines={buildStampLines}
+        onCapture={(file) => cameraFor && handlePhotoCaptured(cameraFor, file)}
+      />
     </div>
   );
 }
