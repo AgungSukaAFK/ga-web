@@ -44,6 +44,7 @@ import {
   CircleUser,
   ArrowLeft,
   Paperclip,
+  Link2,
   Tag,
   ExternalLink,
   DollarSign,
@@ -759,7 +760,11 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
                     target="_blank"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
-                    <Paperclip className="h-4 w-4" />
+                    {file.is_link ? (
+                      <Link2 className="h-4 w-4" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
                     <span>{file.name}</span>
                     <ExternalLink className="h-3 w-3 text-muted-foreground" />
                   </Link>

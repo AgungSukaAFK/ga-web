@@ -159,7 +159,7 @@ async function buildSnapshotUncached(): Promise<AttachmentEntry[]> {
     documentCreatedAt: string,
     att: Attachment
   ) {
-    if (!att?.url) return;
+    if (!att?.url || att.is_link) return;
     const { bucket, path } = resolveBucketAndPath(att.url);
     const statMap = bucket === "legacy" ? legacyStats : vpsStats;
     const stat = statMap.get(path);

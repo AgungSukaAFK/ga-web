@@ -9,6 +9,23 @@ export function resolveAttachmentUrl(url: string): string {
   return `${OLD_CLOUD_BUCKET_BASE}/${url}`;
 }
 
+// Normalisasi & validasi URL lampiran berupa link (mis. Google Drive).
+// Mengembalikan URL yang sudah dinormalisasi, atau null bila tidak valid.
+export function normalizeLinkUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (!parsed.hostname.includes(".")) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 // Batas ukuran lampiran (PO/MR/BAST/dll) - murni batas bisnis/UX, bukan lagi
 // terikat limit Server Action Vercel (upload lewat signed URL langsung ke
 // storage VPS, lihat lib/uploadDirect.ts, jadi file tidak lewat body Server

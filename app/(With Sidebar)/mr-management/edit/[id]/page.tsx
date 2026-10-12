@@ -985,7 +985,9 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           }
         : null,
     );
-    if (attachmentToRemove.url.startsWith("http")) {
+    if (attachmentToRemove.is_link) {
+      // Link eksternal - tidak ada file di storage yang perlu dihapus.
+    } else if (attachmentToRemove.url.startsWith("http")) {
       removeAttachmentVps(attachmentToRemove.url);
     } else {
       supabase.storage.from("mr").remove([attachmentToRemove.url]);
