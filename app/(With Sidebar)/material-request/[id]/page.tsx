@@ -40,6 +40,7 @@ import {
   Plus,
   Trash2,
   Paperclip,
+  Link2,
   Upload,
   Truck,
   Building2,
@@ -1422,7 +1423,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       (_, i) => i !== indexToRemove,
     );
     setMr({ ...mr, attachments: updatedAttachments });
-    if (attachmentToRemove.url.startsWith("http")) {
+    if (attachmentToRemove.is_link) {
+      // Link eksternal - tidak ada file di storage yang perlu dihapus.
+    } else if (attachmentToRemove.url.startsWith("http")) {
       removeAttachmentVps(attachmentToRemove.url);
     } else {
       supabase.storage.from("mr").remove([attachmentToRemove.url]);
@@ -2500,7 +2503,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                       className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
                     >
                       <div className="flex items-center gap-2 truncate min-w-0">
-                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        {file.is_link ? (
+                          <Link2 className="h-4 w-4 flex-shrink-0" />
+                        ) : (
+                          <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        )}
                         <span className="truncate">{file.name}</span>
                       </div>
                       <Button
@@ -2525,7 +2532,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     target="_blank"
                     className="flex items-center gap-2 text-sm text-primary hover:underline"
                   >
-                    <Paperclip className="h-4 w-4" />
+                    {file.is_link ? (
+                      <Link2 className="h-4 w-4" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
                     <span>{file.name}</span>
                     <ExternalLink className="h-3 w-3 text-muted-foreground" />
                   </Link>

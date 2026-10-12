@@ -120,6 +120,10 @@ export interface Attachment {
   url: string;
   name: string;
   type?: "po" | "finance" | "bast" | "invoice" | "quotation" | "delivery";
+  // true = lampiran berupa link eksternal (mis. Google Drive) untuk file yang
+  // terlalu besar diunggah - url-nya bukan file di storage, jadi jangan
+  // dihapus dari storage / didata di File Management.
+  is_link?: boolean;
 }
 
 // Jenis entitas yang bisa di-tag di rich editor (diskusi & field catatan) -

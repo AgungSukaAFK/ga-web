@@ -42,6 +42,9 @@ import {
   FileStack,
   History,
   X,
+  Link2,
+  Paperclip,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -68,7 +71,12 @@ import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatCurrency, cn } from "@/lib/utils";
-import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
+import {
+  getAttachmentSizeError,
+  getUploadErrorMessage,
+  normalizeLinkUrl,
+} from "@/lib/attachments";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
 import { logActivity } from "@/services/logService";
@@ -148,6 +156,8 @@ export default function BuatMRPage() {
   const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [linkAttachmentName, setLinkAttachmentName] = useState("");
+  const [linkAttachmentUrl, setLinkAttachmentUrl] = useState("");
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
 
   const [isLourdes, setIsLourdes] = useState(false);
@@ -648,10 +658,44 @@ export default function BuatMRPage() {
     }
   };
 
-  const handleRemoveAttachment = async (index: number, path: string) => {
+  const handleAddLinkAttachment = () => {
+    const name = linkAttachmentName.trim();
+    const url = normalizeLinkUrl(linkAttachmentUrl);
+    if (!name) {
+      toast.warning("Nama file wajib diisi.");
+      return;
+    }
+    if (!url) {
+      toast.warning("Link tidak valid. Contoh: https://drive.google.com/...");
+      return;
+    }
+    if ((formCreateMR.attachments || []).some((att) => att.url === url)) {
+      toast.warning("Link ini sudah ditambahkan.");
+      return;
+    }
+    setFormCreateMR((prev) => ({
+      ...prev,
+      attachments: [
+        ...(prev.attachments || []),
+        { url, name, is_link: true },
+      ],
+    }));
+    setLinkAttachmentName("");
+    setLinkAttachmentUrl("");
+    toast.success("Link lampiran ditambahkan.");
+  };
+
+  const handleRemoveAttachment = async (index: number, att: Attachment) => {
+    if (att.is_link) {
+      setFormCreateMR((prev) => ({
+        ...prev,
+        attachments: (prev.attachments || []).filter((_, i) => i !== index),
+      }));
+      return;
+    }
     const toastId = toast.loading("Menghapus file...");
     try {
-      await removeAttachment(path);
+      await removeAttachment(att.url);
       const updatedAttachments = (formCreateMR.attachments || []).filter(
         (_, i) => i !== index,
       );
@@ -1268,24 +1312,83 @@ export default function BuatMRPage() {
 
       <Content title="Lampiran File" size="sm">
         <div className="flex flex-col gap-4">
-          <Input
-            type="file"
-            multiple
-            onChange={handleFileUpload}
-            disabled={isUploading}
-          />
+          <Tabs defaultValue="file">
+            <TabsList className="w-full">
+              <TabsTrigger value="file" className="flex-1">
+                <Paperclip className="h-4 w-4" />
+                Upload File
+              </TabsTrigger>
+              <TabsTrigger value="link" className="flex-1">
+                <Link2 className="h-4 w-4" />
+                Link Drive
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="file">
+              <Input
+                type="file"
+                multiple
+                onChange={handleFileUpload}
+                disabled={isUploading}
+              />
+            </TabsContent>
+            <TabsContent value="link" className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground">
+                Untuk file yang terlalu besar, unggah ke Google Drive lalu
+                tempel link-nya di sini. Pastikan akses link sudah dibuka
+                (Anyone with the link).
+              </p>
+              <Input
+                placeholder="Nama file, mis. Foto kerusakan unit"
+                value={linkAttachmentName}
+                onChange={(e) => setLinkAttachmentName(e.target.value)}
+              />
+              <Input
+                type="url"
+                placeholder="https://drive.google.com/..."
+                value={linkAttachmentUrl}
+                onChange={(e) => setLinkAttachmentUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddLinkAttachment();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddLinkAttachment}
+                disabled={!linkAttachmentName.trim() || !linkAttachmentUrl.trim()}
+              >
+                <Plus className="h-4 w-4" />
+                Tambah Link
+              </Button>
+            </TabsContent>
+          </Tabs>
           {(formCreateMR.attachments || []).length > 0 && (
             <ul className="space-y-2">
               {formCreateMR.attachments.map((att, index) => (
                 <li
                   key={index}
-                  className="flex justify-between items-center p-2 bg-muted rounded text-sm"
+                  className="flex justify-between items-center gap-2 p-2 bg-muted rounded text-sm"
                 >
-                  <span className="truncate max-w-[200px]">{att.name}</span>
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 min-w-0 hover:underline"
+                  >
+                    {att.is_link ? (
+                      <Link2 className="h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="truncate max-w-[200px]">{att.name}</span>
+                  </a>
                   <Button
                     size="icon"
                     variant="ghost"
-                    onClick={() => handleRemoveAttachment(index, att.url)}
+                    onClick={() => handleRemoveAttachment(index, att)}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
