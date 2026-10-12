@@ -37,6 +37,7 @@ import {
   LinkIcon,
   ArrowLeftRight,
   UserCog,
+  Link2,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -118,6 +119,8 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { logActivity } from "@/services/logService";
+import { LinkAttachmentForm } from "@/components/link-attachment-form";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -1488,14 +1491,51 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
 
             <Content title="Lampiran">
               <div className="space-y-4">
-                <Label htmlFor="attachments">Tambah Lampiran</Label>
-                <Input
-                  id="attachments"
-                  type="file"
-                  multiple
-                  disabled={actionLoading || isUploading}
-                  onChange={handleAttachmentUpload}
-                />
+                <Label>Tambah Lampiran</Label>
+                <Tabs defaultValue="file">
+                  <TabsList className="w-full">
+                    <TabsTrigger value="file" className="flex-1">
+                      <Paperclip className="h-4 w-4" />
+                      Upload File
+                    </TabsTrigger>
+                    <TabsTrigger value="link" className="flex-1">
+                      <Link2 className="h-4 w-4" />
+                      Link Drive
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="file">
+                    <Input
+                      id="attachments"
+                      type="file"
+                      multiple
+                      disabled={actionLoading || isUploading}
+                      onChange={handleAttachmentUpload}
+                    />
+                  </TabsContent>
+                  <TabsContent value="link">
+                    <LinkAttachmentForm
+                      existingAttachments={
+                        Array.isArray(mr.attachments) ? mr.attachments : []
+                      }
+                      onAdd={(att) =>
+                        setMr((prevMr) =>
+                          prevMr
+                            ? {
+                                ...prevMr,
+                                attachments: [
+                                  ...(Array.isArray(prevMr.attachments)
+                                    ? prevMr.attachments
+                                    : []),
+                                  att,
+                                ],
+                              }
+                            : null,
+                        )
+                      }
+                      disabled={actionLoading || isUploading}
+                    />
+                  </TabsContent>
+                </Tabs>
                 {isUploading && (
                   <div className="flex items-center text-sm text-muted-foreground">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
@@ -1515,7 +1555,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                           rel="noopener noreferrer"
                           className="flex items-center gap-2 truncate hover:underline text-primary"
                         >
-                          <Paperclip className="h-4 w-4 flex-shrink-0" />
+                          {file.is_link ? (
+                            <Link2 className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <Paperclip className="h-4 w-4 flex-shrink-0" />
+                          )}
                           <span className="truncate">{file.name}</span>
                         </a>
                         <Button
