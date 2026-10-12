@@ -44,7 +44,6 @@ import {
   X,
   Link2,
   Paperclip,
-  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -74,8 +73,8 @@ import { formatCurrency, cn } from "@/lib/utils";
 import {
   getAttachmentSizeError,
   getUploadErrorMessage,
-  normalizeLinkUrl,
 } from "@/lib/attachments";
+import { LinkAttachmentForm } from "@/components/link-attachment-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { notifyGAOnMRSubmit } from "@/lib/notifications/client";
@@ -156,8 +155,6 @@ export default function BuatMRPage() {
   const [formattedCost, setFormattedCost] = useState("Rp 0");
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [linkAttachmentName, setLinkAttachmentName] = useState("");
-  const [linkAttachmentUrl, setLinkAttachmentUrl] = useState("");
   const [tujuanSamaDenganLokasi, setTujuanSamaDenganLokasi] = useState(true);
 
   const [isLourdes, setIsLourdes] = useState(false);
@@ -656,33 +653,6 @@ export default function BuatMRPage() {
       setIsUploading(false);
       e.target.value = "";
     }
-  };
-
-  const handleAddLinkAttachment = () => {
-    const name = linkAttachmentName.trim();
-    const url = normalizeLinkUrl(linkAttachmentUrl);
-    if (!name) {
-      toast.warning("Nama file wajib diisi.");
-      return;
-    }
-    if (!url) {
-      toast.warning("Link tidak valid. Contoh: https://drive.google.com/...");
-      return;
-    }
-    if ((formCreateMR.attachments || []).some((att) => att.url === url)) {
-      toast.warning("Link ini sudah ditambahkan.");
-      return;
-    }
-    setFormCreateMR((prev) => ({
-      ...prev,
-      attachments: [
-        ...(prev.attachments || []),
-        { url, name, is_link: true },
-      ],
-    }));
-    setLinkAttachmentName("");
-    setLinkAttachmentUrl("");
-    toast.success("Link lampiran ditambahkan.");
   };
 
   const handleRemoveAttachment = async (index: number, att: Attachment) => {
@@ -1331,38 +1301,16 @@ export default function BuatMRPage() {
                 disabled={isUploading}
               />
             </TabsContent>
-            <TabsContent value="link" className="flex flex-col gap-2">
-              <p className="text-xs text-muted-foreground">
-                Untuk file yang terlalu besar, unggah ke Google Drive lalu
-                tempel link-nya di sini. Pastikan akses link sudah dibuka
-                (Anyone with the link).
-              </p>
-              <Input
-                placeholder="Nama file, mis. Foto kerusakan unit"
-                value={linkAttachmentName}
-                onChange={(e) => setLinkAttachmentName(e.target.value)}
+            <TabsContent value="link">
+              <LinkAttachmentForm
+                existingAttachments={formCreateMR.attachments || []}
+                onAdd={(att) =>
+                  setFormCreateMR((prev) => ({
+                    ...prev,
+                    attachments: [...(prev.attachments || []), att],
+                  }))
+                }
               />
-              <Input
-                type="url"
-                placeholder="https://drive.google.com/..."
-                value={linkAttachmentUrl}
-                onChange={(e) => setLinkAttachmentUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddLinkAttachment();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleAddLinkAttachment}
-                disabled={!linkAttachmentName.trim() || !linkAttachmentUrl.trim()}
-              >
-                <Plus className="h-4 w-4" />
-                Tambah Link
-              </Button>
             </TabsContent>
           </Tabs>
           {(formCreateMR.attachments || []).length > 0 && (
