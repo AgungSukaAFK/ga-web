@@ -3,7 +3,7 @@
 "use client";
 
 import * as React from "react";
-import { redirect, usePathname } from "next/navigation";
+import { redirect, usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   canManageMrTemplate,
@@ -18,6 +18,14 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+import { SidebarSearch } from "@/components/sidebar-search";
+import {
+  searchMenuItems,
+  scoreMenuItem,
+  normalizeSearch,
+  useSidebarSearch,
+} from "@/lib/sidebar/menu-search";
+import { setPendingNavUrl } from "@/lib/sidebar/nav-pending";
 import { AVATAR_UPDATED_EVENT } from "@/lib/avatar";
 import { useNotification } from "@/components/providers/NotificationProvider";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
@@ -52,6 +60,7 @@ import {
   PiggyBank,
   Megaphone,
   FileStack,
+  SearchX,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -148,7 +157,9 @@ const data = {
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const currentPath = usePathname();
+  const router = useRouter();
   const supabase = createClient();
+  const { query, setQuery } = useSidebarSearch();
 
   const [user, setUser] = React.useState<any>(null);
   const [profile, setProfile] = React.useState<any>(null);
@@ -393,6 +404,47 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return markActive(items);
   }, [markActive, hasNewUpdateWebPost]);
 
+  const adminItems = React.useMemo(
+    () => (profile?.role === "admin" ? markActive(data.navAdmin) : []),
+    [profile, markActive],
+  );
+
+  const navGroups = React.useMemo(
+    () => [
+      { label: "Admin", items: adminItems, hideable: true },
+      { label: "Menu", items: mainNavItems, hideable: true },
+      { label: "Petty Cash", items: pettyCashItems, hideable: true },
+      { label: "About", items: navSecondaryItems, hideable: false },
+    ],
+    [adminItems, mainNavItems, pettyCashItems, navSecondaryItems],
+  );
+
+  const searching = normalizeSearch(query) !== "";
+
+  // Saat mencari: saring & urutkan tiap grup, grup tanpa hasil disembunyikan.
+  const shownGroups = React.useMemo(() => {
+    if (!searching) return navGroups.filter((g) => g.items.length > 0);
+    return navGroups
+      .map((g) => ({ ...g, items: searchMenuItems(g.items, query, g.label) }))
+      .filter((g) => g.items.length > 0);
+  }, [navGroups, query, searching]);
+
+  const openTopResult = () => {
+    if (!searching) return;
+    // Hasil paling relevan di antara semua grup.
+    let best: { url: string; score: number } | null = null;
+    for (const g of navGroups) {
+      for (const item of g.items) {
+        const score = scoreMenuItem(query, item, g.label);
+        if (score > 0 && (!best || score > best.score))
+          best = { url: item.url, score };
+      }
+    }
+    if (!best) return;
+    if (best.url !== currentPath) setPendingNavUrl(best.url);
+    router.push(best.url);
+  };
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -408,16 +460,40 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
 
+      <SidebarSearch
+        query={query}
+        onQueryChange={setQuery}
+        onSubmit={openTopResult}
+      />
+
       <SidebarContent>
-        {profile?.role === "admin" && (
-          <NavMain label="Admin" items={markActive(data.navAdmin)} />
+        {shownGroups.map((g) => (
+          <NavMain
+            key={g.label}
+            label={g.label}
+            items={g.items}
+            hideable={g.hideable}
+            searching={searching}
+          />
+        ))}
+
+        {searching && shownGroups.length === 0 && (
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+            <SearchX className="h-6 w-6 opacity-60" />
+            <p>
+              Tidak ada menu untuk &ldquo;
+              <span className="font-medium text-foreground">{query}</span>
+              &rdquo;
+            </p>
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Hapus pencarian
+            </button>
+          </div>
         )}
-
-        <NavMain items={mainNavItems} />
-
-        <NavMain label="Petty Cash" items={pettyCashItems} />
-
-        <NavMain label="About" items={navSecondaryItems} hideable={false} />
       </SidebarContent>
 
       <SidebarFooter>

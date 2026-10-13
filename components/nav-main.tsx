@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type LucideIcon } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Loader2, type LucideIcon } from "lucide-react";
 
 import {
   SidebarGroup,
@@ -9,12 +11,14 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSidebarGroupVisibility } from "@/lib/sidebar/menu-visibility";
+import { setPendingNavUrl, usePendingNavUrl } from "@/lib/sidebar/nav-pending";
 
 type NavItem = {
   label?: string;
@@ -33,6 +37,7 @@ export function NavMain({
   items,
   label = "Menu",
   hideable = true,
+  searching = false,
 }: {
   label?: string;
   items: NavItem[];
@@ -42,7 +47,16 @@ export function NavMain({
    * app-sidebar.tsx).
    */
   hideable?: boolean;
+  /**
+   * Sedang mode pencarian: `items` sudah disaring & diurutkan oleh
+   * app-sidebar.tsx, jadi tampilkan apa adanya (termasuk menu yang
+   * disembunyikan lewat "Atur") & sembunyikan tombol "Atur".
+   */
+  searching?: boolean;
 }) {
+  const pathname = usePathname();
+  const pendingUrl = usePendingNavUrl();
+  const { isMobile, setOpenMobile } = useSidebar();
   const { hiddenUrls, toggleUrl } = useSidebarGroupVisibility(label);
   // Popover Radix baru dirender setelah mount: id aria-controls dari useId
   // bisa beda antara SSR & klien (hydration mismatch), jadi sebelum mount
@@ -51,7 +65,8 @@ export function NavMain({
   useEffect(() => setMounted(true), []);
   const aturButtonClass =
     "group-data-[collapsible=icon]:hidden mr-1 h-6 shrink-0 px-2 text-[11px] font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
-  const visibleItems = hideable
+  const showAtur = hideable && !searching;
+  const visibleItems = showAtur
     ? items.filter((item) => !hiddenUrls.includes(item.url))
     : items;
 
@@ -59,12 +74,12 @@ export function NavMain({
     <SidebarGroup>
       <div className="flex items-center justify-between">
         <SidebarGroupLabel>{label}</SidebarGroupLabel>
-        {hideable && items.length > 0 && !mounted && (
+        {showAtur && items.length > 0 && !mounted && (
           <Button variant="ghost" size="sm" className={aturButtonClass}>
             Atur
           </Button>
         )}
-        {hideable && items.length > 0 && mounted && (
+        {showAtur && items.length > 0 && mounted && (
           <Popover>
             <PopoverTrigger asChild>
               <Button
@@ -112,36 +127,63 @@ export function NavMain({
         )}
       </div>
       <SidebarMenu>
-        {visibleItems.map((item) => (
-          <SidebarMenuItem key={item.title}>
-            <SidebarMenuButton tooltip={item.title} asChild>
-              <a
-                href={item.url}
-                className={cn(
-                  "w-full flex gap-4 items-center rounded-md px-3 py-2 transition-colors hover:bg-accent",
-                  item.isActive && "bg-primary/5"
-                )}
-              >
-                {item.icon && (
-                  <div className="relative shrink-0 h-4 w-4">
-                    <item.icon className="h-4 w-4" />
-                    {!!item.badge && item.badge > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white leading-none">
-                        {item.badge > 99 ? "99+" : item.badge}
-                      </span>
-                    )}
-                  </div>
-                )}
-                <span className="grow text-left">{item.title}</span>
-                {!!item.badge && item.badge > 0 && (
-                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                    {item.badge > 99 ? "99+" : item.badge}
-                  </span>
-                )}
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ))}
+        {visibleItems.map((item) => {
+          const isPending = pendingUrl === item.url;
+          // Selama ada navigasi berjalan, highlight pindah ke menu yang
+          // diklik supaya terasa responsif.
+          const isActive = pendingUrl ? isPending : item.isActive;
+          return (
+            <SidebarMenuItem key={item.url}>
+              <SidebarMenuButton tooltip={item.title} asChild>
+                <Link
+                  href={item.url}
+                  aria-busy={isPending || undefined}
+                  onClick={(e) => {
+                    // Buka di tab baru / klik tengah: tidak ada navigasi di
+                    // tab ini, jadi jangan tampilkan loading.
+                    if (
+                      e.defaultPrevented ||
+                      e.button !== 0 ||
+                      e.metaKey ||
+                      e.ctrlKey ||
+                      e.shiftKey ||
+                      e.altKey
+                    )
+                      return;
+                    if (isMobile) setOpenMobile(false);
+                    if (item.url !== pathname) setPendingNavUrl(item.url);
+                  }}
+                  className={cn(
+                    "w-full flex gap-4 items-center rounded-md px-3 py-2 transition-colors hover:bg-accent active:scale-[0.98] active:bg-accent",
+                    isActive && "bg-primary/5",
+                    isPending && "bg-primary/10",
+                  )}
+                >
+                  {item.icon && (
+                    <div className="relative shrink-0 h-4 w-4">
+                      {isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <item.icon className="h-4 w-4" />
+                      )}
+                      {!!item.badge && item.badge > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white leading-none">
+                          {item.badge > 99 ? "99+" : item.badge}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <span className="grow text-left">{item.title}</span>
+                  {!!item.badge && item.badge > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  )}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
       </SidebarMenu>
     </SidebarGroup>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { NavigationProgress } from "@/components/navigation-progress";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -85,6 +86,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <NavigationProgress />
       <SidebarProvider>
         {/* Pastikan AppSidebar menerima prop user dengan tipe yang sesuai */}
         <AppSidebar className="shadow-lg no-print" />
