@@ -644,3 +644,81 @@
     animation: none;
   }
 }
+
+/* ================================================================== */
+/* Halaman Dokumentasi (app/(With Sidebar)/dokumentasi) - animasi      */
+/* visualisasi alur. Semua dimatikan kalau user minta reduced motion. */
+/* ================================================================== */
+@keyframes docs-travel-x {
+  0% { left: 0%; opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+@keyframes docs-travel-y {
+  0% { top: 0%; opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@keyframes docs-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes docs-pop {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes docs-ring {
+  0% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45); }
+  100% { box-shadow: 0 0 0 10px hsl(var(--primary) / 0); }
+}
+
+@keyframes docs-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes docs-shrink-budget {
+  from { width: var(--docs-from, 100%); }
+  to { width: var(--docs-to, 60%); }
+}
+
+@keyframes docs-scan {
+  0%, 100% { top: 8%; }
+  50% { top: 86%; }
+}
+
+.docs-travel-x { animation: docs-travel-x var(--docs-duration, 6s) linear infinite; }
+.docs-travel-y { animation: docs-travel-y var(--docs-duration, 6s) linear infinite; }
+.docs-fade-up { animation: docs-fade-up 0.45s ease-out both; }
+.docs-pop { animation: docs-pop 0.4s ease-out both; }
+.docs-ring { animation: docs-ring 1.6s ease-out infinite; }
+.docs-grow-x { transform-origin: left; animation: docs-grow-x 0.9s ease-out both; }
+.docs-shrink-budget { animation: docs-shrink-budget 1.4s ease-in-out 0.6s both; }
+.docs-scan { animation: docs-scan 2.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-travel-x,
+  .docs-travel-y,
+  .docs-scan,
+  .docs-ring {
+    animation: none;
+  }
+  .docs-travel-x,
+  .docs-travel-y {
+    display: none;
+  }
+  .docs-fade-up,
+  .docs-pop,
+  .docs-grow-x,
+  .docs-shrink-budget {
+    animation-duration: 0.01ms;
+    animation-delay: 0s !important;
+  }
+}
