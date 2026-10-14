@@ -291,7 +291,7 @@ export default function RequestNewItemPage() {
                         {getStatusBadge(req.status)}
                         {req.admin_notes && (
                           <span
-                            className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-amber-200 truncate max-w-[120px]"
+                            className="text-[10px] text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-900/30 px-1.5 py-0.5 rounded flex items-center gap-1 border border-amber-200 dark:border-amber-800 truncate max-w-[120px]"
                             title={req.admin_notes}
                           >
                             <Info className="h-3 w-3" /> Ada Catatan
@@ -375,7 +375,7 @@ export default function RequestNewItemPage() {
 
               {selectedRequest.admin_notes && (
                 <div className="space-y-1.5 pt-2">
-                  <span className="text-amber-700 font-semibold text-xs flex items-center gap-1">
+                  <span className="text-amber-700 dark:text-amber-400 font-semibold text-xs flex items-center gap-1">
                     <Info className="h-3 w-3" /> Catatan Admin / General Affair
                   </span>
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-900 rounded-md text-sm italic break-words">

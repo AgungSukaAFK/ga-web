@@ -343,7 +343,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
                 className="h-11 border-muted-foreground/30"
                 placeholder="Rp 0"
               />
-              <div className="flex gap-2 items-start text-[11px] text-amber-600 bg-amber-50 p-2 rounded border border-amber-100">
+              <div className="flex gap-2 items-start text-[11px] text-amber-600 bg-amber-50 p-2 rounded border border-amber-100 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800">
                 <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                 <p>
                   Harga ini (HPS) hanya referensi. Harga beli aktual ditentukan
@@ -401,7 +401,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
           </Button>
           <Button
             size="lg"
-            className="px-8 bg-blue-600 hover:bg-blue-700 font-semibold"
+            className="px-8 font-semibold"
             onClick={handleSubmit}
             disabled={saving}
           >

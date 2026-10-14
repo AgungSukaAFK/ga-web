@@ -515,7 +515,7 @@ export default function BarangClient() {
 
                       <TableCell className="text-center">
                         {item.is_asset ? (
-                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 text-[10px]">
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/40 dark:border-blue-800 text-[10px]">
                             Asset
                           </Badge>
                         ) : (
@@ -693,7 +693,7 @@ export default function BarangClient() {
                             </>
                           ) : (
                             <>
-                              <Box className="h-3 w-3 text-gray-500" />{" "}
+                              <Box className="h-3 w-3 text-muted-foreground" />{" "}
                               Consumable
                             </>
                           )}
@@ -725,7 +725,7 @@ export default function BarangClient() {
                         <span className="text-xs text-muted-foreground">
                           Harga Referensi:
                         </span>
-                        <div className="text-sm font-bold text-green-700">
+                        <div className="text-sm font-bold text-green-700 dark:text-green-400">
                           {selectedItem.last_purchase_price
                             ? formatCurrency(selectedItem.last_purchase_price)
                             : "Rp 0"}
@@ -737,7 +737,7 @@ export default function BarangClient() {
                             href={selectedItem.link}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs flex items-center gap-1 text-blue-600 hover:underline"
+                            className="text-xs flex items-center gap-1 text-primary hover:underline"
                           >
                             <ExternalLink className="h-3 w-3" /> Buka Link
                             Produk

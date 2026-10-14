@@ -463,7 +463,8 @@
     --sidebar-accent: hsl(240 4.8% 95.9%);
     --sidebar-accent-foreground: hsl(240 5.9% 10%);
     --sidebar-border: hsl(220 13% 91%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    /* Ikut --ring supaya focus ring sidebar mengikuti warna aksen */
+    --sidebar-ring: hsl(var(--ring));
   }
   .dark {
     /* REVISI: Dark mode sidebar juga disesuaikan dengan Zinc */
@@ -474,7 +475,7 @@
     --sidebar-accent: hsl(240 3.7% 15.9%);
     --sidebar-accent-foreground: hsl(0 0% 98%);
     --sidebar-border: hsl(240 3.7% 15.9%);
-    --sidebar-ring: hsl(240 4.9% 83.9%);
+    --sidebar-ring: hsl(var(--ring));
   }
   .soft-light {
     --sidebar: hsl(40 13% 89%);
@@ -484,7 +485,7 @@
     --sidebar-accent: hsl(38 12% 84%);
     --sidebar-accent-foreground: hsl(30 7% 23%);
     --sidebar-border: hsl(38 9% 80.5%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar-ring: hsl(var(--ring));
   }
   .soft-dark {
     --sidebar: hsl(215 14% 14.5%);
@@ -494,7 +495,7 @@
     --sidebar-accent: hsl(215 12% 23%);
     --sidebar-accent-foreground: hsl(210 16% 87%);
     --sidebar-border: hsl(215 11% 20.5%);
-    --sidebar-ring: hsl(213 14% 66%);
+    --sidebar-ring: hsl(var(--ring));
   }
 }
 

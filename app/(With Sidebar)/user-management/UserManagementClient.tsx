@@ -578,7 +578,7 @@ export function UserManagementClientContent() {
                     {user.is_active === false ? (
                       <Badge variant="destructive">Nonaktif</Badge>
                     ) : (
-                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
                         Aktif
                       </Badge>
                     )}

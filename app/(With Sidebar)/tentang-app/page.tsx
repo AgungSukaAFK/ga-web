@@ -138,7 +138,7 @@ function SectionHeading({
 }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
         {eyebrow}
       </p>
       <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
@@ -155,48 +155,48 @@ export default function TentangAppPage() {
   return (
     <div className="col-span-12 flex flex-col gap-16 pb-4 xl:col-span-10 xl:col-start-2">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-blue-950 to-blue-800 px-6 py-10 text-white shadow-lg sm:px-10 sm:py-14">
+      <section className="relative overflow-hidden rounded-2xl bg-primary px-6 py-10 text-primary-foreground shadow-lg sm:px-10 sm:py-14">
         {/* Dekorasi latar */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:32px_32px]"
+          className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:32px_32px]"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-cyan-400/30 blur-3xl"
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary-foreground/15 blur-3xl"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-blue-500/30 blur-3xl"
+          className="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-primary-foreground/10 blur-3xl"
         />
 
         <div className="relative grid items-center gap-10 lg:grid-cols-[1.3fr_1fr]">
           <div className="space-y-5 text-center lg:text-left">
             <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
-              <Badge className="border-white/20 bg-white/10 text-white hover:bg-white/15">
+              <Badge className="border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15">
                 {VERSI_APLIKASI}
               </Badge>
-              <Badge className="border-white/20 bg-white/10 text-white hover:bg-white/15">
+              <Badge className="border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15">
                 Procurement
               </Badge>
-              <Badge className="border-white/20 bg-white/10 text-white hover:bg-white/15">
+              <Badge className="border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/15">
                 Petty Cash
               </Badge>
             </div>
             <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-5xl">
               Pengadaan barang yang{" "}
-              <span className="bg-gradient-to-r from-cyan-300 to-blue-300 bg-clip-text text-transparent">
+              <span className="text-primary-foreground/75">
                 terstruktur, transparan, dan akuntabel.
               </span>
             </h1>
-            <p className="mx-auto max-w-xl text-base leading-relaxed text-blue-100/80 sm:text-lg lg:mx-0">
-              <span className="font-semibold text-white">{NAMA_APLIKASI}</span>{" "}
+            <p className="mx-auto max-w-xl text-base leading-relaxed text-primary-foreground/80 sm:text-lg lg:mx-0">
+              <span className="font-semibold text-primary-foreground">{NAMA_APLIKASI}</span>{" "}
               adalah solusi digital terpusat untuk alur kerja Material Request,
               Purchase Order, hingga Petty Cash di {NAMA_PERUSAHAAN}.
             </p>
           </div>
 
-          <div className="mx-auto w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-white/20 sm:p-8">
+          <div className="mx-auto w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-primary-foreground/20 sm:p-8">
             <Image
               src="/lourdes-logo.webp"
               alt="Logo Lourdes Auto Parts"
@@ -213,11 +213,11 @@ export default function TentangAppPage() {
           {STATS.map(({ icon: Icon, value, label }) => (
             <div
               key={label}
-              className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm"
+              className="rounded-xl border border-primary-foreground/10 bg-primary-foreground/5 p-4 backdrop-blur-sm"
             >
-              <Icon className="h-5 w-5 text-cyan-300" />
+              <Icon className="h-5 w-5 text-primary-foreground/80" />
               <p className="mt-3 text-lg font-bold sm:text-xl">{value}</p>
-              <p className="text-xs text-blue-100/70 sm:text-sm">{label}</p>
+              <p className="text-xs text-primary-foreground/70 sm:text-sm">{label}</p>
             </div>
           ))}
         </div>
@@ -287,15 +287,15 @@ export default function TentangAppPage() {
             </ul>
           </div>
 
-          <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-6 dark:border-blue-900/50 dark:bg-blue-950/20">
-            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+          <div className="rounded-2xl border border-primary/25 bg-primary/5 p-6">
+            <div className="flex items-center gap-2 text-primary">
               <CheckCircle2 className="h-5 w-5" />
               <p className="font-semibold">Sesudah, dengan {NAMA_APLIKASI}</p>
             </div>
             <ul className="mt-5 space-y-5">
               {SOLUSI.map(({ icon: Icon, title, desc }) => (
                 <li key={title} className="flex gap-3">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Icon className="h-4 w-4" />
                   </div>
                   <div>
@@ -322,16 +322,16 @@ export default function TentangAppPage() {
           {/* Garis penghubung (desktop) */}
           <div
             aria-hidden
-            className="absolute left-[10%] right-[10%] top-6 hidden h-px bg-gradient-to-r from-blue-500/0 via-blue-500/50 to-blue-500/0 lg:block"
+            className="absolute left-[10%] right-[10%] top-6 hidden h-px bg-gradient-to-r from-primary/0 via-primary/50 to-primary/0 lg:block"
           />
           {TAHAPAN.map(({ icon: Icon, title, desc }, i) => (
             <li
               key={title}
               className="relative flex gap-4 rounded-xl border bg-card p-5 shadow-sm lg:flex-col lg:items-center lg:border-0 lg:bg-transparent lg:p-0 lg:text-center lg:shadow-none"
             >
-              <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-400 text-white shadow-md ring-4 ring-background">
+              <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-4 ring-background">
                 <Icon className="h-5 w-5" />
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background text-[10px] font-bold text-blue-600 ring-1 ring-border dark:text-blue-400">
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background text-[10px] font-bold text-primary ring-1 ring-border">
                   {i + 1}
                 </span>
               </div>
@@ -347,16 +347,16 @@ export default function TentangAppPage() {
       </section>
 
       {/* Penutup */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 px-6 py-10 text-center text-white shadow-lg sm:px-10">
+      <section className="relative overflow-hidden rounded-2xl bg-primary px-6 py-10 text-center text-primary-foreground shadow-lg sm:px-10">
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10 blur-2xl"
+          className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-primary-foreground/10 blur-2xl"
         />
         <div className="relative mx-auto max-w-2xl space-y-3">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Satu sistem, satu alur, satu sumber data.
           </h2>
-          <p className="text-blue-50/90">
+          <p className="text-primary-foreground/90">
             Keterlambatan dan kesalahan dalam pengadaan berdampak langsung pada
             efisiensi operasional. {NAMA_APLIKASI} hadir agar setiap permintaan
             bergerak cepat, tercatat, dan bisa dipertanggungjawabkan.

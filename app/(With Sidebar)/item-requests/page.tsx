@@ -312,7 +312,6 @@ export default function ItemRequestPage() {
                       </Button>
                       <Button
                         size="sm"
-                        className="bg-blue-600 hover:bg-blue-700"
                         onClick={() => handleOpenProcess(req)}
                       >
                         Proses <ArrowRight className="ml-1 h-3 w-3" />
@@ -408,7 +407,7 @@ export default function ItemRequestPage() {
                   </div>
                 </div>
                 {selectedReq?.description && (
-                  <div className="text-xs text-muted-foreground italic border-t border-blue-100 pt-2 mt-2">
+                  <div className="text-xs text-muted-foreground italic border-t pt-2 mt-2">
                     &quot;Note User: {selectedReq.description}&quot;
                   </div>
                 )}
