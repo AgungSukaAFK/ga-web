@@ -24,7 +24,7 @@ export default function PendingApprovalPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 px-4">
+    <div className="flex items-center justify-center min-h-screen bg-muted px-4">
       <Card className="w-full max-w-lg text-center">
         <CardHeader>
           <CardTitle className="text-2xl font-bold">Akun Belum Aktif</CardTitle>

@@ -2200,7 +2200,6 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 {showManualReceiveButton && (
                   <Button
                     size="sm"
-                    className="bg-blue-600 hover:bg-blue-700"
                     onClick={() => setIsReceiveDialogOpen(true)}
                     disabled={actionLoading}
                   >
@@ -2584,7 +2583,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                         onClick={() =>
                                           handleOpenEditStatus(mrItem, idx)
                                         }
-                                        className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+                                        className="p-1 rounded-full hover:bg-muted text-muted-foreground transition-colors"
                                         title="Edit Status Barang"
                                       >
                                         <Pencil className="w-3 h-3" />
@@ -2665,7 +2664,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="mt-2 h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50"
+                                      className="mt-2 h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:text-amber-300 dark:hover:bg-amber-900/40"
                                       onClick={() =>
                                         setDeliveryDetailItem(mrItem)
                                       }
@@ -3217,21 +3216,21 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
                 {/* PPH */}
                 {po.pph_type ? (
-                  <div className="rounded-md bg-orange-50 border border-orange-200 p-3 space-y-1">
+                  <div className="rounded-md bg-orange-50 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 p-3 space-y-1">
                     <div className="flex justify-between items-center text-sm gap-2">
                       <div>
-                        <span className="font-semibold text-orange-900">
+                        <span className="font-semibold text-orange-900 dark:text-orange-200">
                           {PPH_LABELS[po.pph_type] || po.pph_type}
                         </span>
-                        <span className="ml-1.5 text-xs text-orange-700">
+                        <span className="ml-1.5 text-xs text-orange-700 dark:text-orange-300">
                           ({po.pph_rate}%)
                         </span>
                       </div>
-                      <span className="font-semibold text-orange-900 whitespace-nowrap">
+                      <span className="font-semibold text-orange-900 dark:text-orange-200 whitespace-nowrap">
                         - {formatCurrency(po.pph_amount || 0)}
                       </span>
                     </div>
-                    <p className="text-xs text-orange-700 leading-relaxed">
+                    <p className="text-xs text-orange-700 dark:text-orange-300 leading-relaxed">
                       Dipotong dari pembayaran vendor &amp; disetor ke KPP oleh
                       perusahaan.
                     </p>
@@ -3284,7 +3283,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <span className="text-muted-foreground">
                       PPH disetor ke KPP
                     </span>
-                    <span className="font-medium text-orange-700">
+                    <span className="font-medium text-orange-700 dark:text-orange-300">
                       + {formatCurrency(po.pph_amount || 0)}
                     </span>
                   </div>
@@ -3600,7 +3599,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
             <div className="grid gap-4 py-2">
               {selectedItemToEdit && !selectedItemToEdit.part_number && (
-                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <p>
                     Barang ini tidak punya Part Number, jadi info Breakdown PO

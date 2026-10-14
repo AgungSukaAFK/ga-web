@@ -1091,7 +1091,7 @@ function CreatePOPageContent() {
                   <TooltipTrigger>
                     <Badge
                       variant="outline"
-                      className="bg-amber-100 text-amber-700 border-amber-200 flex items-center gap-1 cursor-help"
+                      className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1 cursor-help"
                     >
                       Direct PO (Tanpa MR) <HelpCircle className="h-3 w-3" />
                     </Badge>
@@ -2317,7 +2317,7 @@ function CreatePOPageContent() {
                           href={poForm.items[viewItemIndex].link}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-xs break-all"
+                          className="text-primary hover:underline text-xs break-all"
                         >
                           {poForm.items[viewItemIndex].link}
                         </a>
@@ -2343,11 +2343,11 @@ function CreatePOPageContent() {
                   </Label>
                   <div className="flex items-center gap-2">
                     {poForm.items[viewItemIndex].barang_id ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-green-200">
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800">
                         <Tag className="h-3 w-3" /> Terdaftar di Master Barang
                       </span>
                     ) : (
-                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-amber-200">
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800">
                         <Info className="h-3 w-3" /> Input Manual (Belum
                         Terlink)
                       </span>

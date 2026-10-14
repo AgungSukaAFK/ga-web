@@ -1062,7 +1062,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                         {item.part_number}
                       </div>
                       {!item.barang_id && (
-                        <span className="text-[10px] text-amber-600 bg-amber-100 px-1 rounded inline-block mt-1">
+                        <span className="text-[10px] text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40 px-1 rounded inline-block mt-1">
                           Manual Input
                         </span>
                       )}
@@ -1715,7 +1715,7 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                 </div>
               )}
 
-              <div className="border-t border-slate-300 my-2 pt-2">
+              <div className="border-t border-border my-2 pt-2">
                 <div className="flex justify-between font-bold text-lg">
                   <span>Grand Total</span>
                   <span>{formatCurrency(poForm.total_price)}</span>
@@ -1840,11 +1840,11 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
                   </Label>
                   <div className="flex items-center gap-2">
                     {poForm.items[viewItemIndex].barang_id ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-green-200">
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800">
                         <Tag className="h-3 w-3" /> Terdaftar di Master Barang
                       </span>
                     ) : (
-                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-amber-200">
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1 w-fit border border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800">
                         <Info className="h-3 w-3" /> Input Manual (Belum
                         Terlink)
                       </span>

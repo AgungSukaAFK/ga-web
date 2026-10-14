@@ -362,7 +362,7 @@ export default function TambahBarangPage() {
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 p-3 bg-yellow-50 text-yellow-800 rounded text-xs">
+              <div className="flex items-start gap-2 p-3 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200 rounded text-xs">
                 <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <p>
                   Pastikan <strong>Part Number</strong> unik. Data yang memiliki
@@ -546,7 +546,7 @@ export default function TambahBarangPage() {
                 className="h-11 border-muted-foreground/30"
                 placeholder="Rp 0"
               />
-              <div className="flex gap-2 items-start text-[11px] text-amber-600 bg-amber-50 p-2 rounded border border-amber-100">
+              <div className="flex gap-2 items-start text-[11px] text-amber-600 bg-amber-50 p-2 rounded border border-amber-100 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800">
                 <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                 <p>
                   Harga ini (HPS) hanya referensi. Harga beli aktual ditentukan
@@ -603,7 +603,7 @@ export default function TambahBarangPage() {
           </Button>
           <Button
             size="lg"
-            className="px-8 bg-green-600 hover:bg-green-700 font-semibold"
+            className="px-8 font-semibold"
             onClick={handleSubmit}
             disabled={loading}
           >

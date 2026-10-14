@@ -802,19 +802,19 @@ export function MaterialRequestContent({
     let colorClass = "";
     switch (p) {
       case "P0":
-        colorClass = "border-red-500 text-red-600 bg-red-50 text-sm";
+        colorClass = "border-red-500 text-red-600 bg-red-50 dark:text-red-300 dark:bg-red-900/40 text-sm";
         break;
       case "P1":
-        colorClass = "border-orange-500 text-orange-600 bg-orange-50 text-sm";
+        colorClass = "border-orange-500 text-orange-600 bg-orange-50 dark:text-orange-300 dark:bg-orange-900/40 text-sm";
         break;
       case "P2":
-        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50 text-sm";
+        colorClass = "border-yellow-500 text-yellow-600 bg-yellow-50 dark:text-yellow-300 dark:bg-yellow-900/40 text-sm";
         break;
       case "P3":
-        colorClass = "border-green-500 text-green-600 bg-green-50 text-sm";
+        colorClass = "border-green-500 text-green-600 bg-green-50 dark:text-green-300 dark:bg-green-900/40 text-sm";
         break;
       default:
-        colorClass = "border-gray-300 text-gray-500 bg-gray-50 text-sm";
+        colorClass = "border-border text-muted-foreground bg-muted text-sm";
     }
     return (
       <Badge
@@ -1299,7 +1299,7 @@ export function MaterialRequestContent({
                     <Link
                       href={`/material-request/${mr.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="hover:underline hover:text-blue-600 decoration-blue-600 underline-offset-4"
+                      className="hover:underline hover:text-primary decoration-primary underline-offset-4"
                     >
                       {mr.kode_mr}
                     </Link>

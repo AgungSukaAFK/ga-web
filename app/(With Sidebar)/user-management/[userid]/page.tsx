@@ -331,7 +331,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
     <>
       <Content size="md" title={`Edit Profil - ${user.email}`}>
         {updateSuccess && (
-          <Alert className="mb-4 bg-green-100 border-green-400 text-green-700">
+          <Alert className="mb-4 bg-green-100 border-green-400 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300">
             <Terminal className="h-4 w-4" />
             <AlertTitle>Berhasil!</AlertTitle>
             <AlertDescription>Profil berhasil diperbarui.</AlertDescription>
@@ -545,7 +545,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
           <div className="mb-4 flex items-center gap-2">
             <span className="text-sm font-medium">Status saat ini:</span>
             {user.is_active ? (
-              <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+              <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
                 Aktif
               </Badge>
             ) : (

@@ -1573,7 +1573,7 @@ export default function MrManagementClient() {
                                     {item.bast_attachments.map((att, idx) => (
                                       <div
                                         key={idx}
-                                        className="text-[10px] bg-emerald-50 text-emerald-700 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
+                                        className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 pl-2 pr-1 py-0.5 rounded-sm flex items-center gap-1"
                                       >
                                         <Link
                                           href={resolveAttachmentUrl(att.url)}
