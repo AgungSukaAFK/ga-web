@@ -16,6 +16,18 @@ import {
   MentionListItem,
 } from "@/services/mentionSearchService";
 import { DiscussionMention, MentionType } from "@/type";
+import { debounceAsync } from "@/lib/debounce-async";
+
+// Tiptap memanggil `items` di SETIAP ketikan setelah karakter pemicu - tanpa
+// debounce, ngetik "/GMI/MR/X" = 9 x 5 query (pencarian dokumen query 5
+// tabel sekaligus), semuanya masuk log API Supabase. Dibuat di level modul
+// supaya cache-nya dipakai bersama semua editor di halaman.
+const debouncedSearch = {
+  user: debounceAsync(searchUserMentions),
+  barang: debounceAsync(searchBarangMentions),
+  vendor: debounceAsync(searchVendorMentions),
+  document: debounceAsync(searchDocumentMentions),
+};
 
 export const MENTION_LEGEND: {
   type: MentionType;
@@ -121,12 +133,20 @@ export function createAppMentionExtension(
       return `${charFor(type)}${node.attrs.label ?? node.attrs.id}`;
     },
     suggestions: [
-      makeSuggestion("user", searchUserMentions, "User tidak ditemukan"),
-      makeSuggestion("barang", searchBarangMentions, "Barang tidak ditemukan"),
-      makeSuggestion("vendor", searchVendorMentions, "Vendor tidak ditemukan"),
+      makeSuggestion("user", debouncedSearch.user, "User tidak ditemukan"),
+      makeSuggestion(
+        "barang",
+        debouncedSearch.barang,
+        "Barang tidak ditemukan",
+      ),
+      makeSuggestion(
+        "vendor",
+        debouncedSearch.vendor,
+        "Vendor tidak ditemukan",
+      ),
       makeSuggestion(
         "document",
-        searchDocumentMentions,
+        debouncedSearch.document,
         "Dokumen tidak ditemukan",
       ),
     ],
