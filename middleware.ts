@@ -59,11 +59,14 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // UPDATE: Menggunakan getUser() alih-alih getSession() untuk keamanan
-  // getUser() memvalidasi token ke server auth Supabase
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims() memverifikasi tanda tangan JWT (tetap aman, beda dengan
+  // getSession()) dan me-refresh token kalau expired. Kalau project memakai
+  // JWT Signing Keys asimetris, verifikasinya lokal (JWKS di-cache) - tidak
+  // ada request ke /auth/v1/user di tiap navigasi seperti getUser(), jadi
+  // log Auth & API Gateway jauh berkurang. Dengan legacy JWT secret (HS256)
+  // ia otomatis fallback ke getUser(), perilakunya sama seperti sebelumnya.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? { id: claimsData.claims.sub } : null;
 
   const { pathname } = request.nextUrl;
 

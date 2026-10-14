@@ -39,6 +39,7 @@ import {
   updatePurchaseOrder,
 } from "@/services/purchaseOrderService";
 import { formatCurrency, cn } from "@/lib/utils";
+import { withAssetMarker } from "@/lib/poAssetMarker";
 import {
   AlertTriangle,
   Loader2,
@@ -251,6 +252,11 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
 
   const [poForm, setPoForm] = useState<PurchaseOrderDetail | null>(null);
+  // Snapshot jenis PO (Aset/Biasa) + kode_po saat halaman dimuat, buat dicatat
+  // ke riwayat aktivitas kalau jenisnya diubah di halaman ini.
+  const originalAssetRef = useRef<{ is_asset: boolean; kode_po: string } | null>(
+    null,
+  );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -347,6 +353,10 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           },
         };
         setPoForm(initialData as any);
+        originalAssetRef.current = {
+          is_asset: !!initialData.is_asset,
+          kode_po: initialData.kode_po,
+        };
 
         // --- Init Payment Term ---
         if (initialData.payment_term) {
@@ -659,6 +669,21 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
           `${userProfile?.nama || currentUser.email || "Unknown"} memperbarui data Purchase Order ${poForm.kode_po}`,
           { updated_fields: Object.keys(payload) },
         );
+        const original = originalAssetRef.current;
+        if (original && original.is_asset !== !!poForm.is_asset) {
+          const label = (isAsset: boolean) => (isAsset ? "PO Aset" : "PO Biasa");
+          await logActivity(
+            currentUser.id,
+            "CHANGE_PO_TYPE",
+            "purchase_order",
+            String(poId),
+            `${userProfile?.nama || currentUser.email || "Unknown"} mengubah jenis PO dari ${label(original.is_asset)} (${original.kode_po}) menjadi ${label(!!poForm.is_asset)} (${poForm.kode_po})`,
+            {
+              before: { is_asset: original.is_asset, kode_po: original.kode_po },
+              after: { is_asset: !!poForm.is_asset, kode_po: poForm.kode_po },
+            },
+          );
+        }
         if (poForm.mr_id) {
           await logActivity(
             currentUser.id,
@@ -826,6 +851,34 @@ function EditPOPageContent({ params }: { params: { id: string } }) {
             {poForm.material_requests &&
               ` | Ref. MR: ${poForm.material_requests.kode_mr}`}
           </p>
+          <div className="flex items-center gap-2 mt-1">
+            <Checkbox
+              id="is-asset-po"
+              checked={!!poForm.is_asset}
+              onCheckedChange={(c) =>
+                setPoForm((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        is_asset: c as boolean,
+                        kode_po: withAssetMarker(prev.kode_po, c as boolean),
+                      }
+                    : null,
+                )
+              }
+            />
+            <label
+              htmlFor="is-asset-po"
+              className="text-sm font-medium cursor-pointer select-none"
+            >
+              Ini adalah PO Aset
+            </label>
+            {poForm.is_asset && (
+              <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
+                PO Asset
+              </Badge>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
           <Button
