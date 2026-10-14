@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "./nav-user";
+import { TeamSwitcher } from "@/components/team-switcher";
+import { WEB_APPS, WEB_ROLE_LABELS } from "@/lib/constants/web-apps";
 import { SidebarSearch } from "@/components/sidebar-search";
 import {
   searchMenuItems,
@@ -458,6 +460,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             priority
           />
         </div>
+        {/* Pindah ke web lain: khusus departemen GA */}
+        {isGADepartment(profile?.department) && (
+          <TeamSwitcher
+            apps={WEB_APPS}
+            roleLabel={WEB_ROLE_LABELS[profile?.role]}
+          />
+        )}
       </SidebarHeader>
 
       <SidebarSearch
