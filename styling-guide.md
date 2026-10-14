@@ -52,8 +52,8 @@ import kalau ada yang tidak ada di project baru.
 **Fondasi tema (wajib):**
 
 - `app/globals.css`: semua token warna, 4 mode tema, warna aksen, font, print.
-  Bagian `#printable-po-a4`, `.feedback-editor` dan `auth-kenburns` boleh
-  dibuang kalau tidak dipakai.
+  Bagian `#printable-po-a4`, `.feedback-editor`, `auth-kenburns` dan
+  keyframe `docs-*` (halaman Dokumentasi) boleh dibuang kalau tidak dipakai.
 - `components.json`: config shadcn (new-york, neutral, lucide).
 - `lib/utils.ts`: cukup ambil fungsi `cn()`.
 - `lib/theme-provider.tsx`: `CustomThemeProvider`, `accentThemes`, `useCustomTheme`.
@@ -84,6 +84,13 @@ dimodifikasi dari default shadcn, jadi **jangan** generate ulang lewat
 - `components/auth/auth-shell.tsx` + `components/auth/auth-input.tsx`: layout login/sign-up.
 - `components/app-sidebar.tsx`, `nav-main.tsx`, `nav-user.tsx`: struktur sidebar
   (isi menu disesuaikan).
+- `components/sidebar-search.tsx` + `lib/sidebar/menu-search.ts`: pencarian menu
+  di sidebar (isi `MENU_KEYWORDS` disesuaikan dengan URL menu project baru).
+- `lib/sidebar/menu-visibility.ts`: tombol "Atur" untuk sembunyikan menu per grup.
+- `components/navigation-progress.tsx` + `lib/sidebar/nav-pending.ts`: progress
+  bar & spinner saat pindah halaman dari sidebar.
+- `components/link-attachment-form.tsx`: form lampiran berupa link (Google Drive)
+  untuk file yang terlalu besar diunggah.
 
 ---
 
@@ -214,7 +221,7 @@ Hampir tidak pernah `font-bold`.
 
 ## 6. Warna status (badge)
 
-Status memakai **badge outline lembut** dengan pola tetap (light: `-50/-700/-200`,
+Status per item/voucher memakai **badge outline lembut** dengan pola tetap (light: `-50/-700/-200`,
 dark: `-900/40 / -300 / -800`). Simpan map-nya di satu file konstanta
 (di ga-web: `type/enum.ts`), jangan ditulis inline di tiap halaman.
 
@@ -250,6 +257,17 @@ Arti warna yang konsisten dipakai:
 | emerald      | Selesai / closed (sedikit lebih tebal: `-100/-800`) |
 | red          | Rejected / masalah                      |
 
+Pengecualian yang memang dipakai:
+
+- **Status dokumen MR/PO** (header halaman detail) memakai badge **solid**:
+  `border-transparent text-white bg-<warna>-500` (pending = `bg-secondary`,
+  rejected = `bg-destructive`). Sumbernya `getStatusBadge` di halaman detail;
+  halaman Dokumentasi menyalin map yang sama (`DOC_STATUS_COLORS` di
+  `dokumentasi/_components/primitives.tsx`) supaya tampilannya identik.
+- **Badge jumlah notifikasi** di sidebar: `rounded-full bg-red-500 text-white
+  text-[10px] font-bold`, maksimal tampil `99+`. Saat sidebar diciutkan, badge
+  pindah ke pojok ikon (`absolute -top-1.5 -right-1.5 h-4 w-4 text-[9px]`).
+
 Untuk aksi utama tetap pakai `Button` default (warna `primary`), **bukan**
 `bg-green-600` dsb.
 
@@ -262,6 +280,7 @@ Untuk aksi utama tetap pakai `Button` default (warna `primary`), **bukan**
 Route group `app/(With Sidebar)/layout.tsx`:
 
 ```tsx
+<NavigationProgress />   {/* progress bar navigasi, di luar SidebarProvider */}
 <SidebarProvider>
   <AppSidebar className="shadow-lg no-print" />
   <SidebarInset>
@@ -282,9 +301,40 @@ Route group `app/(With Sidebar)/layout.tsx`:
 ```
 
 - Sidebar: `collapsible="icon"`, logo perusahaan (`/lourdes-logo.webp`) full
-  width di `SidebarHeader`, menu dikelompokkan via `NavMain label="..."`,
-  `NavUser` di footer.
+  width di `SidebarHeader`, lalu `SidebarSearch`, menu dikelompokkan via
+  `NavMain label="..."` (Admin, Menu, Petty Cash, About), `NavUser` di footer.
+- Link menu pakai `next/link` (bukan `<a>`), class
+  `rounded-md px-3 py-2 hover:bg-accent active:scale-[0.98]`; aktif `bg-primary/5`.
+- Tiap grup (kecuali About) punya tombol **Atur** (`ghost`, `h-6 text-[11px]`)
+  untuk menyembunyikan menu; pilihan disimpan per grup.
 - Breadcrumb: segmen URL di-Title-Case, segmen UUID terakhir disembunyikan.
+
+### 7.1a Pencarian menu sidebar
+
+- Input `SidebarInput` dengan ikon `Search` kiri (`pl-8`) dan tombol `X` kanan
+  (`h-5 w-5 rounded-sm`) saat ada isi. Placeholder `Cari menu...`.
+- Cocok ke judul, singkatan (`mr`, `po`, `pc`), sinonim ID/EN, nama grup, dan
+  tahan typo ringan. Grup tanpa hasil disembunyikan, tombol "Atur" disembunyikan
+  dan menu yang di-hide tetap ikut dicari.
+- **Enter** membuka hasil teratas, **Esc** mengosongkan. Query disimpan di
+  `localStorage` agar tidak hilang saat pindah halaman.
+- Sidebar diciutkan: tampil sebagai tombol ikon `Search` (aktif bila ada query)
+  yang membuka sidebar lalu fokus ke input.
+- Tidak ada hasil: blok tengah `py-8 text-sm text-muted-foreground` dengan ikon
+  `SearchX` (`h-6 w-6 opacity-60`), query di-`font-medium text-foreground`, dan
+  link "Hapus pencarian" `text-xs text-primary hover:underline`.
+
+### 7.1b Feedback navigasi
+
+Klik menu sidebar harus terasa instan walau halaman tujuan masih dimuat:
+
+- Item yang diklik langsung jadi aktif (`bg-primary/10`), ikonnya diganti
+  `Loader2 animate-spin text-primary`, `aria-busy` dipasang.
+- `NavigationProgress`: bar `h-0.5 bg-primary` fixed di atas layar (`z-[100]`,
+  `no-print`), jalan pelan ke ~85%, penuh + fade saat pathname berubah, auto
+  batal setelah 20 detik.
+- Ctrl/Cmd/Shift/klik tengah (buka tab baru) **tidak** memicu loading.
+- Di mobile, sidebar ditutup otomatis setelah klik menu.
 
 ### 7.2 Konten halaman: `<Content>`
 
@@ -374,6 +424,18 @@ butuh aksi pakai `action: { label, onClick }`.
 
 **Transisi**: `transition-colors` di elemen interaktif; `transition-transform` +
 `rotate-180` untuk chevron. Hormati `prefers-reduced-motion` untuk animasi besar.
+
+**Animasi custom**: keyframe ditaruh di `globals.css` dengan prefix per fitur
+(`auth-*`, `docs-*`), durasi/posisi bisa di-override lewat CSS variable
+(`--docs-duration`, `--docs-from`, `--docs-to`), delay lewat `style={{ animationDelay }}`.
+Setiap animasi baru **wajib** punya blok `@media (prefers-reduced-motion: reduce)`:
+animasi berulang dimatikan, animasi masuk dibuat instan (`animation-duration: 0.01ms`).
+Contoh yang tersedia: `docs-fade-up` (masuk konten), `docs-pop` (status baru),
+`docs-ring` (pulse ring `--primary` untuk langkah aktif), `docs-grow-x`.
+
+**Lampiran**: upload file biasa, plus `LinkAttachmentForm` (outline button
+"Tambah Link", ikon `Plus` + `Link2`) untuk file besar via link Google Drive.
+Validasi lewat `toast.warning`, bukan teks error inline.
 
 **Angka & tanggal**: format `id-ID` (`Rp 150.000`, `09 Okt 2026`).
 
@@ -473,5 +535,8 @@ cp public/icon.svg $DEST/public/ && cp public/icons/*.png $DEST/public/icons/   
 5. Hapus gradient/glow/glassmorphism dekoratif di halaman app.
 6. Bungkus halaman dalam layout sidebar + `<Content>` (bagian 7).
 7. Copy aset di bagian 10.
-8. Tes: light, soft-light, dark, soft-dark × aksen default, GMI, dan satu warna umum;
-   ukuran font "Sangat Besar"; lebar mobile 375px.
+8. Pasang `<NavigationProgress />` di layout sidebar dan isi `MENU_KEYWORDS`
+   untuk menu project baru.
+9. Tes: light, soft-light, dark, soft-dark × aksen default, GMI, dan satu warna umum;
+   ukuran font "Sangat Besar"; lebar mobile 375px; sidebar mode ikon;
+   `prefers-reduced-motion`.
