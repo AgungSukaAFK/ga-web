@@ -447,15 +447,7 @@ export interface Barang {
   created_at: string;
   part_number: string;
   part_name: string | null;
-  // COA (kode akun) barang ini per company - dipakai jg sbg kategori
-  // tampilan. Kosong/null = barang dianggap NONAKTIF utk company tsb
-  // (belum ada COA yg di-assign di company itu, jadi tidak dibukukan/
-  // dipesan atas nama company tsb). Data lama (kolom `category` tunggal,
-  // sebelum field ini dipecah per company) sudah dipindah semua ke
-  // `coa_gmi` - lihat supabase/barang-coa-setup.sql; `coa_gis` sengaja
-  // kosong krn data COA GIS belum ada.
-  coa_gmi: string | null;
-  coa_gis: string | null;
+  category: string | null;
   uom: string | null;
   vendor: string | null;
   is_asset: boolean;
@@ -508,8 +500,7 @@ export interface GaStock {
     part_number: string;
     part_name: string | null;
     uom: string | null;
-    coa_gmi: string | null;
-    coa_gis: string | null;
+    category: string | null;
   } | null;
 }
 
