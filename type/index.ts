@@ -1230,3 +1230,25 @@ export interface PettyCashAdminAuditLog {
   // Field relasi (saat di-join dengan tabel lain)
   admin_profile?: { nama: string } | null;
 }
+
+// Feedback user (tabel `feedbacks`, lihat supabase/feedback-setup.sql) -
+// dikirim dari /feedback, dikelola admin IT di /feedback-management.
+export type FeedbackStatus = "baru" | "diproses" | "selesai";
+
+export interface Feedback {
+  id: number;
+  user_id: string | null;
+  user_nama: string | null;
+  user_email: string | null;
+  user_department: string | null;
+  whatsapp: string;
+  kategori: string;
+  pesan: string;
+  lampiran_url: string | null;
+  lampiran_nama: string | null;
+  status: FeedbackStatus;
+  catatan_admin: string | null;
+  handled_by: string | null;
+  created_at: string;
+  updated_at: string;
+}

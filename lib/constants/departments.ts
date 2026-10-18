@@ -15,6 +15,15 @@ export const isGADepartment = (department?: string | null): boolean =>
   !!department && (GA_DEPARTMENTS as readonly string[]).includes(department);
 
 /**
+ * True jika user adalah admin departemen IT - satu-satunya yang boleh melihat
+ * & mengelola feedback user (/feedback-management). Harus sama dengan
+ * `public.is_it_admin()` di supabase/feedback-setup.sql.
+ */
+export const isITAdmin = (
+  profile?: { role?: string | null; department?: string | null } | null,
+): boolean => profile?.role === "admin" && profile?.department === "IT";
+
+/**
  * True jika user boleh mengelola Template MR: admin, atau departemen setara
  * GA dengan role approver. Harus sama dengan RLS `mr_templates`.
  */

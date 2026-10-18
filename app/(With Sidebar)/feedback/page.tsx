@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { User } from "@/type";
+import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 
 // Import TipTap
 import { useEditor, EditorContent, Editor } from "@tiptap/react";
@@ -86,23 +87,6 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
       </Button>
     </div>
   );
-};
-
-// Fungsi helper untuk konversi file ke Base64
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64String = (reader.result as string).split(",")[1];
-      if (base64String) {
-        resolve(base64String);
-      } else {
-        reject(new Error("Gagal mengonversi file ke Base64."));
-      }
-    };
-    reader.onerror = (error) => reject(error);
-  });
 };
 
 export default function FeedbackPage() {
@@ -172,57 +156,35 @@ export default function FeedbackPage() {
     const toastId = toast.loading("Mengirim feedback...");
 
     try {
-      let attachmentPayload = undefined;
+      let lampiranUrl: string | null = null;
+      let lampiranNama: string | null = null;
       if (attachment) {
         if (attachment.size > 5 * 1024 * 1024) {
           // Validasi ukuran file (5MB)
           throw new Error("Ukuran file lampiran tidak boleh melebihi 5MB.");
         }
-        const base64Content = await fileToBase64(attachment);
-        attachmentPayload = [
-          {
-            filename: attachment.name,
-            content: base64Content,
-            encoding: "base64",
-          },
-        ];
+        const filePath = `feedback/${currentUser.id}/${Date.now()}_${attachment.name}`;
+        const uploadResult = await uploadAttachmentDirect(attachment, filePath);
+        if (!uploadResult.success) throw new Error(uploadResult.message);
+        lampiranUrl = uploadResult.url;
+        lampiranNama = attachment.name;
       }
 
-      const emailHtmlBody = `
-        <h1>Feedback Baru dari Aplikasi</h1>
-        <p>Anda menerima pesan feedback baru dari salah satu pengguna.</p>
-        <hr>
-        <h3>Detail Pengirim:</h3>
-        <ul>
-          <li><strong>Nama:</strong> ${currentUser.nama}</li>
-          <li><strong>Email:</strong> ${currentUser.email}</li>
-          <li><strong>ID Pengguna:</strong> ${currentUser.id}</li>
-          <li><strong>No. WhatsApp:</strong> ${whatsapp}</li>
-        </ul>
-        <h3>Detail Pesan:</h3>
-        <ul>
-          <li><strong>Kategori:</strong> ${finalCategory}</li>
-        </ul>
-        <strong>Pesan:</strong>
-        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-top: 8px; background-color: #f8fafc;">
-          ${message}
-        </div>
-      `;
-
-      const response = await fetch("/api/v1/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: process.env.NEXT_PUBLIC_DEVELOPER_EMAIL,
-          subject: `Feedback Baru: [${finalCategory}] dari ${currentUser.nama}`,
-          html: emailHtmlBody,
-          attachments: attachmentPayload,
-        }),
+      // Disimpan ke tabel `feedbacks`, dibaca admin IT di /feedback-management
+      // (lihat supabase/feedback-setup.sql).
+      const supabase = createClient();
+      const { error } = await supabase.from("feedbacks").insert({
+        user_id: currentUser.id,
+        user_nama: currentUser.nama,
+        user_email: currentUser.email,
+        user_department: currentUser.department,
+        whatsapp: whatsapp.trim(),
+        kategori: finalCategory.trim(),
+        pesan: message,
+        lampiran_url: lampiranUrl,
+        lampiran_nama: lampiranNama,
       });
-
-      const result = await response.json();
-      if (!response.ok || !result.success)
-        throw new Error(result.error || "Gagal mengirim email dari server.");
+      if (error) throw new Error(error.message);
 
       toast.success("Terima kasih! Feedback Anda telah terkirim.", {
         id: toastId,
@@ -334,6 +296,7 @@ export default function FeedbackPage() {
                   <span className="truncate">{attachment.name}</span>
                 </div>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 flex-shrink-0"

@@ -47,6 +47,7 @@ const MENU_KEYWORDS: Record<string, string[]> = {
   "/dokumentasi": ["docs", "panduan", "bantuan", "help", "manual", "tutorial", "cara"],
   "/update-web": ["changelog", "rilis", "release", "versi", "pengumuman", "berita", "info terbaru", "whats new"],
   "/feedback": ["saran", "kritik", "masukan", "lapor", "bug", "keluhan"],
+  "/feedback-management": ["feedback", "saran", "kritik", "masukan", "laporan bug", "keluhan", "it"],
   "/tentang-app": ["about", "info", "versi", "aplikasi"],
 };
 

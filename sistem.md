@@ -63,7 +63,6 @@ Sistem menggunakan **Supabase** sebagai backend utama, meliputi:
 - Session berbasis cookies SSR
 
 ### 3.4 Library tambahan yang menunjukkan capability sistem
-- **nodemailer** → pengiriman email
 - **jspdf** dan **jspdf-autotable** → generasi PDF dokumen
 - **xlsx** → ekspor / impor Excel
 - **zustand** → state management client-side
@@ -119,7 +118,6 @@ Lapisan ini menangani:
 - middleware auth & route protection
 - RPC/function database
 - setup SQL tabel/fitur tertentu
-- endpoint API internal seperti send-email
 
 ### 4.4 Pola arsitektur yang tampak
 Sistem ini tidak memisahkan backend sebagai service terpisah, namun menggunakan pola:
@@ -738,18 +736,13 @@ Jenis file yang diakomodasi:
 ---
 
 ## 13. API Internal
-Terdapat route API internal:
-- `app/api/v1/send-email/route.ts`
+Sistem tidak lagi memakai email: endpoint `send-email`, modul `lib/amazon_ses`, dan dependency `nodemailer` sudah dihapus. Notifikasi memakai notifikasi in-app/push, dan feedback user disimpan ke tabel `feedbacks`.
 
-Keberadaan endpoint ini, ditambah dependency `nodemailer`, `SMTP_*`, dan `SES_FROM`, menunjukkan sistem mendukung **pengiriman email** untuk kebutuhan notifikasi atau dokumen.
-
-Selain itu ada folder:
-- `lib/amazon_ses`
+Folder integrasi yang tersisa:
 - `lib/fonnte`
 - `lib/notifications`
 
 Dari nama folder dapat diinferensikan bahwa sistem berpotensi mendukung:
-- email via SMTP / Amazon SES
 - notifikasi WhatsApp / messaging via Fonnte
 - orkestrasi notifikasi multi-channel
 
@@ -762,22 +755,13 @@ Berdasarkan `.env.example`, sistem memerlukan:
 
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY`
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `SMTP_PORT`
-- `SMTP_HOST`
-- `NEXT_PUBLIC_DEVELOPER_EMAIL`
 - `NEXT_PUBLIC_FONNTE_TOKEN`
-- `APP_NAME`
-- `SES_FROM`
-- `SMTP_PASS`
-- `SMTP_USER`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_URL`
 
 ### 14.1 Klasifikasi fungsi environment
 - **Supabase client/server**: URL dan key
-- **SMTP / SES**: email sending
 - **Fonnte**: kemungkinan integrasi WhatsApp API
-- **APP_NAME**: identitas aplikasi
 - **developer email**: kemungkinan fallback / monitoring
 
 ---
@@ -958,7 +942,6 @@ Lihat:
 - `lib/supabase/client.ts`
 - `lib/supabase/server.ts`
 - folder `supabase/*.sql`
-- route `app/api/v1/send-email/route.ts`
 
 ---
 

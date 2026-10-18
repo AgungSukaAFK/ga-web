@@ -10,21 +10,13 @@ Dokumen ini menjelaskan integrasi pihak ketiga dan variabel lingkungan yang dipe
 | :------------------------------ | :---------------------------------- | :------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | Endpoint API Supabase.              | **High**       |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Key untuk client-side fetch. | **High**       |
-| `AWS_ACCESS_KEY_ID`             | Kredensial Amazon SES (Email).      | Medium         |
-| `AWS_SECRET_ACCESS_KEY`         | Kredensial Amazon SES (Email).      | Medium         |
 | `FONNTE_TOKEN`                  | Token API Fonnte (WhatsApp).        | Medium         |
 
 ## 2. External Services
 
-### A. Email Service (AWS SES)
+> Sistem tidak memakai layanan email. Notifikasi lewat notifikasi in-app/push, feedback user disimpan ke tabel `feedbacks`.
 
-**File:** `lib/amazon_ses/index.ts`
-
-- **Provider:** Amazon Simple Email Service (SES).
-- **Fungsi:** Mengirim notifikasi email resmi (PO Approval, Notifikasi User Baru).
-- **Rate Limit:** Perhatikan limit pengiriman harian AWS sandbox/production.
-
-### B. WhatsApp Service (Fonnte)
+### A. WhatsApp Service (Fonnte)
 
 **File:** `lib/fonnte/index.ts`
 
@@ -32,7 +24,7 @@ Dokumen ini menjelaskan integrasi pihak ketiga dan variabel lingkungan yang dipe
 - **Fungsi:** Mengirim notifikasi cepat ke HP user (misal: "Ada MR baru perlu approval").
 - **Handling:** Jika token invalid atau kuota habis, pastikan sistem tidak crash (gunakan `try/catch` senyap).
 
-### C. Database (Supabase)
+### B. Database (Supabase)
 
 **Instance:** `lib/supabase/client.ts` & `server.ts`
 

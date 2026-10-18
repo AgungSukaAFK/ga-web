@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   canManageMrTemplate,
   isGADepartment,
+  isITAdmin,
 } from "@/lib/constants/departments";
 import {
   Sidebar,
@@ -63,6 +64,7 @@ import {
   Megaphone,
   FileStack,
   SearchX,
+  MessagesSquare,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -406,10 +408,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return markActive(items);
   }, [markActive, hasNewUpdateWebPost]);
 
-  const adminItems = React.useMemo(
-    () => (profile?.role === "admin" ? markActive(data.navAdmin) : []),
-    [profile, markActive],
-  );
+  const adminItems = React.useMemo(() => {
+    if (profile?.role !== "admin") return [];
+    const items = [...data.navAdmin];
+    // Feedback User: khusus admin departemen IT (sama dgn RLS `feedbacks`).
+    if (isITAdmin(profile)) {
+      items.push({
+        title: "Feedback User",
+        url: "/feedback-management",
+        icon: MessagesSquare,
+      });
+    }
+    return markActive(items);
+  }, [profile, markActive]);
 
   const navGroups = React.useMemo(
     () => [

@@ -275,9 +275,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
       const {
         data: { user },
       } = await s.auth.getUser();
-      const requesterEmail = (po as any).users_with_profiles?.email;
       const firstApprover = newApprovals[0];
-      const emailPromises = [];
 
       // In-app notifications (non-blocking)
       if (user && po) {
@@ -309,42 +307,11 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
         });
       }
 
-      if (requesterEmail) {
-        emailPromises.push(
-          fetch("/api/v1/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: requesterEmail,
-              subject: `[VALIDATED] PO Anda (${po.kode_po}) telah divalidasi`,
-              html: `<h1>Purchase Order Divalidasi</h1><p>Purchase Order Anda dengan kode <strong>${po.kode_po}</strong> telah divalidasi dan sekarang dalam proses persetujuan.</p><a href="${window.location.origin}/purchase-order/${po.id}">Lihat Detail PO</a>`,
-            }),
-          }),
-        );
-      }
-
-      if (firstApprover?.email) {
-        emailPromises.push(
-          fetch("/api/v1/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: firstApprover.email,
-              subject: `[ACTION REQUIRED] Persetujuan PO Baru (${po.kode_po})`,
-              html: `<h1>Tugas Persetujuan Baru</h1><p>Halo ${firstApprover.nama},</p><p>Anda memiliki Purchase Order baru dengan kode <strong>${po.kode_po}</strong> yang menunggu persetujuan Anda.</p><a href="${window.location.origin}/approval-validation">Buka Halaman Approval</a>`,
-            }),
-          }),
-        );
-      }
-
-      await Promise.all(emailPromises);
-      toast.success("PO berhasil divalidasi dan notifikasi email terkirim!", {
+      toast.success("PO berhasil divalidasi!", { id: toastId });
+    } catch (notifyError: any) {
+      toast.warning("PO divalidasi, namun gagal mencatat aktivitas/notifikasi.", {
         id: toastId,
-      });
-    } catch (emailError: any) {
-      toast.warning("PO divalidasi, namun gagal mengirim notifikasi email.", {
-        id: toastId,
-        description: emailError.message,
+        description: notifyError.message,
       });
     } finally {
       setActionLoading(false);
