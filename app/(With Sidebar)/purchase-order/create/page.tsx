@@ -85,6 +85,7 @@ import {
   HelpCircle,
   MessageSquare,
   StickyNote,
+  Printer,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -96,6 +97,7 @@ import {
   StoredVendorDetails,
   Barang,
   Discussion,
+  PurchaseOrderDetail,
 } from "@/type";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 import { Label } from "@/components/ui/label";
@@ -147,6 +149,9 @@ import {
   FormSummaryLayout,
   type FormSummaryCheck,
 } from "@/components/form-summary-panel";
+import { PrintablePO, getPrintVendorData } from "../PrintablePO";
+import { BarangPickerPopover } from "./BarangPickerPopover";
+import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
 
 // --- INTERFACE EXTENSION ---
 // Kita extend POItem lokal di sini agar tidak error TS
@@ -228,15 +233,20 @@ function VendorSearchCombobox({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between truncate"
+            className="w-full justify-between"
             title={poForm.vendor_details?.nama_vendor}
           >
-            {poForm.vendor_details?.nama_vendor ||
-              "Cari Nama atau Kode Vendor..."}
+            <span className="min-w-0 truncate">
+              {poForm.vendor_details?.nama_vendor ||
+                "Cari Nama atau Kode Vendor..."}
+            </span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[400px] p-0" align="start">
+        <PopoverContent
+          className="w-[min(400px,calc(100vw-2rem))] p-0"
+          align="start"
+        >
           <Command shouldFilter={false}>
             <CommandInput
               placeholder="Ketik untuk mencari vendor..."
@@ -255,7 +265,7 @@ function VendorSearchCombobox({
                     onSelect={() => handleSelect(vendor)}
                   >
                     <div className="flex flex-col w-full text-left">
-                      <span className="font-semibold">
+                      <span className="font-semibold [overflow-wrap:anywhere]">
                         {vendor.nama_vendor}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -302,7 +312,7 @@ const InfoItem = ({
       <Icon className="h-4 w-4 flex-shrink-0" />
       {label}
     </dt>
-    <dd className="text-sm font-semibold break-words">{value}</dd>
+    <dd className="min-w-0 text-sm font-semibold [overflow-wrap:anywhere]">{value}</dd>
   </div>
 );
 
@@ -345,7 +355,6 @@ function CreatePOPageContent() {
 
   // State Item Dialogs
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
-  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
   const [isViewItemOpen, setIsViewItemOpen] = useState(false);
   const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
@@ -428,6 +437,44 @@ function CreatePOPageContent() {
   // PPH State
   const [pphType, setPphType] = useState<string>("none");
 
+  // --- Cetak preview (sebelum PO diajukan) ---
+  // Alurnya sama dengan cetak di detail PO (purchase-order/[id]/page.tsx):
+  // set company -> tunggu logo siap -> double rAF -> window.print().
+  const [previewCompany, setPreviewCompany] = useState<"GMI" | "GIS" | null>(
+    null,
+  );
+
+  useEffect(() => {
+    // Preload logo supaya ganti company tidak nge-print logo kosong.
+    new Set(Object.values(COMPANY_DETAILS).map((c) => c.logo)).forEach(
+      (src) => {
+        const img = new window.Image();
+        img.src = src;
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!previewCompany) return;
+    let cancelled = false;
+    let raf1 = 0;
+    waitForLogoReady(COMPANY_DETAILS[previewCompany].logo).then(() => {
+      if (cancelled) return;
+      raf1 = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) window.print();
+        });
+      });
+    });
+    const reset = () => setPreviewCompany(null);
+    window.addEventListener("afterprint", reset, { once: true });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      window.removeEventListener("afterprint", reset);
+    };
+  }, [previewCompany]);
+
   const getCostCenterName = (data: any) => {
     const cc = data.cost_centers;
     if (Array.isArray(cc)) {
@@ -451,7 +498,7 @@ function CreatePOPageContent() {
 
         const { data: profile } = await supabase
           .from("profiles")
-          .select("department, lokasi, company")
+          .select("nama, department, lokasi, company")
           .eq("id", user.id)
           .single();
 
@@ -727,6 +774,29 @@ function CreatePOPageContent() {
   };
 
   const handleAddItemFromDB = (barang: Barang) => {
+    // Barang yang sudah ada di PO: tambah qty-nya, jangan bikin baris dobel.
+    const existingIndex = poForm.items.findIndex(
+      (i) => !!i.barang_id && i.barang_id === barang.id,
+    );
+    if (existingIndex !== -1) {
+      setPoForm((prev) => ({
+        ...prev,
+        items: prev.items.map((item, i) =>
+          i === existingIndex
+            ? {
+                ...item,
+                qty: item.qty + 1,
+                total_price: (item.qty + 1) * item.price,
+              }
+            : item,
+        ),
+      }));
+      toast.success(
+        `${barang.part_name || barang.part_number} sudah ada di PO - qty ditambah 1.`,
+      );
+      return;
+    }
+
     const newItem: ExtendedPOItem = {
       barang_id: barang.id,
       part_number: barang.part_number,
@@ -745,7 +815,6 @@ function CreatePOPageContent() {
       ...prev,
       items: [...prev.items, newItem],
     }));
-    setIsAddItemDialogOpen(false);
     toast.success("Barang ditambahkan ke PO.");
   };
 
@@ -1056,6 +1125,23 @@ function CreatePOPageContent() {
       ),
     ),
   );
+  // Konteks picker "Tambah Item": qty yang sudah di PO & sisa qty MR.
+  const poQtyByBarang: Record<number, number> = {};
+  for (const item of poForm.items) {
+    if (item.barang_id)
+      poQtyByBarang[item.barang_id] =
+        (poQtyByBarang[item.barang_id] ?? 0) + item.qty;
+  }
+  const mrRemainingByBarang: Record<number, { qty: number; uom: string }> =
+    {};
+  for (const order of mrData?.orders ?? []) {
+    if (order.barang_id)
+      mrRemainingByBarang[order.barang_id] = {
+        qty: getRemainingQty(order),
+        uom: order.uom,
+      };
+  }
+
   const summaryChecks: FormSummaryCheck[] = [
     {
       id: "source",
@@ -1119,6 +1205,7 @@ function CreatePOPageContent() {
   return (
     <>
       <FormSummaryLayout
+        className="no-print"
         summary={{
           title: "Ringkasan PO",
           subtitle: <span className="font-mono">{poForm.kode_po}</span>,
@@ -1128,6 +1215,28 @@ function CreatePOPageContent() {
           onSubmit: handleCheckSubmit,
           submitting: loading,
           disabled: isUploadingPO || isUploadingFinance || isUploadingPurchasing,
+          secondaryActions: (
+            <div className="grid grid-cols-2 gap-2">
+              {(["GMI", "GIS"] as const).map((company) => (
+                <Button
+                  key={company}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPreviewCompany(company)}
+                  disabled={!!previewCompany}
+                  title={`Cetak preview dokumen PO dengan kop ${COMPANY_DETAILS[company].name} (watermark PREVIEW)`}
+                >
+                  {previewCompany === company ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="mr-2 h-4 w-4" />
+                  )}
+                  Preview {company}
+                </Button>
+              ))}
+            </div>
+          ),
           nextSteps: (
             <>
               PO diajukan ke tim GA untuk divalidasi.
@@ -1209,12 +1318,12 @@ function CreatePOPageContent() {
         }}
       >
         <TooltipProvider>
-          <div className="flex flex-wrap justify-between items-center gap-4">
+          <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Buat Purchase Order</h1>
-              <div className="flex items-center gap-2 mt-1">
+              <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">Buat Purchase Order</h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
                 <span className="text-muted-foreground">PO:</span>
-                <span className="font-semibold text-primary">
+                <span className="font-semibold text-primary [overflow-wrap:anywhere]">
                   {poForm.kode_po}
                 </span>
                 <div className="flex items-center gap-1.5 ml-1">
@@ -1274,7 +1383,7 @@ function CreatePOPageContent() {
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {mrData ? (
                 <div className="flex gap-1">
                   <Button variant="outline" onClick={handleOpenLinkMR}>
@@ -1325,7 +1434,7 @@ function CreatePOPageContent() {
               </Button>
             }
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 [&>*]:min-w-0">
               <InfoItem
                 icon={CircleUser}
                 label="Pembuat MR"
@@ -1577,13 +1686,24 @@ function CreatePOPageContent() {
           id="po-section-items"
           title="Rincian Item Purchase Order (Final)"
           cardAction={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAddItemDialogOpen(true)}
+            <BarangPickerPopover
+              onSelect={handleAddItemFromDB}
+              initialBarangIds={(mrData?.orders ?? [])
+                .map((o) => o.barang_id)
+                .filter((id): id is number => !!id)}
+              initialLabel={
+                mrData ? `Barang di MR ${mrData.kode_mr}` : undefined
+              }
+              mrId={mrData ? Number(mrData.id) : null}
+              companyCode={userProfile?.company ?? null}
+              poQtyByBarang={poQtyByBarang}
+              mrRemainingByBarang={mrRemainingByBarang}
+              poIsAsset={!!poForm.is_asset}
             >
-              <PackagePlus className="mr-2 h-4 w-4" /> Tambah Item
-            </Button>
+              <Button variant="outline" size="sm">
+                <PackagePlus className="mr-2 h-4 w-4" /> Tambah Item
+              </Button>
+            </BarangPickerPopover>
           }
         >
           <div className="overflow-x-auto border rounded-md">
@@ -1610,7 +1730,7 @@ function CreatePOPageContent() {
                 )}
                 {poForm.items.map((item, index) => (
                   <TableRow key={index}>
-                    <TableCell>
+                    <TableCell className="min-w-[160px] max-w-[320px] whitespace-normal [overflow-wrap:anywhere]">
                       <div className="font-medium flex items-center gap-2">
                         {item.name}
                         {/* Indikator Link/Notes di Table Final */}
@@ -1623,7 +1743,7 @@ function CreatePOPageContent() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
                         <span className="text-xs text-muted-foreground font-mono">
                           {item.part_number}
                         </span>
@@ -1687,8 +1807,8 @@ function CreatePOPageContent() {
         </Content>
 
         <Content id="po-section-vendor" title="Vendor & Pembayaran">
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-4">
+          <div className="grid gap-6 md:grid-cols-2 [&>*]:min-w-0">
+            <div className="min-w-0 space-y-4">
               <div>
                 <Label className="mb-1 block">Pilih Vendor Utama</Label>
                 <VendorSearchCombobox
@@ -1709,14 +1829,14 @@ function CreatePOPageContent() {
               </div>
               <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
                 <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Kontak:</span>
-                  <span className="text-right break-words">
+                  <span className="shrink-0 text-muted-foreground">Kontak:</span>
+                  <span className="min-w-0 text-right [overflow-wrap:anywhere]">
                     {poForm.vendor_details?.contact_person || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Email:</span>
-                  <span className="text-right break-all">
+                  <span className="shrink-0 text-muted-foreground">Email:</span>
+                  <span className="min-w-0 text-right [overflow-wrap:anywhere]">
                     {poForm.vendor_details?.email || "-"}
                   </span>
                 </div>
@@ -1724,14 +1844,14 @@ function CreatePOPageContent() {
                   <span className="text-muted-foreground block mb-1">
                     Alamat:
                   </span>
-                  <p className="whitespace-pre-wrap">
+                  <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
                     {poForm.vendor_details?.alamat || "-"}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               {/* PAYMENT TERM SECTION */}
               <div>
                 <Label className="text-sm font-medium">Payment Term</Label>
@@ -1868,8 +1988,8 @@ function CreatePOPageContent() {
           title="Pajak & Biaya Tambahan"
           description="Grand total dihitung otomatis di panel ringkasan."
         >
-          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-            <div className="space-y-4">
+          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2 [&>*]:min-w-0">
+            <div className="min-w-0 space-y-4">
               <div className="flex justify-between items-center gap-3">
                 <Label className="text-xs">Diskon (Rp)</Label>
                 <CurrencyInput
@@ -2061,7 +2181,7 @@ function CreatePOPageContent() {
               </ul>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 border-t pt-5">
+            <div className="grid gap-5 md:grid-cols-2 border-t pt-5 [&>*]:min-w-0">
               <div>
                 <Label>Lampiran PO</Label>
                 <Input
@@ -2161,6 +2281,38 @@ function CreatePOPageContent() {
           </div>
         </Content>
       </FormSummaryLayout>
+
+      {/* Dokumen cetak preview - di luar FormSummaryLayout (no-print) supaya
+          cuma ini yang tercetak. Dirender hanya selama proses cetak. */}
+      {previewCompany && (
+        <div className="print-only">
+          <PrintablePO
+            po={
+              {
+                ...poForm,
+                id: 0,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                mr_id: mrData ? Number(mrData.id) : null,
+                user_id: currentUser?.id ?? "",
+                status: "Draft",
+                company_code: userProfile?.company || "",
+                approvals: [],
+                vendor_details: poForm.vendor_details ?? null,
+                users_with_profiles: {
+                  nama: userProfile?.nama || currentUser?.email || "User",
+                },
+                material_requests: mrData,
+              } as unknown as PurchaseOrderDetail
+            }
+            companyInfo={COMPANY_DETAILS[previewCompany]}
+            qrUrl=""
+            vendorData={getPrintVendorData(poForm.vendor_details)}
+            printTrigger
+            preview
+          />
+        </div>
+      )}
 
       {/* --- DIALOG LINK MR --- */}
       <Dialog open={isLinkMROpen} onOpenChange={setIsLinkMROpen}>
@@ -2337,29 +2489,6 @@ function CreatePOPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DIALOG TAMBAH BARANG --- */}
-      <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Tambah Item ke PO</DialogTitle>
-            <DialogDescription>
-              Cari dan pilih barang dari database master.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <BarangSearchCombobox onSelect={handleAddItemFromDB} />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsAddItemDialogOpen(false)}
-            >
-              Batal
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* --- DIALOG VIEW DETAIL ITEM (UPDATED) --- */}
       <Dialog open={isViewItemOpen} onOpenChange={setIsViewItemOpen}>
         <DialogContent className="sm:max-w-[500px]">
@@ -2375,7 +2504,7 @@ function CreatePOPageContent() {
 
           {viewItemIndex !== null && poForm.items[viewItemIndex] && (
             <div className="py-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-2 gap-4 text-sm [&>*]:min-w-0">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">
                     Nama Barang

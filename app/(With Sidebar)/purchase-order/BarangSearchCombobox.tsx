@@ -52,7 +52,7 @@ export function BarangSearchCombobox({ onSelect }: BarangSearchComboboxProps) {
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0">
+      <PopoverContent className="w-[min(400px,calc(100vw-2rem))] p-0">
         <Command>
           <CommandInput
             placeholder="Ketik untuk mencari..."
@@ -71,8 +71,8 @@ export function BarangSearchCombobox({ onSelect }: BarangSearchComboboxProps) {
                     setOpen(false);
                   }}
                 >
-                  <div className="flex flex-col">
-                    <span className="font-semibold flex items-center gap-2">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="font-semibold flex flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
                       {barang.part_name}
                       <Badge
                         variant="outline"
@@ -86,7 +86,7 @@ export function BarangSearchCombobox({ onSelect }: BarangSearchComboboxProps) {
                         {barang.is_asset ? "Aset" : "Barang"}
                       </Badge>
                     </span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                       {barang.part_number}
                     </span>
                   </div>

@@ -111,8 +111,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </Breadcrumb>
             </div>
           </header>
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-            <div className="grid grid-cols-12 items-start gap-4 md:gap-6 auto-rows-auto">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 pt-0 break-words">
+            <div className="grid grid-cols-12 items-start gap-4 md:gap-6 auto-rows-auto [&>*]:min-w-0">
               {children}
             </div>
           </div>

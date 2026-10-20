@@ -756,20 +756,41 @@ export const updatePurchaseOrder = async (
   return data;
 };
 
-export const searchBarang = async (query: string): Promise<Barang[]> => {
+export const searchBarang = async (
+  query: string,
+  limit = 10,
+): Promise<Barang[]> => {
   if (!query) return [];
 
   const { data, error } = await supabase
     .from("barang")
     .select("*, last_purchase_price")
     .or(`part_number.ilike."%${query}%",part_name.ilike."%${query}%"`)
-    .limit(10);
+    .limit(limit);
 
   if (error) {
     console.error("Error searching barang:", error);
     return [];
   }
   return data;
+};
+
+/** Ambil barang master berdasarkan id, urutan hasil mengikuti urutan `ids`. */
+export const fetchBarangByIds = async (ids: number[]): Promise<Barang[]> => {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("barang")
+    .select("*, last_purchase_price")
+    .in("id", unique);
+
+  if (error) {
+    console.error("Error fetching barang by ids:", error);
+    return [];
+  }
+  const byId = new Map((data as Barang[]).map((b) => [b.id, b]));
+  return unique.map((id) => byId.get(id)).filter((b): b is Barang => !!b);
 };
 
 // Ambil flag is_asset utk sekumpulan barang_id sekaligus (dipakai saat

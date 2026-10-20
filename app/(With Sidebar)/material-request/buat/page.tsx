@@ -86,7 +86,10 @@ import { logActivity } from "@/services/logService";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
-import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
+import {
+  MR_KATEGORI_OPTIONS,
+  WAJIB_LAMPIRAN_KATEGORI,
+} from "@/lib/constants/mr";
 import {
   applyMrHistory,
   applyMrTemplate,
@@ -119,9 +122,6 @@ const dataLokasi: ComboboxData = [
   { label: "Site PIK", value: "Site PIK" },
   { label: "Site BGE", value: "Site BGE" },
 ];
-
-// Kategori yang wajib menyertakan lampiran (dicek di handleAjukanMR & checklist).
-const WAJIB_LAMPIRAN_KATEGORI = ["Replace Item", "Fix & Repair", "Upgrade"];
 
 const PRIORITY_OPTIONS: {
   value: "P0" | "P1" | "P2" | "P3" | "P4";
@@ -1034,7 +1034,7 @@ export default function BuatMRPage() {
           title="Buat Material Request Baru"
           description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
         >
-          <div className="grid grid-cols-12 gap-4">
+          <div className="grid grid-cols-12 gap-4 [&>*]:min-w-0">
             <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
               {appliedTemplate ? (
                 <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -1101,7 +1101,7 @@ export default function BuatMRPage() {
                   <Building2 className="h-4 w-4 text-primary" />
                   Buat MR untuk Perusahaan <span className="text-red-500">*</span>
                 </Label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
                   {(["GMI", "GIS"] as const).map((company) => (
                     <button
                       key={company}
@@ -1171,7 +1171,7 @@ export default function BuatMRPage() {
               className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
             >
               <Label>Prioritas</Label>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5 [&>*]:min-w-0">
                 {PRIORITY_OPTIONS.map((opt) => {
                   const selected = formCreateMR.prioritas === opt.value;
                   return (
@@ -1315,7 +1315,7 @@ export default function BuatMRPage() {
                 {formCreateMR.orders.map((order, index) => (
                   <TableRow key={index}>
                     <TableCell>{index + 1}</TableCell>
-                    <TableCell>
+                    <TableCell className="min-w-[160px] max-w-[320px] whitespace-normal [overflow-wrap:anywhere]">
                       <div className="flex items-center gap-2">
                         {order.name}
                         <AssetGoodsBadge
@@ -1374,7 +1374,7 @@ export default function BuatMRPage() {
                 <Label className="text-right">Cari Barang (Wajib)</Label>
                 <BarangSearchCombobox onSelect={handleSelectBarang} />
                 {orderItem.name && (
-                  <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                  <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border [overflow-wrap:anywhere]">
                     Terpilih: <strong>{orderItem.name}</strong> (
                     {orderItem.part_number})
                   </div>
@@ -1387,7 +1387,7 @@ export default function BuatMRPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 [&>*]:min-w-0">
                 <div className="space-y-2">
                   <Label>Quantity</Label>
                   <Input

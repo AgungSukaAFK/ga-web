@@ -175,6 +175,28 @@ interface PaginatedPrintDocumentProps<T> {
   // adanya (1 halaman, tanpa nomor halaman) sebagai fallback aman.
   enabled: boolean;
   tableClassName?: string;
+  // Teks watermark diagonal di tiap halaman (mis. "PREVIEW" utk cetak
+  // pratinjau sebelum dokumen diajukan). Tidak ikut render pengukuran -
+  // posisinya absolute, jadi tidak mempengaruhi tinggi halaman.
+  watermark?: string;
+}
+
+function PrintWatermark({ text }: { text: string }) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 flex select-none items-center justify-center overflow-hidden"
+    >
+      <span
+        // 80pt: setelah diputar 35° lebarnya ~150mm, muat di area konten
+        // A4 (180mm) - lebih besar dari ini huruf pinggirnya kepotong.
+        className="-rotate-[35deg] whitespace-nowrap text-[80pt] font-black leading-none tracking-[0.1em] text-gray-400/30"
+        style={{ printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}
+      >
+        {text}
+      </span>
+    </div>
+  );
 }
 
 export function PaginatedPrintDocument<T>({
@@ -187,6 +209,7 @@ export function PaginatedPrintDocument<T>({
   renderOutro,
   enabled,
   tableClassName,
+  watermark,
 }: PaginatedPrintDocumentProps<T>) {
   const introNode = renderIntro?.();
   const outroNode = renderOutro?.();
@@ -283,7 +306,8 @@ export function PaginatedPrintDocument<T>({
         // Belum terukur (atau enabled=false) - fallback 1 halaman apa
         // adanya, tanpa nomor halaman, supaya tetap ada yang tercetak
         // kalau pengukuran gagal/belum sempat jalan.
-        <div id="printable-po-a4" className={pageClassName}>
+        <div id="printable-po-a4" className={cn(pageClassName, "relative")}>
+          {watermark && <PrintWatermark text={watermark} />}
           {renderHeader({ pageIndex: 0, pageCount: 1 })}
           {introNode}
           <table className={cn("w-full border-collapse text-xs", tableClassName)}>
@@ -311,11 +335,12 @@ export function PaginatedPrintDocument<T>({
             <div
               key={pageIndex}
               id="printable-po-a4"
-              className={pageClassName}
+              className={cn(pageClassName, "relative")}
               style={{
                 breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
               }}
             >
+              {watermark && <PrintWatermark text={watermark} />}
               {renderHeader({ pageIndex, pageCount: pages.length })}
               {page.hasIntro && introNode}
               {/* Halaman yang cuma berisi outro (tidak muat di halaman

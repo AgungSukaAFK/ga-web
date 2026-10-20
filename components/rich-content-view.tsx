@@ -65,7 +65,7 @@ function RichContentReadOnly({
     editorProps: {
       attributes: {
         class: cn(
-          "text-sm leading-relaxed [&_p]:m-0 [&_p+p]:mt-2",
+          "text-sm leading-relaxed [overflow-wrap:anywhere] [&_p]:m-0 [&_p+p]:mt-2",
           "[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:m-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:m-0",
           "[&_.mention]:rounded [&_.mention]:px-1 [&_.mention]:py-0.5 [&_.mention]:font-medium [&_.mention]:text-sm",
           "[&_a.mention]:hover:underline [&_a.mention]:cursor-pointer",

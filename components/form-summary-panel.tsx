@@ -1,8 +1,8 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -21,11 +21,18 @@ import { cn } from "@/lib/utils";
  * - `done`: syarat terpenuhi.
  * - `todo`: wajib & belum terpenuhi - memblok tombol submit (klik submit akan
  *   scroll ke langkah ini).
+ * - `suggested`: belum diisi & disarankan diisi, tapi TIDAK memblok (dipakai
+ *   di halaman edit yang validasinya longgar). Dihitung belum lengkap.
  * - `warning`: terpenuhi tapi perlu perhatian (mis. Direct PO tanpa MR),
- *   tidak memblok.
+ *   tidak memblok. Dihitung lengkap.
  * - `optional`: opsional & belum diisi, tidak dihitung di progress.
  */
-export type FormSummaryCheckStatus = "done" | "todo" | "warning" | "optional";
+export type FormSummaryCheckStatus =
+  | "done"
+  | "todo"
+  | "suggested"
+  | "warning"
+  | "optional";
 
 export type FormSummaryCheck = {
   id: string;
@@ -56,6 +63,10 @@ export type FormSummaryProps = {
   error?: string;
   /** Penjelasan "setelah diajukan ...". */
   nextSteps?: ReactNode;
+  /** Ada perubahan yang belum disimpan (halaman edit). */
+  dirty?: boolean;
+  /** Aksi tambahan di bawah tombol submit (mis. cetak preview). */
+  secondaryActions?: ReactNode;
 };
 
 // Preferensi buka/tutup panel dipakai bersama semua form (MR, PO, ...).
@@ -78,22 +89,63 @@ export function scrollToFormSection(targetId: string) {
   window.setTimeout(() => el.classList.remove(...HIGHLIGHT_CLASSES), 1600);
 }
 
+/**
+ * Deteksi "ada perubahan belum disimpan" dengan membandingkan `value` ke
+ * snapshot-nya. Snapshot diambil sebentar setelah `ready` (bukan tepat saat
+ * data dimuat) supaya hasil effect kalkulasi awal (pajak, total, dsb) tidak
+ * terhitung sebagai perubahan. Panggil `resetBaseline` setelah data disimpan
+ * & dimuat ulang.
+ */
+export function useUnsavedChanges(value: unknown, ready: boolean) {
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [epoch, setEpoch] = useState(0);
+  const latest = useRef(value);
+
+  useEffect(() => {
+    latest.current = value;
+  });
+
+  useEffect(() => {
+    setBaseline(null);
+    if (!ready) return;
+    const timer = window.setTimeout(
+      () => setBaseline(JSON.stringify(latest.current)),
+      400,
+    );
+    return () => window.clearTimeout(timer);
+  }, [ready, epoch]);
+
+  const resetBaseline = useCallback(() => setEpoch((e) => e + 1), []);
+  const dirty = baseline !== null && JSON.stringify(value) !== baseline;
+  return { dirty, resetBaseline };
+}
+
 const STATUS_ICON: Record<FormSummaryCheckStatus, ReactNode> = {
   done: <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
   todo: <Circle className="h-4 w-4 text-muted-foreground" />,
-  warning: <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
+  suggested: <Circle className="h-4 w-4 text-amber-500 dark:text-amber-400" />,
+  warning: (
+    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+  ),
   optional: <CircleDashed className="h-4 w-4 text-muted-foreground/70" />,
 };
 
 function getProgress(checks: FormSummaryCheck[]) {
   const required = checks.filter((c) => c.status !== "optional");
-  const done = required.filter((c) => c.status !== "todo").length;
+  const done = required.filter(
+    (c) => c.status === "done" || c.status === "warning",
+  ).length;
   const pending = checks.filter((c) => c.status === "todo");
+  const suggested = checks.filter((c) => c.status === "suggested");
   return {
     done,
     total: required.length,
     pending,
-    complete: pending.length === 0,
+    suggested,
+    /** Tidak ada yang memblok submit. */
+    canSubmit: pending.length === 0,
+    /** Semua yang dihitung sudah lengkap. */
+    complete: pending.length === 0 && suggested.length === 0,
     percent: required.length ? Math.round((done / required.length) * 100) : 100,
   };
 }
@@ -122,6 +174,40 @@ function ProgressBadge({
       {done}/{total}
     </span>
   );
+}
+
+function DirtyBadge() {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      Belum disimpan
+    </span>
+  );
+}
+
+function ProgressHint({
+  progress,
+}: {
+  progress: ReturnType<typeof getProgress>;
+}) {
+  if (progress.pending.length > 0) {
+    return (
+      <>
+        Lengkapi {progress.pending.length} langkah wajib bertanda{" "}
+        <Circle className="-mt-0.5 inline h-3 w-3" /> dulu.
+      </>
+    );
+  }
+  if (progress.suggested.length > 0) {
+    return (
+      <>
+        {progress.suggested.length} data belum lengkap{" "}
+        <Circle className="-mt-0.5 inline h-3 w-3 text-amber-500" />, tetap
+        bisa disimpan.
+      </>
+    );
+  }
+  return null;
 }
 
 function SubmitButton({
@@ -166,14 +252,15 @@ function SummaryPanelBody({
   onNavigate: (targetId: string) => void;
   onSubmit: () => void;
 }) {
-  const { done, total, pending, complete, percent } = getProgress(props.checks);
+  const progress = getProgress(props.checks);
+  const { done, total, complete, percent } = progress;
 
   return (
     <Card className="flex h-full flex-col gap-0 overflow-hidden rounded-none border-0 border-l py-0 shadow-none">
       <div className="shrink-0 space-y-3 border-b px-5 pt-4 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="font-semibold leading-none">{props.title}</h2>
+            <h2 className="font-semibold leading-tight [overflow-wrap:anywhere]">{props.title}</h2>
             {props.subtitle && (
               <div className="mt-1.5 truncate text-xs text-muted-foreground">
                 {props.subtitle}
@@ -211,6 +298,7 @@ function SummaryPanelBody({
             style={{ width: `${percent}%` }}
           />
         </div>
+        {props.dirty && <DirtyBadge />}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -238,8 +326,8 @@ function SummaryPanelBody({
                   <span className="min-w-0 flex-1">
                     <span
                       className={cn(
-                        "block",
-                        check.status === "todo"
+                        "block [overflow-wrap:anywhere]",
+                        check.status === "todo" || check.status === "suggested"
                           ? "font-medium"
                           : "text-muted-foreground",
                         check.status === "done" &&
@@ -256,8 +344,9 @@ function SummaryPanelBody({
                     {check.hint && (
                       <span
                         className={cn(
-                          "mt-0.5 block text-xs",
-                          check.status === "warning"
+                          "mt-0.5 block text-xs [overflow-wrap:anywhere]",
+                          check.status === "warning" ||
+                            check.status === "suggested"
                             ? "text-amber-700 dark:text-amber-400"
                             : "text-muted-foreground",
                         )}
@@ -293,10 +382,10 @@ function SummaryPanelBody({
           </Alert>
         )}
         <SubmitButton props={props} onClick={onSubmit} />
+        {props.secondaryActions}
         {!complete && (
           <p className="text-center text-xs text-muted-foreground">
-            Lengkapi {pending.length} langkah bertanda{" "}
-            <Circle className="-mt-0.5 inline h-3 w-3" /> dulu.
+            <ProgressHint progress={progress} />
           </p>
         )}
         {props.nextSteps && (
@@ -321,6 +410,11 @@ function SummaryPanelBody({
  *   bersama semua form) dan diterapkan lagi di desktop.
  * - Selalu ada bar submit di akhir form (disembunyikan di desktop saat panel
  *   terbuka), jadi form tetap bisa diajukan walau panel tertutup.
+ * - Area form berupa grid 12 kolom (sama dengan layout halaman) sekaligus
+ *   container `@container/form`, jadi children bisa pakai `col-span-*` biasa
+ *   atau `@3xl/form:col-span-*` kalau perlu ikut lebar form (bukan layar).
+ * - `enabled={false}`: panel, tab & bar submit disembunyikan, children tetap
+ *   dirender di struktur yang sama (tidak remount saat di-toggle).
  *
  * Tombol submit sengaja tidak di-disable saat form belum lengkap: kalau
  * masih ada langkah `todo`, klik submit scroll ke langkah pertama yang kurang
@@ -329,22 +423,28 @@ function SummaryPanelBody({
 export function FormSummaryLayout({
   summary,
   children,
+  enabled = true,
+  className,
 }: {
   summary: FormSummaryProps;
   children: ReactNode;
+  enabled?: boolean;
+  /** Mis. "no-print" supaya seluruh form & panel tidak ikut tercetak. */
+  className?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [storedOpen, setStoredOpen] = useState(false);
   const [isXl, setIsXl] = useState(false);
   // Transisi baru diaktifkan setelah preferensi tersimpan diterapkan, supaya
   // panel tidak "geser masuk" sendiri tiap halaman dibuka.
   const [animate, setAnimate] = useState(false);
+  const open = enabled && storedOpen;
 
   useEffect(() => {
     const mql = window.matchMedia(XL_QUERY);
     setIsXl(mql.matches);
     if (mql.matches) {
       try {
-        setOpen(window.localStorage.getItem(STORAGE_KEY) === "true");
+        setStoredOpen(window.localStorage.getItem(STORAGE_KEY) === "true");
       } catch {
         // localStorage tidak tersedia (private mode dsb) - pakai default.
       }
@@ -353,7 +453,7 @@ export function FormSummaryLayout({
     const onChange = (e: MediaQueryListEvent) => {
       setIsXl(e.matches);
       // Turun ke layar kecil: jangan biarkan overlay menutupi form.
-      if (!e.matches) setOpen(false);
+      if (!e.matches) setStoredOpen(false);
     };
     mql.addEventListener("change", onChange);
     return () => {
@@ -363,7 +463,7 @@ export function FormSummaryLayout({
   }, []);
 
   const setOpenAndRemember = useCallback((value: boolean) => {
-    setOpen(value);
+    setStoredOpen(value);
     try {
       window.localStorage.setItem(STORAGE_KEY, String(value));
     } catch {
@@ -375,7 +475,7 @@ export function FormSummaryLayout({
   useEffect(() => {
     if (!open || isXl) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setStoredOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -384,7 +484,7 @@ export function FormSummaryLayout({
   // Di layar kecil overlay ditutup dulu (tanpa mengubah preferensi) supaya
   // section tujuan kelihatan.
   const navigate = (targetId: string) => {
-    if (!isXl) setOpen(false);
+    if (!isXl) setStoredOpen(false);
     scrollToFormSection(targetId);
   };
 
@@ -401,74 +501,84 @@ export function FormSummaryLayout({
   const transition = animate ? "duration-300 ease-out" : "duration-0";
 
   return (
-    <div className="col-span-12 flex">
-      <div className="flex min-w-0 flex-1 flex-col gap-4 md:gap-6">
+    <div className={cn("col-span-12 flex", className)}>
+      <div className="@container/form grid min-w-0 flex-1 grid-cols-12 content-start items-start gap-4 md:gap-6 [&>*]:min-w-0">
         {children}
 
         {/* Bar submit di akhir form */}
-        <Card
-          className={cn("gap-0 py-0", open && "xl:hidden")}
-          aria-hidden={open && isXl}
-        >
-          {summary.error && (
-            <div className="px-5 pt-4">
-              <Alert variant="destructive">
-                <AlertTitle>Perhatian!</AlertTitle>
-                <AlertDescription>{summary.error}</AlertDescription>
-              </Alert>
+        {enabled && (
+          <Card
+            className={cn("col-span-12 gap-0 py-0", open && "xl:hidden")}
+            aria-hidden={open && isXl}
+          >
+            {summary.error && (
+              <div className="px-5 pt-4">
+                <Alert variant="destructive">
+                  <AlertTitle>Perhatian!</AlertTitle>
+                  <AlertDescription>{summary.error}</AlertDescription>
+                </Alert>
+              </div>
+            )}
+            <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <ProgressBadge
+                  done={progress.done}
+                  total={progress.total}
+                  complete={progress.complete}
+                />
+                <span className="text-muted-foreground">
+                  {progress.complete ? (
+                    "Semua data lengkap."
+                  ) : (
+                    <ProgressHint progress={progress} />
+                  )}
+                </span>
+                {summary.dirty && <DirtyBadge />}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0"
+                  onClick={() => setOpenAndRemember(true)}
+                >
+                  Lihat ringkasan
+                </Button>
+              </div>
+              <div className="flex flex-col gap-2 sm:w-64 sm:shrink-0">
+                <SubmitButton props={summary} onClick={handleSubmit} />
+                {summary.secondaryActions}
+              </div>
             </div>
-          )}
-          <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 text-sm">
-              <ProgressBadge
-                done={progress.done}
-                total={progress.total}
-                complete={progress.complete}
-              />
-              <span className="text-muted-foreground">
-                {progress.complete
-                  ? "Semua langkah wajib lengkap."
-                  : `${progress.pending.length} langkah wajib belum lengkap.`}
-              </span>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className="h-auto px-0"
-                onClick={() => setOpenAndRemember(true)}
-              >
-                Lihat ringkasan
-              </Button>
-            </div>
-            <div className="sm:w-64">
-              <SubmitButton props={summary} onClick={handleSubmit} />
-            </div>
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
 
-      {/* Spacer: menyempitkan form di desktop selebar panel saat terbuka */}
-      <div
-        aria-hidden
-        className={cn(
-          "hidden shrink-0 transition-[width] xl:block",
-          transition,
-          open ? "w-[384px]" : "w-0",
-        )}
-      />
+      {enabled && (
+        <>
+          {/* Spacer: menyempitkan form di desktop selebar panel saat terbuka */}
+          <div
+            aria-hidden
+            className={cn(
+              "hidden shrink-0 transition-[width] xl:block",
+              transition,
+              open ? "w-[384px]" : "w-0",
+            )}
+          />
 
-      {/* Backdrop overlay (layar kecil saja) */}
-      <div
-        aria-hidden
-        onClick={() => setOpen(false)}
-        className={cn(
-          "fixed inset-0 z-40 bg-black/40 transition-opacity xl:hidden",
-          transition,
-          open ? "opacity-100" : "pointer-events-none opacity-0",
-        )}
-      />
+          {/* Backdrop overlay (layar kecil saja) */}
+          <div
+            aria-hidden
+            onClick={() => setStoredOpen(false)}
+            className={cn(
+              "fixed inset-0 z-40 bg-black/40 transition-opacity xl:hidden",
+              transition,
+              open ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
+          />
+        </>
+      )}
 
-      {/* Panel */}
+      {/* Panel - tetap dirender saat disabled supaya animasi keluar jalan */}
       <aside
         aria-label={summary.title}
         aria-hidden={!open}
@@ -482,7 +592,7 @@ export function FormSummaryLayout({
         <SummaryPanelBody
           props={summary}
           onClose={() =>
-            isXl ? setOpenAndRemember(false) : setOpen(false)
+            isXl ? setOpenAndRemember(false) : setStoredOpen(false)
           }
           onNavigate={navigate}
           onSubmit={handleSubmit}
@@ -496,19 +606,23 @@ export function FormSummaryLayout({
         aria-label="Tampilkan ringkasan"
         title="Tampilkan ringkasan"
         className={cn(
-          "fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-lg border border-r-0 bg-primary px-1.5 py-3 text-primary-foreground shadow-lg transition-transform hover:px-2",
+          "fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-l-md border border-r-0 bg-primary px-1 py-2 text-primary-foreground shadow-md transition-transform hover:px-1.5",
           transition,
-          open ? "translate-x-full" : "translate-x-0",
+          enabled && !open ? "translate-x-0" : "translate-x-full",
         )}
-        tabIndex={open ? -1 : 0}
+        tabIndex={enabled && !open ? 0 : -1}
+        aria-hidden={!enabled || open}
       >
-        <ListChecks className="h-4 w-4" />
-        <span className="text-xs font-medium [writing-mode:vertical-rl] rotate-180">
+        {summary.dirty && (
+          <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-amber-500" />
+        )}
+        <ListChecks className="h-3.5 w-3.5" />
+        <span className="rotate-180 text-[10px] font-medium leading-none [writing-mode:vertical-rl]">
           Ringkasan
         </span>
         <span
           className={cn(
-            "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+            "rounded-full px-1 py-px text-[9px] font-semibold tabular-nums",
             progress.complete
               ? "bg-emerald-500 text-white"
               : "bg-primary-foreground/20",
