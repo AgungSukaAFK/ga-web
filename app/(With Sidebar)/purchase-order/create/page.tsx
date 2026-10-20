@@ -143,6 +143,10 @@ import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
+import {
+  FormSummaryLayout,
+  type FormSummaryCheck,
+} from "@/components/form-summary-panel";
 
 // --- INTERFACE EXTENSION ---
 // Kita extend POItem lokal di sini agar tidak error TS
@@ -1040,113 +1044,274 @@ function CreatePOPageContent() {
       (a) => a.type === "invoice" || a.type === "quotation",
     ) || [];
 
+  // --- Checklist kelengkapan (panel ringkasan) ---
+  // Kondisi `todo` di sini harus subset dari validasi handleCheckSubmit supaya
+  // panel tidak memblok PO yang sebenarnya valid.
+  const hasVendor = !!poForm.vendor_details?.vendor_id;
+  const vendorTypeMissing = hasVendor && !poForm.vendor_details?.tipe_vendor;
+  const purchasingTypes = Array.from(
+    new Set(
+      purchasingAttachments.map((a) =>
+        a.type === "invoice" ? "Invoice" : "Quotation",
+      ),
+    ),
+  );
+  const summaryChecks: FormSummaryCheck[] = [
+    {
+      id: "source",
+      label: "Referensi MR",
+      status: mrData ? "done" : "warning",
+      value: mrData ? (
+        <span className="font-mono text-xs">{mrData.kode_mr}</span>
+      ) : undefined,
+      hint: mrData ? undefined : "Direct PO (tanpa MR)",
+      targetId: "po-section-source",
+    },
+    {
+      id: "items",
+      label: "Item PO",
+      status: poForm.items.length > 0 ? "done" : "todo",
+      value:
+        poForm.items.length > 0 ? `${poForm.items.length} item` : undefined,
+      hint:
+        poForm.items.length > 0
+          ? undefined
+          : mrData
+            ? "Centang item MR atau tambah item"
+            : "Tambah minimal 1 item",
+      targetId: mrData ? "po-section-mr-items" : "po-section-items",
+    },
+    {
+      id: "vendor",
+      label: "Vendor",
+      status: hasVendor && !vendorTypeMissing ? "done" : "todo",
+      value: hasVendor ? poForm.vendor_details?.nama_vendor : undefined,
+      hint: vendorTypeMissing
+        ? "Tipe vendor (HO/Branch/Site) belum diset"
+        : hasVendor
+          ? undefined
+          : "Pilih vendor utama",
+      targetId: "po-section-vendor",
+    },
+    {
+      id: "payment",
+      label: "Payment term",
+      status: "done",
+      value: poForm.payment_term,
+      targetId: "po-section-vendor",
+    },
+    {
+      id: "purchasing-attachment",
+      label: "Quotation / Invoice",
+      status: purchasingAttachments.length > 0 ? "done" : "todo",
+      value:
+        purchasingAttachments.length > 0
+          ? purchasingTypes.join(", ")
+          : undefined,
+      hint:
+        purchasingAttachments.length > 0
+          ? undefined
+          : "Wajib minimal 1 lampiran",
+      targetId: "po-section-attachments",
+    },
+  ];
+
   return (
     <>
-      <TooltipProvider>
-        <div className="col-span-12 flex flex-wrap justify-between items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">Buat Purchase Order</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-muted-foreground">PO:</span>
-              <span className="font-semibold text-primary">
-                {poForm.kode_po}
-              </span>
-              <div className="flex items-center gap-1.5 ml-1">
-                <Checkbox
-                  id="is-asset-po"
-                  checked={!!poForm.is_asset}
-                  onCheckedChange={(c) =>
-                    setPoForm((prev) => ({ ...prev, is_asset: c as boolean }))
-                  }
-                />
-                <label
-                  htmlFor="is-asset-po"
-                  className="text-sm font-medium cursor-pointer select-none"
-                >
-                  Ini adalah PO Aset
-                </label>
+      <FormSummaryLayout
+        summary={{
+          title: "Ringkasan PO",
+          subtitle: <span className="font-mono">{poForm.kode_po}</span>,
+          checks: summaryChecks,
+          submitLabel: "Ajukan PO",
+          submitIcon: <Send className="mr-2 h-4 w-4" />,
+          onSubmit: handleCheckSubmit,
+          submitting: loading,
+          disabled: isUploadingPO || isUploadingFinance || isUploadingPurchasing,
+          nextSteps: (
+            <>
+              PO diajukan ke tim GA untuk divalidasi.
+              {!mrData &&
+                " Karena Direct PO, Anda akan diminta konfirmasi dulu."}
+            </>
+          ),
+          children: (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  Subtotal ({poForm.items.length} item)
+                </span>
+                <span className="tabular-nums">{formatCurrency(subtotal)}</span>
               </div>
-              {poForm.is_asset && (
-                <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
-                  PO Asset
-                </Badge>
+
+              {(poForm.discount || 0) > 0 && (
+                <div className="flex justify-between text-destructive">
+                  <span>- Diskon</span>
+                  <span className="tabular-nums">
+                    ({formatCurrency(poForm.discount)})
+                  </span>
+                </div>
               )}
+
+              {(poForm.pph_amount || 0) > 0 && (
+                <div className="flex justify-between text-destructive">
+                  <span>
+                    - PPH ({PPH_OPTIONS.find((o) => o.value === pphType)?.rate}%)
+                  </span>
+                  <span className="tabular-nums">
+                    ({formatCurrency(poForm.pph_amount || 0)})
+                  </span>
+                </div>
+              )}
+
+              {!isTaxIncluded && (poForm.tax || 0) > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>+ PPN ({taxPercentage}%)</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(poForm.tax || 0)}
+                  </span>
+                </div>
+              )}
+
+              {isTaxIncluded && (
+                <div className="flex justify-between gap-2 text-muted-foreground italic">
+                  <span>PPN ({taxPercentage}%, sudah termasuk harga)</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(subtotal * (taxPercentage / 100))}
+                  </span>
+                </div>
+              )}
+
+              {(poForm.postage || 0) > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>+ Ongkir</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(poForm.postage || 0)}
+                  </span>
+                </div>
+              )}
+
+              <div className="border-t pt-2 mt-2">
+                <div className="flex items-baseline justify-between gap-2 font-bold">
+                  <span>Grand Total</span>
+                  <span className="text-lg tabular-nums">
+                    {formatCurrency(poForm.total_price)}
+                  </span>
+                </div>
+                {(poForm.pph_amount || 0) > 0 && (
+                  <p className="text-[10px] text-muted-foreground text-right mt-1 italic">
+                    *Net Payable (setelah potong PPH)
+                  </p>
+                )}
+              </div>
+            </div>
+          ),
+        }}
+      >
+        <TooltipProvider>
+          <div className="flex flex-wrap justify-between items-center gap-4">
+            <div>
+              <h1 className="text-3xl font-bold">Buat Purchase Order</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-muted-foreground">PO:</span>
+                <span className="font-semibold text-primary">
+                  {poForm.kode_po}
+                </span>
+                <div className="flex items-center gap-1.5 ml-1">
+                  <Checkbox
+                    id="is-asset-po"
+                    checked={!!poForm.is_asset}
+                    onCheckedChange={(c) =>
+                      setPoForm((prev) => ({ ...prev, is_asset: c as boolean }))
+                    }
+                  />
+                  <label
+                    htmlFor="is-asset-po"
+                    className="text-sm font-medium cursor-pointer select-none"
+                  >
+                    Ini adalah PO Aset
+                  </label>
+                </div>
+                {poForm.is_asset && (
+                  <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
+                    PO Asset
+                  </Badge>
+                )}
+                {mrData ? (
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Badge
+                        variant="outline"
+                        className="bg-primary/10 text-primary border-primary/20 flex items-center gap-1 cursor-help"
+                      >
+                        Ref MR: {mrData.kode_mr}{" "}
+                        <HelpCircle className="h-3 w-3" />
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>PO ini terhubung ke MR. Item diambil dari MR.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1 cursor-help"
+                      >
+                        Direct PO (Tanpa MR) <HelpCircle className="h-3 w-3" />
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        PO ini dibuat langsung tanpa referensi MR.
+                        <br />
+                        Anda perlu menambahkan item secara manual.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
               {mrData ? (
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Badge
-                      variant="outline"
-                      className="bg-primary/10 text-primary border-primary/20 flex items-center gap-1 cursor-help"
-                    >
-                      Ref MR: {mrData.kode_mr}{" "}
-                      <HelpCircle className="h-3 w-3" />
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>PO ini terhubung ke MR. Item diambil dari MR.</p>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="flex gap-1">
+                  <Button variant="outline" onClick={handleOpenLinkMR}>
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Ganti MR
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    onClick={() => setIsUnlinkDialogOpen(true)}
+                    title="Putuskan Koneksi MR"
+                  >
+                    <Unlink className="h-4 w-4" />
+                  </Button>
+                </div>
               ) : (
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Badge
-                      variant="outline"
-                      className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1 cursor-help"
-                    >
-                      Direct PO (Tanpa MR) <HelpCircle className="h-3 w-3" />
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>
-                      PO ini dibuat langsung tanpa referensi MR.
-                      <br />
-                      Anda perlu menambahkan item secara manual.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
+                <Button variant="outline" onClick={handleOpenLinkMR}>
+                  <Link2 className="mr-2 h-4 w-4" />
+                  Kaitkan Material Request
+                </Button>
               )}
+
+              <Button onClick={handleCheckSubmit} disabled={loading}>
+                {loading ? (
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}{" "}
+                Ajukan PO
+              </Button>
             </div>
           </div>
+        </TooltipProvider>
 
-          <div className="flex gap-2">
-            {mrData ? (
-              <div className="flex gap-1">
-                <Button variant="outline" onClick={handleOpenLinkMR}>
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Ganti MR
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={() => setIsUnlinkDialogOpen(true)}
-                  title="Putuskan Koneksi MR"
-                >
-                  <Unlink className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <Button variant="outline" onClick={handleOpenLinkMR}>
-                <Link2 className="mr-2 h-4 w-4" />
-                Kaitkan Material Request
-              </Button>
-            )}
-
-            <Button onClick={handleCheckSubmit} disabled={loading}>
-              {loading ? (
-                <Loader2 className="animate-spin mr-2 h-4 w-4" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}{" "}
-              Ajukan PO
-            </Button>
-          </div>
-        </div>
-      </TooltipProvider>
-
-      {/* --- KOLOM KIRI --- */}
-      <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
         {mrData ? (
           <Content
+            id="po-section-source"
             title={`Referensi MR: ${mrData.kode_mr}`}
             cardAction={
               <Button
@@ -1214,7 +1379,10 @@ function CreatePOPageContent() {
             </div>
           </Content>
         ) : (
-          <Content className="bg-muted/40 border-dashed border-2">
+          <Content
+            id="po-section-source"
+            className="bg-muted/40 border-dashed border-2"
+          >
             <div className="flex items-center gap-4 text-muted-foreground p-4">
               <Info className="h-8 w-8" />
               <div>
@@ -1232,6 +1400,7 @@ function CreatePOPageContent() {
 
         {mrData && (
           <Content
+            id="po-section-mr-items"
             title="Pilih Item dari Material Request"
             description="Centang item yang akan diproses ke PO."
           >
@@ -1405,6 +1574,7 @@ function CreatePOPageContent() {
         )}
 
         <Content
+          id="po-section-items"
           title="Rincian Item Purchase Order (Final)"
           cardAction={
             <Button
@@ -1516,357 +1686,228 @@ function CreatePOPageContent() {
           </div>
         </Content>
 
-        <Content title="Catatan PO">
-          <div className="flex flex-col gap-2">
-            <RichMentionEditor
-              ref={notesEditorRef}
-              placeholder="Tambahkan catatan untuk vendor atau internal..."
-              onChange={() => {
-                setPoForm((prev) => ({
-                  ...prev,
-                  notes: notesEditorRef.current?.isEmpty()
-                    ? ""
-                    : stringifyRichContent(
-                        notesEditorRef.current?.getJSON() ?? { type: "doc" },
-                      ),
-                }));
-                setIsNotesEmpty(notesEditorRef.current?.isEmpty() ?? true);
-              }}
-              onSubmit={() => {
-                if (notesEditorRef.current?.isEmpty()) return;
-                toast.success("Catatan PO tersimpan.");
-              }}
-            />
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-                disabled={isNotesEmpty}
-                onClick={() => {
-                  if (notesEditorRef.current?.isEmpty()) return;
-                  toast.success("Catatan PO tersimpan.");
-                }}
-              >
-                <Send className="mr-2 h-4 w-4" /> Simpan Catatan
-              </Button>
-            </div>
-          </div>
-        </Content>
-      </div>
-
-      {/* --- KOLOM KANAN --- */}
-      <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
-        <Content title="Vendor & Pembayaran">
-          <div className="space-y-4">
-            <div>
-              <Label className="mb-1 block">Pilih Vendor Utama</Label>
-              <VendorSearchCombobox
-                poForm={poForm}
-                setPoForm={setPoForm}
-                onVendorSelected={(vendor) => {
-                  if (isMarketplaceVendor(vendor.nama_vendor)) {
-                    setIsTaxIncluded(false);
-                    setTaxMode("percentage");
-                    setTaxPercentage(0);
-                  } else {
-                    setIsTaxIncluded(true);
-                    setTaxMode("percentage");
-                    setTaxPercentage(11);
-                  }
-                }}
-              />
-            </div>
-            <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Kontak:</span>
-                <span>{poForm.vendor_details?.contact_person || "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Email:</span>
-                <span>{poForm.vendor_details?.email || "-"}</span>
-              </div>
+        <Content id="po-section-vendor" title="Vendor & Pembayaran">
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-4">
               <div>
-                <span className="text-muted-foreground block mb-1">
-                  Alamat:
-                </span>
-                <p className="whitespace-pre-wrap">
-                  {poForm.vendor_details?.alamat || "-"}
-                </p>
-              </div>
-            </div>
-            <hr />
-
-            {/* PAYMENT TERM SECTION */}
-            <div>
-              <Label className="text-sm font-medium">Payment Term</Label>
-              <div className="flex flex-col gap-3 mt-1">
-                <SearchableSelect
-                  value={paymentTermType}
-                  onValueChange={setPaymentTermType}
-                >
-                  <SearchableSelectTrigger className="w-full">
-                    <SearchableSelectValue placeholder="Pilih Metode Pembayaran" />
-                  </SearchableSelectTrigger>
-                  <SearchableSelectContent>
-                    <SearchableSelectItem value="Termin">
-                      Termin (Jangka Waktu)
-                    </SearchableSelectItem>
-                    <SearchableSelectItem value="Cash">Cash (Tunai)</SearchableSelectItem>
-                    <SearchableSelectItem value="DP_BP">
-                      DP & Pelunasan (DP & Balance)
-                    </SearchableSelectItem>
-                  </SearchableSelectContent>
-                </SearchableSelect>
-
-                {paymentTermType === "Termin" && (
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      value={paymentTermDays}
-                      onChange={(e) => setPaymentTermDays(e.target.value)}
-                      className="pr-12"
-                      placeholder="30"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      Hari
-                    </span>
-                  </div>
-                )}
-
-                {paymentTermType === "DP_BP" && (
-                  <div className="space-y-3 p-3 bg-muted/30 rounded-md border">
-                    <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">
-                        Kapan Barang Dikirim?
-                      </Label>
-                      <SearchableSelect
-                        value={dpBpShippingType}
-                        onValueChange={(v) =>
-                          setDpBpShippingType(v as typeof dpBpShippingType)
-                        }
-                      >
-                        <SearchableSelectTrigger className="w-full">
-                          <SearchableSelectValue />
-                        </SearchableSelectTrigger>
-                        <SearchableSelectContent>
-                          <SearchableSelectItem value="ship_after_dp">
-                            Kirim Setelah DP
-                          </SearchableSelectItem>
-                          <SearchableSelectItem value="ship_after_full_payment">
-                            Kirim Setelah Pelunasan
-                          </SearchableSelectItem>
-                        </SearchableSelectContent>
-                      </SearchableSelect>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {dpBpShippingType === "ship_after_dp"
-                          ? "Vendor kirim barang begitu DP dibayar. Pelunasan (BP) menyusul belakangan, dilacak terpisah setelah PO berjalan."
-                          : "Vendor baru kirim barang setelah DP dan Pelunasan (BP) lunas semua."}
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">
-                        Persentase Down Payment (DP)
-                      </Label>
-                      <div className="relative">
-                        <Input
-                          type="number"
-                          value={dpPercentage}
-                          onChange={(e) =>
-                            setDpPercentage(Number(e.target.value))
-                          }
-                          className="pr-8"
-                          min="0"
-                          max="100"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                          %
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-sm space-y-1 pt-1">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Nominal DP ({dpPercentage}%):
-                        </span>
-                        <span className="font-medium text-primary">
-                          {formatCurrency(
-                            (poForm.total_price * dpPercentage) / 100,
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between border-t pt-1 mt-1">
-                        <span className="text-muted-foreground">
-                          Pelunasan ({100 - dpPercentage}%):
-                        </span>
-                        <span className="font-medium text-green-600">
-                          {formatCurrency(
-                            poForm.total_price -
-                              (poForm.total_price * dpPercentage) / 100,
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <Label>Alamat Pengiriman</Label>
-              <Textarea
-                value={poForm.shipping_address}
-                onChange={(e) =>
-                  setPoForm((p) => ({ ...p, shipping_address: e.target.value }))
-                }
-              />
-            </div>
-          </div>
-        </Content>
-
-        <Content title="Lampiran">
-          <div className="space-y-4">
-            <div>
-              <Label>Lampiran PO</Label>
-              <Input
-                type="file"
-                onChange={(e) => handleAttachmentUpload(e, "po")}
-                disabled={isUploadingPO}
-                className="mt-1"
-              />
-              <ul className="space-y-1 mt-2">
-                {poAttachments.map((att, i) => (
-                  <li
-                    key={i}
-                    className="flex justify-between text-xs bg-muted p-1 rounded items-center"
-                  >
-                    <span className="truncate max-w-[150px]">{att.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() =>
-                        removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
-                      }
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <hr />
-            <div>
-              <Label>Lampiran Finance</Label>
-              <Input
-                type="file"
-                onChange={(e) => handleAttachmentUpload(e, "finance")}
-                disabled={isUploadingFinance}
-                className="mt-1"
-              />
-              <ul className="space-y-1 mt-2">
-                {financeAttachments.map((att, i) => (
-                  <li
-                    key={i}
-                    className="flex justify-between text-xs bg-muted p-1 rounded items-center"
-                  >
-                    <span className="truncate max-w-[150px]">{att.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() =>
-                        removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
-                      }
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <hr />
-            <div>
-              <Label>Lampiran Purchasing (wajib salah satu)</Label>
-              <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                Minimal 1 lampiran (Quotation atau Invoice) wajib diunggah
-                sebelum PO bisa dibuat. Pilih jenisnya dulu, baru unggah
-                filenya.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <SearchableSelect
-                  value={purchasingAttachmentType}
-                  onValueChange={(v) =>
-                    setPurchasingAttachmentType(v as "quotation" | "invoice")
-                  }
-                >
-                  <SearchableSelectTrigger className="w-full sm:w-40">
-                    <SearchableSelectValue placeholder="Jenis lampiran" />
-                  </SearchableSelectTrigger>
-                  <SearchableSelectContent>
-                    <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
-                    <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
-                  </SearchableSelectContent>
-                </SearchableSelect>
-                <Input
-                  type="file"
-                  onChange={handlePurchasingAttachmentUpload}
-                  disabled={isUploadingPurchasing}
-                  className="flex-1"
+                <Label className="mb-1 block">Pilih Vendor Utama</Label>
+                <VendorSearchCombobox
+                  poForm={poForm}
+                  setPoForm={setPoForm}
+                  onVendorSelected={(vendor) => {
+                    if (isMarketplaceVendor(vendor.nama_vendor)) {
+                      setIsTaxIncluded(false);
+                      setTaxMode("percentage");
+                      setTaxPercentage(0);
+                    } else {
+                      setIsTaxIncluded(true);
+                      setTaxMode("percentage");
+                      setTaxPercentage(11);
+                    }
+                  }}
                 />
               </div>
-              <ul className="space-y-1 mt-2">
-                {purchasingAttachments.map((att, i) => (
-                  <li
-                    key={i}
-                    className="flex justify-between text-xs bg-muted p-1 rounded items-center gap-2"
+              <div className="p-3 bg-muted/50 rounded-md space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Kontak:</span>
+                  <span className="text-right break-words">
+                    {poForm.vendor_details?.contact_person || "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Email:</span>
+                  <span className="text-right break-all">
+                    {poForm.vendor_details?.email || "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block mb-1">
+                    Alamat:
+                  </span>
+                  <p className="whitespace-pre-wrap">
+                    {poForm.vendor_details?.alamat || "-"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* PAYMENT TERM SECTION */}
+              <div>
+                <Label className="text-sm font-medium">Payment Term</Label>
+                <div className="flex flex-col gap-3 mt-1">
+                  <SearchableSelect
+                    value={paymentTermType}
+                    onValueChange={setPaymentTermType}
                   >
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {att.type === "invoice" ? "Invoice" : "Quotation"}
-                      </Badge>
-                      <span className="truncate max-w-[150px]">
-                        {att.name}
+                    <SearchableSelectTrigger className="w-full">
+                      <SearchableSelectValue placeholder="Pilih Metode Pembayaran" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="Termin">
+                        Termin (Jangka Waktu)
+                      </SearchableSelectItem>
+                      <SearchableSelectItem value="Cash">Cash (Tunai)</SearchableSelectItem>
+                      <SearchableSelectItem value="DP_BP">
+                        DP & Pelunasan (DP & Balance)
+                      </SearchableSelectItem>
+                    </SearchableSelectContent>
+                  </SearchableSelect>
+
+                  {paymentTermType === "Termin" && (
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        value={paymentTermDays}
+                        onChange={(e) => setPaymentTermDays(e.target.value)}
+                        className="pr-12"
+                        placeholder="30"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        Hari
                       </span>
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() =>
-                        removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
-                      }
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                    </div>
+                  )}
+
+                  {paymentTermType === "DP_BP" && (
+                    <div className="space-y-3 p-3 bg-muted/30 rounded-md border">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">
+                          Kapan Barang Dikirim?
+                        </Label>
+                        <SearchableSelect
+                          value={dpBpShippingType}
+                          onValueChange={(v) =>
+                            setDpBpShippingType(v as typeof dpBpShippingType)
+                          }
+                        >
+                          <SearchableSelectTrigger className="w-full">
+                            <SearchableSelectValue />
+                          </SearchableSelectTrigger>
+                          <SearchableSelectContent>
+                            <SearchableSelectItem value="ship_after_dp">
+                              Kirim Setelah DP
+                            </SearchableSelectItem>
+                            <SearchableSelectItem value="ship_after_full_payment">
+                              Kirim Setelah Pelunasan
+                            </SearchableSelectItem>
+                          </SearchableSelectContent>
+                        </SearchableSelect>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {dpBpShippingType === "ship_after_dp"
+                            ? "Vendor kirim barang begitu DP dibayar. Pelunasan (BP) menyusul belakangan, dilacak terpisah setelah PO berjalan."
+                            : "Vendor baru kirim barang setelah DP dan Pelunasan (BP) lunas semua."}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">
+                          Persentase Down Payment (DP)
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            value={dpPercentage}
+                            onChange={(e) =>
+                              setDpPercentage(Number(e.target.value))
+                            }
+                            className="pr-8"
+                            min="0"
+                            max="100"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                            %
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-sm space-y-1 pt-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Nominal DP ({dpPercentage}%):
+                          </span>
+                          <span className="font-medium text-primary">
+                            {formatCurrency(
+                              (poForm.total_price * dpPercentage) / 100,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1 mt-1">
+                          <span className="text-muted-foreground">
+                            Pelunasan ({100 - dpPercentage}%):
+                          </span>
+                          <span className="font-medium text-green-600">
+                            {formatCurrency(
+                              poForm.total_price -
+                                (poForm.total_price * dpPercentage) / 100,
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Label>Alamat Pengiriman</Label>
+                <Textarea
+                  className="mt-1"
+                  value={poForm.shipping_address}
+                  onChange={(e) =>
+                    setPoForm((p) => ({ ...p, shipping_address: e.target.value }))
+                  }
+                />
+              </div>
             </div>
           </div>
         </Content>
 
-        {/* --- RINGKASAN BIAYA --- */}
-        <Content title="Ringkasan Biaya">
-          <div className="space-y-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatCurrency(subtotal)}</span>
-            </div>
-
-            {/* Input Diskon */}
-            <div className="flex justify-between items-center">
-              <Label className="text-xs">Input Diskon (Rp)</Label>
-              <CurrencyInput
-                value={poForm.discount}
-                onValueChange={(v) => setPoForm((p) => ({ ...p, discount: v }))}
-                className="w-36 h-9 text-right"
-              />
+        <Content
+          id="po-section-costs"
+          title="Pajak & Biaya Tambahan"
+          description="Grand total dihitung otomatis di panel ringkasan."
+        >
+          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center gap-3">
+                <Label className="text-xs">Diskon (Rp)</Label>
+                <CurrencyInput
+                  value={poForm.discount}
+                  onValueChange={(v) => setPoForm((p) => ({ ...p, discount: v }))}
+                  className="w-40 h-9 text-right"
+                />
+              </div>
+              <div className="flex justify-between items-center gap-3">
+                <Label className="text-xs">Ongkir / Lain-lain</Label>
+                <CurrencyInput
+                  value={poForm.postage}
+                  onValueChange={(v) => setPoForm((p) => ({ ...p, postage: v }))}
+                  className="w-40 h-9 text-right"
+                />
+              </div>
+              {/* PPH Section */}
+              <div className="space-y-2 border-t border-dashed pt-3">
+                <Label className="text-xs font-semibold">
+                  PPH (Pajak Penghasilan)
+                </Label>
+                <SearchableSelect value={pphType} onValueChange={setPphType}>
+                  <SearchableSelectTrigger className="h-9 text-xs">
+                    <SearchableSelectValue placeholder="Pilih PPH..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    {PPH_OPTIONS.map((opt) => (
+                      <SearchableSelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
             </div>
 
             {/* PPN Section */}
-            <div className="space-y-2 pt-2 border-t border-dashed">
+            <div className="space-y-2 md:border-l md:pl-8 border-t border-dashed pt-3 md:border-t-0 md:pt-0">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="include-tax-create"
@@ -1959,96 +2000,167 @@ function CreatePOPageContent() {
                 </div>
               )}
             </div>
+          </div>
+        </Content>
 
-            {/* PPH Section */}
-            <div className="space-y-2 border-t border-dashed pt-2">
-              <Label className="text-xs font-semibold">
-                PPH (Pajak Penghasilan)
-              </Label>
-              <SearchableSelect value={pphType} onValueChange={setPphType}>
-                <SearchableSelectTrigger className="h-9 text-xs">
-                  <SearchableSelectValue placeholder="Pilih PPH..." />
-                </SearchableSelectTrigger>
-                <SearchableSelectContent>
-                  {PPH_OPTIONS.map((opt) => (
-                    <SearchableSelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SearchableSelectItem>
-                  ))}
-                </SearchableSelectContent>
-              </SearchableSelect>
-            </div>
-
-            {/* Input Ongkir */}
-            <div className="flex justify-between items-center pt-2 border-t border-dashed">
-              <Label className="text-xs">Ongkir / Lain-lain</Label>
-              <CurrencyInput
-                value={poForm.postage}
-                onValueChange={(v) => setPoForm((p) => ({ ...p, postage: v }))}
-                className="w-36 h-9 text-right"
-              />
-            </div>
-
-            {/* --- VISUALISASI PERHITUNGAN --- */}
-            <div className="bg-muted/30 p-4 rounded-md space-y-2 mt-4 text-sm border">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span>{formatCurrency(subtotal)}</span>
+        <Content id="po-section-attachments" title="Lampiran">
+          <div className="space-y-5">
+            <div>
+              <Label>Lampiran Purchasing (wajib salah satu)</Label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                Minimal 1 lampiran (Quotation atau Invoice) wajib diunggah
+                sebelum PO bisa dibuat. Pilih jenisnya dulu, baru unggah
+                filenya.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <SearchableSelect
+                  value={purchasingAttachmentType}
+                  onValueChange={(v) =>
+                    setPurchasingAttachmentType(v as "quotation" | "invoice")
+                  }
+                >
+                  <SearchableSelectTrigger className="w-full sm:w-40">
+                    <SearchableSelectValue placeholder="Jenis lampiran" />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
+                    <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
+                  </SearchableSelectContent>
+                </SearchableSelect>
+                <Input
+                  type="file"
+                  onChange={handlePurchasingAttachmentUpload}
+                  disabled={isUploadingPurchasing}
+                  className="flex-1"
+                />
               </div>
+              <ul className="space-y-1 mt-2">
+                {purchasingAttachments.map((att, i) => (
+                  <li
+                    key={i}
+                    className="flex justify-between text-xs bg-muted p-1 rounded items-center gap-2"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {att.type === "invoice" ? "Invoice" : "Quotation"}
+                      </Badge>
+                      <span className="truncate">{att.name}</span>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() =>
+                        removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
+                      }
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-              {(poForm.discount || 0) > 0 && (
-                <div className="flex justify-between text-destructive">
-                  <span>- Diskon</span>
-                  <span>({formatCurrency(poForm.discount)})</span>
-                </div>
-              )}
-
-              {(poForm.pph_amount || 0) > 0 && (
-                <div className="flex justify-between text-destructive">
-                  <span>
-                    - PPH ({PPH_OPTIONS.find((o) => o.value === pphType)?.rate}
-                    %)
-                  </span>
-                  <span>({formatCurrency(poForm.pph_amount || 0)})</span>
-                </div>
-              )}
-
-              {!isTaxIncluded && (poForm.tax || 0) > 0 && (
-                <div className="flex justify-between text-primary">
-                  <span>+ PPN ({taxPercentage}%)</span>
-                  <span>{formatCurrency(poForm.tax || 0)}</span>
-                </div>
-              )}
-
-              {isTaxIncluded && (
-                <div className="flex justify-between text-muted-foreground italic">
-                  <span>PPN ({taxPercentage}%, sudah termasuk harga)</span>
-                  <span>{formatCurrency(subtotal * (taxPercentage / 100))}</span>
-                </div>
-              )}
-
-              {(poForm.postage || 0) > 0 && (
-                <div className="flex justify-between text-primary">
-                  <span>+ Ongkir</span>
-                  <span>{formatCurrency(poForm.postage || 0)}</span>
-                </div>
-              )}
-
-              <div className="border-t border-muted-foreground/30 my-2 pt-2">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Grand Total</span>
-                  <span>{formatCurrency(poForm.total_price)}</span>
-                </div>
-                {(poForm.pph_amount || 0) > 0 && (
-                  <p className="text-[10px] text-muted-foreground text-right mt-1 italic">
-                    *Net Payable (setelah potong PPH)
-                  </p>
-                )}
+            <div className="grid gap-5 md:grid-cols-2 border-t pt-5">
+              <div>
+                <Label>Lampiran PO</Label>
+                <Input
+                  type="file"
+                  onChange={(e) => handleAttachmentUpload(e, "po")}
+                  disabled={isUploadingPO}
+                  className="mt-1"
+                />
+                <ul className="space-y-1 mt-2">
+                  {poAttachments.map((att, i) => (
+                    <li
+                      key={i}
+                      className="flex justify-between text-xs bg-muted p-1 rounded items-center gap-2"
+                    >
+                      <span className="truncate">{att.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() =>
+                          removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
+                        }
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <Label>Lampiran Finance</Label>
+                <Input
+                  type="file"
+                  onChange={(e) => handleAttachmentUpload(e, "finance")}
+                  disabled={isUploadingFinance}
+                  className="mt-1"
+                />
+                <ul className="space-y-1 mt-2">
+                  {financeAttachments.map((att, i) => (
+                    <li
+                      key={i}
+                      className="flex justify-between text-xs bg-muted p-1 rounded items-center gap-2"
+                    >
+                      <span className="truncate">{att.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() =>
+                          removeAttachment(poForm.attachments?.indexOf(att) ?? -1)
+                        }
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
         </Content>
-      </div>
+
+        <Content title="Catatan PO">
+          <div className="flex flex-col gap-2">
+            <RichMentionEditor
+              ref={notesEditorRef}
+              placeholder="Tambahkan catatan untuk vendor atau internal..."
+              onChange={() => {
+                setPoForm((prev) => ({
+                  ...prev,
+                  notes: notesEditorRef.current?.isEmpty()
+                    ? ""
+                    : stringifyRichContent(
+                        notesEditorRef.current?.getJSON() ?? { type: "doc" },
+                      ),
+                }));
+                setIsNotesEmpty(notesEditorRef.current?.isEmpty() ?? true);
+              }}
+              onSubmit={() => {
+                if (notesEditorRef.current?.isEmpty()) return;
+                toast.success("Catatan PO tersimpan.");
+              }}
+            />
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={isNotesEmpty}
+                onClick={() => {
+                  if (notesEditorRef.current?.isEmpty()) return;
+                  toast.success("Catatan PO tersimpan.");
+                }}
+              >
+                <Send className="mr-2 h-4 w-4" /> Simpan Catatan
+              </Button>
+            </div>
+          </div>
+        </Content>
+      </FormSummaryLayout>
 
       {/* --- DIALOG LINK MR --- */}
       <Dialog open={isLinkMROpen} onOpenChange={setIsLinkMROpen}>
