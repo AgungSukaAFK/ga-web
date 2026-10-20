@@ -23,7 +23,11 @@ import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
+import {
+  extractPlainText,
+  parseRichValue,
+  stringifyRichContent,
+} from "@/lib/rich-content";
 import {
   Table,
   TableBody,
@@ -44,9 +48,9 @@ import {
   X,
   Link2,
   Paperclip,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -82,7 +86,10 @@ import { logActivity } from "@/services/logService";
 import { BarangSearchCombobox } from "../../purchase-order/BarangSearchCombobox";
 import { Badge } from "@/components/ui/badge"; // <--- UPDATE: Import Badge
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
-import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
+import {
+  MR_KATEGORI_OPTIONS,
+  WAJIB_LAMPIRAN_KATEGORI,
+} from "@/lib/constants/mr";
 import {
   applyMrHistory,
   applyMrTemplate,
@@ -91,6 +98,10 @@ import {
 } from "@/services/mrTemplateService";
 import { MrTemplatePickerDialog } from "./MrTemplatePickerDialog";
 import { MrHistoryPickerDialog } from "./MrHistoryPickerDialog";
+import {
+  FormSummaryLayout,
+  type FormSummaryCheck,
+} from "@/components/form-summary-panel";
 
 const kategoriData: ComboboxData = MR_KATEGORI_OPTIONS;
 
@@ -851,9 +862,8 @@ export default function BuatMRPage() {
       return;
     }
 
-    const wajibLampiran = ["Replace Item", "Fix & Repair", "Upgrade"];
     if (
-      wajibLampiran.includes(formCreateMR.kategori) &&
+      WAJIB_LAMPIRAN_KATEGORI.includes(formCreateMR.kategori) &&
       (formCreateMR.attachments || []).length === 0
     ) {
       setAjukanAlert(
@@ -884,502 +894,638 @@ export default function BuatMRPage() {
     await proceedCreateMR();
   };
 
+  // --- Checklist kelengkapan (panel ringkasan) ---
+  // Kondisi `todo` di sini harus subset dari validasi handleAjukanMR supaya
+  // panel tidak memblok MR yang sebenarnya valid.
+  const lampiranWajib = WAJIB_LAMPIRAN_KATEGORI.includes(formCreateMR.kategori);
+  const attachmentCount = (formCreateMR.attachments || []).length;
+  const remarksText = extractPlainText(formCreateMR.remarks);
+  const invalidOrderCount = formCreateMR.orders.filter((o) => !o.barang_id)
+    .length;
+  const totalCost = Number(formCreateMR.cost_estimation) || 0;
+  const selectedPriority = PRIORITY_OPTIONS.find(
+    (p) => p.value === formCreateMR.prioritas,
+  );
+
+  const summaryChecks: FormSummaryCheck[] = [
+    ...(isLourdes
+      ? [
+          {
+            id: "company",
+            label: "Perusahaan tujuan",
+            status: formCreateMR.company_code ? "done" : "todo",
+            value: formCreateMR.company_code || undefined,
+            hint: formCreateMR.company_code ? undefined : "Pilih GMI atau GIS",
+            targetId: "mr-field-company",
+          } satisfies FormSummaryCheck,
+        ]
+      : []),
+    {
+      id: "kategori",
+      label: "Kategori",
+      status: formCreateMR.kategori ? "done" : "todo",
+      value: formCreateMR.kategori || undefined,
+      targetId: "mr-field-kategori",
+    },
+    {
+      id: "prioritas",
+      label: "Prioritas",
+      status: "done",
+      value: selectedPriority
+        ? `${selectedPriority.value} · ${selectedPriority.label}`
+        : formCreateMR.prioritas,
+      hint: formCreateMR.due_date
+        ? `Target pemakaian ${format(formCreateMR.due_date, "dd MMM yyyy")}`
+        : undefined,
+      targetId: "mr-field-prioritas",
+    },
+    {
+      id: "tujuan",
+      label: "Tujuan pengiriman",
+      status: formCreateMR.tujuan_site ? "done" : "todo",
+      value: formCreateMR.tujuan_site || undefined,
+      targetId: "mr-field-tujuan",
+    },
+    {
+      id: "remarks",
+      label: "Remarks",
+      status: formCreateMR.remarks ? "done" : "todo",
+      value: remarksText ? (
+        <span className="font-normal text-muted-foreground">
+          {remarksText}
+        </span>
+      ) : undefined,
+      hint: formCreateMR.remarks ? undefined : "Tujuan & latar belakang",
+      targetId: "mr-field-remarks",
+    },
+    {
+      id: "items",
+      label: "Order item",
+      status:
+        formCreateMR.orders.length > 0 && invalidOrderCount === 0
+          ? "done"
+          : "todo",
+      value:
+        formCreateMR.orders.length > 0
+          ? `${formCreateMR.orders.length} barang`
+          : undefined,
+      hint:
+        formCreateMR.orders.length === 0
+          ? "Minimal 1 barang"
+          : invalidOrderCount > 0
+            ? `${invalidOrderCount} item bukan dari database`
+            : undefined,
+      targetId: "mr-section-items",
+    },
+    {
+      id: "cost",
+      label: "Estimasi harga",
+      status: totalCost > 0 ? "done" : "todo",
+      value: totalCost > 0 ? formatCurrency(totalCost) : undefined,
+      hint: totalCost > 0 ? undefined : "Total estimasi harus > Rp 0",
+      targetId: "mr-section-items",
+    },
+    {
+      id: "lampiran",
+      label: "Lampiran",
+      status:
+        attachmentCount > 0 ? "done" : lampiranWajib ? "todo" : "optional",
+      value: attachmentCount > 0 ? `${attachmentCount} file` : undefined,
+      hint:
+        lampiranWajib && attachmentCount === 0
+          ? `Wajib untuk kategori ${formCreateMR.kategori}`
+          : undefined,
+      targetId: "mr-section-attachments",
+    },
+  ];
+
   return (
     <>
-      <Content
-        title="Buat Material Request Baru"
-        description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
+      <FormSummaryLayout
+        summary={{
+          title: "Ringkasan MR",
+          subtitle: <span className="font-mono">{formCreateMR.kode_mr}</span>,
+          checks: summaryChecks,
+          submitLabel: "Buat Material Request",
+          submitIcon: <Send className="mr-2 h-4 w-4" />,
+          onSubmit: handleAjukanMR,
+          submitting: loading,
+          disabled: isUploading,
+          error: ajukanAlert,
+          nextSteps: (
+            <>
+              MR masuk status <strong>Pending Validation</strong> dan tim GA
+              akan dinotifikasi untuk memvalidasi sebelum lanjut ke approval.
+            </>
+          ),
+          children: (
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                Estimasi biaya
+              </span>
+              <span className="text-lg font-bold tabular-nums">
+                {formattedCost}
+              </span>
+            </div>
+          ),
+        }}
       >
-        <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
-            {appliedTemplate ? (
-              <div className="flex min-w-0 items-center gap-2 text-sm">
-                {appliedTemplate.source === "template" ? (
-                  <FileStack className="h-4 w-4 shrink-0 text-primary" />
-                ) : (
-                  <History className="h-4 w-4 shrink-0 text-primary" />
-                )}
-                <span className="min-w-0 [overflow-wrap:anywhere]">
-                  {appliedTemplate.source === "template"
-                    ? "Menggunakan template "
-                    : "Menggunakan History MR "}
-                  <strong>{appliedTemplate.nama}</strong>. Semua isian tetap
-                  bisa diedit.
-                </span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 shrink-0"
-                  title="Lepas keterangan template"
-                  onClick={() => setAppliedTemplate(null)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <FileStack className="h-4 w-4 shrink-0" />
-                MR rutin? Pakai template dari GA atau MR lama supaya tidak
-                perlu input barang satu per satu.
-              </div>
-            )}
-            <div className="flex shrink-0 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="flex-1 sm:flex-none"
-                onClick={() => setOpenTemplateDialog(true)}
-                disabled={loading}
-              >
-                <FileStack className="mr-1 h-4 w-4" /> Template MR
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="flex-1 sm:flex-none"
-                onClick={() => setOpenHistoryDialog(true)}
-                disabled={loading || !formCreateMR.department}
-              >
-                <History className="mr-1 h-4 w-4" /> History MR
-              </Button>
-            </div>
-          </div>
-
-          {isLourdes && (
-            <div className="col-span-12 flex flex-col gap-2">
-              <Label className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-primary" />
-                Buat MR untuk Perusahaan <span className="text-red-500">*</span>
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                {(["GMI", "GIS"] as const).map((company) => (
-                  <button
-                    key={company}
-                    type="button"
-                    onClick={() => handleTargetCompanyChange(company)}
-                    className={cn(
-                      "py-4 rounded-lg border-2 font-bold text-lg transition-all",
-                      formCreateMR.company_code === company
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary/40 text-muted-foreground",
-                    )}
-                  >
-                    {company}
-                  </button>
-                ))}
-              </div>
-              {formCreateMR.company_code && (
-                <p className="text-xs text-muted-foreground">
-                  MR ini akan dicatat sebagai dokumen{" "}
-                  <strong>{formCreateMR.company_code}</strong>.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2 col-span-12">
-            <Label>Kode MR</Label>
-            <Input readOnly disabled value={formCreateMR.kode_mr} />
-          </div>
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
-            <Label>Perusahaan</Label>
-            <Input
-              readOnly
-              disabled
-              value={formCreateMR.company_code || "Memuat..."}
-            />
-          </div>
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
-            <Label>Departemen</Label>
-            <Input
-              readOnly
-              disabled
-              value={formCreateMR.department || "Memuat..."}
-            />
-          </div>
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
-            <Label>Lokasi Saya (Pengaju)</Label>
-            <Input readOnly disabled value={userLokasi || "Memuat..."} />
-          </div>
-
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Kategori</Label>
-            <Combobox
-              key={`kategori-${formKey}`}
-              data={kategoriData}
-              onChange={handleCBKategori}
-              placeholder="Pilih kategori..."
-              defaultValue={formCreateMR.kategori}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Prioritas</Label>
-            <div className="grid grid-cols-5 gap-1.5">
-              {PRIORITY_OPTIONS.map((opt) => {
-                const selected = formCreateMR.prioritas === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleSelectPriority(opt.value)}
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
-                      selected
-                        ? cn(
-                            getPriorityColor(opt.value),
-                            "text-white border-transparent",
-                          )
-                        : "border-input hover:bg-muted",
-                    )}
-                  >
-                    <span className="text-xs font-bold">{opt.value}</span>
-                    <span className="text-[9px] leading-tight">
-                      {opt.label}
-                    </span>
-                    <span className="text-[9px] leading-tight opacity-80">
-                      {opt.days}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {formCreateMR.due_date && (
-              <p className="text-xs text-muted-foreground">
-                Target Pemakaian:{" "}
-                <span className="font-medium text-foreground">
-                  {format(formCreateMR.due_date, "dd MMMM yyyy")}
-                </span>
-              </p>
-            )}
-            <p className="text-[10px] text-muted-foreground">
-              *Due date otomatis ditentukan dari prioritas yang dipilih.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
-            <Label>Tujuan Pengiriman (Site)</Label>
-            <div className="flex items-center space-x-2 mt-2 h-9">
-              <Checkbox
-                id="tujuan-sama"
-                checked={tujuanSamaDenganLokasi}
-                onCheckedChange={(checked) =>
-                  setTujuanSamaDenganLokasi(checked as boolean)
-                }
-              />
-              <label
-                htmlFor="tujuan-sama"
-                className="text-sm font-medium leading-none cursor-pointer"
-              >
-                Sama dengan lokasi saya
-              </label>
-            </div>
-            {!tujuanSamaDenganLokasi && (
-              <div className="mt-2 animate-in fade-in">
-                <Combobox
-                  data={dataLokasi}
-                  onChange={handleCBTujuanSite}
-                  placeholder="Pilih lokasi tujuan..."
-                  defaultValue={formCreateMR.tujuan_site}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 col-span-12">
-            <Label>Remarks (Tujuan & Latar Belakang)</Label>
-            <RichMentionEditor
-              key={`remarks-${formKey}`}
-              ref={remarksEditorRef}
-              initialContent={parseRichValue(formCreateMR.remarks)}
-              placeholder="Contoh: Laptop lama rusak layar, dibutuhkan untuk kerja harian tim IT..."
-              onChange={() =>
-                setFormCreateMR({
-                  ...formCreateMR,
-                  remarks: remarksEditorRef.current?.isEmpty()
-                    ? ""
-                    : stringifyRichContent(
-                        remarksEditorRef.current?.getJSON() ?? { type: "doc" },
-                      ),
-                })
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              Isi jelas & detail (alasan, kondisi saat ini, urgensi) - remarks
-              yang lengkap mempercepat keputusan approver. Bisa pakai @ (orang),
-              # (barang), $ (vendor), / (dokumen) buat tag.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 col-span-12">
-            <Label>Estimasi Biaya (Otomatis)</Label>
-            <Input
-              readOnly
-              disabled
-              value={formattedCost}
-              className="font-bold text-lg"
-            />
-          </div>
-        </div>
-      </Content>
-
-      <Content
-        title="Order Item"
-        size="lg"
-        cardAction={
-          <Button
-            variant="outline"
-            disabled={loading}
-            onClick={handleOpenAddItemDialog}
-          >
-            Tambah Order Item
-          </Button>
-        }
-      >
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>No</TableHead>
-                <TableHead>Nama Item</TableHead>
-                <TableHead>Part Number</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Estimasi Harga</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {formCreateMR.orders.map((order, index) => (
-                <TableRow key={index}>
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {order.name}
-                      <AssetGoodsBadge
-                        isAsset={
-                          !!(
-                            order.barang_id && barangAssetMap[order.barang_id]
-                          )
-                        }
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {order.part_number || "-"}
-                  </TableCell>
-                  <TableCell>
-                    {order.qty} {order.uom}
-                  </TableCell>
-                  <TableCell>{formatCurrency(order.estimasi_harga)}</TableCell>
-                  <TableCell>
-                    {formatCurrency(Number(order.qty) * order.estimasi_harga)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={() => handleOpenEditItemDialog(index)}
-                      >
-                        <EditIcon className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        onClick={() => removeItem(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Content>
-
-      <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingIndex !== null ? "Edit Order Item" : "Tambah Order Item"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label className="text-right">Cari Barang (Wajib)</Label>
-              <BarangSearchCombobox onSelect={handleSelectBarang} />
-              {orderItem.name && (
-                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
-                  Terpilih: <strong>{orderItem.name}</strong> (
-                  {orderItem.part_number})
-                </div>
-              )}
-              {isDuplicateItem && (
-                <p className="text-xs text-destructive mt-1">
-                  Barang ini sudah ada di daftar item. Edit item yang sudah
-                  ada kalau mau ubah quantity-nya, jangan ditambah lagi.
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  value={orderItem.qty}
-                  onChange={(e) =>
-                    setOrderItem({ ...orderItem, qty: e.target.value })
-                  }
-                  min="1"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>UoM</Label>
-                <Input
-                  value={orderItem.uom}
-                  readOnly
-                  disabled
-                  className="bg-muted"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Estimasi Harga Satuan</Label>
-              <CurrencyInput
-                value={orderItem.estimasi_harga}
-                onValueChange={(value) =>
-                  setOrderItem({ ...orderItem, estimasi_harga: value })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Catatan / Link Ref</Label>
-              <Textarea
-                value={orderItem.note}
-                onChange={(e) =>
-                  setOrderItem({ ...orderItem, note: e.target.value })
-                }
-                placeholder="(Opsional)"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={handleSaveOrUpdateItem} disabled={isDuplicateItem}>
-              {editingIndex !== null ? "Simpan Perubahan" : "Tambah"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Content title="Lampiran File" size="sm">
-        <div className="flex flex-col gap-4">
-          <Tabs defaultValue="file">
-            <TabsList className="w-full">
-              <TabsTrigger value="file" className="flex-1">
-                <Paperclip className="h-4 w-4" />
-                Upload File
-              </TabsTrigger>
-              <TabsTrigger value="link" className="flex-1">
-                <Link2 className="h-4 w-4" />
-                Link Drive
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="file">
-              <Input
-                type="file"
-                multiple
-                onChange={handleFileUpload}
-                disabled={isUploading}
-              />
-            </TabsContent>
-            <TabsContent value="link">
-              <LinkAttachmentForm
-                existingAttachments={formCreateMR.attachments || []}
-                onAdd={(att) =>
-                  setFormCreateMR((prev) => ({
-                    ...prev,
-                    attachments: [...(prev.attachments || []), att],
-                  }))
-                }
-              />
-            </TabsContent>
-          </Tabs>
-          {(formCreateMR.attachments || []).length > 0 && (
-            <ul className="space-y-2">
-              {formCreateMR.attachments.map((att, index) => (
-                <li
-                  key={index}
-                  className="flex justify-between items-center gap-2 p-2 bg-muted rounded text-sm"
-                >
-                  <a
-                    href={att.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 min-w-0 hover:underline"
-                  >
-                    {att.is_link ? (
-                      <Link2 className="h-4 w-4 shrink-0 text-primary" />
-                    ) : (
-                      <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="truncate max-w-[200px]">{att.name}</span>
-                  </a>
+        <Content
+          title="Buat Material Request Baru"
+          description="Isi data pada form di bawah ini. Departemen & Lokasi Anda akan terisi otomatis."
+        >
+          <div className="grid grid-cols-12 gap-4 [&>*]:min-w-0">
+            <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+              {appliedTemplate ? (
+                <div className="flex min-w-0 items-center gap-2 text-sm">
+                  {appliedTemplate.source === "template" ? (
+                    <FileStack className="h-4 w-4 shrink-0 text-primary" />
+                  ) : (
+                    <History className="h-4 w-4 shrink-0 text-primary" />
+                  )}
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    {appliedTemplate.source === "template"
+                      ? "Menggunakan template "
+                      : "Menggunakan History MR "}
+                    <strong>{appliedTemplate.nama}</strong>. Semua isian tetap
+                    bisa diedit.
+                  </span>
                   <Button
+                    type="button"
                     size="icon"
                     variant="ghost"
-                    onClick={() => handleRemoveAttachment(index, att)}
+                    className="h-6 w-6 shrink-0"
+                    title="Lepas keterangan template"
+                    onClick={() => setAppliedTemplate(null)}
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <X className="h-3.5 w-3.5" />
                   </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Content>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <FileStack className="h-4 w-4 shrink-0" />
+                  MR rutin? Pakai template dari GA atau MR lama supaya tidak
+                  perlu input barang satu per satu.
+                </div>
+              )}
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 sm:flex-none"
+                  onClick={() => setOpenTemplateDialog(true)}
+                  disabled={loading}
+                >
+                  <FileStack className="mr-1 h-4 w-4" /> Template MR
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 sm:flex-none"
+                  onClick={() => setOpenHistoryDialog(true)}
+                  disabled={loading || !formCreateMR.department}
+                >
+                  <History className="mr-1 h-4 w-4" /> History MR
+                </Button>
+              </div>
+            </div>
 
-      <Content title="Diskusi" size="lg">
-        <DiscussionPanel
-          discussions={formCreateMR.discussions ?? []}
-          onSubmit={handleDraftDiscussionSubmit}
-          storagePathPrefix={`discussions/material-request/draft/${draftId}`}
-          currentUserId={currentUserId}
-          placeholder="Tulis catatan awal untuk MR ini... (opsional, bisa drag & drop atau paste gambar)"
-        />
-      </Content>
-
-      <Content size="lg">
-        <div className="flex flex-col gap-4">
-          {ajukanAlert && (
-            <Alert variant="destructive">
-              <AlertTitle>Perhatian!</AlertTitle>
-              <AlertDescription>{ajukanAlert}</AlertDescription>
-            </Alert>
-          )}
-          <Button
-            onClick={handleAjukanMR}
-            disabled={loading || isUploading}
-            className="w-full"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Mengajukan...
-              </>
-            ) : (
-              "Buat Material Request"
+            {isLourdes && (
+              <div
+                id="mr-field-company"
+                className="col-span-12 flex flex-col gap-2 rounded-md"
+              >
+                <Label className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  Buat MR untuk Perusahaan <span className="text-red-500">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                  {(["GMI", "GIS"] as const).map((company) => (
+                    <button
+                      key={company}
+                      type="button"
+                      onClick={() => handleTargetCompanyChange(company)}
+                      className={cn(
+                        "py-4 rounded-lg border-2 font-bold text-lg transition-all",
+                        formCreateMR.company_code === company
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary/40 text-muted-foreground",
+                      )}
+                    >
+                      {company}
+                    </button>
+                  ))}
+                </div>
+                {formCreateMR.company_code && (
+                  <p className="text-xs text-muted-foreground">
+                    MR ini akan dicatat sebagai dokumen{" "}
+                    <strong>{formCreateMR.company_code}</strong>.
+                  </p>
+                )}
+              </div>
             )}
-          </Button>
-        </div>
-      </Content>
+
+            <div className="flex flex-col gap-2 col-span-12">
+              <Label>Kode MR</Label>
+              <Input readOnly disabled value={formCreateMR.kode_mr} />
+            </div>
+            <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+              <Label>Perusahaan</Label>
+              <Input
+                readOnly
+                disabled
+                value={formCreateMR.company_code || "Memuat..."}
+              />
+            </div>
+            <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+              <Label>Departemen</Label>
+              <Input
+                readOnly
+                disabled
+                value={formCreateMR.department || "Memuat..."}
+              />
+            </div>
+            <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+              <Label>Lokasi Saya (Pengaju)</Label>
+              <Input readOnly disabled value={userLokasi || "Memuat..."} />
+            </div>
+
+            <div
+              id="mr-field-kategori"
+              className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
+            >
+              <Label>Kategori</Label>
+              <Combobox
+                key={`kategori-${formKey}`}
+                data={kategoriData}
+                onChange={handleCBKategori}
+                placeholder="Pilih kategori..."
+                defaultValue={formCreateMR.kategori}
+              />
+            </div>
+
+            <div
+              id="mr-field-prioritas"
+              className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
+            >
+              <Label>Prioritas</Label>
+              <div className="grid grid-cols-5 gap-1.5 [&>*]:min-w-0">
+                {PRIORITY_OPTIONS.map((opt) => {
+                  const selected = formCreateMR.prioritas === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSelectPriority(opt.value)}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
+                        selected
+                          ? cn(
+                              getPriorityColor(opt.value),
+                              "text-white border-transparent",
+                            )
+                          : "border-input hover:bg-muted",
+                      )}
+                    >
+                      <span className="text-xs font-bold">{opt.value}</span>
+                      <span className="text-[9px] leading-tight">
+                        {opt.label}
+                      </span>
+                      <span className="text-[9px] leading-tight opacity-80">
+                        {opt.days}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {formCreateMR.due_date && (
+                <p className="text-xs text-muted-foreground">
+                  Target Pemakaian:{" "}
+                  <span className="font-medium text-foreground">
+                    {format(formCreateMR.due_date, "dd MMMM yyyy")}
+                  </span>
+                </p>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                *Due date otomatis ditentukan dari prioritas yang dipilih.
+              </p>
+            </div>
+
+            <div
+              id="mr-field-tujuan"
+              className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
+            >
+              <Label>Tujuan Pengiriman (Site)</Label>
+              <div className="flex items-center space-x-2 mt-2 h-9">
+                <Checkbox
+                  id="tujuan-sama"
+                  checked={tujuanSamaDenganLokasi}
+                  onCheckedChange={(checked) =>
+                    setTujuanSamaDenganLokasi(checked as boolean)
+                  }
+                />
+                <label
+                  htmlFor="tujuan-sama"
+                  className="text-sm font-medium leading-none cursor-pointer"
+                >
+                  Sama dengan lokasi saya
+                </label>
+              </div>
+              {!tujuanSamaDenganLokasi && (
+                <div className="mt-2 animate-in fade-in">
+                  <Combobox
+                    data={dataLokasi}
+                    onChange={handleCBTujuanSite}
+                    placeholder="Pilih lokasi tujuan..."
+                    defaultValue={formCreateMR.tujuan_site}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div
+              id="mr-field-remarks"
+              className="flex flex-col gap-2 col-span-12 rounded-md"
+            >
+              <Label>Remarks (Tujuan & Latar Belakang)</Label>
+              <RichMentionEditor
+                key={`remarks-${formKey}`}
+                ref={remarksEditorRef}
+                initialContent={parseRichValue(formCreateMR.remarks)}
+                placeholder="Contoh: Laptop lama rusak layar, dibutuhkan untuk kerja harian tim IT..."
+                onChange={() =>
+                  setFormCreateMR({
+                    ...formCreateMR,
+                    remarks: remarksEditorRef.current?.isEmpty()
+                      ? ""
+                      : stringifyRichContent(
+                          remarksEditorRef.current?.getJSON() ?? { type: "doc" },
+                        ),
+                  })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Isi jelas & detail (alasan, kondisi saat ini, urgensi) - remarks
+                yang lengkap mempercepat keputusan approver. Bisa pakai @ (orang),
+                # (barang), $ (vendor), / (dokumen) buat tag.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 col-span-12">
+              <Label>Estimasi Biaya (Otomatis)</Label>
+              <Input
+                readOnly
+                disabled
+                value={formattedCost}
+                className="font-bold text-lg"
+              />
+            </div>
+          </div>
+        </Content>
+
+        <Content
+          id="mr-section-items"
+          title="Order Item"
+          size="lg"
+          cardAction={
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={handleOpenAddItemDialog}
+            >
+              Tambah Order Item
+            </Button>
+          }
+        >
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>No</TableHead>
+                  <TableHead>Nama Item</TableHead>
+                  <TableHead>Part Number</TableHead>
+                  <TableHead>Qty</TableHead>
+                  <TableHead>Estimasi Harga</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {formCreateMR.orders.map((order, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell className="min-w-[160px] max-w-[320px] whitespace-normal [overflow-wrap:anywhere]">
+                      <div className="flex items-center gap-2">
+                        {order.name}
+                        <AssetGoodsBadge
+                          isAsset={
+                            !!(
+                              order.barang_id && barangAssetMap[order.barang_id]
+                            )
+                          }
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {order.part_number || "-"}
+                    </TableCell>
+                    <TableCell>
+                      {order.qty} {order.uom}
+                    </TableCell>
+                    <TableCell>{formatCurrency(order.estimasi_harga)}</TableCell>
+                    <TableCell>
+                      {formatCurrency(Number(order.qty) * order.estimasi_harga)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={() => handleOpenEditItemDialog(index)}
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          onClick={() => removeItem(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
+
+        <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingIndex !== null ? "Edit Order Item" : "Tambah Order Item"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-right">Cari Barang (Wajib)</Label>
+                <BarangSearchCombobox onSelect={handleSelectBarang} />
+                {orderItem.name && (
+                  <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border [overflow-wrap:anywhere]">
+                    Terpilih: <strong>{orderItem.name}</strong> (
+                    {orderItem.part_number})
+                  </div>
+                )}
+                {isDuplicateItem && (
+                  <p className="text-xs text-destructive mt-1">
+                    Barang ini sudah ada di daftar item. Edit item yang sudah
+                    ada kalau mau ubah quantity-nya, jangan ditambah lagi.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 [&>*]:min-w-0">
+                <div className="space-y-2">
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    value={orderItem.qty}
+                    onChange={(e) =>
+                      setOrderItem({ ...orderItem, qty: e.target.value })
+                    }
+                    min="1"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>UoM</Label>
+                  <Input
+                    value={orderItem.uom}
+                    readOnly
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estimasi Harga Satuan</Label>
+                <CurrencyInput
+                  value={orderItem.estimasi_harga}
+                  onValueChange={(value) =>
+                    setOrderItem({ ...orderItem, estimasi_harga: value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Catatan / Link Ref</Label>
+                <Textarea
+                  value={orderItem.note}
+                  onChange={(e) =>
+                    setOrderItem({ ...orderItem, note: e.target.value })
+                  }
+                  placeholder="(Opsional)"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleSaveOrUpdateItem} disabled={isDuplicateItem}>
+                {editingIndex !== null ? "Simpan Perubahan" : "Tambah"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Content
+          id="mr-section-attachments"
+          title="Lampiran File"
+          description={
+            lampiranWajib
+              ? `Wajib untuk kategori ${formCreateMR.kategori}.`
+              : "Opsional - foto kondisi, spesifikasi, atau penawaran."
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <Tabs defaultValue="file">
+              <TabsList className="w-full">
+                <TabsTrigger value="file" className="flex-1">
+                  <Paperclip className="h-4 w-4" />
+                  Upload File
+                </TabsTrigger>
+                <TabsTrigger value="link" className="flex-1">
+                  <Link2 className="h-4 w-4" />
+                  Link Drive
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="file">
+                <Input
+                  type="file"
+                  multiple
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+              </TabsContent>
+              <TabsContent value="link">
+                <LinkAttachmentForm
+                  existingAttachments={formCreateMR.attachments || []}
+                  onAdd={(att) =>
+                    setFormCreateMR((prev) => ({
+                      ...prev,
+                      attachments: [...(prev.attachments || []), att],
+                    }))
+                  }
+                />
+              </TabsContent>
+            </Tabs>
+            {(formCreateMR.attachments || []).length > 0 && (
+              <ul className="space-y-2">
+                {formCreateMR.attachments.map((att, index) => (
+                  <li
+                    key={index}
+                    className="flex justify-between items-center gap-2 p-2 bg-muted rounded text-sm"
+                  >
+                    <a
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 min-w-0 hover:underline"
+                    >
+                      {att.is_link ? (
+                        <Link2 className="h-4 w-4 shrink-0 text-primary" />
+                      ) : (
+                        <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate max-w-[200px]">{att.name}</span>
+                    </a>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleRemoveAttachment(index, att)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Content>
+
+        <Content title="Diskusi" size="lg">
+          <DiscussionPanel
+            discussions={formCreateMR.discussions ?? []}
+            onSubmit={handleDraftDiscussionSubmit}
+            storagePathPrefix={`discussions/material-request/draft/${draftId}`}
+            currentUserId={currentUserId}
+            placeholder="Tulis catatan awal untuk MR ini... (opsional, bisa drag & drop atau paste gambar)"
+          />
+        </Content>
+
+      </FormSummaryLayout>
 
       {/* MODAL: Pilih Template MR */}
       <MrTemplatePickerDialog

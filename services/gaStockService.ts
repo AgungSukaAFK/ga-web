@@ -142,6 +142,30 @@ export const fetchGaStockForBarang = async (
 };
 
 /**
+ * Qty Stok GA untuk banyak barang sekaligus (1 query) di company tertentu -
+ * dipakai info "Stok GA" di picker barang Buat PO. Hasil: barang_id -> qty
+ * (barang tanpa baris stok tidak ada di map).
+ */
+export const fetchGaStockQtyMap = async (
+  barangIds: number[],
+  companyCode: string,
+): Promise<Record<number, number>> => {
+  const ids = Array.from(new Set(barangIds.filter(Boolean)));
+  if (ids.length === 0 || !companyCode) return {};
+
+  const { data, error } = await supabase
+    .from("ga_stocks")
+    .select("barang_id, quantity")
+    .in("barang_id", ids)
+    .eq("company_code", companyCode);
+
+  if (error) throw error;
+  const map: Record<number, number> = {};
+  for (const row of data ?? []) map[row.barang_id] = Number(row.quantity) || 0;
+  return map;
+};
+
+/**
  * Kurangi quantity Stok GA secara atomic lewat fungsi Postgres
  * decrement_ga_stock() (row lock saat UPDATE) - MENGGANTI pola
  * read-then-subtract-then-write yang rawan race condition kalau 2 user

@@ -165,6 +165,11 @@ import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
 import { FollowupApprovalButton } from "@/components/followup-approval-button";
 import { UserAvatar } from "@/components/user-avatar";
+import {
+  FormSummaryLayout,
+  useUnsavedChanges,
+} from "@/components/form-summary-panel";
+import { buildMrEditChecks, MR_EDIT_TARGETS } from "@/lib/mrEditSummaryChecks";
 
 const kategoriData: ComboboxData = [
   { label: "New Item", value: "New Item" },
@@ -234,6 +239,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [formattedCost, setFormattedCost] = useState("Rp 0");
+
+  // Snapshot diambil tiap kali masuk mode edit (lihat panel ringkasan).
+  const { dirty } = useUnsavedChanges(mr, isEditing && !!mr);
 
   const [costCenterName, setCostCenterName] = useState<string | null>(null);
   const [costCenterBudget, setCostCenterBudget] = useState<number | null>(null);
@@ -1623,998 +1631,1053 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const canDelete =
     isOwner && (mr.status === "Pending Validation" || mr.status === "Draft");
 
+  const isRevision = mr.status === "On Hold";
+
   return (
     <>
-      <div className="col-span-12">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold">{mr.kode_mr}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-muted-foreground text-sm">
-                Dibuat pada {formatDateFriendly(mr.created_at)}
+      {/* Panel ringkasan cuma aktif selama mode edit (approver: Edit Rincian,
+          requester: Perbaiki & Submit Ulang). */}
+      <FormSummaryLayout
+        enabled={isEditing}
+        summary={{
+          title: isRevision ? "Ringkasan Perbaikan MR" : "Ringkasan Perubahan MR",
+          subtitle: <span className="font-mono">{mr.kode_mr}</span>,
+          checks: buildMrEditChecks(mr),
+          submitLabel: isRevision ? "Submit Ulang" : "Simpan",
+          submittingLabel: isRevision ? "Mengajukan..." : "Menyimpan...",
+          submitIcon: <Save className="mr-2 h-4 w-4" />,
+          onSubmit: () => {
+            if (isRevision) handleResubmit();
+            else handleSaveChanges();
+          },
+          submitting: actionLoading,
+          disabled: isUploading,
+          dirty,
+          nextSteps: isRevision ? (
+            <>
+              MR kembali ke status <strong>Pending Validation</strong> dan tim
+              GA dinotifikasi untuk memvalidasi ulang.
+            </>
+          ) : (
+            <>Perubahan disimpan ke MR ini dan tercatat di log aktivitas.</>
+          ),
+          children: (
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                Estimasi biaya
               </span>
-              {getStatusBadge(mr.status)}
-              <span className="text-muted-foreground text-xs">
-                Umur:{" "}
-                {formatAge(
-                  mr.created_at,
-                  mr.full_received_at,
-                  mr.status === "Full Received",
-                )}
+              <span className="text-lg font-bold tabular-nums">
+                {formattedCost}
               </span>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <ActivityLogDialog
-              resourceType="material_request"
-              resourceId={String(mr.id)}
-            />
-            {canDelete && (
-              <Button variant="destructive" size="sm" onClick={handleDelete}>
-                Hapus MR
-              </Button>
-            )}
-            {canEdit && !isEditing && mr.status === "Pending Approval" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditing(true)}
-              >
-                <Edit className="mr-2 h-4 w-4" /> Edit Rincian
-              </Button>
-            )}
-            {isOwner && !isEditing && mr.status === "On Hold" && (
-              <Button size="sm" onClick={() => setIsEditing(true)}>
-                <Edit className="mr-2 h-4 w-4" /> Perbaiki & Submit Ulang
-              </Button>
-            )}
-            {isEditing && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setIsEditing(false);
-                    fetchMrData();
-                  }}
-                  disabled={actionLoading}
-                >
-                  Batal
+          ),
+        }}
+      >
+        <div className="col-span-12">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">{mr.kode_mr}</h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className="text-muted-foreground text-sm">
+                  Dibuat pada {formatDateFriendly(mr.created_at)}
+                </span>
+                {getStatusBadge(mr.status)}
+                <span className="text-muted-foreground text-xs">
+                  Umur:{" "}
+                  {formatAge(
+                    mr.created_at,
+                    mr.full_received_at,
+                    mr.status === "Full Received",
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ActivityLogDialog
+                resourceType="material_request"
+                resourceId={String(mr.id)}
+              />
+              {canDelete && (
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                  Hapus MR
                 </Button>
-                {mr.status === "On Hold" ? (
+              )}
+              {canEdit && !isEditing && mr.status === "Pending Approval" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Edit className="mr-2 h-4 w-4" /> Edit Rincian
+                </Button>
+              )}
+              {isOwner && !isEditing && mr.status === "On Hold" && (
+                <Button size="sm" onClick={() => setIsEditing(true)}>
+                  <Edit className="mr-2 h-4 w-4" /> Perbaiki & Submit Ulang
+                </Button>
+              )}
+              {isEditing && (
+                <>
                   <Button
+                    variant="ghost"
                     size="sm"
-                    onClick={handleResubmit}
+                    onClick={() => {
+                      setIsEditing(false);
+                      fetchMrData();
+                    }}
                     disabled={actionLoading}
                   >
-                    {actionLoading ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}{" "}
-                    Submit Ulang
+                    Batal
                   </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleSaveChanges}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}{" "}
-                    Simpan
-                  </Button>
-                )}
-              </>
-            )}
-            <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
+                  {mr.status === "On Hold" ? (
+                    <Button
+                      size="sm"
+                      onClick={handleResubmit}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}{" "}
+                      Submit Ulang
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={handleSaveChanges}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}{" "}
+                      Simpan
+                    </Button>
+                  )}
+                </>
+              )}
+              <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
+            </div>
           </div>
+
+          {/* Requester bisa langsung menyelesaikan barang yang masih dalam
+              pengiriman dari sini (boleh upload file/galeri) - tanpa harus
+              scan QR dari cetakan BAST. Tombol per-baris di tabel barang
+              tetap ada, tapi gampang kelewat (tabel lebar, harus geser di HP). */}
+          {isOwner && !isEditing && bastEligibleItems.length > 0 && (
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+              <div className="flex items-start gap-3">
+                <Truck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {bastEligibleItems.length} barang sedang dalam pengiriman ke
+                    Anda
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Sudah terima barangnya? Konfirmasi di sini dengan unggah
+                    bukti penerimaan, tidak perlu scan QR dari cetakan BAST.
+                  </p>
+                </div>
+              </div>
+              <Button
+                className="shrink-0"
+                onClick={() => handleOpenBastUpload(bastEligibleItems)}
+              >
+                <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang
+                Diterima
+              </Button>
+            </div>
+          )}
         </div>
 
-        {/* Requester bisa langsung menyelesaikan barang yang masih dalam
-            pengiriman dari sini (boleh upload file/galeri) - tanpa harus
-            scan QR dari cetakan BAST. Tombol per-baris di tabel barang
-            tetap ada, tapi gampang kelewat (tabel lebar, harus geser di HP). */}
-        {isOwner && !isEditing && bastEligibleItems.length > 0 && (
-          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
-            <div className="flex items-start gap-3">
-              <Truck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-              <div>
-                <p className="text-sm font-medium">
-                  {bastEligibleItems.length} barang sedang dalam pengiriman ke
-                  Anda
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Sudah terima barangnya? Konfirmasi di sini dengan unggah
-                  bukti penerimaan, tidak perlu scan QR dari cetakan BAST.
-                </p>
-              </div>
-            </div>
-            <Button
-              className="shrink-0"
-              onClick={() => handleOpenBastUpload(bastEligibleItems)}
-            >
-              <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang
-              Diterima
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <div className="col-span-12 lg:col-span-8 space-y-6">
-        <Content title="Informasi Utama">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            {/* 1. PEMBUAT (Selalu Read-Only) */}
-            <div className="space-y-1">
-              <Label>Pembuat</Label>
-              <div className="flex items-center gap-2">
-                <CircleUser className="w-4 h-4 text-muted-foreground" />
-                {/* Kotak mirip input tapi bukan input */}
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {(mr as any).users_with_profiles?.nama || "N/A"}
+        <div
+          className={cn(
+            "col-span-12 space-y-6",
+            isEditing ? "@4xl/form:col-span-8" : "lg:col-span-8",
+          )}
+        >
+          <Content title="Informasi Utama">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 [&>*]:min-w-0">
+              {/* 1. PEMBUAT (Selalu Read-Only) */}
+              <div className="space-y-1">
+                <Label>Pembuat</Label>
+                <div className="flex items-center gap-2">
+                  <CircleUser className="w-4 h-4 text-muted-foreground" />
+                  {/* Kotak mirip input tapi bukan input */}
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    {(mr as any).users_with_profiles?.nama || "N/A"}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* 2. DEPARTEMEN (Selalu Read-Only) */}
-            <div className="space-y-1">
-              <Label>Departemen</Label>
-              <div className="flex items-center gap-2">
-                <Building className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {mr.department}
+              {/* 2. DEPARTEMEN (Selalu Read-Only) */}
+              <div className="space-y-1">
+                <Label>Departemen</Label>
+                <div className="flex items-center gap-2">
+                  <Building className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    {mr.department}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* 3. KATEGORI */}
-            <div className="space-y-1">
-              <Label>Kategori</Label>
-              <div className="flex items-center gap-2">
-                <Tag className="w-4 h-4 text-muted-foreground" />
-                <div className="w-full">
+              {/* 3. KATEGORI */}
+              <div id={MR_EDIT_TARGETS.kategori} className="space-y-1 rounded-md">
+                <Label>Kategori</Label>
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-muted-foreground" />
+                  <div className="w-full">
+                    {isEditing ? (
+                      <Combobox
+                        data={kategoriData}
+                        onChange={(v) => setMr({ ...mr, kategori: v })}
+                        defaultValue={mr.kategori}
+                        disabled={actionLoading}
+                        placeholder="Pilih Kategori"
+                      />
+                    ) : (
+                      <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                        {mr.kategori}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. TANGGAL DIBUAT */}
+              <div className="space-y-1">
+                <Label>Tanggal Dibuat</Label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    {formatDateFriendly(mr.created_at)}
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. DUE DATE - sekarang selalu read-only, diturunkan dari
+                  Prioritas yang dipilih di bawah (bukan diisi manual). */}
+              <div className="space-y-1">
+                <Label>Due Date (Target)</Label>
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    {formatDateFriendly(mr.due_date)}
+                  </div>
+                </div>
+                {isEditing && (
+                  <p className="text-[10px] text-muted-foreground">
+                    *Due date otomatis ditentukan dari prioritas di bawah.
+                  </p>
+                )}
+              </div>
+
+              {/* 6. PRIORITAS */}
+              <div id={MR_EDIT_TARGETS.prioritas} className="space-y-1 rounded-md">
+                <Label>Prioritas</Label>
+                {isEditing ? (
+                  <div className="grid grid-cols-5 gap-1.5 [&>*]:min-w-0">
+                    {PRIORITY_OPTIONS.map((opt) => {
+                      const selected = mr.prioritas === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() =>
+                            setMr({
+                              ...mr,
+                              prioritas: opt.value,
+                              due_date: getDueDateFromPriority(opt.value),
+                            })
+                          }
+                          className={cn(
+                            "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
+                            selected
+                              ? cn(
+                                  getPriorityPickerColor(opt.value),
+                                  "text-white border-transparent",
+                                )
+                              : "border-input hover:bg-muted",
+                          )}
+                        >
+                          <span className="text-xs font-bold">{opt.value}</span>
+                          <span className="text-[9px] leading-tight">
+                            {opt.label}
+                          </span>
+                          <span className="text-[9px] leading-tight opacity-80">
+                            {opt.days}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                      {getPriorityBadge(mr.prioritas)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 7. LEVEL */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label>Level</Label>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    onClick={() => setIsLevelInfoOpen(true)}
+                  >
+                    <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-muted-foreground" />
                   {isEditing ? (
-                    <Combobox
-                      data={kategoriData}
-                      onChange={(v) => setMr({ ...mr, kategori: v })}
-                      defaultValue={mr.kategori}
+                    <SearchableSelect
+                      onValueChange={(v) => setMr({ ...mr, level: v as any })}
+                      value={mr.level || ""}
                       disabled={actionLoading}
-                      placeholder="Pilih Kategori"
-                    />
+                    >
+                      <SearchableSelectTrigger className="w-full bg-background">
+                        <SearchableSelectValue placeholder="Pilih level..." />
+                      </SearchableSelectTrigger>
+                      <SearchableSelectContent>
+                        {MR_LEVELS.map((lvl) => (
+                          <SearchableSelectItem key={lvl.value} value={lvl.value}>
+                            {lvl.label}
+                          </SearchableSelectItem>
+                        ))}
+                      </SearchableSelectContent>
+                    </SearchableSelect>
                   ) : (
-                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                      {mr.kategori}
+                    <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                      {mr.level || "N/A"}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* 4. TANGGAL DIBUAT */}
-            <div className="space-y-1">
-              <Label>Tanggal Dibuat</Label>
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {formatDateFriendly(mr.created_at)}
-                </div>
-              </div>
-            </div>
-
-            {/* 5. DUE DATE - sekarang selalu read-only, diturunkan dari
-                Prioritas yang dipilih di bawah (bukan diisi manual). */}
-            <div className="space-y-1">
-              <Label>Due Date (Target)</Label>
-              <div className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {formatDateFriendly(mr.due_date)}
-                </div>
-              </div>
-              {isEditing && (
-                <p className="text-[10px] text-muted-foreground">
-                  *Due date otomatis ditentukan dari prioritas di bawah.
-                </p>
-              )}
-            </div>
-
-            {/* 6. PRIORITAS */}
-            <div className="space-y-1">
-              <Label>Prioritas</Label>
-              {isEditing ? (
-                <div className="grid grid-cols-5 gap-1.5">
-                  {PRIORITY_OPTIONS.map((opt) => {
-                    const selected = mr.prioritas === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() =>
-                          setMr({
-                            ...mr,
-                            prioritas: opt.value,
-                            due_date: getDueDateFromPriority(opt.value),
-                          })
-                        }
-                        className={cn(
-                          "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors",
-                          selected
-                            ? cn(
-                                getPriorityPickerColor(opt.value),
-                                "text-white border-transparent",
-                              )
-                            : "border-input hover:bg-muted",
-                        )}
-                      >
-                        <span className="text-xs font-bold">{opt.value}</span>
-                        <span className="text-[9px] leading-tight">
-                          {opt.label}
-                        </span>
-                        <span className="text-[9px] leading-tight opacity-80">
-                          {opt.days}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
+              {/* 8. COST CENTER */}
+              <div className="space-y-1">
+                <Label>Cost Center</Label>
                 <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-muted-foreground" />
-                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                    {getPriorityBadge(mr.prioritas)}
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    {costCenterName
+                      ? userProfile?.role === "requester"
+                        ? costCenterName
+                        : `${costCenterName} (Sisa: ${formatCurrency(
+                            costCenterBudget ?? 0,
+                          )})`
+                      : "Belum Ditentukan GA"}
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* 7. LEVEL */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label>Level</Label>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4"
-                  onClick={() => setIsLevelInfoOpen(true)}
-                >
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </Button>
               </div>
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-muted-foreground" />
+
+              {/* 9. TUJUAN SITE */}
+              <div id={MR_EDIT_TARGETS.tujuan} className="space-y-1 rounded-md">
+                <Label>Tujuan (Site)</Label>
+                <div className="flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-muted-foreground" />
+                  <div className="w-full">
+                    {isEditing ? (
+                      <Combobox
+                        data={dataLokasi}
+                        onChange={(v) => setMr({ ...mr, tujuan_site: v })}
+                        defaultValue={mr.tujuan_site}
+                        disabled={actionLoading}
+                        placeholder="Pilih Site"
+                      />
+                    ) : (
+                      <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                        {mr.tujuan_site || "N/A"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 10. TOTAL ESTIMASI */}
+              <div className="space-y-1">
+                <Label>Total Estimasi Biaya</Label>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere] font-bold">
+                    {formattedCost}
+                  </div>
+                </div>
+              </div>
+
+              {/* 11. REMARKS (Full Width) */}
+              <div
+                id={MR_EDIT_TARGETS.remarks}
+                className="md:col-span-2 space-y-1 rounded-md"
+              >
+                <Label>Remarks</Label>
                 {isEditing ? (
-                  <SearchableSelect
-                    onValueChange={(v) => setMr({ ...mr, level: v as any })}
-                    value={mr.level || ""}
+                  <RichMentionEditor
+                    ref={remarksEditorRef}
+                    initialContent={parseRichValue(mr.remarks)}
                     disabled={actionLoading}
-                  >
-                    <SearchableSelectTrigger className="w-full bg-background">
-                      <SearchableSelectValue placeholder="Pilih level..." />
-                    </SearchableSelectTrigger>
-                    <SearchableSelectContent>
-                      {MR_LEVELS.map((lvl) => (
-                        <SearchableSelectItem key={lvl.value} value={lvl.value}>
-                          {lvl.label}
-                        </SearchableSelectItem>
-                      ))}
-                    </SearchableSelectContent>
-                  </SearchableSelect>
+                    onChange={() =>
+                      setMr({
+                        ...mr,
+                        remarks: remarksEditorRef.current?.isEmpty()
+                          ? ""
+                          : stringifyRichContent(
+                              remarksEditorRef.current?.getJSON() ?? {
+                                type: "doc",
+                              },
+                            ),
+                      })
+                    }
+                  />
+                ) : mr.remarks ? (
+                  <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px] [overflow-wrap:anywhere]">
+                    <RichContentView content={parseRichValue(mr.remarks)} />
+                  </div>
                 ) : (
-                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                    {mr.level || "N/A"}
+                  <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px] [overflow-wrap:anywhere]">
+                    -
                   </div>
                 )}
               </div>
             </div>
+          </Content>
 
-            {/* 8. COST CENTER */}
-            <div className="space-y-1">
-              <Label>Cost Center</Label>
+          {/* --- ORDER ITEMS SECTION --- */}
+          <Content
+            id={MR_EDIT_TARGETS.items}
+            title="Daftar Barang (Item Request)"
+            cardAction={
               <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                  {costCenterName
-                    ? userProfile?.role === "requester"
-                      ? costCenterName
-                      : `${costCenterName} (Sisa: ${formatCurrency(
-                          costCenterBudget ?? 0,
-                        )})`
-                    : "Belum Ditentukan GA"}
-                </div>
+                {isOwner && bastEligibleItems.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleOpenBastUpload()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" /> Upload Bukti Penerimaan
+                    Massal
+                  </Button>
+                )}
+                {isEditing && (
+                  <Button
+                    variant="outline"
+                    onClick={handleOpenAddItemDialog}
+                    disabled={actionLoading}
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Tambah Item
+                  </Button>
+                )}
               </div>
-            </div>
+            }
+          >
+            <div className="rounded-md border overflow-x-auto">
+              <Table className="min-w-[1000px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[30%]">Nama Barang</TableHead>
+                    <TableHead className="w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[120px]">UoM</TableHead>
+                    <TableHead>Estimasi Harga</TableHead>
+                    <TableHead>Total Estimasi</TableHead>
+                    <TableHead>Link</TableHead>
+                    <TableHead className="w-[200px]">Status & Tracking</TableHead>
+                    {isEditing && (
+                      <TableHead className="w-[100px]">Aksi</TableHead>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mr.orders && mr.orders.length > 0 ? (
+                    mr.orders.map((item, index) => {
+                      const statusColor =
+                        MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
+                        MR_ITEM_STATUS_COLOR_DEFAULT;
+                      const statusLabel =
+                        MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
+                        item.status;
 
-            {/* 9. TUJUAN SITE */}
-            <div className="space-y-1">
-              <Label>Tujuan (Site)</Label>
-              <div className="flex items-center gap-2">
-                <Truck className="w-4 h-4 text-muted-foreground" />
-                <div className="w-full">
-                  {isEditing ? (
-                    <Combobox
-                      data={dataLokasi}
-                      onChange={(v) => setMr({ ...mr, tujuan_site: v })}
-                      defaultValue={mr.tujuan_site}
-                      disabled={actionLoading}
-                      placeholder="Pilih Site"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                      {mr.tujuan_site || "N/A"}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 10. TOTAL ESTIMASI */}
-            <div className="space-y-1">
-              <Label>Total Estimasi Biaya</Label>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-                <div className="flex h-10 w-full items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm font-bold">
-                  {formattedCost}
-                </div>
-              </div>
-            </div>
-
-            {/* 11. REMARKS (Full Width) */}
-            <div className="md:col-span-2 space-y-1">
-              <Label>Remarks</Label>
-              {isEditing ? (
-                <RichMentionEditor
-                  ref={remarksEditorRef}
-                  initialContent={parseRichValue(mr.remarks)}
-                  disabled={actionLoading}
-                  onChange={() =>
-                    setMr({
-                      ...mr,
-                      remarks: remarksEditorRef.current?.isEmpty()
-                        ? ""
-                        : stringifyRichContent(
-                            remarksEditorRef.current?.getJSON() ?? {
-                              type: "doc",
-                            },
-                          ),
-                    })
-                  }
-                />
-              ) : mr.remarks ? (
-                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px]">
-                  <RichContentView content={parseRichValue(mr.remarks)} />
-                </div>
-              ) : (
-                <div className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm min-h-[80px]">
-                  -
-                </div>
-              )}
-            </div>
-          </div>
-        </Content>
-
-        {/* --- ORDER ITEMS SECTION --- */}
-        <Content
-          title="Daftar Barang (Item Request)"
-          cardAction={
-            <div className="flex items-center gap-2">
-              {isOwner && bastEligibleItems.length > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => handleOpenBastUpload()}
-                >
-                  <Upload className="mr-2 h-4 w-4" /> Upload Bukti Penerimaan
-                  Massal
-                </Button>
-              )}
-              {isEditing && (
-                <Button
-                  variant="outline"
-                  onClick={handleOpenAddItemDialog}
-                  disabled={actionLoading}
-                >
-                  <Plus className="mr-2 h-4 w-4" /> Tambah Item
-                </Button>
-              )}
-            </div>
-          }
-        >
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1000px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[30%]">Nama Barang</TableHead>
-                  <TableHead className="w-[80px]">Qty</TableHead>
-                  <TableHead className="w-[120px]">UoM</TableHead>
-                  <TableHead>Estimasi Harga</TableHead>
-                  <TableHead>Total Estimasi</TableHead>
-                  <TableHead>Link</TableHead>
-                  <TableHead className="w-[200px]">Status & Tracking</TableHead>
-                  {isEditing && (
-                    <TableHead className="w-[100px]">Aksi</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mr.orders && mr.orders.length > 0 ? (
-                  mr.orders.map((item, index) => {
-                    const statusColor =
-                      MR_ITEM_STATUS_COLORS[item.status || "Pending"] ||
-                      MR_ITEM_STATUS_COLOR_DEFAULT;
-                    const statusLabel =
-                      MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
-                      item.status;
-
-                    return (
-                      <TableRow key={index}>
-                        <TableCell>
-                          {isEditing ? (
-                            <div className="space-y-1">
-                              <Input
-                                value={item.name}
-                                onChange={(e) =>
-                                  handleItemChange(
-                                    index,
-                                    "name",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={actionLoading}
-                                placeholder="Nama Item"
-                              />
-                              <Input
-                                value={item.part_number || ""}
-                                onChange={(e) =>
-                                  handleItemChange(
-                                    index,
-                                    "part_number",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={actionLoading}
-                                placeholder="Part Number (Opsional)"
-                                className="text-xs h-8"
-                              />
-                            </div>
-                          ) : (
-                            <div>
-                              <div className="font-medium flex items-center gap-2">
-                                {item.name}
-                                <AssetGoodsBadge
-                                  isAsset={
-                                    !!(
-                                      item.barang_id &&
-                                      barangAssetMap[item.barang_id]
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>
+                            {isEditing ? (
+                              <div className="space-y-1">
+                                <Input
+                                  value={item.name}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "name",
+                                      e.target.value,
                                     )
                                   }
+                                  disabled={actionLoading}
+                                  placeholder="Nama Item"
                                 />
-                                <ItemLevelBadge level={item.level} />
-                              </div>
-                              {item.part_number && (
-                                <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                                  PN: {item.part_number}
-                                </div>
-                              )}
-                              {item.note && (
-                                <div className="text-xs text-muted-foreground mt-1 italic">
-                                  &quot;<NoteWithLinks text={item.note} />&quot;
-                                </div>
-                              )}
-                              {item.status_note && (
-                                <div className="text-xs text-amber-600 mt-1 italic flex items-start gap-1">
-                                  <Info className="w-3 h-3 mt-0.5" />
-                                  <NoteWithLinks text={item.status_note} />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <Input
-                              value={item.qty}
-                              onChange={(e) =>
-                                handleItemChange(index, "qty", e.target.value)
-                              }
-                              className="w-20"
-                              type="number"
-                              disabled={actionLoading}
-                            />
-                          ) : (
-                            item.qty
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <Input
-                              value={item.uom}
-                              onChange={(e) =>
-                                handleItemChange(index, "uom", e.target.value)
-                              }
-                              className="w-24"
-                              disabled={actionLoading}
-                            />
-                          ) : (
-                            item.uom
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {isEditing ? (
-                            <CurrencyInput
-                              value={item.estimasi_harga}
-                              onValueChange={(value) =>
-                                handleItemChange(index, "estimasi_harga", value)
-                              }
-                              disabled={actionLoading}
-                              className="w-32"
-                            />
-                          ) : (
-                            formatCurrency(item.estimasi_harga)
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(
-                            Number(item.qty) * item.estimasi_harga,
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <Input
-                              value={item.url}
-                              onChange={(e) =>
-                                handleItemChange(index, "url", e.target.value)
-                              }
-                              disabled={actionLoading}
-                              type="url"
-                              placeholder="URL Link"
-                            />
-                          ) : (
-                            item.url && (
-                              <Button asChild variant={"outline"} size="sm">
-                                <Link
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <LinkIcon className="h-3 w-3" />
-                                </Link>
-                              </Button>
-                            )
-                          )}
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="flex flex-col items-start gap-2">
-                            <div className="flex items-center gap-1">
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "capitalize font-normal",
-                                  statusColor,
-                                )}
-                              >
-                                {statusLabel}
-                              </Badge>
-                              {isPurchasing && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() =>
-                                    handleOpenItemStatusDialog(item, index)
+                                <Input
+                                  value={item.part_number || ""}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "part_number",
+                                      e.target.value,
+                                    )
                                   }
-                                  title="Kelola status & PO"
-                                >
-                                  <Pencil className="h-3 w-3" />
+                                  disabled={actionLoading}
+                                  placeholder="Part Number (Opsional)"
+                                  className="text-xs h-8"
+                                />
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="font-medium flex items-center gap-2">
+                                  {item.name}
+                                  <AssetGoodsBadge
+                                    isAsset={
+                                      !!(
+                                        item.barang_id &&
+                                        barangAssetMap[item.barang_id]
+                                      )
+                                    }
+                                  />
+                                  <ItemLevelBadge level={item.level} />
+                                </div>
+                                {item.part_number && (
+                                  <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                                    PN: {item.part_number}
+                                  </div>
+                                )}
+                                {item.note && (
+                                  <div className="text-xs text-muted-foreground mt-1 italic">
+                                    &quot;<NoteWithLinks text={item.note} />&quot;
+                                  </div>
+                                )}
+                                {item.status_note && (
+                                  <div className="text-xs text-amber-600 mt-1 italic flex items-start gap-1">
+                                    <Info className="w-3 h-3 mt-0.5" />
+                                    <NoteWithLinks text={item.status_note} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <Input
+                                value={item.qty}
+                                onChange={(e) =>
+                                  handleItemChange(index, "qty", e.target.value)
+                                }
+                                className="w-20"
+                                type="number"
+                                disabled={actionLoading}
+                              />
+                            ) : (
+                              item.qty
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <Input
+                                value={item.uom}
+                                onChange={(e) =>
+                                  handleItemChange(index, "uom", e.target.value)
+                                }
+                                className="w-24"
+                                disabled={actionLoading}
+                              />
+                            ) : (
+                              item.uom
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {isEditing ? (
+                              <CurrencyInput
+                                value={item.estimasi_harga}
+                                onValueChange={(value) =>
+                                  handleItemChange(index, "estimasi_harga", value)
+                                }
+                                disabled={actionLoading}
+                                className="w-32"
+                              />
+                            ) : (
+                              formatCurrency(item.estimasi_harga)
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(
+                              Number(item.qty) * item.estimasi_harga,
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <Input
+                                value={item.url}
+                                onChange={(e) =>
+                                  handleItemChange(index, "url", e.target.value)
+                                }
+                                disabled={actionLoading}
+                                type="url"
+                                placeholder="URL Link"
+                              />
+                            ) : (
+                              item.url && (
+                                <Button asChild variant={"outline"} size="sm">
+                                  <Link
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <LinkIcon className="h-3 w-3" />
+                                  </Link>
                                 </Button>
-                              )}
-                              {isGA &&
-                                item.level === "Open 2" &&
-                                item.barang_id &&
-                                item.status !== "Cancelled" &&
-                                item.status !== "Replaced" &&
-                                getItemRemainingQty(item) > 0 && (
+                              )
+                            )}
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="flex flex-col items-start gap-2">
+                              <div className="flex items-center gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "capitalize font-normal",
+                                    statusColor,
+                                  )}
+                                >
+                                  {statusLabel}
+                                </Badge>
+                                {isPurchasing && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="h-6 w-6"
                                     onClick={() =>
-                                      handleOpenUseStockDialog(item, index)
+                                      handleOpenItemStatusDialog(item, index)
                                     }
-                                    title="Kirim pakai Stok GA"
+                                    title="Kelola status & PO"
                                   >
-                                    <PackageCheck className="h-3 w-3" />
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {isGA &&
+                                  item.level === "Open 2" &&
+                                  item.barang_id &&
+                                  item.status !== "Cancelled" &&
+                                  item.status !== "Replaced" &&
+                                  getItemRemainingQty(item) > 0 && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      onClick={() =>
+                                        handleOpenUseStockDialog(item, index)
+                                      }
+                                      title="Kirim pakai Stok GA"
+                                    >
+                                      <PackageCheck className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                              </div>
+
+                              {(() => {
+                                const linkedPos = item.part_number
+                                  ? poBreakdown[item.part_number] || []
+                                  : [];
+                                if (linkedPos.length === 0) return null;
+                                const cumulativeQty = linkedPos.reduce(
+                                  (sum, entry) => sum + (entry.qty || 0),
+                                  0,
+                                );
+                                const requestedQty = Number(item.qty) || 0;
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedPos.map((entry, idx) => (
+                                        <Link
+                                          key={idx}
+                                          href={
+                                            entry.po_id
+                                              ? `/purchase-order/${entry.po_id}`
+                                              : `/purchase-order?search=${encodeURIComponent(
+                                                  entry.kode_po,
+                                                )}`
+                                          }
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          <Badge
+                                            variant="outline"
+                                            className={cn(
+                                              "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
+                                              PO_REF_STATUS_COLORS[
+                                                entry.po_status
+                                              ] || PO_REF_STATUS_COLOR_DEFAULT,
+                                            )}
+                                          >
+                                            {entry.kode_po} ({entry.qty})
+                                          </Badge>
+                                        </Link>
+                                      ))}
+                                    </div>
+                                    <span
+                                      className={cn(
+                                        "text-[10px]",
+                                        cumulativeQty >= requestedQty
+                                          ? "text-emerald-600"
+                                          : "text-amber-600",
+                                      )}
+                                    >
+                                      Qty ter-PO: {cumulativeQty} /{" "}
+                                      {requestedQty} {item.uom}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+
+                              {item.stock_fulfillments &&
+                                item.stock_fulfillments.length > 0 && (
+                                  <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-sm flex items-center gap-1 w-fit">
+                                    <PackageCheck className="w-3 h-3" />
+                                    {item.stock_fulfillments.reduce(
+                                      (sum, e) => sum + (e.qty || 0),
+                                      0,
+                                    )}{" "}
+                                    {item.uom} dari Stok GA
+                                  </span>
+                                )}
+
+                              {/* Info kirim dari GA - bandingin sama bukti
+                                  BAST sebelum upload */}
+                              {item.delivery_info && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:text-amber-200 dark:hover:bg-amber-950/40"
+                                  onClick={() => setDeliveryDetailItem(item)}
+                                >
+                                  <Truck className="mr-1 h-3 w-3" /> Lihat Detail
+                                  Pengiriman
+                                </Button>
+                              )}
+
+                              {isOwner &&
+                                MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(
+                                  item.status || "",
+                                ) &&
+                                item.part_number && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={() => handleOpenBastUpload([item])}
+                                  >
+                                    <Upload className="mr-1 h-3 w-3" /> Upload
+                                    Bukti Terima
+                                  </Button>
+                                )}
+
+                              {item.bast_attachments &&
+                                item.bast_attachments.length > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs border-emerald-200 text-emerald-700 hover:text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200 dark:hover:bg-emerald-950/40"
+                                    onClick={() => setBastDetailItem(item)}
+                                  >
+                                    <FileText className="mr-1 h-3 w-3" /> Lihat
+                                    Bukti Terima
                                   </Button>
                                 )}
                             </div>
-
-                            {(() => {
-                              const linkedPos = item.part_number
-                                ? poBreakdown[item.part_number] || []
-                                : [];
-                              if (linkedPos.length === 0) return null;
-                              const cumulativeQty = linkedPos.reduce(
-                                (sum, entry) => sum + (entry.qty || 0),
-                                0,
-                              );
-                              const requestedQty = Number(item.qty) || 0;
-                              return (
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex flex-wrap gap-1">
-                                    {linkedPos.map((entry, idx) => (
-                                      <Link
-                                        key={idx}
-                                        href={
-                                          entry.po_id
-                                            ? `/purchase-order/${entry.po_id}`
-                                            : `/purchase-order?search=${encodeURIComponent(
-                                                entry.kode_po,
-                                              )}`
-                                        }
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        <Badge
-                                          variant="outline"
-                                          className={cn(
-                                            "text-[10px] h-5 px-1.5 font-mono cursor-pointer hover:opacity-75 transition-opacity",
-                                            PO_REF_STATUS_COLORS[
-                                              entry.po_status
-                                            ] || PO_REF_STATUS_COLOR_DEFAULT,
-                                          )}
-                                        >
-                                          {entry.kode_po} ({entry.qty})
-                                        </Badge>
-                                      </Link>
-                                    ))}
-                                  </div>
-                                  <span
-                                    className={cn(
-                                      "text-[10px]",
-                                      cumulativeQty >= requestedQty
-                                        ? "text-emerald-600"
-                                        : "text-amber-600",
-                                    )}
-                                  >
-                                    Qty ter-PO: {cumulativeQty} /{" "}
-                                    {requestedQty} {item.uom}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-
-                            {item.stock_fulfillments &&
-                              item.stock_fulfillments.length > 0 && (
-                                <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-sm flex items-center gap-1 w-fit">
-                                  <PackageCheck className="w-3 h-3" />
-                                  {item.stock_fulfillments.reduce(
-                                    (sum, e) => sum + (e.qty || 0),
-                                    0,
-                                  )}{" "}
-                                  {item.uom} dari Stok GA
-                                </span>
-                              )}
-
-                            {/* Info kirim dari GA - bandingin sama bukti
-                                BAST sebelum upload */}
-                            {item.delivery_info && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs border-amber-200 text-amber-700 hover:text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:text-amber-200 dark:hover:bg-amber-950/40"
-                                onClick={() => setDeliveryDetailItem(item)}
-                              >
-                                <Truck className="mr-1 h-3 w-3" /> Lihat Detail
-                                Pengiriman
-                              </Button>
-                            )}
-
-                            {isOwner &&
-                              MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(
-                                item.status || "",
-                              ) &&
-                              item.part_number && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs"
-                                  onClick={() => handleOpenBastUpload([item])}
-                                >
-                                  <Upload className="mr-1 h-3 w-3" /> Upload
-                                  Bukti Terima
-                                </Button>
-                              )}
-
-                            {item.bast_attachments &&
-                              item.bast_attachments.length > 0 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs border-emerald-200 text-emerald-700 hover:text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200 dark:hover:bg-emerald-950/40"
-                                  onClick={() => setBastDetailItem(item)}
-                                >
-                                  <FileText className="mr-1 h-3 w-3" /> Lihat
-                                  Bukti Terima
-                                </Button>
-                              )}
-                          </div>
-                        </TableCell>
-
-                        {isEditing && (
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => handleOpenEditItemDialog(index)}
-                                disabled={actionLoading}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="icon"
-                                onClick={() => removeItem(index)}
-                                disabled={actionLoading}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
                           </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={isEditing ? 8 : 7}
-                      className="text-center text-muted-foreground h-24"
-                    >
-                      Tidak ada barang.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Content>
-      </div>
 
-      <div className="col-span-12 lg:col-span-4 space-y-6">
-        <Content title="Tindakan">
-          <div className="flex flex-col gap-2">
-            {!isEditing && <ApprovalActions />}
-            {isEditing && (
-              <p className="text-sm text-center text-muted-foreground">
-                Simpan perubahan atau setujui untuk melanjutkan.
-                <br />
-                {isMyTurnForApproval && (
-                  <strong>(Menyetujui akan menyimpan otomatis)</strong>
-                )}
-              </p>
-            )}
-          </div>
-        </Content>
-
-        <Content title="Jalur Approval">
-          {mr.approvals.length > 0 ? (
-            <ul className="space-y-2">
-              {mr.approvals.map((approver, index) => {
-                const isMyTurn =
-                  currentTurnIndex === index &&
-                  (currentTurnIndex === 0 || allPreviousApproved);
-                return (
-                  <li
-                    key={index}
-                    className={cn(
-                      "flex flex-col gap-2 p-3 rounded-md transition-all",
-                      isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <UserAvatar
-                        userId={approver.userid}
-                        name={approver.nama}
-                        className="h-9 w-9"
-                        fallbackClassName="text-xs"
-                      />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="font-semibold flex flex-wrap items-center gap-2">
-                          <span className="break-words">{approver.nama}</span>
-                          <Badge variant={"outline"}>
-                            {approver.department}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {approver.type}
-                        </p>
-                        {approver.status !== "pending" &&
-                          approver.processed_at && (
-                            <p className="text-xs text-muted-foreground italic">
-                              {formatDateWithTime(approver.processed_at)}
-                            </p>
+                          {isEditing && (
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => handleOpenEditItemDialog(index)}
+                                  disabled={actionLoading}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="icon"
+                                  onClick={() => removeItem(index)}
+                                  disabled={actionLoading}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
                           )}
-                      </div>
-                      <div className="flex-shrink-0">
-                        {getApprovalStatusBadge(
-                          approver.status as
-                            | "approved"
-                            | "rejected"
-                            | "pending",
-                        )}
-                      </div>
-                    </div>
-                    {isMyTurn &&
-                      approver.status === "pending" &&
-                      currentUser?.id !== approver.userid && (
-                        <div className="flex justify-end">
-                          <FollowupApprovalButton
-                            resourceType="material_request"
-                            resourceId={mr.id}
-                            kode={mr.kode_mr}
-                            approverId={approver.userid}
-                            approverName={approver.nama}
-                            followups={mr.followup_requests || []}
-                            currentUserId={currentUser?.id || ""}
-                            currentUserName={
-                              userProfile?.nama || currentUser?.email || "User"
-                            }
-                            onUpdated={(updated) =>
-                              setMr({ ...mr, followup_requests: updated })
-                            }
-                          />
-                        </div>
-                      )}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center">
-              Jalur approval belum ditentukan oleh GA.
-            </p>
-          )}
-        </Content>
-        <Content title="Lampiran">
-          {isEditing ? (
-            <div className="space-y-4">
-              <Label htmlFor="attachments">Tambah Lampiran</Label>
-              <Input
-                id="attachments"
-                type="file"
-                multiple
-                disabled={actionLoading || isUploading}
-                onChange={handleAttachmentUpload}
-              />
-              {isUploading && (
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
-                  Mengunggah...
-                </div>
-              )}
-              {mr.attachments.length > 0 && (
-                <ul className="space-y-2 mt-2">
-                  {mr.attachments.map((file, index) => (
-                    <li
-                      key={index}
-                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
-                    >
-                      <div className="flex items-center gap-2 truncate min-w-0">
-                        {file.is_link ? (
-                          <Link2 className="h-4 w-4 flex-shrink-0" />
-                        ) : (
-                          <Paperclip className="h-4 w-4 flex-shrink-0" />
-                        )}
-                        <span className="truncate">{file.name}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => removeAttachment(index)}
+                        </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={isEditing ? 8 : 7}
+                        className="text-center text-muted-foreground h-24"
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
+                        Tidak ada barang.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        </div>
+
+        <div
+          className={cn(
+            "col-span-12 space-y-6",
+            isEditing ? "@4xl/form:col-span-4" : "lg:col-span-4",
+          )}
+        >
+          <Content title="Tindakan">
+            <div className="flex flex-col gap-2">
+              {!isEditing && <ApprovalActions />}
+              {isEditing && (
+                <p className="text-sm text-center text-muted-foreground">
+                  Simpan perubahan atau setujui untuk melanjutkan.
+                  <br />
+                  {isMyTurnForApproval && (
+                    <strong>(Menyetujui akan menyimpan otomatis)</strong>
+                  )}
+                </p>
               )}
             </div>
-          ) : (mr.attachments || []).length > 0 ? (
-            <ul className="space-y-2">
-              {(mr.attachments as Attachment[]).map((file, index) => (
-                <li key={index}>
-                  <Link
-                    href={resolveAttachmentUrl(file.url)}
-                    target="_blank"
-                    className="flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    {file.is_link ? (
-                      <Link2 className="h-4 w-4" />
-                    ) : (
-                      <Paperclip className="h-4 w-4" />
-                    )}
-                    <span>{file.name}</span>
-                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
-          )}
+          </Content>
 
-          {(() => {
-            const bastAttachments = (mr.orders || []).flatMap(
-              (orderItem) =>
-                (orderItem.bast_attachments || []).map((att, idx) => ({
-                  ...att,
-                  itemName: orderItem.name,
-                  orderItem,
-                  attIdx: idx,
-                })),
-            );
-            if (bastAttachments.length === 0) return null;
-            return (
-              <div className="mt-4 pt-4 border-t">
-                <Label className="text-sm text-muted-foreground">
-                  Lampiran Bukti Penerimaan
-                </Label>
-                <ul className="space-y-2 mt-2">
-                  {bastAttachments.map((att, i) => (
+          <Content id={MR_EDIT_TARGETS.approvals} title="Jalur Approval">
+            {mr.approvals.length > 0 ? (
+              <ul className="space-y-2">
+                {mr.approvals.map((approver, index) => {
+                  const isMyTurn =
+                    currentTurnIndex === index &&
+                    (currentTurnIndex === 0 || allPreviousApproved);
+                  return (
                     <li
-                      key={i}
-                      className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded gap-2"
+                      key={index}
+                      className={cn(
+                        "flex flex-col gap-2 p-3 rounded-md transition-all",
+                        isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
+                      )}
                     >
-                      <Link
-                        href={resolveAttachmentUrl(att.url)}
-                        target="_blank"
-                        className="flex items-center gap-2 text-primary hover:underline truncate min-w-0"
-                      >
-                        <FileText className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">{att.name}</span>
-                      </Link>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800"
-                        >
-                          Bukti Terima
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px]">
-                          {att.itemName}
-                        </Badge>
-                        {isOwner && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() =>
-                              handleRemoveItemBast(att.orderItem, att.url)
-                            }
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        )}
+                      <div className="flex items-start justify-between gap-2">
+                        <UserAvatar
+                          userId={approver.userid}
+                          name={approver.nama}
+                          className="h-9 w-9"
+                          fallbackClassName="text-xs"
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="font-semibold flex flex-wrap items-center gap-2">
+                            <span className="break-words">{approver.nama}</span>
+                            <Badge variant={"outline"}>
+                              {approver.department}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {approver.type}
+                          </p>
+                          {approver.status !== "pending" &&
+                            approver.processed_at && (
+                              <p className="text-xs text-muted-foreground italic">
+                                {formatDateWithTime(approver.processed_at)}
+                              </p>
+                            )}
+                        </div>
+                        <div className="flex-shrink-0">
+                          {getApprovalStatusBadge(
+                            approver.status as
+                              | "approved"
+                              | "rejected"
+                              | "pending",
+                          )}
+                        </div>
                       </div>
+                      {isMyTurn &&
+                        approver.status === "pending" &&
+                        currentUser?.id !== approver.userid && (
+                          <div className="flex justify-end">
+                            <FollowupApprovalButton
+                              resourceType="material_request"
+                              resourceId={mr.id}
+                              kode={mr.kode_mr}
+                              approverId={approver.userid}
+                              approverName={approver.nama}
+                              followups={mr.followup_requests || []}
+                              currentUserId={currentUser?.id || ""}
+                              currentUserName={
+                                userProfile?.nama || currentUser?.email || "User"
+                              }
+                              onUpdated={(updated) =>
+                                setMr({ ...mr, followup_requests: updated })
+                              }
+                            />
+                          </div>
+                        )}
                     </li>
-                  ))}
-                </ul>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center">
+                Jalur approval belum ditentukan oleh GA.
+              </p>
+            )}
+          </Content>
+          <Content id={MR_EDIT_TARGETS.attachments} title="Lampiran">
+            {isEditing ? (
+              <div className="space-y-4">
+                <Label htmlFor="attachments">Tambah Lampiran</Label>
+                <Input
+                  id="attachments"
+                  type="file"
+                  multiple
+                  disabled={actionLoading || isUploading}
+                  onChange={handleAttachmentUpload}
+                />
+                {isUploading && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                    Mengunggah...
+                  </div>
+                )}
+                {mr.attachments.length > 0 && (
+                  <ul className="space-y-2 mt-2">
+                    {mr.attachments.map((file, index) => (
+                      <li
+                        key={index}
+                        className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                      >
+                        <div className="flex items-center gap-2 truncate min-w-0">
+                          {file.is_link ? (
+                            <Link2 className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <Paperclip className="h-4 w-4 flex-shrink-0" />
+                          )}
+                          <span className="truncate">{file.name}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => removeAttachment(index)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            );
-          })()}
-        </Content>
-      </div>
+            ) : (mr.attachments || []).length > 0 ? (
+              <ul className="space-y-2">
+                {(mr.attachments as Attachment[]).map((file, index) => (
+                  <li key={index}>
+                    <Link
+                      href={resolveAttachmentUrl(file.url)}
+                      target="_blank"
+                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      {file.is_link ? (
+                        <Link2 className="h-4 w-4" />
+                      ) : (
+                        <Paperclip className="h-4 w-4" />
+                      )}
+                      <span>{file.name}</span>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">Tidak ada lampiran.</p>
+            )}
 
-      <div className="col-span-12">
-        <DiscussionSection
-          mrId={String(mr.id)}
-          initialDiscussions={mr.discussions as Discussion[]}
-        />
-      </div>
+            {(() => {
+              const bastAttachments = (mr.orders || []).flatMap(
+                (orderItem) =>
+                  (orderItem.bast_attachments || []).map((att, idx) => ({
+                    ...att,
+                    itemName: orderItem.name,
+                    orderItem,
+                    attIdx: idx,
+                  })),
+              );
+              if (bastAttachments.length === 0) return null;
+              return (
+                <div className="mt-4 pt-4 border-t">
+                  <Label className="text-sm text-muted-foreground">
+                    Lampiran Bukti Penerimaan
+                  </Label>
+                  <ul className="space-y-2 mt-2">
+                    {bastAttachments.map((att, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded gap-2"
+                      >
+                        <Link
+                          href={resolveAttachmentUrl(att.url)}
+                          target="_blank"
+                          className="flex items-center gap-2 text-primary hover:underline truncate min-w-0"
+                        >
+                          <FileText className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate">{att.name}</span>
+                        </Link>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800"
+                          >
+                            Bukti Terima
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            {att.itemName}
+                          </Badge>
+                          {isOwner && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() =>
+                                handleRemoveItemBast(att.orderItem, att.url)
+                              }
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+          </Content>
+        </div>
+
+        <div className="col-span-12">
+          <DiscussionSection
+            mrId={String(mr.id)}
+            initialDiscussions={mr.discussions as Discussion[]}
+          />
+        </div>
+      </FormSummaryLayout>
 
       {/* Dialog Item (Updated with Part Number & Status Preservation) */}
       <Dialog open={openItemDialog} onOpenChange={setOpenItemDialog}>
@@ -2631,7 +2694,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               </Label>
               <BarangSearchCombobox onSelect={handleSelectBarang} />
               {orderItem.name && (
-                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border [overflow-wrap:anywhere]">
                   Terpilih: <strong>{orderItem.name}</strong>
                   {orderItem.part_number && ` (${orderItem.part_number})`}
                 </div>
@@ -2649,7 +2712,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemQtyDlg" className="text-right">
                 Quantity
               </Label>
@@ -2663,7 +2726,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemUomDlg" className="text-right">
                 UoM
               </Label>
@@ -2676,7 +2739,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="estimasi_harga" className="text-right">
                 Estimasi Harga
               </Label>
@@ -2689,7 +2752,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemUrlDlg" className="text-right">
                 Link Ref.
               </Label>
@@ -2704,7 +2767,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 placeholder="(Opsional)"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemNoteDlg" className="text-right">
                 Catatan
               </Label>
@@ -3165,7 +3228,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           ) : (
             selectedItemForStock && (
               <div className="space-y-4 py-2">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-sm [&>*]:min-w-0">
                   <div>
                     <p className="text-muted-foreground text-xs">
                       Stok Tersedia
@@ -3362,7 +3425,7 @@ const InfoItem = ({
       <Icon className="h-4 w-4 flex-shrink-0" />
       {label}
     </div>
-    <div className="text-sm font-semibold col-span-2 whitespace-pre-wrap break-words">
+    <div className="min-w-0 text-sm font-semibold col-span-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
       {value}
     </div>
   </div>

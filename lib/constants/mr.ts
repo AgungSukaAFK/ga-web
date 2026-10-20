@@ -9,3 +9,6 @@ export const MR_KATEGORI_OPTIONS: ComboboxData = [
   { label: "Fix & Repair", value: "Fix & Repair" },
   { label: "Upgrade", value: "Upgrade" },
 ];
+
+/** Kategori MR yang wajib menyertakan lampiran saat diajukan. */
+export const WAJIB_LAMPIRAN_KATEGORI = ["Replace Item", "Fix & Repair", "Upgrade"];

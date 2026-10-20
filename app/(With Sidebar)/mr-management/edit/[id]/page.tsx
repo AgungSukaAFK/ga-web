@@ -123,6 +123,11 @@ import { LinkAttachmentForm } from "@/components/link-attachment-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { UserAvatar } from "@/components/user-avatar";
+import {
+  FormSummaryLayout,
+  useUnsavedChanges,
+} from "@/components/form-summary-panel";
+import { buildMrEditChecks, MR_EDIT_TARGETS } from "@/lib/mrEditSummaryChecks";
 
 // --- Data Konstanta Lokal ---
 const kategoriData: ComboboxData = [
@@ -175,7 +180,7 @@ const InfoItem = ({
       <Icon className="h-4 w-4" />
       {label}
     </dt>
-    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+    <dd className="min-w-0 text-sm font-semibold col-span-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
       {value}
     </dd>
   </div>
@@ -209,6 +214,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   >(null);
 
   const supabase = createClient();
+
+  const { dirty, resetBaseline } = useUnsavedChanges(mr, !loading && !!mr);
 
   // 1. Auto-Calculate Cost
   useEffect(() => {
@@ -272,6 +279,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
+      // Data baru dari DB = titik "sudah tersimpan" yang baru.
+      resetBaseline();
 
       return initialData;
     }
@@ -1013,653 +1022,700 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       </Content>
     );
 
+  const costCenterLabel = mr.cost_center_id
+    ? costCenterList.find((c) => c.value === mr.cost_center_id?.toString())
+        ?.label || `ID: ${mr.cost_center_id}`
+    : null;
+
   return (
     <>
-      <div className="col-span-12">
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold">{mr.kode_mr}</h1>
-            <p className="text-muted-foreground">
-              Edit Material Request (Mode Administrator)
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={handleSaveChanges}
-              disabled={actionLoading || isUploading}
-            >
-              {actionLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Simpan & Catat Log
-            </Button>
-            <ActivityLogDialog
-              resourceType="material_request"
-              resourceId={String(mr.id)}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              {isEditing ? "Batal Edit" : "Mode Edit"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsConvertDialogOpen(true)}
-              disabled={actionLoading}
-            >
-              <ArrowLeftRight className="mr-2 h-4 w-4" />
-              Konversi Company
-            </Button>
+      <FormSummaryLayout
+        summary={{
+          title: "Ringkasan Edit MR",
+          subtitle: <span className="font-mono">{mr.kode_mr}</span>,
+          checks: buildMrEditChecks(mr, {
+            costCenterLabel,
+            includeApprovals: true,
+            includeStatus: true,
+          }),
+          submitLabel: "Simpan & Catat Log",
+          submittingLabel: "Menyimpan...",
+          submitIcon: <Save className="mr-2 h-4 w-4" />,
+          onSubmit: handleSaveChanges,
+          submitting: actionLoading,
+          disabled: isUploading,
+          dirty,
+          nextSteps: (
+            <>
+              Perubahan langsung disimpan &amp; dicatat di log aktivitas.
+              Aktifkan <strong>Mode Edit</strong> untuk mengubah kategori,
+              item, tujuan, dan remarks.
+            </>
+          ),
+          children: (
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                Estimasi biaya
+              </span>
+              <span className="text-lg font-bold tabular-nums">
+                {formattedCost}
+              </span>
+            </div>
+          ),
+        }}
+      >
+        <div id={MR_EDIT_TARGETS.header} className="col-span-12 rounded-md">
+          <div className="flex flex-wrap justify-between items-center gap-4">
+            <div>
+              <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">{mr.kode_mr}</h1>
+              <p className="text-muted-foreground">
+                Edit Material Request (Mode Administrator)
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={handleSaveChanges}
+                disabled={actionLoading || isUploading}
+              >
+                {actionLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Simpan & Catat Log
+              </Button>
+              <ActivityLogDialog
+                resourceType="material_request"
+                resourceId={String(mr.id)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(!isEditing)}
+              >
+                {isEditing ? "Batal Edit" : "Mode Edit"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsConvertDialogOpen(true)}
+                disabled={actionLoading}
+              >
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+                Konversi Company
+              </Button>
 
-            {/* Direct Status Changer */}
-            <div className="flex items-center gap-1">
-              <Label className="text-sm font-medium">Status MR:</Label>
-              <SearchableSelect value={mr.status} onValueChange={handleMrStatusChange}>
-                <SearchableSelectTrigger className="w-[180px]">
-                  <SearchableSelectValue placeholder="Ubah Status MR..." />
-                </SearchableSelectTrigger>
-                <SearchableSelectContent>
-                  {STATUS_OPTIONS.map((status) => (
-                    <SearchableSelectItem key={status} value={status}>
-                      {status}
-                    </SearchableSelectItem>
-                  ))}
-                </SearchableSelectContent>
-              </SearchableSelect>
+              {/* Direct Status Changer */}
+              <div className="flex items-center gap-1">
+                <Label className="text-sm font-medium">Status MR:</Label>
+                <SearchableSelect value={mr.status} onValueChange={handleMrStatusChange}>
+                  <SearchableSelectTrigger className="w-[180px]">
+                    <SearchableSelectValue placeholder="Ubah Status MR..." />
+                  </SearchableSelectTrigger>
+                  <SearchableSelectContent>
+                    {STATUS_OPTIONS.map((status) => (
+                      <SearchableSelectItem key={status} value={status}>
+                        {status}
+                      </SearchableSelectItem>
+                    ))}
+                  </SearchableSelectContent>
+                </SearchableSelect>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="col-span-12 grid grid-cols-12 gap-6">
-          <div className="col-span-12 lg:col-span-8 space-y-6">
-            <Content title="Informasi Utama">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                <InfoItem
-                  icon={CircleUser}
-                  label="Pembuat"
-                  value={(mr as any).users_with_profiles?.nama || "N/A"}
-                />
-                <InfoItem
-                  icon={Calendar}
-                  label="Tanggal Dibuat"
-                  value={formatDateFriendly(mr.created_at)}
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="department">Departemen</Label>
-                  <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                    {mr.department || "-"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="kategori">Kategori</Label>
-                  {isEditing ? (
-                    <Combobox
-                      id="kategori"
-                      data={kategoriData}
-                      onChange={(v) => handleComboboxChange("kategori", v)}
-                      defaultValue={mr.kategori}
-                      disabled={actionLoading}
-                    />
-                  ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                      {mr.kategori}
-                    </p>
-                  )}
-                </div>
-
-                {/* --- BAGIAN DUE DATE --- */}
-                <div className="space-y-1">
-                  <Label>Due Date (Target)</Label>
-                  {isEditing ? (
-                    <Popover
-                      open={isDatePopoverOpen}
-                      onOpenChange={setIsDatePopoverOpen}
-                    >
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !mr.due_date && "text-muted-foreground",
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {mr.due_date ? (
-                            format(new Date(mr.due_date), "PPP")
-                          ) : (
-                            <span>Pilih tanggal...</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <CalendarComponent
-                          mode="single"
-                          selected={
-                            mr.due_date ? new Date(mr.due_date) : undefined
-                          }
-                          onSelect={(date) => {
-                            setMr({ ...mr, due_date: date });
-                            setIsDatePopoverOpen(false);
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                      {formatDateFriendly(mr.due_date)}
-                    </p>
-                  )}
-                </div>
-
-                {/* --- BAGIAN PRIORITAS --- */}
-                <div className="space-y-1">
-                  <Label>Prioritas (Otomatis)</Label>
-                  <div
-                    className={cn(
-                      "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold",
-                      mr.prioritas === "P0" &&
-                        "text-destructive bg-destructive/10",
-                    )}
-                  >
-                    {mr.prioritas || "Menghitung..."}
-                    <span className="text-xs font-normal text-muted-foreground ml-2">
-                      (Live by Date)
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="cost_center_id">Cost Center</Label>
-                  {isEditing ? (
-                    <Combobox
-                      id="cost_center_id"
-                      data={costCenterList}
-                      onChange={(v) =>
-                        handleComboboxChange("cost_center_id", v)
-                      }
-                      defaultValue={mr.cost_center_id?.toString() ?? ""}
-                      placeholder="Pilih Cost Center..."
-                    />
-                  ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center">
-                      {costCenterList.find(
-                        (c) => c.value === mr.cost_center_id?.toString(),
-                      )?.label || "Belum Ditentukan"}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="tujuan_site">Tujuan (Site)</Label>
-                  {isEditing ? (
-                    <Combobox
-                      id="tujuan_site"
-                      data={dataLokasi}
-                      onChange={(v) => handleComboboxChange("tujuan_site", v)}
-                      defaultValue={mr.tujuan_site}
-                      placeholder="Pilih Tujuan Site..."
-                    />
-                  ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
-                      <Truck className="h-4 w-4" /> {mr.tujuan_site || "N/A"}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1">
-                    <Label>Level</Label>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() => setIsLevelInfoOpen(true)}
-                    >
-                      <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </div>
-                  {isEditing ? (
-                    <SearchableSelect
-                      onValueChange={handleLevelChange}
-                      defaultValue={mr.level || ""}
-                      disabled={actionLoading}
-                    >
-                      <SearchableSelectTrigger>
-                        <SearchableSelectValue placeholder="Pilih level..." />
-                      </SearchableSelectTrigger>
-                      <SearchableSelectContent>
-                        {DATA_LEVEL.map((lvl) => (
-                          <SearchableSelectItem key={lvl.value} value={lvl.value}>
-                            {lvl.label}
-                          </SearchableSelectItem>
-                        ))}
-                      </SearchableSelectContent>
-                    </SearchableSelect>
-                  ) : (
-                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center gap-2">
-                      <Layers className="h-4 w-4" /> {mr.level || "N/A"}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="cost_estimation">
-                    Estimasi Biaya (Otomatis)
-                  </Label>
-                  <Input
-                    id="cost_estimation"
-                    type="text"
-                    value={formattedCost}
-                    disabled
-                    readOnly
-                    className="font-bold"
+        <div className="col-span-12 grid grid-cols-12 gap-6 [&>*]:min-w-0">
+            {/* Lebar kolom ikut lebar area form (container query), bukan layar,
+                supaya tetap lega saat panel ringkasan dibuka. */}
+            <div className="col-span-12 @4xl/form:col-span-8 space-y-6">
+              <Content title="Informasi Utama">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 [&>*]:min-w-0">
+                  <InfoItem
+                    icon={CircleUser}
+                    label="Pembuat"
+                    value={(mr as any).users_with_profiles?.nama || "N/A"}
                   />
-                </div>
-                <div className="md:col-span-2 space-y-1">
-                  <Label htmlFor="remarks">Remarks</Label>
-                  {isEditing ? (
-                    <RichMentionEditor
-                      ref={remarksEditorRef}
-                      initialContent={parseRichValue(mr.remarks)}
-                      onChange={() =>
-                        setMr((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                remarks: remarksEditorRef.current?.isEmpty()
-                                  ? ""
-                                  : stringifyRichContent(
-                                      remarksEditorRef.current?.getJSON() ?? {
-                                        type: "doc",
-                                      },
-                                    ),
-                              }
-                            : prev,
-                        )
-                      }
-                    />
-                  ) : (
-                    <div className="p-2 border rounded-md bg-muted/50 min-h-[36px]">
-                      {mr.remarks ? (
-                        <RichContentView content={parseRichValue(mr.remarks)} />
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Content>
+                  <InfoItem
+                    icon={Calendar}
+                    label="Tanggal Dibuat"
+                    value={formatDateFriendly(mr.created_at)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="department">Departemen</Label>
+                    <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere]">
+                      {mr.department || "-"}
+                    </p>
+                  </div>
+                  <div id={MR_EDIT_TARGETS.kategori} className="space-y-1 rounded-md">
+                    <Label htmlFor="kategori">Kategori</Label>
+                    {isEditing ? (
+                      <Combobox
+                        id="kategori"
+                        data={kategoriData}
+                        onChange={(v) => handleComboboxChange("kategori", v)}
+                        defaultValue={mr.kategori}
+                        disabled={actionLoading}
+                      />
+                    ) : (
+                      <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere]">
+                        {mr.kategori}
+                      </p>
+                    )}
+                  </div>
 
-            <Content
-              title="Order Items"
-              cardAction={
-                isEditing && (
-                  <Button
-                    variant="outline"
-                    onClick={handleOpenAddItemDialog}
-                    disabled={actionLoading || isUploading}
+                  {/* --- BAGIAN DUE DATE --- */}
+                  <div id={MR_EDIT_TARGETS.prioritas} className="space-y-1 rounded-md">
+                    <Label>Due Date (Target)</Label>
+                    {isEditing ? (
+                      <Popover
+                        open={isDatePopoverOpen}
+                        onOpenChange={setIsDatePopoverOpen}
+                      >
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !mr.due_date && "text-muted-foreground",
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {mr.due_date ? (
+                              format(new Date(mr.due_date), "PPP")
+                            ) : (
+                              <span>Pilih tanggal...</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <CalendarComponent
+                            mode="single"
+                            selected={
+                              mr.due_date ? new Date(mr.due_date) : undefined
+                            }
+                            onSelect={(date) => {
+                              setMr({ ...mr, due_date: date });
+                              setIsDatePopoverOpen(false);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere]">
+                        {formatDateFriendly(mr.due_date)}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* --- BAGIAN PRIORITAS --- */}
+                  <div className="space-y-1">
+                    <Label>Prioritas (Otomatis)</Label>
+                    <div
+                      className={cn(
+                        "flex items-center h-9 px-3 border rounded-md bg-muted/50 font-semibold",
+                        mr.prioritas === "P0" &&
+                          "text-destructive bg-destructive/10",
+                      )}
+                    >
+                      {mr.prioritas || "Menghitung..."}
+                      <span className="text-xs font-normal text-muted-foreground ml-2">
+                        (Live by Date)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div id={MR_EDIT_TARGETS.costCenter} className="space-y-1 rounded-md">
+                    <Label htmlFor="cost_center_id">Cost Center</Label>
+                    {isEditing ? (
+                      <Combobox
+                        id="cost_center_id"
+                        data={costCenterList}
+                        onChange={(v) =>
+                          handleComboboxChange("cost_center_id", v)
+                        }
+                        defaultValue={mr.cost_center_id?.toString() ?? ""}
+                        placeholder="Pilih Cost Center..."
+                      />
+                    ) : (
+                      <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere]">
+                        {costCenterList.find(
+                          (c) => c.value === mr.cost_center_id?.toString(),
+                        )?.label || "Belum Ditentukan"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div id={MR_EDIT_TARGETS.tujuan} className="space-y-1 rounded-md">
+                    <Label htmlFor="tujuan_site">Tujuan (Site)</Label>
+                    {isEditing ? (
+                      <Combobox
+                        id="tujuan_site"
+                        data={dataLokasi}
+                        onChange={(v) => handleComboboxChange("tujuan_site", v)}
+                        defaultValue={mr.tujuan_site}
+                        placeholder="Pilih Tujuan Site..."
+                      />
+                    ) : (
+                      <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere] gap-2">
+                        <Truck className="h-4 w-4" /> {mr.tujuan_site || "N/A"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <Label>Level</Label>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() => setIsLevelInfoOpen(true)}
+                      >
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    </div>
+                    {isEditing ? (
+                      <SearchableSelect
+                        onValueChange={handleLevelChange}
+                        defaultValue={mr.level || ""}
+                        disabled={actionLoading}
+                      >
+                        <SearchableSelectTrigger>
+                          <SearchableSelectValue placeholder="Pilih level..." />
+                        </SearchableSelectTrigger>
+                        <SearchableSelectContent>
+                          {DATA_LEVEL.map((lvl) => (
+                            <SearchableSelectItem key={lvl.value} value={lvl.value}>
+                              {lvl.label}
+                            </SearchableSelectItem>
+                          ))}
+                        </SearchableSelectContent>
+                      </SearchableSelect>
+                    ) : (
+                      <p className="p-2 border rounded-md bg-muted/50 min-h-[36px] flex items-center min-w-0 [overflow-wrap:anywhere] gap-2">
+                        <Layers className="h-4 w-4" /> {mr.level || "N/A"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="cost_estimation">
+                      Estimasi Biaya (Otomatis)
+                    </Label>
+                    <Input
+                      id="cost_estimation"
+                      type="text"
+                      value={formattedCost}
+                      disabled
+                      readOnly
+                      className="font-bold"
+                    />
+                  </div>
+                  <div
+                    id={MR_EDIT_TARGETS.remarks}
+                    className="md:col-span-2 space-y-1 rounded-md"
                   >
-                    <Plus className="mr-2 h-4 w-4" /> Tambah Item
-                  </Button>
-                )
-              }
-            >
-              <div className="space-y-4">
-                <div className="rounded-md border overflow-x-auto">
-                  <Table className="min-w-[1000px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nama</TableHead>
-                        <TableHead className="w-[80px]">Qty</TableHead>
-                        <TableHead className="w-[120px]">UoM</TableHead>
-                        <TableHead>Estimasi Harga</TableHead>
-                        <TableHead>Total Estimasi</TableHead>
-                        <TableHead>Catatan</TableHead>
-                        <TableHead>Link</TableHead>
-                        {isEditing && (
-                          <TableHead className="w-[100px]">Aksi</TableHead>
+                    <Label htmlFor="remarks">Remarks</Label>
+                    {isEditing ? (
+                      <RichMentionEditor
+                        ref={remarksEditorRef}
+                        initialContent={parseRichValue(mr.remarks)}
+                        onChange={() =>
+                          setMr((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  remarks: remarksEditorRef.current?.isEmpty()
+                                    ? ""
+                                    : stringifyRichContent(
+                                        remarksEditorRef.current?.getJSON() ?? {
+                                          type: "doc",
+                                        },
+                                      ),
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                    ) : (
+                      <div className="p-2 border rounded-md bg-muted/50 min-h-[36px] [overflow-wrap:anywhere]">
+                        {mr.remarks ? (
+                          <RichContentView content={parseRichValue(mr.remarks)} />
+                        ) : (
+                          "-"
                         )}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {mr.orders.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={item.name}
-                                onChange={(e) =>
-                                  handleItemChange(
-                                    index,
-                                    "name",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={actionLoading}
-                              />
-                            ) : (
-                              <span className="font-medium">{item.name}</span>
-                            )}
-                            {(item.conversion_history || []).length > 0 && (
-                              <Button
-                                type="button"
-                                variant="link"
-                                size="sm"
-                                className="h-auto p-0 text-xs mt-0.5 block"
-                                onClick={() => setHistoryViewIndex(index)}
-                              >
-                                <ArrowLeftRight className="h-3 w-3 mr-1 inline" />
-                                Cek riwayat konversi (
-                                {item.conversion_history!.length}x)
-                              </Button>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={item.qty}
-                                onChange={(e) =>
-                                  handleItemChange(index, "qty", e.target.value)
-                                }
-                                className="w-20"
-                                type="number"
-                                disabled={actionLoading}
-                              />
-                            ) : (
-                              item.qty
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={item.uom}
-                                onChange={(e) =>
-                                  handleItemChange(index, "uom", e.target.value)
-                                }
-                                className="w-24"
-                                disabled={actionLoading}
-                              />
-                            ) : (
-                              item.uom
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {isEditing ? (
-                              <CurrencyInput
-                                value={item.estimasi_harga}
-                                onValueChange={(value) =>
-                                  handleItemChange(
-                                    index,
-                                    "estimasi_harga",
-                                    value,
-                                  )
-                                }
-                                disabled={actionLoading}
-                                className="w-32"
-                              />
-                            ) : (
-                              formatCurrency(item.estimasi_harga)
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatCurrency(
-                              Number(item.qty) * item.estimasi_harga,
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={item.note}
-                                onChange={(e) =>
-                                  handleItemChange(
-                                    index,
-                                    "note",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={actionLoading}
-                              />
-                            ) : (
-                              <span className="max-w-xs truncate">
-                                {item.note || "-"}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEditing ? (
-                              <Input
-                                value={item.url}
-                                onChange={(e) =>
-                                  handleItemChange(index, "url", e.target.value)
-                                }
-                                disabled={actionLoading}
-                                type="url"
-                              />
-                            ) : (
-                              item.url && (
-                                <Button asChild variant={"outline"} size="sm">
-                                  <Link
-                                    href={item.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    <LinkIcon className="h-3 w-3" />
-                                  </Link>
-                                </Button>
-                              )
-                            )}
-                          </TableCell>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Content>
+
+              <Content
+                id={MR_EDIT_TARGETS.items}
+                title="Order Items"
+                cardAction={
+                  isEditing && (
+                    <Button
+                      variant="outline"
+                      onClick={handleOpenAddItemDialog}
+                      disabled={actionLoading || isUploading}
+                    >
+                      <Plus className="mr-2 h-4 w-4" /> Tambah Item
+                    </Button>
+                  )
+                }
+              >
+                <div className="space-y-4">
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table className="min-w-[1000px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nama</TableHead>
+                          <TableHead className="w-[80px]">Qty</TableHead>
+                          <TableHead className="w-[120px]">UoM</TableHead>
+                          <TableHead>Estimasi Harga</TableHead>
+                          <TableHead>Total Estimasi</TableHead>
+                          <TableHead>Catatan</TableHead>
+                          <TableHead>Link</TableHead>
                           {isEditing && (
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  title="Konversi Barang"
-                                  onClick={() => handleOpenConvertDialog(index)}
-                                  disabled={actionLoading}
-                                >
-                                  <ArrowLeftRight className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="icon"
-                                  title="Hapus Item"
-                                  onClick={() => removeItem(index)}
-                                  disabled={actionLoading}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
+                            <TableHead className="w-[100px]">Aksi</TableHead>
                           )}
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </Content>
-
-            <Content title="Lampiran">
-              <div className="space-y-4">
-                <Label>Tambah Lampiran</Label>
-                <Tabs defaultValue="file">
-                  <TabsList className="w-full">
-                    <TabsTrigger value="file" className="flex-1">
-                      <Paperclip className="h-4 w-4" />
-                      Upload File
-                    </TabsTrigger>
-                    <TabsTrigger value="link" className="flex-1">
-                      <Link2 className="h-4 w-4" />
-                      Link Drive
-                    </TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="file">
-                    <Input
-                      id="attachments"
-                      type="file"
-                      multiple
-                      disabled={actionLoading || isUploading}
-                      onChange={handleAttachmentUpload}
-                    />
-                  </TabsContent>
-                  <TabsContent value="link">
-                    <LinkAttachmentForm
-                      existingAttachments={
-                        Array.isArray(mr.attachments) ? mr.attachments : []
-                      }
-                      onAdd={(att) =>
-                        setMr((prevMr) =>
-                          prevMr
-                            ? {
-                                ...prevMr,
-                                attachments: [
-                                  ...(Array.isArray(prevMr.attachments)
-                                    ? prevMr.attachments
-                                    : []),
-                                  att,
-                                ],
-                              }
-                            : null,
-                        )
-                      }
-                      disabled={actionLoading || isUploading}
-                    />
-                  </TabsContent>
-                </Tabs>
-                {isUploading && (
-                  <div className="flex items-center text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
-                    Mengunggah...
+                      </TableHeader>
+                      <TableBody>
+                        {mr.orders.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
+                                  value={item.name}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "name",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={actionLoading}
+                                />
+                              ) : (
+                                <span className="font-medium">{item.name}</span>
+                              )}
+                              {(item.conversion_history || []).length > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto p-0 text-xs mt-0.5 block"
+                                  onClick={() => setHistoryViewIndex(index)}
+                                >
+                                  <ArrowLeftRight className="h-3 w-3 mr-1 inline" />
+                                  Cek riwayat konversi (
+                                  {item.conversion_history!.length}x)
+                                </Button>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
+                                  value={item.qty}
+                                  onChange={(e) =>
+                                    handleItemChange(index, "qty", e.target.value)
+                                  }
+                                  className="w-20"
+                                  type="number"
+                                  disabled={actionLoading}
+                                />
+                              ) : (
+                                item.qty
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
+                                  value={item.uom}
+                                  onChange={(e) =>
+                                    handleItemChange(index, "uom", e.target.value)
+                                  }
+                                  className="w-24"
+                                  disabled={actionLoading}
+                                />
+                              ) : (
+                                item.uom
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {isEditing ? (
+                                <CurrencyInput
+                                  value={item.estimasi_harga}
+                                  onValueChange={(value) =>
+                                    handleItemChange(
+                                      index,
+                                      "estimasi_harga",
+                                      value,
+                                    )
+                                  }
+                                  disabled={actionLoading}
+                                  className="w-32"
+                                />
+                              ) : (
+                                formatCurrency(item.estimasi_harga)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(
+                                Number(item.qty) * item.estimasi_harga,
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
+                                  value={item.note}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "note",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={actionLoading}
+                                />
+                              ) : (
+                                <span className="max-w-xs truncate">
+                                  {item.note || "-"}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
+                                  value={item.url}
+                                  onChange={(e) =>
+                                    handleItemChange(index, "url", e.target.value)
+                                  }
+                                  disabled={actionLoading}
+                                  type="url"
+                                />
+                              ) : (
+                                item.url && (
+                                  <Button asChild variant={"outline"} size="sm">
+                                    <Link
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <LinkIcon className="h-3 w-3" />
+                                    </Link>
+                                  </Button>
+                                )
+                              )}
+                            </TableCell>
+                            {isEditing && (
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    title="Konversi Barang"
+                                    onClick={() => handleOpenConvertDialog(index)}
+                                    disabled={actionLoading}
+                                  >
+                                    <ArrowLeftRight className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="icon"
+                                    title="Hapus Item"
+                                    onClick={() => removeItem(index)}
+                                    disabled={actionLoading}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
-                {Array.isArray(mr.attachments) && mr.attachments.length > 0 && (
-                  <ul className="space-y-2 mt-2">
-                    {mr.attachments.map((file, index) => (
-                      <li
-                        key={index}
-                        className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
-                      >
-                        <a
-                          href={resolveAttachmentUrl(file.url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 truncate hover:underline text-primary"
-                        >
-                          {file.is_link ? (
-                            <Link2 className="h-4 w-4 flex-shrink-0" />
-                          ) : (
-                            <Paperclip className="h-4 w-4 flex-shrink-0" />
-                          )}
-                          <span className="truncate">{file.name}</span>
-                        </a>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => removeAttachment(index)}
-                          disabled={actionLoading || isUploading}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </Content>
-          </div>
-
-          <div className="col-span-12 lg:col-span-4 space-y-6">
-            <Content title="Jalur Approval">
-              {Array.isArray(mr.approvals) && mr.approvals.length > 0 ? (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Admin dapat mengubah status approval:
-                  </Label>
-                  {mr.approvals.map((approver, index) => (
-                    <div
-                      key={index}
-                      className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
-                    >
-                      <UserAvatar
-                        userId={approver.userid}
-                        name={approver.nama}
-                        className="h-9 w-9"
-                        fallbackClassName="text-xs"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold break-words">
-                          {approver.nama}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {approver.type}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {approver.status === "pending" && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-9 w-9 flex-shrink-0"
-                            title="Ganti Approver"
-                            onClick={() => setSubstituteApproverIndex(index)}
-                          >
-                            <UserCog className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <SearchableSelect
-                          value={approver.status}
-                          onValueChange={(newStatus) =>
-                            handleApprovalStatusChange(
-                              index,
-                              newStatus as Approval["status"],
-                            )
-                          }
-                        >
-                          <SearchableSelectTrigger className="w-[120px] capitalize">
-                            <SearchableSelectValue placeholder="Status..." />
-                          </SearchableSelectTrigger>
-                          <SearchableSelectContent>
-                            {APPROVAL_STATUS_OPTIONS.map((opt) => (
-                              <SearchableSelectItem
-                                key={opt}
-                                value={opt}
-                                className="capitalize"
-                              >
-                                {opt}
-                              </SearchableSelectItem>
-                            ))}
-                          </SearchableSelectContent>
-                        </SearchableSelect>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center">
-                  Jalur approval belum ditentukan.
-                </p>
-              )}
-            </Content>
-            <div className="col-span-12">
-              <DiscussionSection
-                mrId={String(mr.id)}
-                initialDiscussions={mr.discussions as Discussion[]}
-              />
+              </Content>
+
+              <Content id={MR_EDIT_TARGETS.attachments} title="Lampiran">
+                <div className="space-y-4">
+                  <Label>Tambah Lampiran</Label>
+                  <Tabs defaultValue="file">
+                    <TabsList className="w-full">
+                      <TabsTrigger value="file" className="flex-1">
+                        <Paperclip className="h-4 w-4" />
+                        Upload File
+                      </TabsTrigger>
+                      <TabsTrigger value="link" className="flex-1">
+                        <Link2 className="h-4 w-4" />
+                        Link Drive
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="file">
+                      <Input
+                        id="attachments"
+                        type="file"
+                        multiple
+                        disabled={actionLoading || isUploading}
+                        onChange={handleAttachmentUpload}
+                      />
+                    </TabsContent>
+                    <TabsContent value="link">
+                      <LinkAttachmentForm
+                        existingAttachments={
+                          Array.isArray(mr.attachments) ? mr.attachments : []
+                        }
+                        onAdd={(att) =>
+                          setMr((prevMr) =>
+                            prevMr
+                              ? {
+                                  ...prevMr,
+                                  attachments: [
+                                    ...(Array.isArray(prevMr.attachments)
+                                      ? prevMr.attachments
+                                      : []),
+                                    att,
+                                  ],
+                                }
+                              : null,
+                          )
+                        }
+                        disabled={actionLoading || isUploading}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                  {isUploading && (
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                      Mengunggah...
+                    </div>
+                  )}
+                  {Array.isArray(mr.attachments) && mr.attachments.length > 0 && (
+                    <ul className="space-y-2 mt-2">
+                      {mr.attachments.map((file, index) => (
+                        <li
+                          key={index}
+                          className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
+                        >
+                          <a
+                            href={resolveAttachmentUrl(file.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 truncate hover:underline text-primary"
+                          >
+                            {file.is_link ? (
+                              <Link2 className="h-4 w-4 flex-shrink-0" />
+                            ) : (
+                              <Paperclip className="h-4 w-4 flex-shrink-0" />
+                            )}
+                            <span className="truncate">{file.name}</span>
+                          </a>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => removeAttachment(index)}
+                            disabled={actionLoading || isUploading}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </Content>
             </div>
-          </div>
-      </div>
+
+            <div className="col-span-12 @4xl/form:col-span-4 space-y-6">
+              <Content id={MR_EDIT_TARGETS.approvals} title="Jalur Approval">
+                {Array.isArray(mr.approvals) && mr.approvals.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Admin dapat mengubah status approval:
+                    </Label>
+                    {mr.approvals.map((approver, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-md border bg-card"
+                      >
+                        <UserAvatar
+                          userId={approver.userid}
+                          name={approver.nama}
+                          className="h-9 w-9"
+                          fallbackClassName="text-xs"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold break-words">
+                            {approver.nama}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {approver.type}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {approver.status === "pending" && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-9 w-9 flex-shrink-0"
+                              title="Ganti Approver"
+                              onClick={() => setSubstituteApproverIndex(index)}
+                            >
+                              <UserCog className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <SearchableSelect
+                            value={approver.status}
+                            onValueChange={(newStatus) =>
+                              handleApprovalStatusChange(
+                                index,
+                                newStatus as Approval["status"],
+                              )
+                            }
+                          >
+                            <SearchableSelectTrigger className="w-[120px] capitalize">
+                              <SearchableSelectValue placeholder="Status..." />
+                            </SearchableSelectTrigger>
+                            <SearchableSelectContent>
+                              {APPROVAL_STATUS_OPTIONS.map((opt) => (
+                                <SearchableSelectItem
+                                  key={opt}
+                                  value={opt}
+                                  className="capitalize"
+                                >
+                                  {opt}
+                                </SearchableSelectItem>
+                              ))}
+                            </SearchableSelectContent>
+                          </SearchableSelect>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center">
+                    Jalur approval belum ditentukan.
+                  </p>
+                )}
+              </Content>
+              <div className="col-span-12">
+                <DiscussionSection
+                  mrId={String(mr.id)}
+                  initialDiscussions={mr.discussions as Discussion[]}
+                />
+              </div>
+            </div>
+        </div>
+      </FormSummaryLayout>
 
       <Dialog
         open={substituteApproverIndex !== null}
@@ -1707,7 +1763,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               <Label className="text-right">Cari Barang (Wajib)</Label>
               <BarangSearchCombobox onSelect={handleSelectBarang} />
               {orderItem.name && (
-                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border">
+                <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded border [overflow-wrap:anywhere]">
                   Terpilih: <strong>{orderItem.name}</strong> (
                   {orderItem.part_number})
                 </div>
@@ -1719,7 +1775,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemQtyDlg" className="text-right">
                 Quantity
               </Label>
@@ -1733,7 +1789,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="itemUomDlg" className="text-right">
                 UoM
               </Label>
@@ -1745,7 +1801,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 disabled
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
+            <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
               <Label htmlFor="estimasi_harga" className="text-right">
                 Est. Harga
               </Label>
@@ -1781,7 +1837,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           </DialogHeader>
           {convertItemIndex !== null && mr && (
             <div className="space-y-4 py-2">
-              <div className="p-2 rounded border bg-muted text-sm">
+              <div className="p-2 rounded border bg-muted text-sm [overflow-wrap:anywhere]">
                 Item saat ini:{" "}
                 <strong>{mr.orders[convertItemIndex].name}</strong>{" "}
                 {mr.orders[convertItemIndex].part_number &&
@@ -1792,7 +1848,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 <Label>Cari Barang Pengganti</Label>
                 <BarangSearchCombobox onSelect={handleSelectConvertBarang} />
                 {convertNewBarang && (
-                  <div className="text-xs text-muted-foreground p-2 bg-muted rounded border">
+                  <div className="text-xs text-muted-foreground p-2 bg-muted rounded border [overflow-wrap:anywhere]">
                     Terpilih: <strong>{convertNewBarang.part_name}</strong> (
                     {convertNewBarang.part_number})
                   </div>
@@ -2013,11 +2069,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-3 gap-x-2 items-center">
+            <div className="grid grid-cols-3 gap-x-2 items-center [&>*]:min-w-0">
               <dt className="text-sm text-muted-foreground">Company Saat Ini</dt>
               <dd className="text-sm font-semibold col-span-2">{mr?.company_code}</dd>
             </div>
-            <div className="grid grid-cols-3 gap-x-2 items-center">
+            <div className="grid grid-cols-3 gap-x-2 items-center [&>*]:min-w-0">
               <dt className="text-sm text-muted-foreground">Kode MR Saat Ini</dt>
               <dd className="text-xs font-semibold col-span-2 font-mono">{mr?.kode_mr}</dd>
             </div>

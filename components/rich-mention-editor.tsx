@@ -126,7 +126,7 @@ export const RichMentionEditor = forwardRef<
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-16 rounded-md border border-input bg-transparent px-3 py-2 text-sm leading-relaxed",
+          "min-h-16 rounded-md border border-input bg-transparent px-3 py-2 text-sm leading-relaxed [overflow-wrap:anywhere]",
           "focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "[&_p]:m-0 [&_p+p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:m-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:m-0",
           "[&_.mention]:rounded [&_.mention]:px-1 [&_.mention]:py-0.5 [&_.mention]:font-medium [&_.mention]:text-sm",
