@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -231,6 +232,10 @@ export default function NotificationsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
+  // Notifikasi yang dicentang utk aksi massal (tandai dibaca/belum dibaca).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   // Abaikan respons query lama kalau filter sudah berubah lagi.
   const requestId = useRef(0);
 
@@ -309,6 +314,21 @@ export default function NotificationsPage() {
     fetchPage(0);
   }, [fetchPage]);
 
+  // Filter berubah -> daftar diganti, seleksi lama tidak relevan lagi.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [status, category, moduleFilter, search]);
+
+  // Buang id yang sudah tidak ada di daftar (mis. setelah muat ulang).
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const ids = new Set(items.map((n) => n.id));
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
   useEffect(() => {
     fetchUnreadTotal();
   }, [fetchUnreadTotal]);
@@ -372,6 +392,57 @@ export default function NotificationsPage() {
       fetchPage(0);
       fetchUnreadTotal();
     }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = items.length > 0 && selected.size === items.length;
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(items.map((n) => n.id)));
+  };
+
+  const handleBulkRead = async (isRead: boolean) => {
+    if (!userId || selected.size === 0) return;
+    // Hanya yang statusnya memang berubah.
+    const ids = items
+      .filter((n) => selected.has(n.id) && n.is_read !== isRead)
+      .map((n) => n.id);
+    if (ids.length === 0) {
+      setSelected(new Set());
+      return;
+    }
+
+    setBulkLoading(true);
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: isRead })
+      .eq("user_id", userId)
+      .in("id", ids);
+    setBulkLoading(false);
+
+    if (error) {
+      toast.error("Gagal memproses permintaan", { description: error.message });
+      return;
+    }
+
+    const changed = new Set(ids);
+    setItems((prev) =>
+      prev.map((n) => (changed.has(n.id) ? { ...n, is_read: isRead } : n)),
+    );
+    setUnreadTotal((c) => Math.max(0, c + (isRead ? -ids.length : ids.length)));
+    setSelected(new Set());
+    toast.success(
+      `${ids.length} notifikasi ditandai ${isRead ? "sudah" : "belum"} dibaca`,
+    );
+    refreshNotifications();
+    if (isRead && status === "unread") fetchPage(0);
   };
 
   const hasActiveFilter =
@@ -566,6 +637,59 @@ export default function NotificationsPage() {
         </div>
       ) : (
         <div>
+          {/* Bar seleksi - aksi massal utk notifikasi yang dicentang */}
+          <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 py-1.5 sm:px-5">
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={toggleSelectAll}
+                aria-label="Pilih semua notifikasi yang tampil"
+              />
+              {selected.size > 0
+                ? `${selected.size} dipilih`
+                : "Pilih semua"}
+            </label>
+            {selected.size > 0 && (
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  disabled={bulkLoading}
+                  onClick={() => handleBulkRead(true)}
+                >
+                  {bulkLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MailOpen className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">Tandai dibaca</span>
+                  <span className="sm:hidden">Dibaca</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  disabled={bulkLoading}
+                  onClick={() => handleBulkRead(false)}
+                >
+                  <Mail className="h-4 w-4" />
+                  <span className="hidden sm:inline">Tandai belum dibaca</span>
+                  <span className="sm:hidden">Belum</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setSelected(new Set())}
+                  title="Batalkan pilihan"
+                  aria-label="Batalkan pilihan"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
           {groups.map((group) => (
             <section key={group.label}>
               <h2 className="sticky top-0 z-10 border-b bg-muted/80 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur sm:px-5">
@@ -576,6 +700,8 @@ export default function NotificationsPage() {
                   <NotificationRow
                     key={notif.id}
                     notif={notif}
+                    selected={selected.has(notif.id)}
+                    onSelect={() => toggleSelect(notif.id)}
                     onOpen={() => handleOpen(notif)}
                     onToggleRead={() => handleToggleRead(notif)}
                   />
@@ -630,10 +756,14 @@ function CategoryChip({
 
 function NotificationRow({
   notif,
+  selected,
+  onSelect,
   onOpen,
   onToggleRead,
 }: {
   notif: Notification;
+  selected: boolean;
+  onSelect: () => void;
   onOpen: () => void;
   onToggleRead: () => void;
 }) {
@@ -647,12 +777,21 @@ function NotificationRow({
       className={cn(
         "group relative flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:px-5",
         unread && "bg-primary/[0.04]",
+        selected && "bg-primary/10 hover:bg-primary/10",
       )}
     >
       {/* Penanda belum dibaca */}
       {unread && (
         <span className="absolute inset-y-0 left-0 w-0.5 bg-primary" />
       )}
+
+      {/* Checkbox seleksi - di atas overlay klik baris */}
+      <Checkbox
+        checked={selected}
+        onCheckedChange={onSelect}
+        aria-label={`Pilih notifikasi: ${notif.title}`}
+        className="relative z-[1] mt-2.5 shrink-0"
+      />
 
       {/* Avatar pelaku + ikon kategori. Notifikasi sistem -> ikon saja.
           z-10: di atas overlay klik tombol isi, supaya avatar bisa diklik
