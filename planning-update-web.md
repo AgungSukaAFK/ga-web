@@ -62,7 +62,7 @@ Semua query dijalankan langsung dari browser lewat supabase-js. Tidak ada API ro
 
 ## 3. Skema Database
 
-Referensi: `supabase/migrations/20260928000000_update_web_setup.sql` dan `supabase/migrations/20260928010000_update_web_v2_setup.sql`.
+Referensi: `supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_setup.sql)` dan `supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)`.
 
 Prasyarat:
 - Tabel `public.profiles(id uuid, role text, nama text, email text)` dengan `id = auth.users.id`

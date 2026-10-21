@@ -1,6 +1,6 @@
 // src/type/update-web.ts
 // Type untuk fitur "Update Web" (changelog/pengumuman aplikasi internal) -
-// lihat supabase/update-web-setup.sql & services/updateWebService.ts.
+// lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_setup.sql) & services/updateWebService.ts.
 
 import { Discussion } from "@/type";
 
@@ -48,7 +48,7 @@ export interface UpdateWebReactor {
 
 // Hasil agregasi reaction per post, dihitung di service layer (bukan view DB)
 // dari daftar UpdateWebPostReaction mentah. 1 user cuma boleh 1 emoji aktif
-// per post (lihat supabase/update-web-v2-setup.sql), jadi `reactedByMe`
+// per post (lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)), jadi `reactedByMe`
 // benar-benar unik di antara semua summary 1 post.
 export interface UpdateWebPostReactionSummary {
   emoji: string;

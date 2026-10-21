@@ -4,7 +4,7 @@
 // terpisah dari `approval_templates` milik MR/PO - lihat
 // services/pcApprovalTemplateService.ts). Hanya admin & departemen GA yang
 // bisa membuka halaman ini maupun menambah/mengubah/menghapus template
-// (lihat supabase/pc-approval-templates-access-setup.sql untuk RLS-nya).
+// (lihat supabase/migrations/0003_petty_cash_master.sql (asal: pc_approval_templates_access_setup.sql) untuk RLS-nya).
 
 "use client";
 

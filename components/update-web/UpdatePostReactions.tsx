@@ -1,7 +1,7 @@
 // src/components/update-web/UpdatePostReactions.tsx
 //
 // Baris reaction untuk 1 postingan Update Web - 1 user cuma boleh punya 1
-// emoji aktif per post (lihat supabase/update-web-v2-setup.sql), jadi klik
+// emoji aktif per post (lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)), jadi klik
 // emoji lain otomatis GANTI reaction (bukan nambah), klik emoji yang sama
 // dgn reaction sekarang = hapus. Controlled - caller (list card / detail
 // dialog) yang nyimpen state `summaries` & nanganin perubahan lewat

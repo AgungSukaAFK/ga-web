@@ -230,7 +230,7 @@ export const createMaterialRequest = async (
   // FIX BUG DUPLIKAT NOMOR: nomor urut di payload.kode_mr di titik ini
   // masih cuma PREVIEW dari generateMRCode (dihitung read-then-write, bisa
   // bentrok kalau ada user LAIN dari departemen/lokasi berbeda submit
-  // bersamaan - lihat supabase/document-number-counters-setup.sql). Nomor
+  // bersamaan - lihat supabase/migrations/0003_petty_cash_master.sql (asal: document_number_counters_setup.sql)). Nomor
   // FINAL yang benar-benar dipakai direbut atomic di sini lewat fungsi
   // next_document_number() (row lock Postgres) SEBELUM insert pertama,
   // supaya tidak pernah collide walau segmen departemen/lokasinya beda.

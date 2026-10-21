@@ -46,6 +46,8 @@ const MENU_KEYWORDS: Record<string, string[]> = {
   "/petty-cash/deklarasi": ["pc", "deklarasi", "laporan", "realisasi", "reimburse", "pertanggungjawaban", "nota", "struk"],
   "/dokumentasi": ["docs", "panduan", "bantuan", "help", "manual", "tutorial", "cara"],
   "/update-web": ["changelog", "rilis", "release", "versi", "pengumuman", "berita", "info terbaru", "whats new"],
+  "/chat-admin": ["chat", "admin", "it", "bantuan", "help", "helpdesk", "support", "tanya", "kendala", "lapor", "cs"],
+  "/chat-admin-management": ["chat", "inbox", "helpdesk", "support", "tiket", "ticket", "it", "balas"],
   "/feedback": ["saran", "kritik", "masukan", "lapor", "bug", "keluhan"],
   "/feedback-management": ["feedback", "saran", "kritik", "masukan", "laporan bug", "keluhan", "it"],
   "/tentang-app": ["about", "info", "versi", "aplikasi"],

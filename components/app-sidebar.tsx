@@ -32,6 +32,7 @@ import { setPendingNavUrl } from "@/lib/sidebar/nav-pending";
 import { AVATAR_UPDATED_EVENT } from "@/lib/avatar";
 import { useNotification } from "@/components/providers/NotificationProvider";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
+import { useSupportChatBadge } from "@/hooks/use-support-chat-badge";
 import {
   GalleryVerticalEnd,
   Bot,
@@ -65,6 +66,8 @@ import {
   FileStack,
   SearchX,
   MessagesSquare,
+  Headset,
+  Inbox,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -147,6 +150,11 @@ const data = {
       icon: Megaphone,
     },
     {
+      title: "Chat Admin",
+      url: "/chat-admin",
+      icon: Headset,
+    },
+    {
       title: "Feedback",
       url: "/feedback",
       icon: MessageSquareShare,
@@ -173,6 +181,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   // hooks/use-update-web-badge.ts (per akun, hilang setelah dibuka
   // /update-web ATAU postingannya sudah lebih dari 7 hari).
   const { isNew: hasNewUpdateWebPost } = useUpdateWebBadge(user?.id);
+  // Badge Chat Admin - lihat hooks/use-support-chat-badge.ts.
+  const supportBadge = useSupportChatBadge(user?.id);
 
   React.useEffect(() => {
     const getUser = async () => {
@@ -400,13 +410,18 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   }, [profile, markActive]);
 
   const navSecondaryItems = React.useMemo(() => {
-    const items = data.navSecondary.map((item) =>
-      item.url === "/update-web"
-        ? { ...item, badge: hasNewUpdateWebPost ? 1 : undefined }
-        : item,
-    );
+    const items = data.navSecondary
+      // Admin IT membalas dari Inbox Chat Admin, bukan chat ke dirinya sendiri.
+      .filter((item) => item.url !== "/chat-admin" || !isITAdmin(profile))
+      .map((item) => {
+        if (item.url === "/update-web")
+          return { ...item, badge: hasNewUpdateWebPost ? 1 : undefined };
+        if (item.url === "/chat-admin")
+          return { ...item, badge: supportBadge.userUnread || undefined };
+        return item;
+      });
     return markActive(items);
-  }, [markActive, hasNewUpdateWebPost]);
+  }, [markActive, hasNewUpdateWebPost, profile, supportBadge.userUnread]);
 
   const adminItems = React.useMemo(() => {
     if (profile?.role !== "admin") return [];
@@ -414,13 +429,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     // Feedback User: khusus admin departemen IT (sama dgn RLS `feedbacks`).
     if (isITAdmin(profile)) {
       items.push({
+        title: "Inbox Chat Admin",
+        url: "/chat-admin-management",
+        icon: Inbox,
+        badge: supportBadge.adminWaiting || undefined,
+      } as (typeof items)[number]);
+      items.push({
         title: "Feedback User",
         url: "/feedback-management",
         icon: MessagesSquare,
       });
     }
     return markActive(items);
-  }, [profile, markActive]);
+  }, [profile, markActive, supportBadge.adminWaiting]);
 
   const navGroups = React.useMemo(
     () => [

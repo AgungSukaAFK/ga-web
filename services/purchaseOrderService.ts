@@ -532,7 +532,7 @@ export const createPurchaseOrder = async (
   // FIX BUG DUPLIKAT NOMOR: payload.kode_po di titik ini masih cuma PREVIEW
   // dari generatePoCode (dihitung read-then-write, bisa bentrok kalau ada
   // user LAIN dari lokasi berbeda submit bersamaan - lihat
-  // supabase/document-number-counters-setup.sql). Nomor FINAL yang benar-
+  // supabase/migrations/0003_petty_cash_master.sql (asal: document_number_counters_setup.sql)). Nomor FINAL yang benar-
   // benar dipakai direbut atomic di sini lewat next_document_number() (row
   // lock Postgres) SEBELUM insert pertama, supaya tidak pernah collide walau
   // segmen lokasinya beda.
@@ -835,7 +835,7 @@ export const validatePurchaseOrder = async (
  * simetris terhadap urutan step "Receiver" vs "Payment Validator" di
  * template approval-nya (urutannya beda-beda tergantung jalur pembayaran -
  * Cash/DP&BP-setelah-lunas taruh Payment Validator duluan, Termin/DP&BP-
- * setelah-DP taruh Receiver duluan - lihat po-receive-record-setup.sql).
+ * setelah-DP taruh Receiver duluan - lihat supabase/migrations/0002_mr_po.sql (asal: po_receive_record_setup.sql)).
  * Dipanggil dari 2 sisi: begitu step Payment Validator selesai disetujui,
  * dan begitu checklist Receiver disubmit (baik lewat step approval Receiver
  * maupun tombol GA Receive manual).
@@ -944,7 +944,7 @@ export const fetchReceivedQtyByPartNumber = async (
 /**
  * Submit/edit checklist penerimaan barang (Receiver) - dipakai baik dari
  * step approval "Receiver" maupun tombol GA Receive manual (disatukan,
- * lihat po-receive-record-setup.sql). Menimpa `receive_record` PO ini
+ * lihat supabase/migrations/0002_mr_po.sql (asal: po_receive_record_setup.sql)). Menimpa `receive_record` PO ini
  * (bukan log bertumpuk - "sampai terpenuhi" berarti diedit di tempat),
  * menandai item MR "Diterima GA" kalau qty gabungan dari SEMUA PO terkait
  * (bukan cuma PO ini) udah cukup, kalau belum tetap "Processing", lalu set

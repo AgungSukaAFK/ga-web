@@ -2,8 +2,8 @@
 //
 // Sub-Voucher Petty Cash - tarikan dana PARSIAL dari sebuah Voucher yang
 // sudah full-approved (tabel `petty_cash_sub_voucher`, lihat komentar
-// PettyCashSubVoucher di type/index.ts & supabase/petty-cash-sub-voucher-setup.sql
-// + petty-cash-sub-voucher-payment-setup.sql). MENGGANTIKAN alur klaim
+// PettyCashSubVoucher di type/index.ts & supabase/migrations/0004_petty_cash.sql (asal: petty_cash_sub_voucher_setup.sql)
+// + supabase/migrations/0004_petty_cash.sql (asal: petty_cash_sub_voucher_payment_setup.sql)). MENGGANTIKAN alur klaim
 // sekali-penuh yang lama (submitVoucherClaim, "Permintaan Klaim" - sudah
 // dihapus dari services/pettyCashVoucherService.ts). UI Tarik Dana-nya
 // menyatu di halaman "Pengajuan Voucher" (PengajuanVoucherClient.tsx, tabel
@@ -151,7 +151,7 @@ export interface AdminForceEditSubVoucher {
   // Item WAJIB persis set `item_index` yang sama dgn baris yang sudah ada -
   // cuma qty/unit_price/note per baris yang boleh disesuaikan admin (lihat
   // komentar lengkap di admin_force_update_sub_voucher,
-  // supabase/petty-cash-admin-full-management-setup.sql, utk kenapa baris
+  // supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql), utk kenapa baris
   // tidak boleh ditambah/dihapus di sini).
   items: PettyCashSubVoucherItem[];
   notes: string | null;
@@ -299,7 +299,7 @@ export const createSubVoucher = async (
 /**
  * Selesaikan pembayaran Sub-Voucher (Finance/admin only, dijamin di RPC -
  * lihat mark_petty_cash_sub_voucher_paid,
- * supabase/petty-cash-sub-voucher-payment-setup.sql) - wajib sertakan bukti
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_sub_voucher_payment_setup.sql)) - wajib sertakan bukti
  * transfer, tidak bisa dipanggil dgn attachment kosong.
  */
 export const markSubVoucherPaid = async (

@@ -10,7 +10,7 @@
 //     status dokumen & status tiap approver satu-satu, dipakai utk dokumen
 //     nyangkut (mis. approver resign). Tetap lewat adminUpdate{Pengajuan,
 //     Voucher,Deklarasi} (blanket RLS admin, lihat
-//     supabase/petty-cash-admin-management-setup.sql) - TIDAK tercatat ke
+//     supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)) - TIDAK tercatat ke
 //     jejak audit baru (perilaku lama dipertahankan apa adanya).
 //  2. Ganti Kode Dokumen - lewat RPC admin_rename_petty_cash_kode. Kalau
 //     dokumen ini Voucher, kode Sub-Voucher turunannya OTOMATIS ikut
@@ -21,7 +21,7 @@
 //     + refund budget lewat admin_delete_petty_cash_document.
 //
 // Proteksi SEBENARNYA utk (2)-(4) ada di RPC SECURITY DEFINER masing-masing
-// (supabase/petty-cash-admin-full-management-setup.sql) - guard render
+// (supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - guard render
 // `isAdmin` di pemanggil cuma proteksi UI, bukan pengganti RLS/RPC.
 //
 // `key={docId}` WAJIB dipasang oleh pemanggil supaya state lokal ke-reset

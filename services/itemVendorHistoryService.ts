@@ -2,7 +2,7 @@
 //
 // "History Vendor" per item MR di halaman Buat PO - vendor mana saja yang
 // pernah dipakai membeli barang tsb (lewat RPC `get_item_vendor_history`,
-// lihat supabase/migrations/20260930030000_item_vendor_history_setup.sql).
+// lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: item_vendor_history_setup.sql)).
 //
 // Semua item 1 MR diambil dalam 1 RPC, lalu di-cache di memori (per MR +
 // per barang) selama ITEM_VENDOR_HISTORY_TTL_MS - buka ulang MR yang sama

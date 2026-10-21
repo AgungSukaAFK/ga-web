@@ -705,10 +705,10 @@ Walaupun schema lengkap tabel tidak seluruhnya dibaca, dari type dan service dap
 
 ### 12.1 SQL setup yang tersedia
 Folder `supabase/` berisi:
-- `cost-center-active-status-setup.sql`
-- `ga-stock-setup.sql`
-- `notifications-setup.sql`
-- `user-active-status-setup.sql`
+- `supabase/migrations/0002_mr_po.sql (asal: cost_center_active_status_setup.sql)`
+- `supabase/migrations/0002_mr_po.sql (asal: ga_stock_setup.sql)`
+- `supabase/migrations/0002_mr_po.sql (asal: notifications_setup.sql)`
+- `supabase/migrations/0002_mr_po.sql (asal: user_active_status_setup.sql)`
 
 Artinya sebagian fitur dikembangkan melalui script SQL terpisah, misalnya:
 - aktivasi/nonaktivasi cost center

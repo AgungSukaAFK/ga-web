@@ -3,7 +3,7 @@
 // Katalog barang KHUSUS Petty Cash (tabel `petty_cash_barang`, terpisah dari
 // `barang` utama). created_by/updated_by/created_at/updated_at di-set
 // otomatis oleh trigger DB dari auth.uid() (lihat
-// supabase/petty-cash-barang-setup.sql) - JANGAN dikirim dari sini, RLS juga
+// supabase/migrations/0003_petty_cash_master.sql (asal: petty_cash_barang_setup.sql)) - JANGAN dikirim dari sini, RLS juga
 // yang membatasi insert/update/delete cuma admin & departemen GA (lihat
 // isGADepartment di lib/constants/departments.ts).
 

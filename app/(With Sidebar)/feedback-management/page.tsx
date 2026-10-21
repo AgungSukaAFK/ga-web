@@ -2,7 +2,7 @@
 //
 // Daftar feedback yang dikirim user lewat /feedback - khusus admin departemen
 // IT (isITAdmin). Akses data juga dijaga RLS tabel `feedbacks` (lihat
-// supabase/feedback-setup.sql), jadi guard di sini cuma untuk tampilan.
+// supabase/migrations/0006_feedback.sql), jadi guard di sini cuma untuk tampilan.
 
 "use client";
 

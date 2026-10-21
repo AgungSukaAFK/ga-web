@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import {
   Loader2,
   Building2,
-  Headset,
   LockKeyhole,
   LogIn,
   UserRound,
@@ -19,6 +18,7 @@ import {
 import { signInWithEmailOrNrp } from "@/services/userService";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { AuthInput } from "@/components/auth/auth-input";
+import { AskDeptHeadNote } from "@/components/auth/chat-admin-info-dialog";
 import { getSafeNextPath } from "@/lib/safe-next-path";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -41,7 +41,7 @@ export default function LoginPage() {
     const reason = new URLSearchParams(window.location.search).get("reason");
     if (reason === "deactivated") {
       const message =
-        "Akun Anda telah dinonaktifkan. Silakan hubungi administrator.";
+        "Akun Anda telah dinonaktifkan. Silakan minta bantuan ke Department Head Anda.";
       setError(message);
       toast.error("Akses Ditolak", { description: message });
     }
@@ -158,21 +158,7 @@ export default function LoginPage() {
               ini.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-start gap-3 rounded-md border p-3">
-              <Headset className="h-5 w-5 flex-shrink-0 text-primary mt-0.5" />
-              <p>
-                Silakan hubungi pihak <strong>IT</strong> atau{" "}
-                <strong>Admin General Affair (GA)</strong> di{" "}
-                <strong>Head Office PT. Garuda Mart Indonesia</strong> untuk
-                dibantu proses reset password akun Anda.
-              </p>
-            </div>
-            <p className="text-muted-foreground">
-              Siapkan Nama, Email/NRP yang terdaftar, dan Departemen Anda saat
-              menghubungi, agar proses verifikasi lebih cepat.
-            </p>
-          </div>
+          <AskDeptHeadNote />
           <DialogFooter>
             <Button onClick={() => setIsForgotPasswordOpen(false)}>
               Mengerti

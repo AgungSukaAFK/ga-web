@@ -7,7 +7,7 @@
 // boleh mengganggu notifikasi in-app yang sudah tersimpan.
 //
 // Subscription per device diambil dari tabel `push_subscriptions` (lihat
-// supabase/push-notifications-setup.sql) - kalau push service bilang
+// supabase/migrations/0003_petty_cash_master.sql (asal: push_notifications_setup.sql)) - kalau push service bilang
 // endpoint sudah tidak valid lagi (404/410, mis. user uninstall/clear data),
 // baris subscription itu langsung dihapus supaya tidak terus dicoba.
 

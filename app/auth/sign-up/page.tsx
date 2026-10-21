@@ -61,8 +61,9 @@ export default function SignupPage() {
             <CheckCircle2 className="size-7" />
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Akun Anda telah dibuat. Silakan hubungi admin untuk mendapatkan NRP
-            dan aktivasi akun agar dapat mengakses sistem.
+            Akun Anda telah dibuat. Silakan minta bantuan ke Department Head
+            Anda untuk pemberian NRP dan aktivasi akun oleh Departemen IT agar
+            dapat mengakses sistem.
           </p>
           <Button asChild className="h-11 w-full">
             <Link href="/auth/login">Kembali ke Halaman Login</Link>

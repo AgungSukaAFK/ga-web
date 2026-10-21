@@ -4,7 +4,7 @@
 // bareng oleh badge merah di components/app-sidebar.tsx (item "Update Web")
 // dan widget kecil di Dashboard. Baru = post terbaru dibuat dalam 7 hari
 // terakhir DAN id-nya lebih besar dari `last_seen_post_id` user (tabel
-// update_web_seen, per akun - lihat supabase/update-web-v2-setup.sql, BUKAN
+// update_web_seen, per akun - lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql), BUKAN
 // localStorage per-device seperti preferensi sidebar di
 // lib/sidebar/menu-visibility.ts, supaya konsisten walau ganti perangkat).
 

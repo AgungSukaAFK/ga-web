@@ -15,8 +15,8 @@
 // dokumen sampah.
 //
 // Proteksi di level RLS/RPC ada di
-// supabase/petty-cash-admin-management-setup.sql (override status) &
-// supabase/petty-cash-admin-full-management-setup.sql (ganti kode/edit
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql) (override status) &
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql) (ganti kode/edit
 // paksa/hapus berantai) - guard di komponen ini cuma proteksi UI, bukan
 // pengganti itu. `isAdmin` di-cek sendiri di sini (bukan prop dari page.tsx)
 // - sama pola dgn ApprovalPettyCashClient.tsx & halaman detail lainnya.

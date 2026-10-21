@@ -458,7 +458,7 @@ export interface Barang {
 // Katalog barang KHUSUS Petty Cash - tabel `petty_cash_barang`, terpisah total
 // dari `barang` (katalog MR/PO utama, lihat interface Barang di atas). Hanya
 // admin/departemen GA yang boleh menambah/ubah/hapus (lihat
-// supabase/petty-cash-barang-setup.sql & isGADepartment).
+// supabase/migrations/0003_petty_cash_master.sql (asal: petty_cash_barang_setup.sql) & isGADepartment).
 export interface PettyCashBarang {
   id: number;
   part_number: string | null;
@@ -694,7 +694,8 @@ export type NotificationType =
   | "pc_fully_approved"
   | "pc_rejected"
   | "mr_followup_requested"
-  | "po_followup_requested";
+  | "po_followup_requested"
+  | "support_message";
 export interface Notification {
   id: string;
   created_at: string;
@@ -740,7 +741,7 @@ export type MrItemStatus =
 // ==========================================
 
 // Rekening bank tersimpan milik user (privat, lihat
-// supabase/petty-cash-reimbursement-bank-account-setup.sql) - dikelola dari
+// supabase/migrations/0003_petty_cash_master.sql (asal: petty_cash_reimbursement_bank_account_setup.sql)) - dikelola dari
 // halaman Profile, dipilih (atau quick-add) saat membuat pengajuan Petty
 // Cash tipe "Reimbursement".
 export interface BankAccount {
@@ -789,13 +790,13 @@ export interface PettyCashPengajuanItem {
 }
 
 // "Template Pengajuan" Petty Cash - daftar barang siap pakai PER-USER (lihat
-// supabase/petty-cash-pengajuan-template-setup.sql) untuk kebutuhan yang
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_pengajuan_template_setup.sql)) untuk kebutuhan yang
 // bisa diprediksi & relatif konstan, dipakai lewat ?template=<id> di
 // InputPengajuanClient.tsx. `coa` tiap item di sini SELALU null/diabaikan -
 // diresolusi ulang ke COA yang berlaku SAAT template diterapkan (bukan
 // dibekukan dari saat dibuat).
 // "Template MR" - katalog bersama barang MR rutin yang disediakan GA
-// (tabel `mr_templates`, lihat supabase/migrations/20260930000000_mr_template_setup.sql).
+// (tabel `mr_templates`, lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: mr_template_setup.sql)).
 export interface MrTemplate {
   id: number;
   nama_template: string;
@@ -1085,7 +1086,7 @@ export interface PettyCashBudgetHistory {
   budget_id: number;
   // "refund" = admin menghapus Sub-Voucher/Voucher/Pengajuan (cascading
   // delete, lihat admin_delete_petty_cash_document,
-  // supabase/petty-cash-admin-full-management-setup.sql) - dana yang sudah
+  // supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - dana yang sudah
   // ditarik dikembalikan ke current_budget, simetris kebalikan dari
   // "deduction". "adjustment" juga dipakai selisih nominal dari
   // admin_force_update_sub_voucher (edit paksa qty/harga admin), bukan cuma
@@ -1114,7 +1115,7 @@ export interface PettyCashBudgetHistory {
 // - lihat createDeklarasiFromSubVoucher,
 // services/pettyCashDeklarasiService.ts. Satu Sub-Voucher cuma boleh dipakai
 // untuk SATU Deklarasi (unique sub_voucher_id di DB, lihat
-// supabase/petty-cash-deklarasi-sub-voucher-setup.sql).
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_deklarasi_sub_voucher_setup.sql)).
 //
 // BEDA dari Voucher (snapshot APA ADANYA dari Pengajuan): item Deklarasi
 // disalin dari Voucher asalnya TAPI qty/unit_price/note per baris BOLEH
@@ -1196,7 +1197,7 @@ export interface PettyCashPengajuanWithChain extends PettyCashPengajuan {
 
 // ==========================================
 // ADMIN MANAGEMENT PETTY CASH (dari A-Z) - lihat
-// supabase/petty-cash-admin-full-management-setup.sql &
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql) &
 // services/pettyCashAdminService.ts. Tiga kemampuan admin-only di atas
 // override status/approvals yang sudah ada (adminUpdatePengajuan dkk.):
 // hapus berantai (dgn refund budget otomatis), ganti kode berantai (kode
@@ -1220,7 +1221,7 @@ export interface PettyCashAdminAuditLog {
   kode: string | null;
   reason: string;
   // Bentuk isinya beda-beda per action - lihat komentar di
-  // supabase/petty-cash-admin-full-management-setup.sql (mis. untuk
+  // supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql) (mis. untuk
   // "delete" berisi daftar Sub-Voucher/Deklarasi yang ikut terhapus &
   // total_refunded, untuk "rename_kode" berisi kode_lama/kode_baru/
   // cascaded_sub_voucher_count).
@@ -1231,7 +1232,7 @@ export interface PettyCashAdminAuditLog {
   admin_profile?: { nama: string } | null;
 }
 
-// Feedback user (tabel `feedbacks`, lihat supabase/feedback-setup.sql) -
+// Feedback user (tabel `feedbacks`, lihat supabase/migrations/0006_feedback.sql) -
 // dikirim dari /feedback, dikelola admin IT di /feedback-management.
 export type FeedbackStatus = "baru" | "diproses" | "selesai";
 
@@ -1251,4 +1252,43 @@ export interface Feedback {
   handled_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Chat Admin (tabel `support_tickets` & `support_messages`, lihat
+// supabase/migrations/0007_chat_admin.sql) - user di /chat-admin, admin IT di
+// /chat-admin-management.
+export type SupportTicketStatus = "menunggu" | "dibalas" | "selesai";
+
+export interface SupportTicket {
+  id: number;
+  user_id: string;
+  user_nama: string | null;
+  user_email: string | null;
+  user_department: string | null;
+  kategori: string;
+  subjek: string;
+  status: SupportTicketStatus;
+  assigned_to: string | null;
+  last_message_at: string;
+  last_message_preview: string | null;
+  last_sender_is_admin: boolean;
+  user_last_read_at: string;
+  admin_last_read_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportMessage {
+  id: number;
+  ticket_id: number;
+  sender_id: string | null;
+  sender_nama: string | null;
+  is_admin: boolean;
+  is_system: boolean;
+  pesan: string;
+  lampiran_url: string | null;
+  lampiran_nama: string | null;
+  lampiran_tipe: string | null;
+  created_at: string;
 }

@@ -17,7 +17,7 @@
 //
 // SEMUA lewat RPC SECURITY DEFINER (admin_delete_petty_cash_document /
 // admin_rename_petty_cash_kode, lihat
-// supabase/petty-cash-admin-full-management-setup.sql) - bukan delete/update
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - bukan delete/update
 // langsung dari client - supaya konsistensi & refund budget SELALU atomic
 // & tidak bisa "lupa" diurus dari sisi client. Tiap aksi WAJIB alasan
 // (`reason`), tercatat permanen ke `petty_cash_admin_audit_log`.

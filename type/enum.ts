@@ -487,7 +487,7 @@ export const PC_PENGAJUAN_STATUS_COLOR_DEFAULT =
 // PettyCashSubVoucher, type/index.ts) - tidak ada lagi status "Permintaan
 // Klaim" terpisah (alur klaim sekali-penuh yang lama sudah diganti tarikan
 // parsial). "Selesai" TIDAK PERNAH diset dari app code - trigger DB
-// (petty-cash-voucher-deklarasi-complete-setup.sql) yang otomatis menaikkan
+// (supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_deklarasi_complete_setup.sql)) yang otomatis menaikkan
 // Voucher ke "Selesai" begitu SEMUA sub-voucher-nya sudah dideklarasikan &
 // disetujui DAN totalnya menutup total_amount Voucher.
 export const PC_VOUCHER_STATUS_OPTIONS = [

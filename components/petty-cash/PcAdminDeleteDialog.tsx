@@ -5,7 +5,7 @@
 // PcAdminSubVoucherPanel) MAUPUN tombol hapus cepat di tabel Management
 // Petty Cash (PettyCashManagementClient.tsx). Proteksi SEBENARNYA ada di RPC
 // `admin_delete_petty_cash_document` (lihat
-// supabase/petty-cash-admin-full-management-setup.sql) - dialog ini cuma
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - dialog ini cuma
 // mengumpulkan alasan & mencegah klik tidak sengaja (wajib ketik ulang kode
 // dokumennya persis, sama pola "type to confirm" yang umum dipakai utk aksi
 // destruktif tidak bisa di-undo).

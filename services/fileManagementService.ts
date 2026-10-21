@@ -104,7 +104,7 @@ async function fetchStorageStats(
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) {
-      // RPC belum di-setup (lihat supabase/file-management-storage-stats-rpc.sql)
+      // RPC belum di-setup (lihat supabase/migrations/0002_mr_po.sql (asal: file_management_storage_stats_rpc.sql))
       // atau bucket tidak ditemukan - jangan gagalkan seluruh snapshot, cukup
       // tampilkan tanpa size/tanggal asli (fallback ke tanggal dokumen).
       console.error(

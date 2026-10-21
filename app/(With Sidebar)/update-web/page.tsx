@@ -4,7 +4,7 @@
 // user login bisa lihat daftar & buka detail (modal besar), komentar, & kasih
 // reaction (+ konfetti emoji, lib/emoji-confetti.ts). Admin (profile.role ===
 // "admin") dapat tombol "Buat Update" (/update-web/buat) + aksi Edit
-// (/update-web/edit/[id]) / Hapus di dalam modal detail. Lihat supabase/update-web-setup.sql
+// (/update-web/edit/[id]) / Hapus di dalam modal detail. Lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_setup.sql)
 // untuk skema & RLS, services/updateWebService.ts untuk semua query.
 
 "use client";
@@ -129,7 +129,7 @@ export default function UpdateWebPage() {
   }, [loading, posts]);
 
   // 1 user cuma boleh 1 reaction aktif per post (lihat
-  // supabase/update-web-v2-setup.sql) - klik emoji yang sama dgn reaction
+  // supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)) - klik emoji yang sama dgn reaction
   // sekarang = hapus, klik emoji lain = ganti (bukan nambah).
   const handleSetReaction = async (
     postId: number,

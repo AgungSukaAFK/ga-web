@@ -35,8 +35,8 @@ export default function PendingApprovalPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Silakan hubungi admin departemen Anda atau administrator sistem
-            untuk aktivasi akun.
+            Silakan minta bantuan ke Department Head Anda. Department Head
+            yang akan meneruskan permintaan aktivasi akun ke Departemen IT.
           </p>
           <Button onClick={handleLogout} variant="outline">
             Logout

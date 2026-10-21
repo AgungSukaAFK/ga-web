@@ -1,10 +1,10 @@
 // src/services/updateWebService.ts
 //
 // Service untuk fitur "Update Web" (changelog/pengumuman aplikasi internal) -
-// lihat supabase/update-web-setup.sql & update-web-v2-setup.sql. Create pakai
+// lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_setup.sql) & supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql). Create pakai
 // RPC (hitung versi atomic, lihat komentar create_update_web_post), edit/hapus
 // pakai .update()/.delete() langsung (dilindungi RLS admin only). Reaction
-// (1 emoji aktif per user per post, lihat update-web-v2-setup.sql) pakai
+// (1 emoji aktif per user per post, lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)) pakai
 // delete-lalu-insert langsung (dilindungi RLS user_id = auth.uid()). Komentar
 // pakai RPC yang sama persis polanya dengan services/pcDiscussionService.ts.
 
@@ -47,7 +47,7 @@ export const fetchUpdateWebPostById = async (
 // profil buat tooltip "siapa aja yang kasih reaction"), lalu diagregasi di JS
 // jadi ringkasan per emoji per post - lebih simpel daripada bikin view/RPC
 // agregasi baru, dan volume reaction internal app ini kecil. 1 user cuma
-// mungkin muncul di TEPAT SATU emoji per post (lihat update-web-v2-setup.sql).
+// mungkin muncul di TEPAT SATU emoji per post (lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)).
 export const fetchUpdateWebPostReactions = async (
   postIds: number[],
   currentUserId?: string | null,
@@ -211,7 +211,7 @@ export const addUpdateWebPostDiscussion = async (
     p_mentions: payload.mentions ?? [],
     p_attachment: payload.attachment ?? null,
     // Cuma dikirim kalau memang membalas - komentar biasa tetap jalan walau
-    // migration discussion_reply_setup.sql belum diterapkan.
+    // migration supabase/migrations/0005_fitur_lanjutan.sql (asal: discussion_reply_setup.sql) belum diterapkan.
     ...(payload.reply_to ? { p_reply_to: payload.reply_to } : {}),
   });
   if (error) throw error;
@@ -220,7 +220,7 @@ export const addUpdateWebPostDiscussion = async (
 // Set reaction milik user sendiri utk 1 post - `emoji` null berarti hapus
 // reaction (tidak suka lagi). Selalu hapus dulu baris lama (kalau ada) baru
 // insert yang baru - 1 user CUMA BOLEH punya 1 reaction aktif per post (lihat
-// unique constraint (post_id,user_id) di update-web-v2-setup.sql), jadi
+// unique constraint (post_id,user_id) di supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)), jadi
 // ganti emoji = ganti baris, bukan nambah baris baru.
 export const setUpdateWebPostReaction = async (
   postId: number,

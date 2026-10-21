@@ -38,12 +38,14 @@ export type NotificationEventType =
   | "pc_rejected"
   | "mr_followup_requested"
   | "po_followup_requested"
+  | "support_message"
   | "info";
 
 export type NotificationResourceType =
   | "material_request"
   | "purchase_order"
-  | "petty_cash";
+  | "petty_cash"
+  | "support_ticket";
 
 export interface NotificationPayload {
   /** UUID of the user who should RECEIVE this notification */
@@ -68,7 +70,7 @@ export interface NotificationPayload {
 // The RPC also forces `actor_id = auth.uid()`, so `actorId` in the payload is
 // only kept for type-compatibility and is ignored server-side.
 //
-// See: supabase/notifications-setup.sql
+// See: supabase/migrations/0002_mr_po.sql (asal: notifications_setup.sql)
 
 /** Shape of a single row passed to the create_notifications RPC. */
 type NotificationRow = {

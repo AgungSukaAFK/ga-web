@@ -11,7 +11,7 @@
 // Diekstrak dari idiom yang sudah dipakai duluan di
 // app/(With Sidebar)/petty-cash/[id]/page.tsx (myApprovalIndex/isMyTurn) -
 // RLS UPDATE policy tabel-tabel ini (lihat
-// supabase/petty-cash-pengajuan-approval-setup.sql) cuma menjamin "kamu ADA
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_pengajuan_approval_setup.sql)) cuma menjamin "kamu ADA
 // di approvals dengan status pending", BUKAN "sekarang giliran kamu" (semua
 // approver mulai pending) - jadi urutan tetap wajib dicek di app lewat fungsi
 // di sini sebelum mengizinkan approve/reject.

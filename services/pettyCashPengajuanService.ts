@@ -3,7 +3,7 @@
 // "Input Pengajuan" Petty Cash - alur berbasis item (tabel
 // `petty_cash_pengajuan`). created_by/updated_by/created_at/updated_at
 // di-set otomatis oleh trigger DB dari auth.uid() (lihat
-// supabase/petty-cash-pengajuan-setup.sql).
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_pengajuan_setup.sql)).
 
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -359,7 +359,7 @@ export const fetchMyPengajuanWithChain = async (
 /**
  * Semua Pengajuan lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_pengajuan_update_admin di
- * supabase/petty-cash-admin-management-setup.sql). Beda dari fetchMyPengajuan
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)). Beda dari fetchMyPengajuan
  * yang difilter `user_id`.
  */
 export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
@@ -413,7 +413,7 @@ export interface AdminForceEditPengajuan {
  * fungsi ini BISA dipanggil di status apa pun (tidak perlu giliran
  * approval) & bisa mengubah company_code/department/budget_id sekaligus -
  * dijamin admin only di dalam RPC (admin_force_update_pengajuan, lihat
- * supabase/petty-cash-admin-full-management-setup.sql), bukan cuma di
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)), bukan cuma di
  * client. total_amount SELALU dihitung ulang dari `items` di server (bukan
  * dipercaya dari sini). Tidak menyentuh status/approvals/revisions - itu
  * tetap lewat adminUpdatePengajuan/panel override yang sudah ada.

@@ -22,7 +22,7 @@ import { MR_ITEM_STATUSES } from "@/type/enum";
 const GOODS_RECEIPT_CODE_KEY = "goods_receipt_global_code";
 
 // UUID service account "Publik (Scan QR)" - lihat
-// supabase/goods-receipt-setup.sql. Dipakai sebagai actor/user_id di
+// supabase/migrations/0002_mr_po.sql (asal: goods_receipt_setup.sql). Dipakai sebagai actor/user_id di
 // activity_logs & bast_attachments.updated_by kalau konfirmasi datang dari
 // scan QR TANPA login (kode global doang) - FK ke auth.users tetap harus
 // terisi valid, nama penerima sesungguhnya selalu di goods_receipt.receiver_name.
@@ -36,7 +36,7 @@ async function getPublicScanUserId(
     .single();
   if (error || !data) {
     throw new Error(
-      "Service account 'Publik (Scan QR)' belum di-setup - jalankan supabase/goods-receipt-setup.sql.",
+      "Service account 'Publik (Scan QR)' belum di-setup - jalankan supabase/migrations/0002_mr_po.sql (asal: goods_receipt_setup.sql).",
     );
   }
   return data.id;

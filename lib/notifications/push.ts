@@ -11,7 +11,7 @@
  *
  * Alur singkat: register SW -> minta izin Notification -> pushManager.
  * subscribe() pakai VAPID public key -> simpan subscription (endpoint+keys)
- * ke tabel `push_subscriptions` (lihat supabase/push-notifications-setup.sql).
+ * ke tabel `push_subscriptions` (lihat supabase/migrations/0003_petty_cash_master.sql (asal: push_notifications_setup.sql)).
  * Pengiriman aktualnya di server (app/api/push/send/route.ts) - VAPID
  * PRIVATE key tidak boleh pernah ada di browser.
  */

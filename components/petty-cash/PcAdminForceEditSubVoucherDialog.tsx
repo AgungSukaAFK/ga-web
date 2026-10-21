@@ -10,7 +10,7 @@
 // satuan tiap baris yang SUDAH ada (mis. requester salah ketik qty saat
 // tarik dana). Selisih nominalnya otomatis direkonsiliasi ke Budget oleh RPC
 // `admin_force_update_sub_voucher` (lihat
-// supabase/petty-cash-admin-full-management-setup.sql) - dialog ini cuma
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - dialog ini cuma
 // mengumpulkan nilai baru.
 //
 // Sub-Voucher tidak punya jalur approval sendiri (lihat komentar

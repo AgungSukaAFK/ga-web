@@ -6,14 +6,14 @@
 // persis dari satu Pengajuan berstatus "Approved" (item/qty/harga/catatan/
 // lampiran di-copy apa adanya, requester tidak bisa mengubahnya di sini) -
 // satu Pengajuan cuma boleh dipakai untuk SATU Voucher (unique pengajuan_id
-// di DB, lihat supabase/petty-cash-voucher-setup.sql).
+// di DB, lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_setup.sql)).
 //
 // Jalur approval Voucher TERPISAH dari jalur approval Pengajuan-nya -
 // diambil dari Template Approval ber-approval_type "Approval Voucher" (lihat
 // resolvePcAutoTemplate, services/pcApprovalTemplateService.ts).
 //
 // created_by/updated_by/created_at/updated_at di-set otomatis oleh trigger DB
-// dari auth.uid() (lihat supabase/petty-cash-voucher-setup.sql).
+// dari auth.uid() (lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_setup.sql)).
 
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -180,7 +180,7 @@ export const fetchMyVouchers = async (
 /**
  * Semua Voucher lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_voucher_update_admin di
- * supabase/petty-cash-admin-management-setup.sql).
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)).
  */
 export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
   const { data, error } = await supabase
@@ -230,7 +230,7 @@ export interface AdminForceEditVoucher {
  * "Edit Paksa" (admin only) - sama pola dengan adminForceUpdatePengajuan
  * (services/pettyCashPengajuanService.ts), lihat komentar di sana. Dijamin
  * admin only di dalam RPC (admin_force_update_voucher, lihat
- * supabase/petty-cash-admin-full-management-setup.sql).
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)).
  */
 export const adminForceUpdateVoucher = async (
   id: number,

@@ -17,7 +17,7 @@ export const isGADepartment = (department?: string | null): boolean =>
 /**
  * True jika user adalah admin departemen IT - satu-satunya yang boleh melihat
  * & mengelola feedback user (/feedback-management). Harus sama dengan
- * `public.is_it_admin()` di supabase/feedback-setup.sql.
+ * `public.is_it_admin()` di supabase/migrations/0006_feedback.sql.
  */
 export const isITAdmin = (
   profile?: { role?: string | null; department?: string | null } | null,

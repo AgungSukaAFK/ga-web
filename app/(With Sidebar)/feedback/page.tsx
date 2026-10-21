@@ -171,7 +171,7 @@ export default function FeedbackPage() {
       }
 
       // Disimpan ke tabel `feedbacks`, dibaca admin IT di /feedback-management
-      // (lihat supabase/feedback-setup.sql).
+      // (lihat supabase/migrations/0006_feedback.sql).
       const supabase = createClient();
       const { error } = await supabase.from("feedbacks").insert({
         user_id: currentUser.id,

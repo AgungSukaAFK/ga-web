@@ -62,8 +62,8 @@ const CATEGORIES: Record<
   }
 > = {
   mention: {
-    label: "Mention & Balasan",
-    types: ["mention", "reply"],
+    label: "Mention, Balasan & Chat",
+    types: ["mention", "reply", "support_message"],
     icon: MessageSquare,
     badge: "bg-orange-500",
   },

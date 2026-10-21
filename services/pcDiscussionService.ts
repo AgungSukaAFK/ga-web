@@ -1,9 +1,9 @@
 // src/services/pcDiscussionService.ts
 //
 // "Kirim pesan diskusi" untuk 3 dokumen Petty Cash (Pengajuan/Voucher/
-// Deklarasi) - lewat RPC (supabase/petty-cash-discussion-rpc-setup.sql +
-// petty-cash-discussion-rich-content-setup.sql +
-// petty-cash-discussion-attachment-setup.sql), BUKAN .update() langsung ke
+// Deklarasi) - lewat RPC (supabase/migrations/0004_petty_cash.sql (asal: petty_cash_discussion_rpc_setup.sql) +
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_discussion_rich_content_setup.sql) +
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_discussion_attachment_setup.sql)), BUKAN .update() langsung ke
 // kolom `discussions`, karena siapa pun yang login boleh ikut diskusi (bukan
 // cuma pemilik/approver yang gilirannya pending) - lihat komentar SECURITY
 // DEFINER di file SQL itu untuk kenapa harus lewat RPC yang dibatasi ketat,

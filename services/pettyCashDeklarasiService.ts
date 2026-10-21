@@ -8,14 +8,14 @@
 // BOLEH disesuaikan ke pemakaian riil (beda dari createVoucherFromPengajuan
 // yang snapshot apa adanya) - satu Sub-Voucher cuma boleh dipakai untuk SATU
 // Deklarasi (unique sub_voucher_id di DB, lihat
-// supabase/petty-cash-deklarasi-sub-voucher-setup.sql).
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_deklarasi_sub_voucher_setup.sql)).
 //
 // Jalur approval Deklarasi TERPISAH dari jalur approval Voucher-nya -
 // diambil dari Template Approval ber-approval_type "Approval Deklarasi"
 // (lihat resolvePcAutoTemplate, services/pcApprovalTemplateService.ts).
 //
 // created_by/updated_by/created_at/updated_at di-set otomatis oleh trigger DB
-// dari auth.uid() (lihat supabase/petty-cash-deklarasi-setup.sql).
+// dari auth.uid() (lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_deklarasi_setup.sql)).
 
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -170,7 +170,7 @@ export const fetchDeklarasiById = async (
 /**
  * Semua Deklarasi lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_deklarasi_update_admin di
- * supabase/petty-cash-admin-management-setup.sql).
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)).
  */
 export const fetchAllDeklarasi = async (): Promise<PettyCashDeklarasi[]> => {
   const { data, error } = await supabase
@@ -220,7 +220,7 @@ export interface AdminForceEditDeklarasi {
  * site tetap ikut nilai yang disalin dari Voucher asalnya, sengaja tidak
  * diedit lewat sini juga (konsisten dgn EditDeklarasiEdits di atas). Dijamin
  * admin only di dalam RPC (admin_force_update_deklarasi, lihat
- * supabase/petty-cash-admin-full-management-setup.sql).
+ * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)).
  */
 export const adminForceUpdateDeklarasi = async (
   id: number,
@@ -266,7 +266,7 @@ export interface CreateDeklarasiPayload {
  * file ini). Jalur approval-nya diambil dari Template Approval
  * ber-approval_type "Approval Deklarasi" untuk departemen yang sama. Begitu
  * Deklarasi ini disetujui, trigger DB
- * (petty-cash-voucher-deklarasi-complete-setup.sql) yang cek apakah SEMUA
+ * (supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_deklarasi_complete_setup.sql)) yang cek apakah SEMUA
  * sub-voucher Voucher induknya sudah tuntas dideklarasikan.
  */
 export const createDeklarasiFromSubVoucher = async (

@@ -66,9 +66,9 @@ ke storage memakai token (lib/uploadDirect.ts).
 ## 3. Database (migration gabungan, siap pakai)
 
 Di `ga-web` skemanya tersebar di 3 migration:
-- `supabase/migrations/20260928000000_update_web_setup.sql` (v1)
-- `supabase/migrations/20260928010000_update_web_v2_setup.sql` (reaction 1 per user + tabel seen)
-- `supabase/migrations/20260930020000_discussion_reply_setup.sql` (balas komentar)
+- `supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_setup.sql)` (v1)
+- `supabase/migrations/0005_fitur_lanjutan.sql (asal: update_web_v2_setup.sql)` (reaction 1 per user + tabel seen)
+- `supabase/migrations/0005_fitur_lanjutan.sql (asal: discussion_reply_setup.sql)` (balas komentar)
 
 Untuk project baru, **langsung pakai versi gabungan di bawah**.
 

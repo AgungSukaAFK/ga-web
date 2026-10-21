@@ -1,7 +1,7 @@
 // src/services/mrTemplateService.ts
 //
 // "Template MR" - katalog BERSAMA barang MR rutin (tabel `mr_templates`,
-// lihat supabase/migrations/20260930000000_mr_template_setup.sql). Dikelola
+// lihat supabase/migrations/0005_fitur_lanjutan.sql (asal: mr_template_setup.sql)). Dikelola
 // GA level approver / admin (RLS), dibaca semua user login - requester
 // tinggal terapkan di halaman Buat MR supaya tidak input barang manual.
 
@@ -172,7 +172,7 @@ export const MR_HISTORY_SEARCH_LIMIT = 5;
  * Cari MR lama dari departemen yang sama untuk dipakai ulang sebagai
  * template di Buat MR - cocok ke kode MR, teks remarks, nama barang, atau
  * part number. Lewat RPC `search_mr_history` (lihat
- * supabase/migrations/20260930010000_mr_history_search_setup.sql) karena
+ * supabase/migrations/0005_fitur_lanjutan.sql (asal: mr_history_search_setup.sql)) karena
  * perlu cari di dalam kolom json `orders`. Dibatasi MR_HISTORY_SEARCH_LIMIT
  * hasil supaya hemat query. `companyCode` null = tanpa filter perusahaan
  * (user LOURDES).

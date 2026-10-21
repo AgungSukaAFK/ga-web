@@ -9,7 +9,7 @@
 //     & fetchPcTemplateById JANGAN diubah shape return-nya, dipakai di sana.
 //
 // created_by/updated_by/created_at/updated_at di-set otomatis oleh trigger DB
-// dari auth.uid() (lihat supabase/pc-approval-templates-access-setup.sql) -
+// dari auth.uid() (lihat supabase/migrations/0003_petty_cash_master.sql (asal: pc_approval_templates_access_setup.sql)) -
 // jangan dikirim dari sini. RLS yang membatasi insert/update/delete cuma
 // admin & departemen GA; select juga terbuka untuk Finance (dipakai alur
 // validasi di atas).

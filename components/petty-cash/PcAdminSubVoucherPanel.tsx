@@ -20,7 +20,7 @@
 //     relevan (lihat admin_delete_petty_cash_document).
 //
 // Proteksi SEBENARNYA ada di RPC SECURITY DEFINER masing-masing (lihat
-// supabase/petty-cash-admin-full-management-setup.sql) - guard render
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql)) - guard render
 // `isAdmin` di pemanggil cuma proteksi UI.
 //
 // `key={docId}` WAJIB dipasang oleh pemanggil, sama seperti

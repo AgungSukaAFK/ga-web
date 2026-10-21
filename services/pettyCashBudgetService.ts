@@ -1,8 +1,8 @@
 // src/services/pettyCashBudgetService.ts
 //
 // "Budgeting" Petty Cash (GA/Admin only, tabel `petty_cash_budget` +
-// `petty_cash_budget_history`, lihat supabase/petty-cash-budget-setup.sql &
-// petty-cash-budget-site-setup.sql & petty-cash-budget-company-setup.sql) -
+// `petty_cash_budget_history`, lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_budget_setup.sql) &
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_budget_site_setup.sql) & supabase/migrations/0004_petty_cash.sql (asal: petty_cash_budget_company_setup.sql)) -
 // pool budget PER DEPARTEMEN + SITE + COMPANY, AUTO-terisi ke Pengajuan
 // baru sesuai departemen & site & company requester (resolveAutoBudget,
 // mirip resolvePcAutoTemplate di services/pcApprovalTemplateService.ts -

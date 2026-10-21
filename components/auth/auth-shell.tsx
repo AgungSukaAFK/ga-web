@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { toast } from "sonner";
 import { Headset } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";
 import { FontSwitcher } from "@/components/font-switcher";
 import { cn } from "@/lib/utils";
+import { ChatAdminInfoDialog } from "@/components/auth/chat-admin-info-dialog";
 
 // Foto latar halaman auth (public/slide*.webp). kbFrom/kbTo = arah geser
 // efek Ken Burns (dipakai di keyframe auth-kenburns di globals.css), dibuat
@@ -181,6 +181,7 @@ export function AuthShell({
   children: React.ReactNode;
 }) {
   const year = new Date().getFullYear();
+  const [chatInfoOpen, setChatInfoOpen] = useState(false);
 
   return (
     <div className="relative min-h-svh w-full lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -192,15 +193,12 @@ export function AuthShell({
       <main className="relative z-10 flex min-h-svh flex-col px-4 py-4 sm:px-8 lg:bg-background lg:px-10 xl:px-16">
         <div className="flex justify-end">
           <div className="flex items-center gap-0.5 rounded-lg bg-background/80 p-0.5 backdrop-blur lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-            {/* TODO: nanti diarahkan ke chat dengan admin */}
             <Button
               variant="ghost"
               size="sm"
-              title="Layanan / Hubungi Admin"
-              aria-label="Layanan / Hubungi Admin"
-              onClick={() =>
-                toast.info("Layanan chat dengan admin segera hadir.")
-              }
+              title="Chat dengan Admin"
+              aria-label="Chat dengan Admin"
+              onClick={() => setChatInfoOpen(true)}
             >
               <Headset className="text-muted-foreground" size={16} />
             </Button>
@@ -224,6 +222,18 @@ export function AuthShell({
             </div>
 
             {children}
+
+            <button
+              type="button"
+              onClick={() => setChatInfoOpen(true)}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <Headset className="h-4 w-4 shrink-0 text-primary" />
+              <span>
+                Butuh bantuan? <strong className="font-medium text-foreground">Chat dengan Admin</strong>{" "}
+                tersedia setelah login.
+              </span>
+            </button>
           </div>
         </div>
 
@@ -231,6 +241,8 @@ export function AuthShell({
           © {year} PT. Garuda Mart Indonesia · Garuda Procure
         </p>
       </main>
+
+      <ChatAdminInfoDialog open={chatInfoOpen} onOpenChange={setChatInfoOpen} />
     </div>
   );
 }

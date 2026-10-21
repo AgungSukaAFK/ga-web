@@ -2,7 +2,7 @@
 //
 // "Template Pengajuan" Petty Cash - daftar barang siap pakai PER-USER (tabel
 // `petty_cash_pengajuan_template`, lihat
-// supabase/petty-cash-pengajuan-template-setup.sql) untuk kebutuhan yang
+// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_pengajuan_template_setup.sql)) untuk kebutuhan yang
 // bisa diprediksi & relatif konstan (mis. "ATK Bulanan") - dipakai supaya
 // requester tidak input ulang barang yang sama tiap kali submit Input
 // Pengajuan. Murni privat milik pembuatnya (RLS: user_id = auth.uid()),
