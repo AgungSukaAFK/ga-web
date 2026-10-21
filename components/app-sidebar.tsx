@@ -410,18 +410,15 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   }, [profile, markActive]);
 
   const navSecondaryItems = React.useMemo(() => {
-    const items = data.navSecondary
-      // Admin IT membalas dari Inbox Chat Admin, bukan chat ke dirinya sendiri.
-      .filter((item) => item.url !== "/chat-admin" || !isITAdmin(profile))
-      .map((item) => {
-        if (item.url === "/update-web")
-          return { ...item, badge: hasNewUpdateWebPost ? 1 : undefined };
-        if (item.url === "/chat-admin")
-          return { ...item, badge: supportBadge.userUnread || undefined };
-        return item;
-      });
+    const items = data.navSecondary.map((item) => {
+      if (item.url === "/update-web")
+        return { ...item, badge: hasNewUpdateWebPost ? 1 : undefined };
+      if (item.url === "/chat-admin")
+        return { ...item, badge: supportBadge.userUnread || undefined };
+      return item;
+    });
     return markActive(items);
-  }, [markActive, hasNewUpdateWebPost, profile, supportBadge.userUnread]);
+  }, [markActive, hasNewUpdateWebPost, supportBadge.userUnread]);
 
   const adminItems = React.useMemo(() => {
     if (profile?.role !== "admin") return [];

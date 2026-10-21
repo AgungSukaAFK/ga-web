@@ -90,7 +90,8 @@ function ChatAdminManagementView() {
     [admins],
   );
 
-  // Percakapan admin IT dengan dirinya sendiri tidak masuk inbox.
+  // Percakapan yang dibuka admin IT ini sendiri (lewat /chat-admin) tidak
+  // masuk inbox-nya - dibalas admin IT lain, sama seperti percakapan user.
   const inbox = useMemo(
     () => tickets.filter((t) => t.user_id !== profile?.id),
     [tickets, profile?.id],
