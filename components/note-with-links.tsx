@@ -4,9 +4,11 @@ import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Deteksi URL "universal": http(s)://, www., atau domain telanjang
-// (mis. drive.google.com/xyz, tokopedia.com, wa.me/62812...).
+// (mis. drive.google.com/xyz, tokopedia.com, wa.me/62812...). Alternatif
+// pertama menangkap alamat email lebih dulu supaya domain di belakang "@"
+// (demo@example.com) tidak ikut dianggap link - email dibiarkan teks biasa.
 const URL_REGEX =
-  /(https?:\/\/[^\s<>"'`]+)|(\bwww\.[^\s<>"'`]+)|(\b(?:[a-zA-Z0-9-]+\.)+(?:com|co|net|org|io|ai|id|info|biz|me|app|dev|xyz|link|click|shop|store|site|online|tech|live|tv|cc|ly|gl|gov|edu|mil|name|pro|vip|top|asia)(?:\/[^\s<>"'`]*)?)/gi;
+  /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)|(https?:\/\/[^\s<>"'`]+)|(\bwww\.[^\s<>"'`]+)|(\b(?:[a-zA-Z0-9-]+\.)+(?:com|co|net|org|io|ai|id|info|biz|me|app|dev|xyz|link|click|shop|store|site|online|tech|live|tv|cc|ly|gl|gov|edu|mil|name|pro|vip|top|asia)(?:\/[^\s<>"'`]*)?)/gi;
 
 // Tanda baca akhir kalimat yang sering ikut "kepencet" saat regex nangkep URL,
 // mis. "...cek di drive.google.com/abc." -> titik terakhir bukan bagian link.
@@ -25,7 +27,8 @@ export function NoteWithLinks({
 }) {
   if (!text) return null;
 
-  const matches = Array.from(text.matchAll(URL_REGEX));
+  // match[1] = alamat email (bukan link, lihat URL_REGEX).
+  const matches = Array.from(text.matchAll(URL_REGEX)).filter((m) => !m[1]);
   if (matches.length === 0) {
     return <>{text}</>;
   }
