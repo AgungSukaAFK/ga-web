@@ -37,3 +37,4 @@ tetap bisa dicari.
 | `0005_fitur_lanjutan.sql` | Update Web, avatar, template MR, histori, balasan diskusi, kategori barang |
 | `0006_feedback.sql` | Feedback user |
 | `0007_chat_admin.sql` | Chat Admin (belum dijalankan di production) |
+| `0008_global_search.sql` | Global search top bar: RPC `global_search` & `global_search_pending`, index trigram (belum dijalankan di production) |

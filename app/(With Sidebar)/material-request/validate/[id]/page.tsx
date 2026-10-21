@@ -4,6 +4,7 @@
 
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { useGoBack } from "@/hooks/use-go-back";
 import { createClient } from "@/lib/supabase/client";
 import { resolveAttachmentUrl } from "@/lib/attachments";
 import { Content } from "@/components/content";
@@ -119,6 +120,7 @@ const InfoItem = ({
 
 function ValidateMRPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const goBack = useGoBack("/approval-validation");
   const mrId = parseInt(params.id);
 
   const [mr, setMr] = useState<
@@ -608,7 +610,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.back()}
+              onClick={goBack}
               className="mb-4"
             >
               <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
@@ -783,7 +785,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           size="sm"
           cardAction={
             <Button asChild size={"sm"} variant={"outline"}>
-              <Link target="_blank" href={"/approval-validation/templates"}>
+              <Link target="_blank" data-pwa-new-window href={"/approval-validation/templates"}>
                 Kelola Template
               </Link>
             </Button>

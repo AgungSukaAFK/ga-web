@@ -97,7 +97,7 @@ export function DiscussionMessageBubble({
           onClick={onReply}
           title="Balas"
           aria-label="Balas pesan"
-          className="self-center rounded p-1 text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
+          className="self-center rounded p-1 text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-visible:opacity-100"
         >
           <Reply className="h-4 w-4" />
         </button>

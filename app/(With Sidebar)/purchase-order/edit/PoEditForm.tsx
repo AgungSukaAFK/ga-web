@@ -1285,7 +1285,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                   <Link
                     href={`/material-request/${poForm.mr_id}`}
                     className="text-primary hover:underline"
-                    target="_blank"
+                    target="_blank" data-pwa-new-window
                   >
                     {mrRef.kode_mr} <LinkIcon className="inline h-3 w-3" />
                   </Link>
@@ -1403,7 +1403,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
               <div className="md:col-span-2 border-t pt-2 mt-2">
                 <Link
                   href={`/material-request/${poForm.mr_id}`}
-                  target="_blank"
+                  target="_blank" data-pwa-new-window
                   className="text-xs text-primary hover:underline flex items-center gap-1 w-fit"
                 >
                   Buka Halaman Detail MR Lengkap{" "}

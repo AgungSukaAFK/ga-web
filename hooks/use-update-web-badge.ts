@@ -20,6 +20,11 @@ import { UpdateWebPost } from "@/type/update-web";
 
 const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Hook ini dipakai di beberapa tempat sekaligus (sidebar, top bar Inbox,
+// dashboard). Event ini memberi tahu instance lain bahwa post sudah dilihat,
+// supaya badge-nya ikut hilang tanpa reload.
+const SEEN_EVENT = "update-web-seen";
+
 export function useUpdateWebBadge(userId: string | null | undefined) {
   const [latestPost, setLatestPost] = useState<UpdateWebPost | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -62,9 +67,16 @@ export function useUpdateWebBadge(userId: string | null | undefined) {
     };
   }, [userId]);
 
+  useEffect(() => {
+    const onSeen = () => setIsNew(false);
+    window.addEventListener(SEEN_EVENT, onSeen);
+    return () => window.removeEventListener(SEEN_EVENT, onSeen);
+  }, []);
+
   const markSeen = useCallback(async () => {
     if (!userId || !latestPost) return;
     setIsNew(false);
+    window.dispatchEvent(new Event(SEEN_EVENT));
     try {
       await markUpdateWebSeen(userId, latestPost.id);
     } catch {

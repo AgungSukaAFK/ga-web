@@ -4,6 +4,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ import { VendorSearchCombobox } from "./VendorSearchCombobox";
 
 export default function TambahBarangPage() {
   const router = useRouter();
+  const goBack = useGoBack("/barang");
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
 
@@ -377,7 +379,7 @@ export default function TambahBarangPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.back()}
+            onClick={goBack}
             title="Kembali"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -570,7 +572,7 @@ export default function TambahBarangPage() {
             variant="outline"
             size="lg"
             className="px-8"
-            onClick={() => router.back()}
+            onClick={goBack}
             disabled={loading}
           >
             Batal

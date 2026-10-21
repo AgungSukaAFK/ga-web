@@ -12,6 +12,10 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchSupportBadgeCounts } from "@/services/supportChatService";
 
+// Hook ini dipakai di beberapa tempat sekaligus (sidebar & top bar) - tiap
+// pemakaian butuh nama channel realtime sendiri supaya tidak bentrok.
+let channelSeq = 0;
+
 export function useSupportChatBadge(userId: string | null | undefined) {
   const [counts, setCounts] = useState({ userUnread: 0, adminWaiting: 0 });
 
@@ -48,7 +52,7 @@ export function useSupportChatBadge(userId: string | null | undefined) {
       }
       if (cancelled) return;
       channel = supabase
-        .channel(`support-badge-${userId}`)
+        .channel(`support-badge-${userId}-${++channelSeq}`)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "support_tickets" },

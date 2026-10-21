@@ -11,8 +11,9 @@ import {
 import { CloudMoon, Laptop, Moon, Sun, SunDim } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { runViewTransition } from "@/lib/view-transition";
 
-const THEME_OPTIONS = [
+export const THEME_OPTIONS = [
   { value: "light", label: "Light", icon: Sun },
   { value: "soft-light", label: "Soft Light", icon: SunDim },
   { value: "dark", label: "Dark", icon: Moon },
@@ -51,7 +52,7 @@ const ThemeSwitcher = () => {
       <DropdownMenuContent className="w-content" align="start">
         <DropdownMenuRadioGroup
           value={theme}
-          onValueChange={(e) => setTheme(e)}
+          onValueChange={(e) => runViewTransition(() => setTheme(e))}
         >
           {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
             <DropdownMenuRadioItem

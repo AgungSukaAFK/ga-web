@@ -1,12 +1,13 @@
 {
-  "name": "MR-PO GA LOURDES",
-  "short_name": "MR-PO GA",
+  "id": "/",
+  "name": "Garuda Procure",
+  "short_name": "Garuda Procure",
   "description": "Sistem Manajemen MR & PO - PT. Garuda Mart Indonesia",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#0f172a",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -19,6 +20,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

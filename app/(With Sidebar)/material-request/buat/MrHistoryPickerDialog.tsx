@@ -208,7 +208,7 @@ export function MrHistoryPickerDialog({
                     <div className="min-w-0 flex-1 space-y-1">
                       <a
                         href={`/material-request/${mr.id}`}
-                        target="_blank"
+                        target="_blank" data-pwa-new-window
                         rel="noopener noreferrer"
                         className="inline-flex items-start gap-1 font-mono text-xs font-semibold text-primary hover:underline [overflow-wrap:anywhere]"
                         title="Buka MR di tab baru"

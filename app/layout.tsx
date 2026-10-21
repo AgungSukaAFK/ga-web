@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CustomThemeProvider } from "@/lib/theme-provider";
+import { PwaSupport } from "@/components/pwa/pwa-support";
 import { fontVariables } from "@/lib/fonts";
 import { fontInitScript } from "@/lib/font-options";
 import "./globals.css";
@@ -26,10 +27,24 @@ export const metadata: Metadata = {
     // iOS belum support SVG untuk apple-touch-icon, tetap pakai PNG
     apple: "/icons/icon-192.png",
   },
+  // Mode standalone di iOS (dibuka dari ikon home screen): judul di bawah
+  // ikon + status bar biasa (konten mulai di bawah status bar, jadi header
+  // sticky tidak perlu padding safe-area).
+  appleWebApp: {
+    capable: true,
+    title: "Garuda Procure",
+    statusBarStyle: "default",
+  },
 };
 
+// Warna status bar HP / title bar PWA = background tema. Nilai di sini
+// dipakai saat first paint (ikut tema sistem); setelah hydrate ditimpa
+// <PwaSupport /> (ThemeColorSync) supaya ikut tema pilihan user.
 export const viewport = {
-  themeColor: "#0f172a",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#18181b" },
+  ],
 };
 
 export default function RootLayout({
@@ -55,6 +70,7 @@ export default function RootLayout({
           <NotificationProvider>{children}</NotificationProvider>
         </CustomThemeProvider>
         <Toaster richColors position="bottom-right" />
+        <PwaSupport />
       </body>
     </html>
   );

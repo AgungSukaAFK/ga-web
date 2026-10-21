@@ -723,3 +723,31 @@
     animation-delay: 0s !important;
   }
 }
+
+/* ─────────────────────────────────────────────
+   View transitions - animasi ganti tema/aksen/font (lib/view-transition.ts)
+   ───────────────────────────────────────────── */
+
+/* Default (aksen & font): cross-fade halus seluruh halaman */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 250ms;
+  animation-timing-function: ease-out;
+}
+
+/* Ganti mode terang/gelap: potret baru dibuka melingkar dari titik klik
+   (clip-path dianimasikan dari JS). Potret lama diam di bawahnya. */
+:root[data-vt="reveal"]::view-transition-old(root),
+:root[data-vt="reveal"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Penanda opsi terpilih di panel Tampilan (view-transition-name di
+   topbar-appearance.tsx & font-switcher.tsx) bergeser ke opsi baru */
+::view-transition-group(appearance-mode),
+::view-transition-group(appearance-accent),
+::view-transition-group(appearance-font) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}

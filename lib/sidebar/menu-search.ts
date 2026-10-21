@@ -112,11 +112,17 @@ function isSubsequence(needle: string, haystack: string): boolean {
 
 type Index = { title: string; titleWords: string[]; acr: string; keywords: string[]; keywordWords: string[] };
 
-function buildIndex(title: string, url: string, groupLabel?: string): Index {
+function buildIndex(
+  title: string,
+  url: string,
+  groupLabel?: string,
+  extraKeywords?: string[],
+): Index {
   const t = normalizeSearch(title);
   const keywords = [
     ...(MENU_KEYWORDS[url] ?? []),
     ...((groupLabel && GROUP_KEYWORDS[groupLabel]) || []),
+    ...(extraKeywords ?? []),
   ].map(normalizeSearch);
   return {
     title: t,
@@ -153,16 +159,17 @@ function scoreToken(token: string, idx: Index): number {
 /**
  * Skor relevansi satu menu terhadap query (0 = tidak cocok). Semua kata di
  * query harus cocok ke sesuatu; frasa utuh yang cocok ke judul/kata kunci
- * dapat skor lebih tinggi.
+ * dapat skor lebih tinggi. `item.keywords` = kata kunci tambahan di luar
+ * MENU_KEYWORDS (mis. aksi cepat di global search top bar).
  */
 export function scoreMenuItem(
   query: string,
-  item: { title: string; url: string },
+  item: { title: string; url: string; keywords?: string[] },
   groupLabel?: string,
 ): number {
   const q = normalizeSearch(query);
   if (!q) return 0;
-  const idx = buildIndex(item.title, item.url, groupLabel);
+  const idx = buildIndex(item.title, item.url, groupLabel, item.keywords);
 
   let phrase = 0;
   if (q.includes(" ")) {

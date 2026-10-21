@@ -628,6 +628,10 @@ export function UpdatePostForm({
                     <div
                       className={cn(
                         "absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
+                        // Layar sentuh tidak bisa hover: tombol tampil terus
+                        // di bagian bawah, gambar tetap kelihatan.
+                        !thumbDragging &&
+                          "pointer-coarse:items-end pointer-coarse:bg-transparent pointer-coarse:bg-gradient-to-t pointer-coarse:from-black/60 pointer-coarse:to-transparent pointer-coarse:pb-3 pointer-coarse:opacity-100",
                         thumbDragging && "opacity-100",
                       )}
                     >

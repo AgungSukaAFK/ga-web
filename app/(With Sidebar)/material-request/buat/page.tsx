@@ -73,7 +73,7 @@ import {
 import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency, cn, randomUUID } from "@/lib/utils";
 import {
   getAttachmentSizeError,
   getUploadErrorMessage,
@@ -180,7 +180,7 @@ export default function BuatMRPage() {
   // 3x sebelum insert final, lihat generateMRCode/proceedCreateMR/createMaterialRequest)
   // dipakai sebagai prefix folder upload gambar diskusi selama MR belum
   // tersimpan di DB.
-  const [draftId] = useState(() => crypto.randomUUID());
+  const [draftId] = useState(() => randomUUID());
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1575,7 +1575,7 @@ export default function BuatMRPage() {
                   <div className="min-w-0">
                     <a
                       href={`/material-request/${mr.id}`}
-                      target="_blank"
+                      target="_blank" data-pwa-new-window
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 font-mono text-sm font-semibold text-primary hover:underline"
                     >

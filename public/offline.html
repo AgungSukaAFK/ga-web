@@ -1,0 +1,159 @@
+<!doctype html>
+<!--
+  Halaman fallback offline. Disajikan public/sw.js saat navigasi halaman
+  gagal karena tidak ada koneksi. Sengaja berdiri sendiri (CSS & ikon inline,
+  tanpa JS/CSS Next.js) karena di-precache & harus tampil tanpa jaringan.
+-->
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Offline · Garuda Procure</title>
+    <script>
+      // Ikut tema pilihan user (key bawaan next-themes) kalau ada.
+      try {
+        var t = localStorage.getItem("theme");
+        var dark =
+          t === "dark" ||
+          t === "soft-dark" ||
+          ((!t || t === "system") &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.className = "dark";
+        document
+          .querySelector('meta[name="theme-color"]')
+          .setAttribute("content", dark ? "#18181b" : "#ffffff");
+      } catch (e) {}
+    </script>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #18181b;
+        --muted: #71717a;
+        --card: #f4f4f5;
+        --btn: #18181b;
+        --btn-fg: #fafafa;
+        color-scheme: light;
+      }
+      :root.dark {
+        --bg: #18181b;
+        --fg: #fafafa;
+        --muted: #a1a1aa;
+        --card: #27272a;
+        --btn: #fafafa;
+        --btn-fg: #18181b;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        width: 100%;
+        max-width: 22rem;
+        text-align: center;
+      }
+      .icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 64px;
+        height: 64px;
+        margin-bottom: 20px;
+        border-radius: 9999px;
+        background: var(--card);
+        color: var(--muted);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+      p {
+        margin: 0 0 24px;
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      button {
+        width: 100%;
+        height: 44px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--btn);
+        color: var(--btn-fg);
+        font: inherit;
+        font-size: 0.9375rem;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      .hint {
+        margin: 16px 0 0;
+        font-size: 0.8125rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="icon" aria-hidden="true">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 20h.01" />
+          <path d="M8.5 16.429a5 5 0 0 1 7 0" />
+          <path d="M5 12.859a10 10 0 0 1 5.17-2.69" />
+          <path d="M19 12.859a10 10 0 0 0-2.007-1.523" />
+          <path d="M2 8.82a15 15 0 0 1 4.177-2.643" />
+          <path d="M22 8.82a15 15 0 0 0-11.288-3.764" />
+          <path d="m2 2 20 20" />
+        </svg>
+      </div>
+      <h1>Kamu sedang offline</h1>
+      <p>
+        Garuda Procure butuh koneksi internet untuk memuat halaman ini. Cek
+        sinyal atau Wi-Fi, lalu coba lagi.
+      </p>
+      <button type="button" id="retry">Coba lagi</button>
+      <p class="hint">Halaman akan dimuat ulang otomatis begitu koneksi kembali.</p>
+    </main>
+    <script>
+      var btn = document.getElementById("retry");
+      function retry() {
+        btn.disabled = true;
+        btn.textContent = "Memuat…";
+        location.reload();
+      }
+      btn.addEventListener("click", retry);
+      window.addEventListener("online", retry);
+    </script>
+  </body>
+</html>

@@ -124,5 +124,7 @@ export async function exportStyledExcel(
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Jangan revoke langsung: Safari iOS (termasuk PWA) bisa membatalkan
+  // unduhan kalau blob URL dicabut sebelum sempat dibaca.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

@@ -879,7 +879,7 @@ function NotificationRow({
         onClick={onToggleRead}
         title={unread ? "Tandai sudah dibaca" : "Tandai belum dibaca"}
         aria-label={unread ? "Tandai sudah dibaca" : "Tandai belum dibaca"}
-        className="relative z-[1] -mr-1 mt-0.5 shrink-0 rounded-md p-1.5 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+        className="relative z-[1] -mr-1 mt-0.5 shrink-0 rounded-md p-1.5 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
       >
         {unread ? (
           <MailOpen className="h-4 w-4" />

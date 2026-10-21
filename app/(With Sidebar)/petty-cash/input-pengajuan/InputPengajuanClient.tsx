@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,7 @@ const getDefaultWeekForDate = (dateStr: string): number | "" => {
 export default function InputPengajuanClient() {
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const router = useRouter();
+  const goBack = useGoBack("/petty-cash");
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template");
   const supabase = createClient();
@@ -621,7 +623,7 @@ export default function InputPengajuanClient() {
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"
-              onClick={() => router.back()}
+              onClick={goBack}
               disabled={loading}
             >
               Batal

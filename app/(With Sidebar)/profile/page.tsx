@@ -390,8 +390,12 @@ export default function Dashboard() {
           {getInitials(profile?.nama || user?.email)}
         </AvatarFallback>
       </Avatar>
-      <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
+      <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:hidden">
         <Camera className="h-6 w-6" />
+      </span>
+      {/* Layar sentuh tidak bisa hover -> penanda "bisa diganti" tampil terus */}
+      <span className="absolute bottom-0 right-0 hidden size-8 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background pointer-coarse:flex">
+        <Camera className="h-4 w-4" />
       </span>
     </>
   );

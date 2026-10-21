@@ -40,6 +40,21 @@ export const generateRandomId = (digits: number = 7): number => {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
+/**
+ * UUID v4 yang tetap jalan di luar secure context. `crypto.randomUUID()`
+ * cuma ada di HTTPS / localhost - buka app lewat IP LAN (mis.
+ * http://192.168.x.x:3000 dari HP) atau browser lama bikin fungsinya
+ * undefined. `crypto.getRandomValues()` tersedia di semua context.
+ */
+export const randomUUID = (): string => {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; // versi 4
+  b[8] = (b[8] & 0x3f) | 0x80; // varian RFC 4122
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
+
 // This check can be removed, it is just for tutorial purposes
 export const hasEnvVars =
   process.env.NEXT_PUBLIC_SUPABASE_URL &&

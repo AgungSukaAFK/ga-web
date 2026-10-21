@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Table,
@@ -86,7 +86,13 @@ const TruncatedCell = ({
 
 export default function BarangClient() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+  // Dibuka dari global search (components/topbar/topbar-search.tsx):
+  // ?search= mengisi kotak cari, ?id= langsung membuka detail barang.
+  const urlSearch = searchParams.get("search");
+  const urlDetailId = searchParams.get("id");
 
   // --- STATE ---
   const [data, setData] = useState<Barang[]>([]);
@@ -94,7 +100,7 @@ export default function BarangClient() {
   const [userRole, setUserRole] = useState<string>("");
 
   // Filter & Pagination
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(urlSearch ?? "");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isAssetFilter, setIsAssetFilter] = useState<"all" | "true" | "false">(
     "all",
@@ -173,6 +179,10 @@ export default function BarangClient() {
     setCurrentPage(1);
   }, [searchTerm, selectedCategory, isAssetFilter]);
 
+  useEffect(() => {
+    if (urlSearch !== null) setSearchTerm(urlSearch);
+  }, [urlSearch]);
+
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
@@ -218,6 +228,24 @@ export default function BarangClient() {
   const openDetail = (item: Barang) => {
     setSelectedItem(item);
     setIsDetailOpen(true);
+  };
+
+  useEffect(() => {
+    if (!urlDetailId || loading) return;
+    const item = data.find((b) => String(b.id) === urlDetailId);
+    if (item) openDetail(item);
+  }, [urlDetailId, loading, data]);
+
+  const handleDetailOpenChange = (open: boolean) => {
+    setIsDetailOpen(open);
+    // Lepas ?id= supaya membuka barang yang sama lagi dari search tetap
+    // memicu efek di atas.
+    if (!open && urlDetailId) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("id");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
   };
 
   const canModify = [
@@ -524,7 +552,7 @@ export default function BarangClient() {
       </Content>
 
       {/* --- DETAIL DIALOG POPUP --- */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+      <Dialog open={isDetailOpen} onOpenChange={handleDetailOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">

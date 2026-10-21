@@ -4,6 +4,7 @@
 
 import { use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import { VendorSearchCombobox } from "../../tambah/VendorSearchCombobox";
 
 function EditBarangContent({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const goBack = useGoBack("/barang");
   const supabase = createClient();
   const id = parseInt(params.id);
 
@@ -160,7 +162,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
           <AlertTriangle className="w-12 h-12 text-destructive mb-4" />
           <h2 className="text-xl font-bold">Terjadi Kesalahan</h2>
           <p className="text-muted-foreground mb-4">{error}</p>
-          <Button variant="outline" onClick={() => router.back()}>
+          <Button variant="outline" onClick={goBack}>
             Kembali
           </Button>
         </div>
@@ -178,7 +180,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.back()}
+            onClick={goBack}
             title="Kembali"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -373,7 +375,7 @@ function EditBarangContent({ params }: { params: { id: string } }) {
             variant="outline"
             size="lg"
             className="px-8"
-            onClick={() => router.back()}
+            onClick={goBack}
             disabled={saving}
           >
             Batal

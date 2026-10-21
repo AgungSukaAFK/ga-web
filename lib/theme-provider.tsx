@@ -15,6 +15,7 @@ import {
   type FontFamily,
   type FontSize,
 } from "@/lib/font-options";
+import { runViewTransition } from "@/lib/view-transition";
 
 // Definisikan tema aksen yang tersedia (sesuai CSS .theme-<name> di
 // globals.css). `color` = warna primary mode terang, dipakai untuk preview
@@ -124,9 +125,13 @@ export function CustomThemeProvider({
     <CustomThemeContext.Provider
       value={{
         accent,
-        setAccent,
+        // Ganti aksen & jenis font dgn animasi cross-fade. Ukuran font
+        // sengaja tanpa animasi: diubah lewat slider (beruntun saat
+        // di-drag), animasi tiap langkah malah bikin patah-patah.
+        setAccent: (next) => runViewTransition(() => setAccent(next)),
         fontFamily: fontFamily ?? DEFAULT_FONT_FAMILY,
-        setFontFamily,
+        setFontFamily: (next) =>
+          runViewTransition(() => setFontFamily(next)),
         fontSize: fontSize ?? DEFAULT_FONT_SIZE,
         setFontSize,
       }}

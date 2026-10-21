@@ -1478,7 +1478,7 @@ function CreatePOPageContent() {
               <div className="md:col-span-2 border-t pt-2 mt-2">
                 <Link
                   href={`/material-request/${mrData.id}`}
-                  target="_blank"
+                  target="_blank" data-pwa-new-window
                   className="text-xs text-primary hover:underline flex items-center gap-1 w-fit"
                 >
                   Buka Halaman Detail MR Lengkap{" "}

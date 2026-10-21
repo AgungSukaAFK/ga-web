@@ -18,6 +18,7 @@
 
 import { use, Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,6 +62,7 @@ const DetailSkeleton = () => (
 
 function SubVoucherDetailContent({ id }: { id: string }) {
   const router = useRouter();
+  const goBack = useGoBack("/petty-cash");
   const supabase = createClient();
   const [doc, setDoc] = useState<PettyCashSubVoucher | null>(null);
   const [loading, setLoading] = useState(true);
@@ -216,7 +218,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
         description="Detail lengkap Sub-Voucher (Tarikan Dana) Petty Cash."
         cardAction={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.back()}>
+            <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
             <PcPrintMenu onPrint={handlePrint} />

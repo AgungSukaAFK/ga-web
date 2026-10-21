@@ -81,6 +81,22 @@ export const fetchSupportTickets = async (
   return (data ?? []) as SupportTicket[];
 };
 
+// Tiket yg ada aktivitas sejak `since` (dipakai Inbox top bar). RLS sudah
+// membatasi: user biasa hanya tiket miliknya, admin IT semua tiket.
+export const fetchRecentSupportTickets = async (
+  since: Date,
+  limit = 50,
+): Promise<SupportTicket[]> => {
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .select("*")
+    .gt("last_message_at", since.toISOString())
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as SupportTicket[];
+};
+
 export const fetchSupportTicket = async (
   id: number,
 ): Promise<SupportTicket | null> => {

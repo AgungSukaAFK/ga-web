@@ -62,23 +62,44 @@ function showBrowserNotification(title: string, body: string, link: string) {
     return;
   }
 
-  try {
-    const notif = new Notification(title, {
-      body,
-      icon: "/lourdes.png",
-      badge: "/lourdes.png",
-      tag: link, // deduplicate by link
-    });
+  const options: NotificationOptions = {
+    body,
+    icon: "/lourdes.png",
+    badge: "/lourdes.png",
+    tag: link, // deduplicate by link
+    data: { url: link }, // dipakai handler notificationclick di public/sw.js
+  };
 
-    notif.onclick = () => {
-      window.focus();
-      window.location.href = link;
-      notif.close();
-    };
-    console.log("[Notif] browser notif ditampilkan");
-  } catch (err) {
-    console.warn("[Notif] gagal menampilkan browser notif:", err);
-  }
+  // Utamakan lewat service worker: Chrome Android & PWA iOS tidak mendukung
+  // `new Notification()` (selalu throw). Klik notifikasinya ditangani
+  // public/sw.js (fokus ke window app yg ada & pindah ke `link`).
+  void (async () => {
+    try {
+      const registration =
+        "serviceWorker" in navigator
+          ? await navigator.serviceWorker.getRegistration()
+          : undefined;
+      if (registration) {
+        await registration.showNotification(title, options);
+        console.log("[Notif] browser notif ditampilkan (service worker)");
+        return;
+      }
+    } catch (err) {
+      console.warn("[Notif] gagal lewat service worker, coba langsung:", err);
+    }
+
+    try {
+      const notif = new Notification(title, options);
+      notif.onclick = () => {
+        window.focus();
+        window.location.href = link;
+        notif.close();
+      };
+      console.log("[Notif] browser notif ditampilkan");
+    } catch (err) {
+      console.warn("[Notif] gagal menampilkan browser notif:", err);
+    }
+  })();
 }
 
 // ─────────────────────────────────────────────
