@@ -26,7 +26,8 @@ Label di dokumen ini:
 2. Copy file di **Lampiran A** kolom "Copy", lalu buat file di kolom
    "Buat baru" dari kode di bagian 9. Jangan generate ulang
    `components/ui/*` lewat `npx shadcn add`, karena beberapa sudah dimodifikasi.
-3. Susun app shell (bagian 2) dan isi menu sidebar sesuai modul sistem baru.
+3. Susun app shell (bagian 2): isi `lib/sidebar/nav-config.ts` sesuai modul
+   sistem baru, pasang top bar (3.2a), lalu sesuaikan global search (3.2b).
 4. Bangun tiap halaman dari **resep** di bagian 4 (list, form, detail, dashboard).
 5. Sebelum fitur dianggap selesai, cek **checklist** di bagian 8.
 
@@ -44,8 +45,8 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
    orang lain dan tombol Back browser bekerja.
 3. **Preferensi tampilan disimpan per perangkat** (`localStorage`), bukan di
    database: tema, aksen, font, menu yang disembunyikan, panel filter
-   terbuka/tertutup. Selalu dibungkus `try/catch` dan dibaca setelah mount
-   (hindari hydration mismatch).
+   terbuka/tertutup, urutan kolom tabel, riwayat global search. Selalu
+   dibungkus `try/catch` dan dibaca setelah mount (hindari hydration mismatch).
 4. **Actionable-first.** Angka dan status sebisa mungkin bisa diklik dan
    membawa user ke tempat aksinya (stat card → daftar, "Perlu Aksi Anda" →
    halaman yang menangani). Hindari badge yang cuma pajangan.
@@ -55,9 +56,12 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
 6. **Satu kebutuhan, satu komponen.** Kalau sudah ada `FilterPanel`,
    `CustomPagination`, `ConfirmDialog`, `DiscussionPanel`, pakai itu. Jangan
    bikin varian baru.
-7. **Mobile tetap layak.** Grid turun ke 1 kolom, tabel lebar boleh scroll
-   horizontal di dalam card (bukan seluruh halaman), panel samping berubah
-   jadi overlay.
+7. **Mobile & layar sentuh tetap layak.** Grid turun ke 1 kolom, tabel lebar
+   boleh scroll horizontal di dalam card (bukan seluruh halaman), panel
+   samping berubah jadi overlay. Aksi yang di desktop baru muncul saat hover
+   harus **selalu terlihat di layar sentuh** (`pointer-fine:` /
+   `pointer-coarse:`, bukan `md:`), dan app tetap enak dipakai sebagai PWA
+   (lihat 3.16).
 8. **Jejak selalu ada.** Dokumen penting punya Riwayat Aktivitas, jalur
    approval dengan waktu proses, dan diskusi. User tidak perlu bertanya
    "ini nyangkut di siapa?".
@@ -72,8 +76,8 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
 
 ```
 ┌──────────────┬────────────────────────────────────────────────────────┐
-│ [Logo]       │ ☰ │ Breadcrumb > Otomatis > Dari > URL                 │ ← header h-16
-│ [AppSwitch]  ├────────────────────────────────────────────────────────┤
+│ [Logo]       │ ☰ │ Breadcrumb › URL   [🔍 Cari… ⌘K]   📥 🎧 🎨 │ (👤)  │ ← top bar sticky
+│ [AppSwitch]  ├────────────────────────────────────────────────────────┤   h-14 / md:h-16
 │ 🔍 Cari menu │  grid-cols-12 gap-4 md:gap-6                            │
 │──────────────│  ┌────────────── <Content size="lg"> ──────────────┐   │
 │ Admin   Atur │  │ Judul                          [Aksi utama]     │   │
@@ -90,39 +94,56 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
 
 | Bagian              | File                                        | Catatan                                                     |
 | ------------------- | ------------------------------------------- | ----------------------------------------------------------- |
-| Layout route group  | `app/(With Sidebar)/layout.tsx`             | `SidebarProvider` + `SidebarInset` + header + grid 12 kolom |
-| Sidebar             | `components/app-sidebar.tsx`                | Susun grup menu & filter per role di sini                   |
+| Layout route group  | `app/(With Sidebar)/layout.tsx`             | `SidebarProvider` + `SidebarInset` + top bar + grid 12 kolom |
+| Daftar menu per role | `lib/sidebar/nav-config.ts`                | `buildNavGroups(profile)`: **satu sumber** utk sidebar & global search |
+| Sidebar             | `components/app-sidebar.tsx`                | Ambil `buildNavGroups`, tambah badge & status aktif          |
 | Grup menu           | `components/nav-main.tsx`                   | Label grup, tombol "Atur", badge, state pending             |
+| Top bar             | `components/topbar/*`                       | lihat 3.2a (search 3.2b)                                    |
 | Menu user (footer)  | `components/nav-user.tsx`                   | Avatar, nama/email, My Profile, Lihat Foto, Log out         |
 | Pencarian menu      | `components/sidebar-search.tsx` + `lib/sidebar/menu-search.ts` | lihat 3.2                               |
 | Sembunyikan menu    | `lib/sidebar/menu-visibility.ts`            | lihat 3.2                                                   |
 | Progress navigasi   | `components/navigation-progress.tsx` + `lib/sidebar/nav-pending.ts` | lihat 3.2                         |
 | Primitive sidebar   | `components/ui/sidebar.tsx`                 | shadcn, `collapsible="icon"`                                |
 
-Detail visual shell (ukuran header, class link aktif, breadcrumb) ada di
-`styling-guide.md` bagian 7.1.
+Detail visual shell (class link aktif, breadcrumb) ada di
+`styling-guide.md` bagian 7.1. Header di sana masih versi lama (`h-16`, tidak
+sticky); versi sekarang dijelaskan di 3.2a.
 
 **Cara menyusun menu:**
 
+- Semua menu ditulis **sekali** di `lib/sidebar/nav-config.ts`.
+  `buildNavGroups(profile)` mengembalikan `{ label, items, hideable }[]`
+  sesuai hak akses. Sidebar dan global search (3.2b) sama-sama memanggilnya,
+  jadi hasil "Menu" di search selalu sama dengan menu yang memang boleh
+  dibuka user.
 - Menu dikelompokkan ke grup berlabel (contoh di ga-web: Admin, Menu, Petty
   Cash, About). Grup kosong (karena role) tidak dirender.
-- Item: `{ title, url, icon (lucide), badge? }`. Visibilitas per role ditulis
+- Item: `{ title, url, icon (lucide) }`. Visibilitas per role ditulis
   sebagai `visible: boolean` lalu di-filter:
 
   ```ts
-  const items = [
-    { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, visible: true },
-    { title: "Approval", url: "/approval", icon: CheckCheck, visible: isApprover },
-    { title: "Manajemen User", url: "/user-management", icon: Users, visible: isAdmin },
-  ];
-  return markActive(items.filter((i) => i.visible).map(({ visible, ...rest }) => rest));
+  // lib/sidebar/nav-config.ts
+  function buildXxxItems(profile: NavProfile): NavItem[] {
+    const items = [
+      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, visible: true },
+      { title: "Approval", url: "/approval", icon: CheckCheck, visible: isApprover },
+      { title: "Manajemen User", url: "/user-management", icon: Users, visible: isAdmin },
+    ];
+    return items.filter((i) => i.visible).map(({ visible, ...rest }) => rest);
+  }
   ```
-  (pola `pettyCashItems` di `app-sidebar.tsx`; hindari pola `splice`
-  bertingkat seperti grup "Menu" di ga-web, karena susah dibaca.)
+  (pola `buildPettyCashItems`; hindari pola `splice` bertingkat seperti
+  `buildMainItems` di ga-web, karena susah dibaca.)
+- `AppSidebar` menambahkan **badge** lewat map URL → angka, lalu
+  `markActive`:
+
+  ```ts
+  const badges = { "/notifications": unreadCount, "/chat-admin": supportBadge.userUnread || undefined };
+  ```
+  Angkanya datang dari provider/hook (`useNotification`,
+  `useSupportChatBadge`, `useUpdateWebBadge`), bukan query di sidebar.
 - Menu aktif memakai **longest match** (`markActive`): `/petty-cash/approval`
   tidak ikut mengaktifkan `/petty-cash`.
-- Badge angka (mis. notifikasi belum dibaca) datang dari provider/hook, bukan
-  query di sidebar.
 
 ---
 
@@ -141,6 +162,7 @@ Copy seluruh folder. Yang perlu diketahui karena berbeda dari shadcn default:
 | `currency-input`        | Input Rupiah: tampil `Rp 1.500.000`, nilai yang dikirim berupa angka    |
 | `sidebar`               | shadcn sidebar, dipakai dengan `collapsible="icon"`                     |
 | `table`                 | Sudah `overflow-x-auto`                                                 |
+| `dialog`, `alert-dialog` | Sudah `max-h-[calc(100dvh-2rem)] overflow-y-auto`: isi yang lebih tinggi dari layar (umum di HP/PWA) bisa di-scroll. Dialog yang mengatur scroll sendiri menimpanya lewat `className` |
 | `chart`                 | Wrapper recharts (`ChartContainer`, tooltip, legend)                    |
 
 Belum ada `ui/switch`. `notification-settings.tsx` membuat switch sederhana
@@ -150,7 +172,8 @@ sendiri. Kalau sistem baru butuh switch di banyak tempat, tambahkan
 ### 3.2 Shell & navigasi
 
 #### Pencarian menu sidebar
-`SidebarSearch` (UI) + `lib/sidebar/menu-search.ts` (logika).
+`SidebarSearch` (UI) + `lib/sidebar/menu-search.ts` (logika). Skornya
+(`scoreMenuItem`) juga dipakai global search (3.2b) untuk hasil Menu & Aksi.
 
 - Cocok ke judul, **singkatan otomatis** ("mr" → Material Request), kata
   kunci tambahan per URL (`MENU_KEYWORDS`), kata kunci per grup
@@ -177,7 +200,9 @@ Disimpan per perangkat, sinkron antar tab. Grup wajib (About) memakai
 
 #### NavUser
 Dropdown di footer sidebar: avatar + nama + email → My Profile, Lihat Foto
-Profil, Log out (dengan `ConfirmDialog`). Link "My Profile" di ga-web masih
+Profil, Log out (dengan `ConfirmDialog`). Isinya sama persis dengan menu
+profil di top bar (3.2a); keduanya tetap ada (sidebar diciutkan / mobile
+tetap punya akses profil di top bar). Link "My Profile" di ga-web masih
 `<a href>`; di sistem baru pakai `next/link`.
 
 #### App switcher, pindah antar aplikasi *(opsional)*
@@ -185,6 +210,220 @@ Profil, Log out (dengan `ConfirmDialog`). Link "My Profile" di ga-web masih
 grup (daftar di `lib/constants/web-apps.ts`, label role di
 `WEB_ROLE_LABELS`). Hanya dipakai kalau sistem baru bagian dari ekosistem
 multi-app; di ga-web hanya tampil untuk departemen GA.
+
+### 3.2a Top bar
+
+```
+☰ │ Garuda Procure › Material Request › Buat   [🔍 Cari MR, PO, barang, menu…  ⌘K]   📥³ 🎧 🎨 │ (👤 Nama)
+└──────── kiri: breadcrumb ──────────┘ └───── tengah (lg+) ─────┘ └──── kanan: aksi ────┘
+```
+
+| Bagian             | File                                  | Isi                                                      |
+| ------------------ | ------------------------------------- | -------------------------------------------------------- |
+| Provider profil    | `topbar/topbar.tsx` (`TopbarProvider`, `useTopbarProfileData`) | Profil user diambil **sekali**, dibagi ke semua bagian top bar; ikut berubah saat event `AVATAR_UPDATED_EVENT` |
+| Deretan aksi       | `topbar/topbar.tsx` (`TopbarActions`) | Inbox → Chat Admin → Tampilan → pemisah → Profil         |
+| Tombol ikon        | `topbar/topbar-icon-button.tsx`       | Dasar semua tombol ikon top bar + badge angka            |
+| Global search      | `topbar/topbar-search.tsx`            | lihat 3.2b                                               |
+| Inbox              | `topbar/topbar-inbox.tsx` + `use-inbox.ts` | Rangkuman semua notif                               |
+| Chat Admin         | `topbar/topbar-chat-admin.tsx`        | Shortcut modul Chat Admin *(opsional, ikut modulnya)*    |
+| Tampilan           | `topbar/topbar-appearance.tsx`        | Tema, aksen, font dalam satu popover                     |
+| Profil             | `topbar/topbar-profile.tsx`           | Sama dengan NavUser                                      |
+
+**Header** (`app/(With Sidebar)/layout.tsx`):
+
+- `sticky top-0 z-40`, tinggi `h-14` (mobile) / `md:h-16`, `h-12` saat
+  sidebar mode ikon. Latar `bg-background/90` + `backdrop-blur-md`; blur &
+  saturasi lebih kuat baru mulai `md:` (repaint tiap scroll berat di HP
+  kelas bawah).
+- Pemisah bawah: `border-b border-border/60` + garis gradien aksen tipis
+  (`after:` `h-px bg-gradient-to-r from-transparent via-primary/30
+  to-transparent`). Tanpa shadow.
+- Breadcrumb: di mobile cuma crumb terakhir (`truncate`), crumb sebelumnya
+  dan root "Garuda Procure" muncul mulai `md:`. Segmen UUID di akhir URL
+  tidak ditampilkan.
+- Header diberi `no-print`.
+
+**`TopbarIconButton`** (wajib dipakai untuk semua tombol ikon di top bar):
+
+```tsx
+<TopbarIconButton label="Inbox" badge={unreadCount}><Inbox /></TopbarIconButton>
+<TopbarIconButton label="Global Search" className="lg:hidden" onClick={open}><Search /></TopbarIconButton>
+```
+- `ghost` bulat, `size-8` di mobile tapi area tap diperluas 2px tiap sisi
+  (`after:-inset-0.5`) → 36px efektif; `sm:size-9`. Antar tombol `gap-1`.
+- Badge merah `bg-red-600` (bukan `--destructive`, supaya teks putih lolos
+  AA di semua tema), `ring-2 ring-background`, `99+` kalau lebih.
+- `label` jadi `title` + `aria-label`; kalau ada badge, aria-label jadi
+  "Inbox (3 baru)".
+- Bisa `asChild` (badge tetap masuk ke child lewat `Slottable`).
+- `data-[state=open]:bg-accent`: tombol tetap tersorot selama popover-nya
+  terbuka.
+
+**Popover/dropdown top bar** selalu `align="end" sideOffset={8}
+collisionPadding={8}` dan lebar `w-[min(24rem,calc(100vw-1rem))]` (angka
+rem disesuaikan isinya) supaya tidak keluar layar di HP.
+
+#### Inbox
+Satu daftar *quick access* yang menggabungkan semua sumber notifikasi:
+
+| Sumber        | Asal data                                        | Warna ikon     |
+| ------------- | ------------------------------------------------ | -------------- |
+| Notifikasi    | `useNotification()` (kecuali tipe `support_message`, sudah diwakili item chat) | `bg-primary` |
+| Chat Admin    | 1 item per percakapan yang menunggu user ini (balasan admin; admin IT: pesan user yang belum dibalas), realtime | `bg-sky-600` |
+| Update Web    | Postingan terbaru (`useUpdateWebBadge`)          | `bg-amber-600` |
+
+- Header popover: "Inbox" + pill "`N` baru" + tombol ghost "Tandai semua
+  dibaca". Di bawahnya chip filter Semua / Notifikasi / Chat / Update,
+  masing-masing dengan jumlah belum dibaca, scroll horizontal tanpa
+  scrollbar.
+- Baris: avatar pelaku + ikon sumber kecil di pojok (tanpa pelaku → ikon
+  sumber saja), judul (`font-semibold` kalau belum dibaca), pesan
+  `line-clamp-2`, "Sumber · 5 menit yang lalu". Belum dibaca =
+  `bg-primary/[0.06]` + garis aksen kiri + titik primary.
+- Klik → tandai dibaca + tutup + pindah ke `href`.
+- Hanya **7 hari terakhir, maks. 20 item** (`INBOX_MAX_AGE_DAYS`,
+  `INBOX_MAX_ITEMS`), ditulis juga di footer, plus link "Semua
+  notifikasi" ke `/notifications`. Daftar lengkap tetap di halaman masing-masing.
+- Kosong → ikon `Inbox` + "Inbox kosong".
+
+#### Chat Admin *(opsional, ikut modul Chat Admin)*
+Selalu **dropdown**, tidak langsung pindah halaman: user yang cuma
+penasaran dengan ikonnya tidak kehilangan isian form yang sedang diketik.
+User biasa: satu kalimat info + "Buka Chat Admin" / "Lihat Balasan". Admin
+IT: "Inbox Chat Admin" + "Chat Saya", masing-masing dengan pill angka.
+
+#### Tampilan
+Satu tombol `Palette` → popover berisi `Tabs` **Tema / Aksen / Font**:
+- Tema: grid 3 kolom opsi `THEME_OPTIONS` (ikon + label).
+- Aksen: "Warna Perusahaan" (grid 2, swatch + label) lalu "Warna Umum"
+  (grid 4 swatch bulat, ✓ di yang terpilih).
+- Font: `FontSettingsPanel` (slider ukuran + daftar jenis font), komponen
+  yang sama dengan `FontSwitcher`.
+- **Animasi ganti tampilan** lewat `runViewTransition`
+  (`lib/view-transition.ts`): ganti mode terang/gelap → tampilan baru
+  menyebar melingkar dari tombol yang diklik (`origin:
+  originFromEvent(e)`); aksen & jenis font → cross-fade 250ms (sudah
+  dibungkus di `setAccent` / `setFontFamily` milik `CustomThemeProvider`).
+  Ukuran font sengaja tanpa animasi (slider). Penanda opsi terpilih punya
+  `viewTransitionName` sendiri (`appearance-mode/-accent/-font`) sehingga
+  bergeser ke opsi baru. Browser tanpa dukungan / `prefers-reduced-motion`
+  → langsung berubah tanpa animasi.
+- Di mana pun tema diganti (switcher, search, profil), panggil
+  `runViewTransition(() => setTheme(v))`, jangan `setTheme` langsung.
+
+#### Profil
+Avatar (+ nama mulai `lg:`) → dropdown: kepala berisi avatar, nama, email →
+My Profile, Lihat Foto Profil (hanya kalau ada foto), lalu **Log out** merah
+(`text-destructive focus:bg-destructive/10`) dengan konfirmasi. Selama
+profil dimuat: `Skeleton` bulat seukuran avatar. Di ga-web konfirmasinya
+masih `MyAlertDialog`; sistem baru memakai `ConfirmDialog` (9.4).
+
+### 3.2b Global search (⌘K)
+
+Satu kotak untuk mencari **menu, aksi cepat, dan data** (dokumen, master
+data, user). File: `topbar/topbar-search.tsx` (UI & keyboard),
+`topbar/search-sections.ts` (penyusun hasil, fungsi murni),
+`topbar/use-global-search.ts` (data, cache, riwayat), RPC di
+`supabase/migrations/0008_global_search.sql`.
+
+**Tampilan**
+
+- `lg` ke atas: field inline di tengah top bar (`max-w-md`, `bg-muted/40`,
+  fokus → `bg-background` + ring) dengan panel hasil di popover di
+  bawahnya (`w-[min(34rem,calc(100vw-2rem))]`).
+- Di bawah `lg`: `TopbarIconButton` 🔍 yang membuka **dialog yang menempel di
+  atas layar** (`top-3`, `sm:top-[12vh]`), bukan di tengah, supaya tidak
+  tertutup keyboard virtual. Ada tombol "Batal" di samping field.
+- Placeholder menyebut apa saja yang bisa dicari: "Cari MR, PO, barang,
+  menu…". Shortcut `⌘K` / `Ctrl K` (dideteksi setelah mount) tampil sebagai
+  `kbd` di kanan field, hilang saat field fokus; saat ada isi diganti tombol ✕.
+- Baris hasil: kotak ikon jenis data, judul (bagian yang cocok ditandai
+  `<mark className="bg-primary/15">`), subjudul, dan di kanan pill status +
+  nominal (`formatCurrency`) atau nama grup menu.
+- Footer panel desktop: petunjuk `↑↓ pilih · Enter buka · Esc tutup`.
+
+**Keyboard & perilaku**
+
+- `⌘K`/`Ctrl+K` di mana saja: fokus ke field inline kalau tampil, kalau
+  tidak buka dialog. `↑/↓` pilih (berputar), `Enter` buka, `Esc` kosongkan
+  & tutup. Pilihan kembali ke item teratas tiap query/hasil berubah.
+- **Enter sebelum hasil server datang** (mis. tempel kode MR lalu Enter):
+  tunggu hasilnya (`flush()`), lalu buka yang teratas. Kode persis selalu di
+  urutan pertama.
+- Klik di panel tidak mencuri fokus dari input (`onMouseDown`
+  `preventDefault`). Combobox ARIA lengkap (`role="combobox"`,
+  `aria-activedescendant`, `role="listbox"/"option"`, grup berlabel).
+- Navigasi memanggil `setPendingNavUrl` (progress bar & highlight sidebar
+  sama seperti klik menu), kecuali kalau cuma query string yang berubah.
+
+**Susunan hasil** (`buildSections`)
+
+| Kondisi                | Urutan grup                                                     |
+| ---------------------- | --------------------------------------------------------------- |
+| Query kosong           | Menunggu approval Anda → Terakhir dibuka → Pencarian terakhir → Aksi cepat |
+| Query mirip kode (ada angka atau `/`) | Paling cocok → MR → PO → Petty Cash → Barang → Vendor → User → Menu → Aksi |
+| Query biasa            | Paling cocok → Menu → Aksi → Barang → Vendor → User → MR → PO → Petty Cash |
+
+- **Paling cocok** = baris yang kode / part number / email-nya persis sama
+  dengan query.
+- **Menunggu approval Anda**: dokumen yang sudah giliran user (RPC
+  `global_search_pending`, terbaru di atas). Kalau totalnya lebih banyak
+  dari yang tampil → item redup "Lihat N approval MR/PO lainnya" ke halaman
+  approval.
+- Grup data yang penuh (5 baris) dapat item redup "Lihat semua hasil X" ke
+  halaman list dengan `?search=` (karena itu halaman list **wajib** membaca
+  `?search=` dari URL, 3.4).
+- **Menu & Aksi** memakai `scoreMenuItem` dengan skor minimal 20
+  (`MIN_LOCAL_SCORE`): cocok cuma sebagai subsequence tidak cukup, salah
+  ketik 1 huruf masih lolos.
+- **Aksi cepat** (`QUICK_ACTIONS`): Buat MR, Buat PO, Ajukan Petty Cash
+  (ditandai `featured` → tampil juga saat query kosong), Profil Saya,
+  `Tema: <mode>` (mode yang sedang aktif tidak ditawarkan), Keluar (dengan
+  konfirmasi). Tiap aksi punya `keywords` dan `visible(profile)` yang
+  **harus sama dengan aturan tombol aslinya** di halaman (mis. "Buat PO"
+  hanya untuk yang `canCreatePO`).
+- Item "Pencarian terakhir" mengisi ulang kotak search (`fillQuery`), tidak
+  pindah halaman.
+
+**Status & pesan**
+
+| Kondisi                           | Tampilan                                            |
+| --------------------------------- | --------------------------------------------------- |
+| Profil belum dimuat               | Spinner "Memuat…"                                   |
+| Query < 3 huruf                   | Hanya menu/aksi (lokal) + catatan "Ketik minimal 3 huruf untuk mencari dokumen & data." |
+| Mencari, belum ada hasil          | Spinner "Mencari…" (ikon 🔍 di field ikut jadi spinner) |
+| Mencari, ada hasil query sebelumnya | Hasil lama tetap tampil (tidak berkedip tiap ketikan) |
+| Gagal                             | "Pencarian data gagal dimuat." + tombol "Coba lagi" |
+| Tidak ada hasil                   | Ikon `SearchX` + "Tidak ada hasil untuk "…""        |
+| Query kosong & tidak ada riwayat  | "Ketik nomor MR/PO, nama barang, vendor, atau menu." |
+
+**Supaya ringan untuk database**
+
+- **Satu RPC per query** (`global_search(q, limit)`), bukan query per tabel
+  dari browser; maks. 5 baris per grup, hanya kolom ringan (tanpa JSON item).
+- Dikirim setelah berhenti mengetik **250ms** dan minimal **3 huruf**.
+  Request basi dibatalkan (`AbortController`).
+- Hasil di-cache 60 detik per akun (maks. 40 query): hapus satu huruf lalu
+  ketik lagi tidak memicu request baru.
+- Antrian approval hanya diambil saat search dibuka, maks. 1× per menit.
+- RPC `SECURITY INVOKER` (RLS tetap berlaku) dan **menerapkan aturan batas
+  company yang sama dengan halaman list**, supaya search tidak menampilkan
+  dokumen yang di list disembunyikan. Pencocokan: semua kata harus ada
+  (urutan bebas), dengan index trigram untuk ekspresi yang dicari.
+
+**Riwayat**: dokumen yang dibuka lewat search (maks. 5) dan query yang
+menghasilkan sesuatu yang dibuka (maks. 4), per akun per perangkat di
+`ga-global-search-history:<userId>`. Ada tombol "Hapus riwayat".
+
+**Adaptasi wajib:**
+- `KIND_META` (label, ikon, `href` detail per jenis data) dan `DATA_GROUPS`
+  (grup + `listHref`) di `search-sections.ts`.
+- `QUICK_ACTIONS` dengan aksi utama sistem baru dan aturan `visible` yang
+  sama dengan halamannya.
+- RPC `global_search` / `global_search_pending`: tabel, kolom yang dicari,
+  aturan batas akses, dan status antrian approval sistem baru. Ekspresi di
+  index trigram harus sama persis dengan yang dipakai di `WHERE`.
+- Placeholder field dan pesan kosong menyebut entitas sistem baru.
 
 ### 3.3 Layout konten
 
@@ -254,9 +493,11 @@ Susunan dari atas ke bawah, di dalam satu `<Content>`:
 ├───────────────────────────────────────────────────────────────────┤
 │ grid 1/2/4 kolom berisi field filter (hanya saat dibuka)          │
 └───────────────────────────────────────────────────────────────────┘
+              Urutan kolom sudah diubah. [↺ Kembalikan urutan bawaan]   ← hanya kalau diubah
 ┌ Tabel (border rounded-md, overflow-x-auto, header bg-muted/50) ───┐
-│ No │ Kode ↕ │ Tanggal ↓ │ Status │ … │ Total ↕ │      Aksi        │
+│ No │ ⋮⋮Kode ↕ │ ⋮⋮Tanggal ↓ │ ⋮⋮Status │ … │ ⋮⋮Total ↕ │    Aksi    │
 └───────────────────────────────────────────────────────────────────┘
+  (⋮⋮ = grip, muncul saat hover; header bisa digeser. No & Aksi tetap)
 Tampilkan [25 ▾] per halaman                    ‹ 1 2 3 … 9 ›
 ```
 
@@ -265,6 +506,7 @@ Tampilkan [25 ▾] per halaman                    ‹ 1 2 3 … 9 ›
 | Kotak cari        | `Input` + ikon `Search` + `useUrlSearchInput`           |
 | Panel filter      | `FilterPanel` + helper `formatFilterDate/Rupiah/Range`, `filterOptionLabel` |
 | Header sortable   | `SortableTableHead` + `resolveSort`                     |
+| Header bisa digeser | `ReorderableHeaderRow` + `ReorderableTableHead` + `useColumnOrder` + `ColumnOrderReset` |
 | Paginasi          | `CustomPagination` (**satu-satunya** komponen paginasi) |
 | Jumlah baris      | `ui/select` berisi `LIMIT_OPTIONS` (`type/enum.ts`)     |
 | Export            | `exportStyledExcel` + `fetchAllRows` (`lib/excel-export.ts`) |
@@ -321,6 +563,80 @@ query.order(sort.column, { ascending: sort.ascending });
 ```
 Klik berputar: arah default → kebalikannya → kembali ke urutan bawaan
 (param `sort` dihapus). Key di luar whitelist diabaikan.
+
+Isi header yang bisa diklik tersedia terpisah sebagai `SortButton` (+
+`sortAriaValue` untuk `aria-sort`), dipakai kalau `<th>`-nya bukan
+`SortableTableHead`, mis. di `ReorderableTableHead`.
+
+#### Kolom yang bisa digeser (`useColumnOrder`)
+Untuk list utama yang kolomnya banyak (di ga-web: Material Request &
+Purchase Order). User menggeser header untuk mengubah urutan kolom;
+urutannya diingat per tabel per perangkat.
+
+```tsx
+// Di luar komponen (referensi stabil). Kolom di antara "No" & "Aksi".
+// `sortDirection` diisi = bisa di-sort; id-nya harus ada di SORTABLE_COLUMNS.
+const MR_COLUMNS = [
+  { id: "kode_mr", label: "Kode MR", sortDirection: "asc" },
+  { id: "status", label: "Status" },
+  { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
+  { id: "cost_estimation", label: "Total Estimasi", sortDirection: "desc", className: "text-right" },
+] as const satisfies readonly ReorderableColumn[];
+type MrColumnId = (typeof MR_COLUMNS)[number]["id"];
+
+const columnOrder = useColumnOrder("table-column-order:material-request", MR_COLUMNS);
+
+// Isi 1 sel per id kolom
+const renderCell = (row: Row, id: MrColumnId) => {
+  switch (id) {
+    case "kode_mr": return <TableCell>…</TableCell>;
+    case "status": return <TableCell><StatusBadge status={row.status} /></TableCell>;
+    // … semua id wajib ada (TypeScript menjaga lewat MrColumnId)
+  }
+};
+
+{columnOrder.isCustomOrder && <ColumnOrderReset onReset={columnOrder.resetOrder} />}
+
+<TableHeader className="bg-muted/50">
+  <ReorderableHeaderRow order={columnOrder.order} onMove={columnOrder.moveColumn}>
+    <TableHead className="w-[50px]">No</TableHead>
+    {columnOrder.orderedColumns.map((column) => (
+      <ReorderableTableHead key={column.id} column={column}
+        sort={{ currentSort: sortParam, onSortChange: (sort) => handleFilterChange({ sort }) }} />
+    ))}
+    <TableHead className="text-right no-print">Aksi</TableHead>
+  </ReorderableHeaderRow>
+</TableHeader>
+<TableBody>
+  {rows.map((row, i) => (
+    <TableRow key={row.id}>
+      <TableCell>{(page - 1) * limit + i + 1}</TableCell>
+      {columnOrder.order.map((id) => <Fragment key={id}>{renderCell(row, id)}</Fragment>)}
+      <TableCell className="text-right no-print">…</TableCell>
+    </TableRow>
+  ))}
+</TableBody>
+```
+
+- **No & Aksi tidak ikut digeser** (ditulis di luar daftar kolom).
+- Interaksi: `cursor-grab`, ikon `GripVertical` muncul saat hover header,
+  kolom yang sedang digeser `opacity-40`, garis `bg-primary` di sisi
+  tempat kolom akan jatuh (digeser ke kanan → sisi kanan target, ke kiri →
+  sisi kiri). `title="Geser untuk memindahkan kolom"`.
+- Memakai drag & drop HTML5 bawaan (tanpa library): jalan di desktop, tidak
+  di layar sentuh. Di layar sentuh urutan bawaan tetap dipakai.
+- State drag ada di context `ReorderableHeaderRow`, bukan di halaman,
+  supaya menggeser header tidak me-render ulang ribuan baris data.
+- Drag dari luar header tabel itu (teks, file, tabel lain) diabaikan.
+- Isi storage selalu dicocokkan ulang dengan daftar kolom di kode: id yang
+  sudah tidak ada dibuang, kolom baru disisipkan di posisi bawaannya. Jadi
+  menambah/menghapus kolom **tidak perlu migrasi storage**. Kalau urutan
+  kembali sama dengan bawaan, storage dihapus.
+- Bar "Urutan kolom sudah diubah. [Kembalikan urutan bawaan]" (`text-xs`,
+  rata kanan) di bawah panel filter, hanya saat urutan berbeda.
+- Key storage: `table-column-order:<nama-tabel>`.
+- Urutan geser hanya untuk tampilan tabel. Export Excel menyusun kolomnya
+  sendiri di fungsi export dan tidak ikut berubah.
 
 #### Quick view
 Klik baris tabel membuka `Dialog` berisi ringkasan dokumen (info utama +
@@ -449,6 +765,10 @@ Dibuat pada Kamis, 9 Oktober 2026 · [Status] · Umur: 3 Hari 4 Jam
 - Judul: kode dokumen `text-3xl font-bold`, baris bawahnya meta +
   `StatusBadge tone="solid"` (9.5).
 - Tombol header `size="sm"`; aksi destruktif `variant="destructive"` via `ConfirmDialog`.
+- Tombol "Kembali" (outline, ikon `ArrowLeft`) memakai
+  `useGoBack(fallbackHref)`, bukan `router.back()`: kalau halaman ini yang
+  pertama dibuka di window itu (mis. dari klik notifikasi push di PWA, yang
+  tidak punya tombol back browser), user dibawa ke `fallbackHref`.
 - **Kartu "Tindakan"** selalu ada di kolom kanan atas. Isinya tombol
   approve/reject *hanya* jika giliran user; kalau bukan, tampilkan teks
   penjelasan (mis. "Menunggu approval dari X").
@@ -623,15 +943,43 @@ link/tombol kecil ("Hapus pencarian", "Reset filter").
 | Suara notifikasi *(opsional)* | `lib/notifications/sound.ts`, `settings.ts`             |
 | Ringtone custom *(opsional)* | `components/custom-ringtone-settings.tsx` + `lib/notifications/custom-sound-db.ts` (IndexedDB) |
 | Push browser *(opsional)*  | `lib/notifications/push.ts`, `app/api/push/send/route.ts`, `public/sw.js` |
-| Install PWA *(opsional)*   | `lib/pwa/use-install-prompt.ts` + `public/manifest.json`   |
+| Install PWA *(opsional)*   | `lib/pwa/use-install-prompt.ts` + `public/manifest.json` (lihat 3.16) |
+| Inbox top bar              | `components/topbar/topbar-inbox.tsx` + `use-inbox.ts` (lihat 3.2a) |
 
 Pola halaman Notifikasi:
 - Filter Semua/Belum dibaca, per modul, per kategori, dan pencarian, semuanya
   dijalankan di query (bukan memfilter data yang sudah dimuat).
 - Dikelompokkan per tanggal: "Hari ini", "Kemarin", lalu tanggal.
 - "Muat lebih banyak" (30 per halaman), bukan paginasi.
-- Toggle dibaca/belum per item, "Tandai semua dibaca".
-- Badge sidebar sinkron karena semuanya lewat provider.
+- Toggle dibaca/belum per item, "Tandai semua dibaca". Tombol toggle per
+  item baru muncul saat hover hanya di perangkat berpointer
+  (`pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100`); di layar
+  sentuh selalu terlihat.
+- **Pilih banyak (checkbox):**
+  - Tiap baris punya `Checkbox` di kiri (di atas overlay klik baris,
+    `relative z-[1]`); baris terpilih `bg-primary/10`.
+  - Bar seleksi di atas daftar (`min-h-11 border-b`): checkbox "Pilih
+    semua" (berubah jadi "`N` dipilih"), lalu di kanan **Tandai dibaca**,
+    **Tandai belum dibaca** (label pendek "Dibaca"/"Belum" di mobile), dan
+    ✕ "Batalkan pilihan".
+  - Hanya item yang statusnya benar-benar berubah yang di-update, dalam
+    satu query (`.in("id", ids)`). Selesai → `toast.success("3 notifikasi
+    ditandai sudah dibaca")`, pilihan dikosongkan, badge disegarkan.
+  - Pilihan dikosongkan saat filter berubah; id yang sudah tidak ada di
+    daftar dibuang otomatis.
+  - "Pilih semua" = semua yang **sudah dimuat**, bukan seluruh data.
+- Badge sidebar, Inbox top bar, dan halaman ini sinkron karena semuanya
+  lewat provider.
+- Notifikasi browser ditampilkan lewat **service worker**
+  (`registration.showNotification`, `data: { url }`), baru jatuh ke
+  `new Notification()` kalau tidak ada registrasi: Chrome Android & PWA iOS
+  tidak mendukung `new Notification()`. Klik notifikasi di `sw.js`: fokus ke
+  window yang sudah di URL itu → kalau tidak ada, fokus ke window app lain
+  dan pindahkan ke URL itu → baru buka window baru.
+- Hook badge yang dipakai di beberapa tempat sekaligus (sidebar, top bar,
+  dashboard) harus sinkron antar-instance: `useUpdateWebBadge` memancarkan
+  event `update-web-seen`; `useSupportChatBadge` memberi nama channel
+  realtime unik per pemakaian.
 
 **Adaptasi:** kategori dan jenis event (`NotificationEventType`,
 `CATEGORIES` di halaman notifikasi) disesuaikan dengan modul sistem baru.
@@ -657,12 +1005,14 @@ Semua bisa diatur user sendiri, disimpan per perangkat:
 
 | Preferensi                     | Pilihan                                              | Tempat atur            | Key penyimpanan (ga-web)         |
 | ------------------------------ | ---------------------------------------------------- | ---------------------- | -------------------------------- |
-| Mode tema                      | Light, Soft Light, Dark, Soft Dark, System           | Profil, halaman auth   | next-themes (`theme`)            |
-| Warna aksen                    | Default, GMI, GIS + 15 warna umum                    | Profil, halaman auth   | `accent-theme`                   |
-| Jenis font                     | Geist, Inter, Plus Jakarta Sans, Poppins, Nunito, Roboto, Atkinson Hyperlegible, Font Sistem | Profil, auth | `font-family`              |
-| Ukuran font                    | Kecil 87.5%, Menengah, Besar 112.5%, Sangat Besar 125% | Profil, auth         | `font-size`                      |
+| Mode tema                      | Light, Soft Light, Dark, Soft Dark, System           | Top bar "Tampilan", profil, halaman auth, global search | next-themes (`theme`) |
+| Warna aksen                    | Default, GMI, GIS + 15 warna umum                    | Top bar "Tampilan", profil, halaman auth | `accent-theme`  |
+| Jenis font                     | Geist, Inter, Plus Jakarta Sans, Poppins, Nunito, Roboto, Atkinson Hyperlegible, Font Sistem | Top bar "Tampilan", profil, auth | `font-family` |
+| Ukuran font                    | Kecil 87.5%, Menengah, Besar 112.5%, Sangat Besar 125% | Top bar "Tampilan", profil, auth | `font-size`         |
 | Menu sidebar tersembunyi       | per grup                                             | Tombol "Atur"          | `ga-sidebar-hidden-menu`         |
 | Query cari menu                | –                                                    | Sidebar                | `ga-sidebar-search`              |
+| Riwayat global search          | dokumen terakhir dibuka + query terakhir, per akun   | Global search ("Hapus riwayat") | `ga-global-search-history:<userId>` |
+| Urutan kolom tabel             | per tabel                                            | Geser header tabel     | `table-column-order:<tabel>`     |
 | Panel filter terbuka           | ya/tidak                                             | Tombol "Filter"        | `filter-panel-open`              |
 | Panel ringkasan form terbuka   | ya/tidak                                             | Tab "Ringkasan"        | `ga-web:form-summary-open`       |
 | Notifikasi (suara, volume, …)  | –                                                    | Profil                 | `ga-notif-settings`              |
@@ -677,6 +1027,10 @@ Kartu berurutan: **Data Profil** (`size="md"`, termasuk ganti/hapus foto) →
 **Tampilan** (`AccentThemeSwitcher`, `FontSwitcher`, `ThemeSwitcher`) →
 **Pengaturan Notifikasi**. Data tambahan khusus domain (di ga-web:
 Rekening Bank untuk petty cash) ditaruh paling bawah.
+
+Foto profil yang bisa diklik untuk diganti: overlay `bg-black/50` + ikon
+kamera saat hover (`pointer-coarse:hidden`); di layar sentuh diganti badge
+kamera kecil `bg-primary` di pojok kanan bawah yang selalu tampil.
 
 ### 3.14 Halaman auth
 `AuthShell` + `AuthInput`. Spesifikasi visual di `styling-guide.md` 7.4 dan
@@ -695,6 +1049,75 @@ akun baru harus diaktifkan admin dulu.
 | Kamera + cap foto        | `CameraCaptureDialog` + `lib/photoStamp.ts` (cap waktu, lokasi, perangkat di foto bukti) | |
 | Template approval        | Builder jalur approval: tambah approver, atur tipe, naik/turun urutan, aturan auto-terapkan per jenis dokumen & departemen | `app/(With Sidebar)/approval-validation/templates/` |
 | Cetak list               | Tombol "Cetak" di toolbar list                                      | 3.4 |
+| Chat Admin               | Chat user ↔ admin IT per topik (percakapan), inbox bersama admin, badge realtime, shortcut top bar | `app/(With Sidebar)/chat-admin/`, `chat-admin-management/`, `components/support-chat/*`, `services/supportChatService.ts`, `supabase/migrations/0007_chat_admin.sql` |
+
+#### Chat Admin *(opsional)*
+- **Halaman user** (`/chat-admin`) dan **Inbox Chat Admin** khusus admin IT
+  (`/chat-admin-management`) memakai komponen yang sama
+  (`SupportTicketList`, `SupportChatThread`, `useSupportTickets`); bedanya
+  hanya `asAdmin` (sisi bubble, penanda dibaca) dan tombol di
+  `headerActions`.
+- **Pola dua panel** di dalam satu `<Content>`: grid
+  `md:grid-cols-[minmax(260px,340px)_1fr]`, tinggi
+  `h-[calc(100svh-15rem)] min-h-[480px]`, `rounded-lg border`. Kiri daftar
+  percakapan, kanan isi chat. Di mobile hanya satu panel yang tampil:
+  daftar, atau thread (dengan tombol kembali `onBack`).
+- Percakapan terpilih disimpan di `?t=<id>`, jadi link dari notifikasi
+  langsung membuka percakapannya. Belum memilih → ikon `Headset` dalam
+  lingkaran `bg-primary/10` + kalimat petunjuk.
+- Tombol utama "Percakapan Baru" di `cardAction` → dialog singkat
+  (kategori, subjek, pesan pertama, lampiran opsional).
+- Status percakapan: `menunggu` / `dibalas` / `selesai`; user bisa
+  menandai "Selesai", admin bisa Ambil, alihkan ke admin IT lain, tandai
+  selesai / buka kembali, dan hapus (dengan konfirmasi).
+- Kotak ketik (`SupportComposer`): Enter = kirim, Shift+Enter = baris baru
+  (di HP Enter tetap baris baru). Lampiran 1 file lewat tombol klip atau
+  paste; file baru di-upload saat pesan dikirim, bukan saat dipilih,
+  supaya lampiran yang batal tidak menyampah di storage.
+- Halaman auth punya tombol `Headset` → `ChatAdminInfoDialog`: user yang
+  belum bisa login diarahkan minta bantuan ke Department Head (Chat Admin
+  baru bisa dipakai setelah login).
+
+### 3.16 PWA & perangkat sentuh
+
+#### Aturan layar sentuh (inti)
+- Aksi yang hanya muncul saat hover memakai varian **pointer**, bukan
+  breakpoint: `pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100`
+  (contoh: tombol Balas di bubble diskusi, toggle dibaca di notifikasi).
+  Tablet besar dengan layar sentuh tetap bisa melihat tombolnya.
+- Overlay yang hanya muncul saat hover diganti penanda yang selalu tampil
+  di `pointer-coarse:` (contoh: ikon kamera foto profil, tombol di thumbnail
+  editor Update Web).
+- Field input teks `text-base md:text-sm` (16px di HP, supaya iOS tidak
+  zoom otomatis saat fokus).
+- `crypto.randomUUID()` hanya ada di HTTPS/localhost; buka app lewat IP LAN
+  dari HP membuatnya undefined. Pakai `randomUUID()` dari `lib/utils.ts`.
+- Unduhan file dari blob (export Excel): `URL.revokeObjectURL` ditunda
+  (10 detik), karena Safari iOS/PWA bisa membatalkan unduhan kalau URL-nya
+  dicabut terlalu cepat.
+
+#### PWA *(opsional)*
+`<PwaSupport />` dipasang sekali di `app/layout.tsx`:
+
+| Bagian                    | File                                         | Fungsi                                                        |
+| ------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
+| Registrasi service worker | `components/pwa/pwa-support.tsx`             | Didaftarkan untuk **semua** user (dibutuhkan halaman offline), bukan hanya saat push diaktifkan |
+| Warna status bar          | `components/pwa/theme-color-sync.tsx`        | `<meta name="theme-color">` mengikuti background tema pilihan user (dipantau dari class `<html>`); `viewport.themeColor` di layout hanya untuk first paint |
+| Link di dalam app         | `components/pwa/standalone-link-handler.tsx` | Di mode standalone, link internal `target="_blank"` dibuka di dalam app (bukan browser overlay yang sesinya bisa beda) |
+| Deteksi standalone        | `lib/pwa.ts` (`isStandalone()`)              | `display-mode: standalone` atau `navigator.standalone` (iOS lama) |
+| Fallback offline          | `public/sw.js` + `public/offline.html`       | Navigasi gagal karena offline → halaman "Kamu sedang offline" + "Coba lagi" (muat ulang otomatis saat online). Tidak meng-cache halaman/data lain |
+| Manifest                  | `public/manifest.json`                       | `id`, `name`/`short_name`, `display: standalone`, ikon `any` + `maskable` |
+| iOS                       | `metadata.appleWebApp` di `app/layout.tsx`   | `capable`, judul di bawah ikon, status bar `default`          |
+
+- `StandaloneLinkHandler` **tidak** mencegat link ke origin lain
+  (lampiran, wa.me), `/api/*`, path berekstensi file, link `download`, dan
+  link ber-atribut **`data-pwa-new-window`**. Pasang atribut itu pada link
+  `_blank` di halaman form (mis. "Buka detail MR" di form buat PO) supaya
+  isian yang belum disimpan tidak hilang.
+- Data MR/PO/PC selalu segar dari server: service worker sengaja **bukan**
+  offline-first. Naikkan `CACHE_VERSION` di `sw.js` kalau `offline.html`
+  berubah.
+- Tombol "Kembali" di halaman detail/form memakai `useGoBack` (3.6).
 
 ---
 
@@ -790,7 +1213,14 @@ di database (Pending Approval, Approved, Rejected, …).
 | File                              | Isi                                                        |
 | --------------------------------- | ---------------------------------------------------------- |
 | `hooks/use-url-search-input.ts`   | lihat 3.4                                                  |
+| `hooks/use-column-order.ts`       | `useColumnOrder(key, columns)` → `{ order, orderedColumns, moveColumn, resetOrder, isCustomOrder }` (3.4) |
+| `hooks/use-go-back.ts`            | `useGoBack(fallbackHref)`: kembali ke halaman sebelumnya, atau ke fallback kalau tidak ada riwayat (3.6) |
 | `hooks/use-mobile.ts`             | `useIsMobile()`                                            |
+| `hooks/use-support-chat-badge.ts`, `hooks/use-update-web-badge.ts` | Angka badge Chat Admin / penanda Update Web baru, realtime & sinkron antar-instance (3.10) |
+| `lib/sidebar/nav-config.ts`       | `buildNavGroups(profile)`: daftar menu per hak akses (2)   |
+| `lib/view-transition.ts`          | `runViewTransition(update, { origin? })`, `originFromEvent(e)` (3.2a) |
+| `lib/pwa.ts`                      | `isStandalone()` (3.16)                                    |
+| `lib/utils.ts` → `randomUUID`     | UUID v4 yang jalan di luar secure context (3.16)           |
 | `hooks/use-image-attachment-upload.ts` | Upload gambar untuk diskusi                           |
 | `lib/excel-export.ts`             | `exportStyledExcel(data, fileName, sheet?)`, `fetchAllRows(buildQuery)` (melewati batas 1000 baris Supabase) |
 | `lib/attachments.ts`              | `resolveAttachmentUrl`, `normalizeLinkUrl`, `formatFileSize`, `getAttachmentSizeError`, `getUploadErrorMessage`, batas ukuran |
@@ -819,6 +1249,14 @@ di database (Pending Approval, Approved, Rejected, …).
 | Hapus/reject tanpa konfirmasi                                   | `ConfirmDialog`                                |
 | Aksi penting tanpa log                                          | `logActivity(...)`                             |
 | Teks UI bahasa Inggris campur ("Continue", "Cancel")            | Bahasa Indonesia ("Lanjutkan", "Batal")        |
+| Menulis daftar menu di sidebar dan di tempat lain terpisah      | `buildNavGroups` di `lib/sidebar/nav-config.ts` |
+| Pencarian global dengan query per tabel dari browser            | Satu RPC (`global_search`) dengan batas akses yang sama dengan list |
+| Tombol ikon top bar dari `Button` biasa                          | `TopbarIconButton`                             |
+| `setTheme(v)` langsung                                          | `runViewTransition(() => setTheme(v))`         |
+| `router.back()` di tombol "Kembali"                             | `useGoBack(fallbackHref)`                      |
+| Aksi hover-only dengan `md:opacity-0 md:group-hover:…`           | `pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100` |
+| `crypto.randomUUID()` langsung                                  | `randomUUID()` dari `lib/utils.ts`             |
+| `URL.revokeObjectURL` langsung setelah klik unduh               | Tunda (`setTimeout`, 10 detik)                 |
 
 ---
 
@@ -833,7 +1271,16 @@ di database (Pending Approval, Approved, Rejected, …).
 - [ ] Status memakai `StatusBadge`; nama orang memakai `UserAvatar`.
 - [ ] Diuji di light, soft-light, dark, soft-dark + 1 aksen non-default.
 - [ ] Diuji dengan ukuran font "Sangat Besar" dan sidebar mode ikon.
-- [ ] Menu baru ditambahkan ke sidebar **dan** `MENU_KEYWORDS`.
+- [ ] Menu baru ditambahkan ke `lib/sidebar/nav-config.ts` (otomatis ikut
+      sidebar & global search) **dan** `MENU_KEYWORDS`.
+- [ ] Jenis dokumen/data baru yang perlu dicari: ditambahkan ke RPC
+      `global_search` + `KIND_META`/`DATA_GROUPS`, dan halaman list-nya
+      membaca `?search=`. Aksi "Buat X" baru masuk `QUICK_ACTIONS` dengan
+      aturan `visible` yang sama dengan tombolnya.
+- [ ] List dengan banyak kolom: pertimbangkan `useColumnOrder`; kolom baru
+      ditambahkan ke konstanta kolom **dan** `renderCell`.
+- [ ] Aksi hover-only tetap terlihat di layar sentuh (`pointer-fine:`).
+- [ ] Tombol "Kembali" memakai `useGoBack`.
 - [ ] Bagian yang tidak perlu dicetak diberi `no-print`.
 
 ---
@@ -1263,18 +1710,22 @@ bukan status dokumen.
 | Area                 | Copy dari ga-web                                                                           | Copy lalu adaptasi                                              | Buat baru (bagian 9) | Jangan dibawa |
 | -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | -------------------- | ------------- |
 | Fondasi              | `components/ui/*`, `lib/utils.ts`, `lib/theme-provider.tsx`, `lib/fonts.ts`, `lib/font-options.ts`, `app/globals.css`, `components.json` | key localStorage di `theme-provider` & `font-options` (prefix) | – | – |
-| Shell                | `nav-main`, `sidebar-search`, `navigation-progress`, `lib/sidebar/nav-pending.ts`          | `app-sidebar` (menu & role), `nav-user` (Link + `ConfirmDialog`), `lib/sidebar/menu-search.ts` (keyword), `lib/sidebar/menu-visibility.ts` (prefix key) | – | – |
+| Shell                | `nav-main`, `sidebar-search`, `navigation-progress`, `lib/sidebar/nav-pending.ts`          | `app-sidebar` (badge), `lib/sidebar/nav-config.ts` (menu & role), `nav-user` (Link + `ConfirmDialog`), `lib/sidebar/menu-search.ts` (keyword), `lib/sidebar/menu-visibility.ts` (prefix key) | – | – |
+| Top bar              | `topbar/topbar-icon-button`, `topbar/topbar-appearance`, `lib/view-transition.ts`, blok "View transitions" di `globals.css` | `topbar/topbar.tsx` (urutan aksi, kolom profil), `topbar/topbar-profile` (`MyAlertDialog` → `ConfirmDialog`), `topbar/topbar-inbox` + `use-inbox.ts` (sumber notif) | – | – |
+| Global search        | `topbar/topbar-search.tsx`, `topbar/use-global-search.ts`                                  | `topbar/search-sections.ts` (`KIND_META`, `DATA_GROUPS`, `QUICK_ACTIONS`, placeholder), RPC `supabase/migrations/0008_global_search.sql` (tabel, kolom, batas akses), key riwayat (prefix) | – | – |
 | Shell *(opsional)*   | –                                                                                          | `team-switcher` + `lib/constants/web-apps.ts`                    | – | – |
 | Layout               | `content`                                                                                  | –                                                               | `info-item`          | – |
-| List                 | `filter-panel`, `sortable-table-head`, `custom-pagination`, `hooks/use-url-search-input.ts`, `lib/excel-export.ts` | – | – | `pagination.tsx`, `pagination-components.tsx` |
+| List                 | `filter-panel`, `sortable-table-head`, `reorderable-table-head`, `custom-pagination`, `hooks/use-url-search-input.ts`, `hooks/use-column-order.ts`, `lib/excel-export.ts` | key `table-column-order:` (prefix) | – | `pagination.tsx`, `pagination-components.tsx` |
 | Form                 | `form-summary-panel`, `combobox`, `date-picker`, `link-attachment-form`, `lib/attachments.ts`, `lib/uploadDirect.ts`, `lib/debounce-async.ts` | checklist per form (pola `lib/mrEditSummaryChecks.ts`), key localStorage panel ringkasan | – | – |
-| Detail & workflow    | `activity-log-dialog`, `services/logService.ts`                                            | `followup-approval-button` *(opsional)*, `PcRevisionHistory` *(opsional)* | `approval-path`, `step-chain` | `petty-cash/PcChainStepper.tsx` |
+| Detail & workflow    | `activity-log-dialog`, `services/logService.ts`, `hooks/use-go-back.ts`                    | `followup-approval-button` *(opsional)*, `PcRevisionHistory` *(opsional)* | `approval-path`, `step-chain` | `petty-cash/PcChainStepper.tsx` |
 | Status               | –                                                                                          | –                                                               | `lib/constants/status.ts`, `status-badge` | `getStatusBadge` inline di halaman |
 | Konfirmasi           | –                                                                                          | –                                                               | `confirm-dialog`     | `confirm-dialog.tsx` lama, `dialog-confirm.tsx` |
 | Diskusi              | `discussion-panel`, `discussion-message-bubble`, `discussion-attachment-view`, `message-attachment-toolbar`, `emoji-sticker-picker`, `rich-content-view`, `note-with-links`, `message-with-mentions`, `lib/discussion-reply.ts`, `lib/rich-content.ts`, `hooks/use-image-attachment-upload.ts` | `rich-mention-editor`, `components/tiptap/*`, `services/mentionSearchService.ts` (jenis mention) | – | – |
 | User                 | `user-avatar`, `user-profile-card`, `avatar-viewer-dialog`, `profile-avatar-dialog`, `image-crop-dialog`, `lib/avatar.ts`, `lib/avatar-cache.ts` | – | – | – |
 | Notifikasi           | `providers/NotificationProvider`, `notification-settings`                                  | `lib/notifications/client.ts` (event), halaman notifikasi (kategori), `lib/notifications/settings.ts` (prefix key) | – | – |
-| Notifikasi *(opsional)* | `lib/notifications/sound.ts`, `custom-ringtone-settings`, `lib/notifications/custom-sound-db.ts`, `lib/notifications/push.ts`, `lib/pwa/use-install-prompt.ts` | `app/api/push/send/route.ts`, `public/sw.js`, `public/manifest.json` | – | – |
+| Notifikasi *(opsional)* | `lib/notifications/sound.ts`, `custom-ringtone-settings`, `lib/notifications/custom-sound-db.ts`, `lib/notifications/push.ts`, `lib/pwa/use-install-prompt.ts` | `app/api/push/send/route.ts` | – | – |
+| PWA *(opsional)*     | `components/pwa/*`, `lib/pwa.ts`                                                           | `public/sw.js` (nama app, `CACHE_VERSION`), `public/offline.html` (teks & warna), `public/manifest.json` + ikon maskable, `metadata.appleWebApp` & `viewport.themeColor` di `app/layout.tsx` | – | – |
+| Chat Admin *(opsional)* | `components/support-chat/*`, `hooks/use-support-chat-badge.ts`                          | `app/(With Sidebar)/chat-admin*/`, `services/supportChatService.ts`, `supabase/migrations/0007_chat_admin.sql`, `topbar/topbar-chat-admin`, `auth/chat-admin-info-dialog` (siapa yang dihubungi) | – | – |
 | Dashboard            | `dashboard/clickable-stat-card`                                                            | `dashboard-profile-avatar`, pola `PcActionNeededList` & `PcActivityFeed` | – | `chart-1`, `chart-2`, `dashboard-header` |
 | Dashboard *(opsional)* | –                                                                                        | `dashboard/score-stat-card`                                     | – | – |
 | Kustomisasi          | `theme-switcher`, `accent-theme-switcher`, `font-switcher`                                 | –                                                               | – | – |
@@ -1301,3 +1752,16 @@ bukan status dokumen.
 - **Tidak dibawa:** sisa template starter Supabase, landing page, komponen
   khusus domain procurement.
 - Kode `ga-web` sendiri tidak diubah oleh keputusan ini.
+
+**Tambahan 22 Okt 2026** (top bar, kolom tabel, PWA):
+
+- **Inti:** top bar (header sticky, `TopbarIconButton`, Inbox, Tampilan,
+  menu profil), global search ⌘K beserta RPC-nya, `nav-config` sebagai satu
+  sumber menu, header tabel yang bisa digeser (`useColumnOrder`) untuk list
+  utama, pilih banyak di halaman Notifikasi, animasi ganti tampilan
+  (`runViewTransition`), `useGoBack`, aturan layar sentuh (`pointer-fine:`),
+  `randomUUID`, dialog yang bisa di-scroll.
+- **Opsional:** PWA (service worker, offline, theme-color, link
+  standalone), modul Chat Admin beserta shortcut-nya di top bar.
+- Logout di top bar & global search memakai `ConfirmDialog` (9.4), bukan
+  `MyAlertDialog` seperti di ga-web.
