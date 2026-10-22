@@ -52,7 +52,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useEffect, useState, useCallback, useTransition } from "react";
+import {
+  Fragment,
+  useEffect,
+  useState,
+  useCallback,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
 import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
@@ -80,10 +86,16 @@ import {
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import {
-  SortableTableHead,
   resolveSort,
   type SortColumnConfig,
 } from "@/components/sortable-table-head";
+import {
+  ColumnOrderReset,
+  ReorderableHeaderRow,
+  ReorderableTableHead,
+  type ReorderableColumn,
+} from "@/components/reorderable-table-head";
+import { useColumnOrder } from "@/hooks/use-column-order";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
@@ -163,6 +175,32 @@ const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
   cost_estimation: { column: "cost_estimation" },
 };
 
+// Kolom tabel di antara "No" & "Aksi" (keduanya tetap di tempat), urutan
+// bawaan. Urutannya bisa digeser user - lihat hooks/use-column-order.ts.
+// `sortDirection` diisi = bisa di-sort, id-nya harus ada di SORTABLE_COLUMNS.
+const MR_COLUMNS = [
+  { id: "kode_mr", label: "Kode MR", sortDirection: "asc" },
+  { id: "prioritas", label: "Priority", sortDirection: "asc" },
+  { id: "cost_center", label: "Cost Center" },
+  { id: "level", label: "Level" },
+  { id: "kategori", label: "Kategori" },
+  { id: "department", label: "Departemen" },
+  { id: "tujuan_site", label: "Tujuan Site" },
+  { id: "requester", label: "Requester" },
+  { id: "status", label: "Status" },
+  { id: "umur", label: "Umur", sortDirection: "desc" },
+  { id: "company", label: "Company" },
+  { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
+  { id: "due_date", label: "Due Date", sortDirection: "asc" },
+  {
+    id: "cost_estimation",
+    label: "Total Estimasi",
+    sortDirection: "desc",
+    className: "text-right",
+  },
+] as const satisfies readonly ReorderableColumn[];
+type MrColumnId = (typeof MR_COLUMNS)[number]["id"];
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
 
 export function MaterialRequestContent({
@@ -187,6 +225,10 @@ export function MaterialRequestContent({
   );
   const [costCenterList, setCostCenterList] = useState<ComboboxData>([]);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const columnOrder = useColumnOrder(
+    "table-column-order:material-request",
+    MR_COLUMNS,
+  );
 
   // --- Quick View State ---
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
@@ -826,6 +868,91 @@ export function MaterialRequestContent({
     );
   };
 
+  // Isi 1 sel tabel; urutannya mengikuti columnOrder (lihat MR_COLUMNS).
+  const renderMrCell = (mr: MaterialRequestListItem, id: MrColumnId) => {
+    switch (id) {
+      case "kode_mr":
+        return (
+          <TableCell className="font-semibold text-foreground">
+            <Link
+              href={`/material-request/${mr.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="hover:underline hover:text-primary decoration-primary underline-offset-4"
+            >
+              {mr.kode_mr}
+            </Link>
+          </TableCell>
+        );
+      case "prioritas":
+        return <TableCell>{getPriorityBadge(mr.prioritas)}</TableCell>;
+      case "cost_center":
+        return (
+          <TableCell>
+            <Badge variant="outline">
+              {(mr as any).cost_centers?.code || "-"}
+            </Badge>
+          </TableCell>
+        );
+      case "level":
+        return (
+          <TableCell>
+            <Badge
+              variant="default"
+              className="bg-slate-600 dark:bg-slate-700"
+            >
+              <Layers className="h-3 w-3 mr-1" /> {mr.level || "OPEN 1"}
+            </Badge>
+          </TableCell>
+        );
+      case "kategori":
+        return <TableCell>{mr.kategori}</TableCell>;
+      case "department":
+        return <TableCell>{mr.department}</TableCell>;
+      case "tujuan_site":
+        return <TableCell>{mr.tujuan_site || "N/A"}</TableCell>;
+      case "requester":
+        return <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>;
+      case "status":
+        return <TableCell>{renderStatusCell(mr)}</TableCell>;
+      case "umur":
+        return (
+          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatAge(
+              mr.created_at,
+              mr.full_received_at,
+              mr.status === "Full Received",
+            )}
+          </TableCell>
+        );
+      case "company":
+        return (
+          <TableCell>
+            <Badge variant="outline" className="text-xs font-mono">
+              {mr.company_code}
+            </Badge>
+          </TableCell>
+        );
+      case "created_at":
+        return (
+          <TableCell className="text-sm text-muted-foreground">
+            {formatDateFriendly(mr.created_at ?? undefined)}
+          </TableCell>
+        );
+      case "due_date":
+        return (
+          <TableCell className="text-sm">
+            {mr.due_date ? formatDateFriendly(mr.due_date) : "-"}
+          </TableCell>
+        );
+      case "cost_estimation":
+        return (
+          <TableCell className="text-right font-medium">
+            {formatCurrency(Number(mr.cost_estimation))}
+          </TableCell>
+        );
+    }
+  };
+
   // --- Chip filter aktif (dari URL, bukan input yang belum diterapkan) ---
   const availableCompanies = getAvailableCompanyOptions();
   const activeFilters: ActiveFilter[] = [];
@@ -1204,6 +1331,10 @@ export function MaterialRequestContent({
             </div>
           </div>
         </FilterPanel>
+
+        {columnOrder.isCustomOrder && (
+          <ColumnOrderReset onReset={columnOrder.resetOrder} />
+        )}
       </div>
 
       {/* --- Table Data --- */}
@@ -1213,66 +1344,23 @@ export function MaterialRequestContent({
       >
         <Table className="min-w-[1600px]">
           <TableHeader className="bg-muted/50">
-            <TableRow>
+            <ReorderableHeaderRow
+              order={columnOrder.order}
+              onMove={columnOrder.moveColumn}
+            >
               <TableHead className="w-[50px]">No</TableHead>
-              <SortableTableHead
-                sortKey="kode_mr"
-                defaultDirection="asc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })}
-              >
-                Kode MR
-              </SortableTableHead>
-              <SortableTableHead
-                sortKey="prioritas"
-                defaultDirection="asc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })}
-              >
-                Priority
-              </SortableTableHead>
-              <TableHead>Cost Center</TableHead>
-              <TableHead>Level</TableHead>
-              <TableHead>Kategori</TableHead>
-              <TableHead>Departemen</TableHead>
-              <TableHead>Tujuan Site</TableHead>
-              <TableHead>Requester</TableHead>
-              <TableHead>Status</TableHead>
-              <SortableTableHead
-                sortKey="umur"
-                defaultDirection="desc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })}
-              >
-                Umur
-              </SortableTableHead>
-              <TableHead>Company</TableHead>
-              <SortableTableHead
-                sortKey="created_at"
-                defaultDirection="desc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })}
-              >
-                Tanggal Dibuat
-              </SortableTableHead>
-              <SortableTableHead
-                sortKey="due_date"
-                defaultDirection="asc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })}
-              >
-                Due Date
-              </SortableTableHead>
-              <SortableTableHead
-                sortKey="cost_estimation"
-                defaultDirection="desc"
-                currentSort={sortFilter}
-                onSortChange={(sort) => handleFilterChange({ sort })} className="text-right"
-              >
-                Total Estimasi
-              </SortableTableHead>
+              {columnOrder.orderedColumns.map((column) => (
+                <ReorderableTableHead
+                  key={column.id}
+                  column={column}
+                  sort={{
+                    currentSort: sortFilter,
+                    onSortChange: (sort) => handleFilterChange({ sort }),
+                  }}
+                />
+              ))}
               <TableHead className="text-right no-print">Aksi</TableHead>
-            </TableRow>
+            </ReorderableHeaderRow>
           </TableHeader>
           <TableBody>
             {loading || isPending ? (
@@ -1294,59 +1382,9 @@ export function MaterialRequestContent({
                     {(currentPage - 1) * limit + index + 1}
                   </TableCell>
 
-                  {/* 1. KODE MR */}
-                  <TableCell className="font-semibold text-foreground">
-                    <Link
-                      href={`/material-request/${mr.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="hover:underline hover:text-primary decoration-primary underline-offset-4"
-                    >
-                      {mr.kode_mr}
-                    </Link>
-                  </TableCell>
-
-                  {/* 2. PRIORITY */}
-                  <TableCell>{getPriorityBadge(mr.prioritas)}</TableCell>
-
-                  <TableCell>
-                    <Badge variant="outline">
-                      {(mr as any).cost_centers?.code || "-"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="default"
-                      className="bg-slate-600 dark:bg-slate-700"
-                    >
-                      <Layers className="h-3 w-3 mr-1" /> {mr.level || "OPEN 1"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{mr.kategori}</TableCell>
-                  <TableCell>{mr.department}</TableCell>
-                  <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
-                  <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>{renderStatusCell(mr)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatAge(
-                      mr.created_at,
-                      mr.full_received_at,
-                      mr.status === "Full Received",
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs font-mono">
-                      {mr.company_code}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDateFriendly(mr.created_at ?? undefined)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {mr.due_date ? formatDateFriendly(mr.due_date) : "-"}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(Number(mr.cost_estimation))}
-                  </TableCell>
+                  {columnOrder.order.map((id) => (
+                    <Fragment key={id}>{renderMrCell(mr, id)}</Fragment>
+                  ))}
 
                   <TableCell className="text-right no-print">
                     <Button

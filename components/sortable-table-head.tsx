@@ -44,7 +44,7 @@ export function resolveSort(
   return parse(value) ?? parse(fallback)!;
 }
 
-type Props = {
+type SortButtonProps = {
   sortKey: string;
   // Nilai param `sort` saat ini (boleh kosong).
   currentSort: string;
@@ -52,18 +52,32 @@ type Props = {
   // Arah saat pertama kali diklik, mis. "desc" utk harga/tanggal (terbesar /
   // terbaru dulu).
   defaultDirection?: SortDirection;
-  className?: string;
+  // Ikon di kiri label, utk kolom rata kanan.
+  alignRight?: boolean;
   children: React.ReactNode;
 };
 
-export function SortableTableHead({
+// Nilai `aria-sort` utk <th> kolom `sortKey`.
+export function sortAriaValue(sortKey: string, currentSort: string) {
+  const [activeKey, activeDir] = currentSort.split(".");
+  if (activeKey !== sortKey) return "none";
+  return activeDir === "asc"
+    ? "ascending"
+    : activeDir === "desc"
+      ? "descending"
+      : "none";
+}
+
+// Isi header yang bisa diklik. Dipisah dari <SortableTableHead> supaya bisa
+// dipakai di <th> lain, mis. ReorderableTableHead.
+export function SortButton({
   sortKey,
   currentSort,
   onSortChange,
   defaultDirection = "asc",
-  className,
+  alignRight,
   children,
-}: Props) {
+}: SortButtonProps) {
   const [activeKey, activeDir] = currentSort.split(".");
   const isActive = activeKey === sortKey;
   const direction = isActive ? (activeDir as SortDirection) : undefined;
@@ -84,34 +98,37 @@ export function SortableTableHead({
       : direction === "desc"
         ? ArrowDown
         : ArrowUpDown;
-  const alignRight = className?.includes("text-right");
 
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        alignRight && "flex-row-reverse",
+        isActive && "text-foreground",
+      )}
+      title="Klik untuk mengurutkan"
+    >
+      {children}
+      <Icon
+        className={cn("h-3.5 w-3.5 shrink-0", !isActive && "opacity-40")}
+      />
+    </button>
+  );
+}
+
+type Props = Omit<SortButtonProps, "alignRight"> & {
+  className?: string;
+};
+
+export function SortableTableHead({ className, ...props }: Props) {
   return (
     <TableHead
       className={className}
-      aria-sort={
-        direction === "asc"
-          ? "ascending"
-          : direction === "desc"
-            ? "descending"
-            : "none"
-      }
+      aria-sort={sortAriaValue(props.sortKey, props.currentSort)}
     >
-      <button
-        type="button"
-        onClick={handleClick}
-        className={cn(
-          "inline-flex items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          alignRight && "flex-row-reverse",
-          isActive && "text-foreground",
-        )}
-        title="Klik untuk mengurutkan"
-      >
-        {children}
-        <Icon
-          className={cn("h-3.5 w-3.5 shrink-0", !isActive && "opacity-40")}
-        />
-      </button>
+      <SortButton {...props} alignRight={className?.includes("text-right")} />
     </TableHead>
   );
 }

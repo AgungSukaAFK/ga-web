@@ -3,6 +3,7 @@
 "use client";
 
 import {
+  Fragment,
   Suspense,
   useEffect,
   useState,
@@ -36,10 +37,16 @@ import { PicGaPopover } from "@/components/pic-ga-popover";
 import { CreatePOModal } from "./CreatePOModal";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
-  SortableTableHead,
   resolveSort,
   type SortColumnConfig,
 } from "@/components/sortable-table-head";
+import {
+  ColumnOrderReset,
+  ReorderableHeaderRow,
+  ReorderableTableHead,
+  type ReorderableColumn,
+} from "@/components/reorderable-table-head";
+import { useColumnOrder } from "@/hooks/use-column-order";
 import {
   Newspaper,
   Search,
@@ -122,6 +129,28 @@ const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
   total_price: { column: "total_price" },
   created_at: { column: "created_at" },
 };
+
+// Kolom tabel sebelum "Aksi" (tetap paling kanan), urutan bawaan. Urutannya
+// bisa digeser user - lihat hooks/use-column-order.ts. `sortDirection`
+// diisi = bisa di-sort, id-nya harus ada di SORTABLE_COLUMNS.
+const PO_COLUMNS = [
+  { id: "kode_po", label: "Kode PO", sortDirection: "asc" },
+  { id: "kode_mr", label: "Ref. Kode MR" },
+  { id: "vendor", label: "Vendor" },
+  { id: "pembuat", label: "Pembuat PO" },
+  { id: "company", label: "Perusahaan" },
+  { id: "status", label: "Status PO", sortDirection: "asc" },
+  { id: "umur", label: "Umur", sortDirection: "desc" },
+  { id: "payment", label: "Payment" },
+  {
+    id: "total_price",
+    label: "Total Harga",
+    sortDirection: "desc",
+    className: "text-right",
+  },
+  { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
+] as const satisfies readonly ReorderableColumn[];
+type PoColumnId = (typeof PO_COLUMNS)[number]["id"];
 
 const STATUS_OPTIONS = [
   "Pending Validation",
@@ -235,6 +264,10 @@ function PurchaseOrderPageContent() {
   const [isExporting, setIsExporting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const columnOrder = useColumnOrder(
+    "table-column-order:purchase-order",
+    PO_COLUMNS,
+  );
 
   // State untuk Modal Vendor
   const [selectedVendor, setSelectedVendor] =
@@ -528,6 +561,109 @@ function PurchaseOrderPageContent() {
   const handleRowClick = (po: PurchaseOrderListItem) => {
     setSelectedPo(po);
     setIsQuickViewOpen(true);
+  };
+
+  // Isi 1 sel tabel; urutannya mengikuti columnOrder (lihat PO_COLUMNS).
+  const renderPoCell = (po: PurchaseOrderListItem, id: PoColumnId) => {
+    switch (id) {
+      case "kode_po":
+        return (
+          <TableCell className="font-medium">
+            <Button
+              asChild
+              variant="ghost"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Link href={`/purchase-order/${po.id}`}>{po.kode_po}</Link>
+            </Button>
+          </TableCell>
+        );
+      case "kode_mr":
+        return <TableCell>{po.material_requests?.kode_mr || "N/A"}</TableCell>;
+      case "vendor":
+        return (
+          <TableCell>
+            {po.vendor_details ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleVendorClick(po.vendor_details);
+                }}
+                className="text-primary hover:underline font-medium text-left"
+              >
+                {po.vendor_details.nama_vendor}
+              </button>
+            ) : (
+              <span className="text-muted-foreground">-</span>
+            )}
+          </TableCell>
+        );
+      case "pembuat":
+        return <TableCell>{po.users_with_profiles?.nama || "N/A"}</TableCell>;
+      case "company":
+        return (
+          <TableCell>
+            <Badge variant="outline">{(po as any).company_code}</Badge>
+          </TableCell>
+        );
+      case "status":
+        return (
+          <TableCell>
+            <div className="flex flex-col items-start gap-1">
+              <Badge variant="secondary">{po.status}</Badge>
+              {po.status === "Pending Approval" &&
+                (() => {
+                  const approver = getCurrentApprover(po.approvals);
+                  return approver ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Menunggu: {approver.nama}
+                    </span>
+                  ) : null;
+                })()}
+              {po.status === "Pending Validation" && <PicGaPopover />}
+            </div>
+          </TableCell>
+        );
+      case "umur":
+        return (
+          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatAge(
+              po.created_at,
+              po.full_received_at,
+              po.status === "Full Received",
+            )}
+          </TableCell>
+        );
+      case "payment":
+        return (
+          <TableCell>
+            {isPoPaid(po.approvals) ? (
+              <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
+                <CreditCard className="h-3 w-3" />
+                Paid
+              </Badge>
+            ) : isDpBpPaymentTerm(po.payment_term) &&
+              (po.dp_paid || po.bp_paid) ? (
+              <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
+                <CreditCard className="h-3 w-3" />
+                {po.dp_paid ? "DP Lunas" : "BP Lunas"}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="w-fit">
+                Unpaid
+              </Badge>
+            )}
+          </TableCell>
+        );
+      case "total_price":
+        return (
+          <TableCell className="text-right">
+            {formatCurrency(po.total_price)}
+          </TableCell>
+        );
+      case "created_at":
+        return <TableCell>{formatDateFriendly(po.created_at)}</TableCell>;
+    }
   };
 
   const handleCreatePO = () => {
@@ -1089,59 +1225,30 @@ function PurchaseOrderPageContent() {
                 </div>
               </div>
             </FilterPanel>
+
+            {columnOrder.isCustomOrder && (
+              <ColumnOrderReset onReset={columnOrder.resetOrder} />
+            )}
           </div>
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[1600px]">
               <TableHeader>
-                <TableRow>
-                  <SortableTableHead
-                    sortKey="kode_po"
-                    defaultDirection="asc"
-                    currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })}
-                  >
-                    Kode PO
-                  </SortableTableHead>
-                  <TableHead>Ref. Kode MR</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Pembuat PO</TableHead>
-                  <TableHead>Perusahaan</TableHead>
-                  <SortableTableHead
-                    sortKey="status"
-                    defaultDirection="asc"
-                    currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })}
-                  >
-                    Status PO
-                  </SortableTableHead>
-                  <SortableTableHead
-                    sortKey="umur"
-                    defaultDirection="desc"
-                    currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })}
-                  >
-                    Umur
-                  </SortableTableHead>
-                  <TableHead>Payment</TableHead>
-                  <SortableTableHead
-                    sortKey="total_price"
-                    defaultDirection="desc"
-                    currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })}
-                    className="text-right"
-                  >
-                    Total Harga
-                  </SortableTableHead>
-                  <SortableTableHead
-                    sortKey="created_at"
-                    defaultDirection="desc"
-                    currentSort={sortFilter}
-                    onSortChange={(sort) => handleFilterChange({ sort })}
-                  >
-                    Tanggal Dibuat
-                  </SortableTableHead>
+                <ReorderableHeaderRow
+                  order={columnOrder.order}
+                  onMove={columnOrder.moveColumn}
+                >
+                  {columnOrder.orderedColumns.map((column) => (
+                    <ReorderableTableHead
+                      key={column.id}
+                      column={column}
+                      sort={{
+                        currentSort: sortFilter,
+                        onSortChange: (sort) => handleFilterChange({ sort }),
+                      }}
+                    />
+                  ))}
                   <TableHead className="text-right no-print">Aksi</TableHead>
-                </TableRow>
+                </ReorderableHeaderRow>
               </TableHeader>
               <TableBody>
                 {loading || isPending ? (
@@ -1159,91 +1266,9 @@ function PurchaseOrderPageContent() {
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={() => handleRowClick(po)}
                     >
-                      <TableCell className="font-medium">
-                        <Button
-                          asChild
-                          variant="ghost"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Link href={`/purchase-order/${po.id}`}>
-                            {po.kode_po}
-                          </Link>
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        {po.material_requests?.kode_mr || "N/A"}
-                      </TableCell>
-
-                      <TableCell>
-                        {po.vendor_details ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleVendorClick(po.vendor_details);
-                            }}
-                            className="text-primary hover:underline font-medium text-left"
-                          >
-                            {po.vendor_details.nama_vendor}
-                          </button>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-
-                      <TableCell>
-                        {po.users_with_profiles?.nama || "N/A"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {(po as any).company_code}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col items-start gap-1">
-                          <Badge variant="secondary">{po.status}</Badge>
-                          {po.status === "Pending Approval" &&
-                            (() => {
-                              const approver = getCurrentApprover(po.approvals);
-                              return approver ? (
-                                <span className="text-[11px] text-muted-foreground">
-                                  Menunggu: {approver.nama}
-                                </span>
-                              ) : null;
-                            })()}
-                          {po.status === "Pending Validation" && (
-                            <PicGaPopover />
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatAge(
-                          po.created_at,
-                          po.full_received_at,
-                          po.status === "Full Received",
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {isPoPaid(po.approvals) ? (
-                          <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
-                            <CreditCard className="h-3 w-3" />
-                            Paid
-                          </Badge>
-                        ) : isDpBpPaymentTerm(po.payment_term) &&
-                          (po.dp_paid || po.bp_paid) ? (
-                          <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
-                            <CreditCard className="h-3 w-3" />
-                            {po.dp_paid ? "DP Lunas" : "BP Lunas"}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="w-fit">
-                            Unpaid
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(po.total_price)}
-                      </TableCell>
-                      <TableCell>{formatDateFriendly(po.created_at)}</TableCell>
+                      {columnOrder.order.map((id) => (
+                        <Fragment key={id}>{renderPoCell(po, id)}</Fragment>
+                      ))}
                       <TableCell
                         className="text-right no-print"
                         onClick={(e) => e.stopPropagation()}
