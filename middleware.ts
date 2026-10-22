@@ -2,11 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSafeNextPath } from "@/lib/safe-next-path";
 
-// Hasil cek profil lengkap (nrp + company) di-cache di cookie supaya
+// Hasil cek profil (aktif + nrp + company) di-cache di cookie supaya
 // middleware tidak query `profiles` di SETIAP request. Nilainya user id,
-// jadi ganti akun otomatis cek ulang.
+// jadi ganti akun otomatis cek ulang. Umurnya sengaja pendek: ini juga
+// batas waktu maksimal user yang dinonaktifkan admin masih bisa akses.
 const PROFILE_OK_COOKIE = "ga-profile-ok";
-const PROFILE_OK_MAX_AGE = 60 * 10; // detik
+const PROFILE_OK_MAX_AGE = 60; // detik
 
 function isPrefetchRequest(request: NextRequest) {
   const h = request.headers;
@@ -15,6 +16,28 @@ function isPrefetchRequest(request: NextRequest) {
     h.get("purpose") === "prefetch" ||
     (h.get("sec-purpose") ?? "").includes("prefetch")
   );
+}
+
+// Akun dinonaktifkan admin (profiles.is_active = false): cabut sesinya di
+// server (semua device) lalu buang cookie sesi di browser. Cookie dihapus
+// manual - bukan lewat setAll() - karena signOut() tidak menghapus sesi
+// lokal kalau request logout-nya gagal, dan kita butuh user benar-benar
+// keluar supaya /auth/login tidak redirect balik.
+async function redirectDeactivated(
+  request: NextRequest,
+  supabase: ReturnType<typeof createServerClient>,
+) {
+  await supabase.auth.signOut();
+
+  const loginUrl = new URL("/auth/login", request.url);
+  loginUrl.searchParams.set("reason", "deactivated");
+  const redirect = NextResponse.redirect(loginUrl);
+  for (const { name } of request.cookies.getAll()) {
+    if (name.startsWith("sb-") || name === PROFILE_OK_COOKIE) {
+      redirect.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+  }
+  return redirect;
 }
 
 export async function middleware(request: NextRequest) {
@@ -119,12 +142,16 @@ export async function middleware(request: NextRequest) {
     if (!profileOk) {
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("nrp, company")
+        .select("nrp, company, is_active")
         .eq("id", user.id) // Gunakan user.id
         .maybeSingle();
 
       if (profileError && profileError.code !== "PGRST116") {
         console.error("Middleware profile fetch error:", profileError);
+      }
+
+      if (profile?.is_active === false) {
+        return redirectDeactivated(request, supabase);
       }
 
       profileOk = !!profile?.nrp && !!profile?.company;

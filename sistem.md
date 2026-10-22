@@ -669,7 +669,8 @@ Middleware melakukan:
 - memvalidasi user lewat `supabase.auth.getUser()`
 - membedakan auth path, public path, dan dynamic public path
 - redirect ke login jika belum login
-- cek profil `nrp` dan `company`
+- cek profil `nrp`, `company`, dan `is_active` (hasil di-cache 60 detik di cookie `ga-profile-ok`)
+- sign-out + redirect ke `/auth/login?reason=deactivated` bila `is_active = false`
 - redirect ke `/pending-approval` bila profil belum lengkap
 - redirect user login dari auth page ke `/`
 

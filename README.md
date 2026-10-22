@@ -1,105 +1,140 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# Garuda Procure
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+Sistem manajemen pengadaan internal (General Affair / Procurement) untuk grup
+PT. Garuda Mart Indonesia: Material Request, Purchase Order, approval
+berjenjang, Petty Cash, master barang & vendor, cost center, dan stok GA dalam
+satu aplikasi web.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+## Modul
 
-## Features
+| Modul                    | Isi                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| Material Request (MR)    | Buat MR (template, ambil dari riwayat), validasi GA, approval, level item, terima barang |
+| Purchase Order (PO)      | Buat PO dari MR, PO aset / non-aset, approval & payment, penerimaan barang (BAST, QR)  |
+| Approval & Validation    | Antrian approval per user, template jalur approval + auto-rule, follow-up approver    |
+| Petty Cash               | Pengajuan → Voucher → Sub-Voucher (tarikan dana) → Deklarasi, budget per departemen/site |
+| Master data              | Barang, vendor (+ riwayat harga), cost center, request barang baru, stok GA           |
+| Notifikasi               | Realtime in-app, Inbox top bar, Web Push (PWA), WhatsApp (Fonnte)                     |
+| Global search            | ⌘K / Ctrl+K: cari MR, PO, Petty Cash, barang, vendor, user, menu, dan aksi cepat      |
+| Pendukung                | Diskusi per dokumen (mention, gambar), riwayat aktivitas, Update Web, Chat Admin, Feedback, Dokumentasi interaktif |
+| Admin                    | User management, MR/PO management, file management, kode global terima barang        |
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Middleware
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+Akses menu & aksi ditentukan oleh `role` (`requester`, `approver`, `admin`),
+departemen, dan company user. Daftar menu per hak akses ada di
+[lib/sidebar/nav-config.ts](lib/sidebar/nav-config.ts).
 
-## Demo
+## Stack
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+- **Next.js 15** (App Router, Turbopack) + **React 19** + **TypeScript**
+- **Tailwind CSS 4** + **shadcn/ui** (Radix) + lucide-react, next-themes, sonner
+- **Supabase**: auth, Postgres (RLS + RPC), realtime, storage
+- **Supabase self-hosted di VPS**: storage khusus attachment baru (upload
+  langsung dari browser lewat signed URL, melewati batas body 4.5 MB Vercel)
+- Tiptap (rich text + mention), recharts, exceljs, jspdf, qrcode.react, web-push
+- Hosting production di **Vercel**
 
-## Deploy to Vercel
+## Menjalankan di lokal
 
-Vercel deployment will guide you through creating a Supabase account and project.
+Butuh: Node.js 20+, Docker, dan [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started).
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+```bash
+npm install
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+# 1. Supabase lokal (Docker): API :54321, Studio :54323, email (Inbucket) :54324
+supabase start
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+# 2. Skema database (semua migrasi + seed barang)
+supabase db reset
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+# 3. Data demo (opsional, urut)
+node supabase/scripts/seed-demo-users.mjs        # user demo, password "demo123"
+node supabase/scripts/seed-demo-bulk.mjs         # ~150 MR + PO, vendor, item request
+node supabase/scripts/seed-demo-petty-cash.mjs   # data Petty Cash lengkap
 
-## Clone and run locally
+# 4. Dev server -> http://localhost:3000
+npm run dev
+```
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+Login demo: `admin1@demo.com` / `demo123` (juga `requester.<departemen>@demo.com`
+dan `approver.<departemen>@demo.com`, lihat
+[seed-demo-users.mjs](supabase/scripts/seed-demo-users.mjs)).
 
-2. Create a Next.js app using the Supabase Starter template npx command
+### Environment
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+| File                     | Dipakai untuk                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `.env`                   | Nilai production (dari [.env.example](.env.example))                          |
+| `.env.development.local` | Override otomatis saat `next dev`: mengarahkan auth/db/storage ke **Supabase lokal** (pakai demo key bawaan `supabase status`) |
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+Dengan dua file itu, `npm run dev` **tidak menyentuh production sama sekali**.
+`npm run dev:prod` sengaja mengarah ke production, jadi hati-hati.
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+| Variabel                                                   | Fungsi                                                   |
+| ---------------------------------------------------------- | -------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` | Supabase utama dari browser & server component |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`                        | Supabase utama dari middleware                           |
+| `SUPABASE_SERVICE_ROLE_KEY`                                | Operasi admin di server (`lib/supabase/admin.ts`, `storage-admin.ts`) |
+| `VPS_SUPABASE_URL`, `VPS_SUPABASE_SERVICE_ROLE_KEY`, `VPS_SUPABASE_STORAGE_BUCKET` | Storage attachment di VPS (server) |
+| `NEXT_PUBLIC_VPS_SUPABASE_URL`, `NEXT_PUBLIC_VPS_SUPABASE_ANON_KEY` | Upload langsung dari browser ke storage VPS (anon key, **bukan** service role) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push. Generate sekali (`npx web-push generate-vapid-keys`); jangan diganti setelah user mulai subscribe |
+| `NEXT_PUBLIC_FONNTE_TOKEN`                                 | Notifikasi WhatsApp lewat Fonnte                         |
+| `NEXT_PUBLIC_GOA_URL`                                      | Base URL web GOA untuk app switcher di sidebar           |
 
-3. Use `cd` to change into the app's directory
+## Scripts
 
-   ```bash
-   cd with-supabase-app
-   ```
+| Perintah              | Fungsi                                                         |
+| --------------------- | -------------------------------------------------------------- |
+| `npm run dev`         | Dev server (Turbopack), ke Supabase lokal                      |
+| `npm run dev:prod`    | Dev server, ke Supabase **production** (`.env` saja)           |
+| `npm run build`       | Build production                                               |
+| `npm run start`       | Jalankan hasil build                                           |
+| `npm run build:local` / `start:local` | Build & jalankan dengan env lokal (`.env.development.local` + `.env`) |
+| `npm run lint`        | ESLint                                                         |
 
-4. Rename `.env.example` to `.env.local` and update the following:
+## Database & migrasi
 
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=[INSERT SUPABASE PROJECT API ANON KEY]
-   ```
+Semua skema ada di [supabase/migrations/](supabase/migrations/), aturan
+lengkapnya di [supabase/README.md](supabase/README.md). Singkatnya:
 
-   Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+- Nama file `NNNN_nama_singkat.sql`. Perubahan baru = file baru dengan nomor
+  berikutnya; file yang sudah jalan di production tidak diedit lagi.
+- Lokal: `supabase db reset`. Production: jalankan isi file baru di Supabase
+  SQL Editor, urut sesuai nomor.
+- `0007_chat_admin.sql` dan `0008_global_search.sql` **belum dijalankan di
+  production**; fitur Chat Admin & global search butuh keduanya.
 
-5. You can now run the Next.js local development server:
+Script Node di [supabase/scripts/](supabase/scripts/) untuk seed demo dan
+sinkronisasi/diagnosa data lama. Baca komentar di atas tiap file sebelum
+menjalankannya ke production.
 
-   ```bash
-   npm run dev
-   ```
+## Struktur folder
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+```
+app/
+  (With Sidebar)/     halaman utama (sidebar + top bar), satu folder per modul
+  auth/               login, daftar, konfirmasi email
+  approval-*/         halaman publik tanpa login (verifikasi dokumen dari QR)
+  goods-receipt/      terima barang via token
+  api/push/           kirim Web Push
+components/
+  ui/                 primitive shadcn (sudah dimodifikasi, jangan generate ulang)
+  topbar/             top bar: global search, Inbox, Chat Admin, Tampilan, Profil
+  petty-cash/, support-chat/, update-web/, dashboard/, pwa/, ...
+services/             akses data per modul (MR, PO, Petty Cash, vendor, notifikasi, ...)
+lib/                  helper: supabase client, notifikasi, sidebar, tema/font, attachment, export
+hooks/                React hook bersama
+type/                 tipe & enum (status, opsi combobox)
+supabase/             migrasi, seed, script, snippet
+public/               ikon, manifest PWA, service worker (sw.js), offline.html
+```
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+## Dokumentasi
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
-
-## Feedback and issues
-
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
-
-## More Supabase examples
-
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+| Dokumen                                                             | Isi                                                               |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [sistem.md](sistem.md)                                              | Gambaran sistem: arsitektur, modul, role, model data, workflow    |
+| [taste-ui.md](taste-ui.md)                                          | Panduan komponen, pola halaman, dan aturan interaksi UI           |
+| [auth-page.md](auth-page.md), [docs/auth-page-design-guide.md](docs/auth-page-design-guide.md) | Desain halaman login / daftar |
+| [planning-update-web.md](planning-update-web.md)                    | Cara kerja fitur Update Web                                       |
+| [review-pc.md](review-pc.md), [planning-pc.md](planning-pc.md)      | Alur & rencana modul Petty Cash                                   |
+| [supabase/README.md](supabase/README.md)                            | Struktur folder supabase & aturan migrasi                         |
