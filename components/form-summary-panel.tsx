@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Circle,
   CircleDashed,
-  Info,
   ListChecks,
   Loader2,
   PanelRightClose,
@@ -61,8 +60,6 @@ export type FormSummaryProps = {
   /** Disable karena proses lain (upload dsb) - BUKAN karena form belum lengkap. */
   disabled?: boolean;
   error?: string;
-  /** Penjelasan "setelah diajukan ...". */
-  nextSteps?: ReactNode;
   /** Ada perubahan yang belum disimpan (halaman edit). */
   dirty?: boolean;
   /** Aksi tambahan di bawah tombol submit (mis. cetak preview). */
@@ -386,17 +383,6 @@ function SummaryPanelBody({
         )}
         <SubmitButton props={props} onClick={onSubmit} />
         {props.secondaryActions}
-        {!complete && (
-          <p className="text-center text-xs text-muted-foreground">
-            <ProgressHint progress={progress} />
-          </p>
-        )}
-        {props.nextSteps && (
-          <div className="flex gap-2 text-xs text-muted-foreground">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <div>{props.nextSteps}</div>
-          </div>
-        )}
       </div>
     </Card>
   );

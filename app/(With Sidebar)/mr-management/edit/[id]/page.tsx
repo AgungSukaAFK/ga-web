@@ -1045,13 +1045,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
           submitting: actionLoading,
           disabled: isUploading,
           dirty,
-          nextSteps: (
-            <>
-              Perubahan langsung disimpan &amp; dicatat di log aktivitas.
-              Aktifkan <strong>Mode Edit</strong> untuk mengubah kategori,
-              item, tujuan, dan remarks.
-            </>
-          ),
           children: (
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-sm text-muted-foreground">

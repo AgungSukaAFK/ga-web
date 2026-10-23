@@ -1180,17 +1180,6 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
           submitting: actionLoading,
           disabled: isUploadingPO || isUploadingFinance || isUploadingPurchasing,
           dirty,
-          nextSteps: isAdmin ? (
-            <>
-              Perubahan langsung disimpan ke PO ini (termasuk Status &amp;
-              Jalur Approval) dan tercatat di riwayat aktivitas.
-            </>
-          ) : (
-            <>
-              Perubahan langsung disimpan ke PO ini dan tercatat di riwayat
-              aktivitas.
-            </>
-          ),
           children: (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">

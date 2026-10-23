@@ -646,10 +646,14 @@ export interface CostCenterHistory {
   created_at: string | Date;
 
   material_requests?: {
+    id: number;
     kode_mr: string;
+    department: string | null;
+    status: string | null;
   } | null;
   profiles?: {
-    nama: string;
+    nama: string | null;
+    department: string | null;
   } | null;
 }
 
@@ -1105,7 +1109,7 @@ export interface PettyCashBudgetHistory {
   new_budget: number;
   description: string;
   created_at: string | Date;
-  profiles?: { nama: string } | null;
+  profiles?: { nama: string | null; department: string | null } | null;
 }
 
 // ==========================================

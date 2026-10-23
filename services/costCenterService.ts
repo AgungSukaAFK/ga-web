@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { CostCenter, CostCenterHistory, Profile } from "@/type";
 import { toast } from "sonner";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 
 const supabase = createClient();
 
@@ -47,26 +48,31 @@ export const fetchCostCenters = async (
 };
 
 /**
- * Mengambil riwayat transaksi untuk satu Cost Center
+ * Mengambil SELURUH riwayat transaksi satu Cost Center (lewat batas 1000
+ * baris Supabase). Pelaku di-alias ke `profiles` supaya cocok dengan
+ * CostCenterHistory - user_id baris pemotongan MR adalah pembuat MR-nya
+ * (lihat handle_mr_budget_deduction, supabase/migrations/0001_baseline.sql).
  */
 export const fetchCostCenterHistory = async (costCenterId: number) => {
-  const { data, error } = await supabase
-    .from("cost_center_history")
-    .select(
-      `
-      *,
-      material_requests!mr_id ( kode_mr ),
-      users_with_profiles!user_id ( nama )
-    `
-    )
-    .eq("cost_center_id", costCenterId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  try {
+    return await fetchAllRows<CostCenterHistory>(() =>
+      supabase
+        .from("cost_center_history")
+        .select(
+          `
+          *,
+          material_requests!mr_id ( id, kode_mr, department, status ),
+          profiles:users_with_profiles!user_id ( nama, department )
+        `
+        )
+        .eq("cost_center_id", costCenterId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+    );
+  } catch (error) {
     console.error("Error fetching cost center history:", error);
     throw error;
   }
-  return data as CostCenterHistory[];
 };
 
 /**

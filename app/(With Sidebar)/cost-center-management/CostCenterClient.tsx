@@ -52,7 +52,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import { CostCenter, CostCenterHistory, Profile } from "@/type";
-import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,6 +68,11 @@ import { CurrencyInput } from "@/components/ui/currency-input"; // <-- IMPORT KO
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
+import {
+  BudgetHistoryDialog,
+  BudgetHistoryEntry,
+  BudgetHistoryKind,
+} from "@/components/budget-history-dialog";
 
 // --- Komponen Dialog untuk Create/Edit ---
 function CostCenterDialog({
@@ -281,6 +286,45 @@ function CostCenterDialog({
 }
 
 // --- Komponen Dialog untuk History ---
+// cost_center_history tidak punya kolom jenis transaksi - jenisnya
+// diturunkan dari mr_id & teks deskripsi yang ditulis
+// handle_mr_budget_deduction / services/costCenterService.ts.
+function costCenterHistoryKind(item: CostCenterHistory): BudgetHistoryKind {
+  const desc = item.description.toLowerCase();
+  if (item.mr_id || desc.startsWith("deduction via mr")) return "deduction";
+  if (desc.startsWith("initial budget")) return "initial";
+  if (desc.includes("diaktifkan") || desc.includes("dinonaktifkan"))
+    return "status";
+  if (item.change_amount > 0) return "topup";
+  if (item.change_amount < 0) return "reduction";
+  return "adjustment";
+}
+
+function toBudgetHistoryEntry(item: CostCenterHistory): BudgetHistoryEntry {
+  const kind = costCenterHistoryKind(item);
+  const mr = item.material_requests;
+  return {
+    id: item.id,
+    createdAt: item.created_at,
+    kind,
+    description: item.description,
+    actor: item.profiles?.nama
+      ? { name: item.profiles.nama, department: item.profiles.department }
+      : null,
+    actorNote: kind === "deduction" ? "Pembuat MR" : undefined,
+    reference: mr
+      ? {
+          label: mr.kode_mr,
+          href: `/material-request/${mr.id}`,
+          detail: [mr.department, mr.status].filter(Boolean).join(" · "),
+        }
+      : null,
+    change: Number(item.change_amount),
+    before: Number(item.previous_budget),
+    after: Number(item.new_budget),
+  };
+}
+
 function HistoryDialog({
   open,
   onOpenChange,
@@ -290,83 +334,28 @@ function HistoryDialog({
   onOpenChange: (open: boolean) => void;
   costCenter: CostCenter | null;
 }) {
-  const [history, setHistory] = useState<CostCenterHistory[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (open && costCenter) {
-      setLoading(true);
-      fetchCostCenterHistory(costCenter.id)
-        .then(setHistory)
-        .catch((err) =>
-          toast.error("Gagal memuat riwayat", { description: err.message })
-        )
-        .finally(() => setLoading(false));
-    }
-  }, [open, costCenter]);
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Riwayat Budget: {costCenter?.name}</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tanggal</TableHead>
-                <TableHead>Deskripsi</TableHead>
-                <TableHead>Oleh</TableHead>
-                <TableHead>Ref. MR</TableHead>
-                <TableHead className="text-right">Perubahan</TableHead>
-                <TableHead className="text-right">Sisa Budget</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading && history.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    Tidak ada riwayat.
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading &&
-                history.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{formatDateFriendly(item.created_at)}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.profiles?.nama || "Sistem"}</TableCell>
-                    <TableCell>
-                      {item.material_requests?.kode_mr || "-"}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "text-right font-medium",
-                        item.change_amount < 0
-                          ? "text-destructive"
-                          : "text-green-600"
-                      )}
-                    >
-                      {formatCurrency(item.change_amount)}
-                    </TableCell>
-                    <TableCell className="text-right font-bold">
-                      {formatCurrency(item.new_budget)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <BudgetHistoryDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      name={costCenter?.name}
+      sourceKey={costCenter?.id ?? null}
+      load={async () =>
+        costCenter
+          ? (await fetchCostCenterHistory(costCenter.id)).map(
+              toBudgetHistoryEntry
+            )
+          : []
+      }
+      meta={[
+        { label: "Kode", value: costCenter?.code },
+        { label: "Perusahaan", value: costCenter?.company_code },
+      ]}
+      isActive={costCenter ? costCenter.is_active !== false : undefined}
+      initialBudget={costCenter?.initial_budget}
+      currentBudget={costCenter?.current_budget}
+      exportFileName={`Riwayat_Budget_CC_${costCenter?.code || costCenter?.name || ""}`}
+    />
   );
 }
 

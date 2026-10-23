@@ -56,13 +56,14 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { isGADepartment } from "@/lib/constants/departments";
-import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { toast } from "sonner";
 import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
 import {
   fetchBudgets,
   fetchBudgetHistory,
+  fetchBudgetHistorySubVoucherRefs,
   createBudget,
   updateBudgetAmount,
   setBudgetActiveStatus,
@@ -81,6 +82,11 @@ import { User } from "@supabase/supabase-js";
 import { LIMIT_OPTIONS } from "@/type/enum";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
+import {
+  BudgetHistoryDialog,
+  BudgetHistoryEntry,
+  BudgetHistoryKind,
+} from "@/components/budget-history-dialog";
 
 function BudgetDialog({
   open,
@@ -284,6 +290,80 @@ function BudgetDialog({
   );
 }
 
+// ref_type -> jenis di dialog riwayat. "adjustment" dengan ref_id =
+// selisih edit paksa admin atas Sub-Voucher (admin_force_update_sub_voucher),
+// bukan top-up manual GA/Admin - lihat komentar PettyCashBudgetHistory.
+function pcHistoryKind(item: PettyCashBudgetHistory): BudgetHistoryKind {
+  switch (item.ref_type) {
+    case "initial":
+      return "initial";
+    case "deduction":
+      return "deduction";
+    case "refund":
+      return "refund";
+    case "deactivate":
+      return "status";
+    default:
+      if (item.ref_type === "adjustment" && item.ref_id) return "correction";
+      if (item.change_amount > 0) return "topup";
+      if (item.change_amount < 0) return "reduction";
+      return "adjustment";
+  }
+}
+
+async function loadPcBudgetHistory(
+  budgetId: number,
+): Promise<BudgetHistoryEntry[]> {
+  const rows = await fetchBudgetHistory(budgetId);
+  const subVoucherIds = rows
+    .filter((r) => r.ref_id && r.ref_type !== "initial")
+    .map((r) => r.ref_id as number);
+  // Info dokumen cuma pelengkap - kalau gagal, riwayat tetap tampil.
+  const refs = new Map(
+    (
+      await fetchBudgetHistorySubVoucherRefs(subVoucherIds).catch(() => [])
+    ).map((r) => [r.id, r]),
+  );
+
+  return rows.map((item) => {
+    const kind = pcHistoryKind(item);
+    const sv = item.ref_id ? refs.get(item.ref_id) : undefined;
+    let reference: BudgetHistoryEntry["reference"] = null;
+    if (sv) {
+      const voucher = sv.petty_cash_voucher;
+      reference = {
+        label: sv.kode_sub_voucher,
+        href: `/petty-cash/sub-voucher/${sv.id}`,
+        detail: [
+          voucher?.petty_cash_pengajuan?.kode_pengajuan ?? voucher?.kode_voucher,
+          voucher?.profiles?.nama && `Pengaju: ${voucher.profiles.nama}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    } else if (item.ref_id) {
+      // Sub-Voucher sudah dihapus admin (baris "refund") - kodenya masih
+      // ada di deskripsi.
+      const kode = item.description.match(/Sub-Voucher (\S+)/)?.[1];
+      if (kode) reference = { label: kode, detail: "Dokumen sudah dihapus" };
+    }
+
+    return {
+      id: item.id,
+      createdAt: item.created_at,
+      kind,
+      description: item.description,
+      actor: item.profiles?.nama
+        ? { name: item.profiles.nama, department: item.profiles.department }
+        : null,
+      reference,
+      change: Number(item.change_amount),
+      before: Number(item.previous_budget),
+      after: Number(item.new_budget),
+    };
+  });
+}
+
 function HistoryDialog({
   open,
   onOpenChange,
@@ -293,79 +373,23 @@ function HistoryDialog({
   onOpenChange: (open: boolean) => void;
   budget: PettyCashBudget | null;
 }) {
-  const [history, setHistory] = useState<PettyCashBudgetHistory[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (open && budget) {
-      setLoading(true);
-      fetchBudgetHistory(budget.id)
-        .then(setHistory)
-        .catch((err) =>
-          toast.error("Gagal memuat riwayat", { description: err.message }),
-        )
-        .finally(() => setLoading(false));
-    }
-  }, [open, budget]);
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl">
-        <DialogHeader>
-          <DialogTitle>Riwayat Budget: {budget?.name}</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tanggal</TableHead>
-                <TableHead>Deskripsi</TableHead>
-                <TableHead>Oleh</TableHead>
-                <TableHead className="text-right">Perubahan</TableHead>
-                <TableHead className="text-right">Sisa Budget</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading && history.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center h-24">
-                    Tidak ada riwayat.
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading &&
-                history.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{formatDateFriendly(item.created_at)}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.profiles?.nama || "Sistem"}</TableCell>
-                    <TableCell
-                      className={cn(
-                        "text-right font-medium",
-                        item.change_amount < 0
-                          ? "text-destructive"
-                          : "text-green-600",
-                      )}
-                    >
-                      {formatCurrency(item.change_amount)}
-                    </TableCell>
-                    <TableCell className="text-right font-bold">
-                      {formatCurrency(item.new_budget)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <BudgetHistoryDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      name={budget?.name}
+      sourceKey={budget?.id ?? null}
+      load={() => (budget ? loadPcBudgetHistory(budget.id) : Promise.resolve([]))}
+      meta={[
+        { label: "Departemen", value: budget?.department },
+        { label: "Site", value: budget?.site },
+        { label: "Perusahaan", value: budget?.company_code },
+      ]}
+      isActive={budget?.is_active}
+      initialBudget={budget?.initial_budget}
+      currentBudget={budget?.current_budget}
+      exportFileName={`Riwayat_Budget_PC_${budget?.name ?? ""}`}
+    />
   );
 }
 

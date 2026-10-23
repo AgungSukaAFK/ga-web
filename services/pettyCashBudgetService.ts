@@ -17,6 +17,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 
 const supabase = createClient();
 
@@ -115,17 +116,55 @@ export const resolveAutoBudget = async (
   return data as unknown as PettyCashBudget | null;
 };
 
+/** SELURUH riwayat satu budget (lewat batas 1000 baris Supabase). */
 export const fetchBudgetHistory = async (
   budgetId: number,
-): Promise<PettyCashBudgetHistory[]> => {
-  const { data, error } = await supabase
-    .from("petty_cash_budget_history")
-    .select("*, profiles:profiles!user_id(nama)")
-    .eq("budget_id", budgetId)
-    .order("created_at", { ascending: false });
+): Promise<PettyCashBudgetHistory[]> =>
+  fetchAllRows<PettyCashBudgetHistory>(() =>
+    supabase
+      .from("petty_cash_budget_history")
+      .select("*, profiles:profiles!user_id(nama, department)")
+      .eq("budget_id", budgetId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false }),
+  );
 
-  if (error) throw error;
-  return (data ?? []) as unknown as PettyCashBudgetHistory[];
+/** Info dokumen di balik ref_id riwayat budget (= petty_cash_sub_voucher.id). */
+export interface BudgetHistorySubVoucherRef {
+  id: number;
+  kode_sub_voucher: string;
+  status: string;
+  petty_cash_voucher: {
+    kode_voucher: string;
+    profiles: { nama: string | null } | null;
+    petty_cash_pengajuan: { kode_pengajuan: string } | null;
+  } | null;
+}
+
+/**
+ * Dipakai dialog riwayat budget untuk menampilkan Sub-Voucher/Pengajuan &
+ * pengaju di balik baris "deduction"/"adjustment". ref_id tidak punya FK
+ * (sub-voucher yang sudah dihapus admin tetap tercatat di riwayat), jadi
+ * diambil terpisah per batch, bukan lewat embed.
+ */
+export const fetchBudgetHistorySubVoucherRefs = async (
+  subVoucherIds: number[],
+): Promise<BudgetHistorySubVoucherRef[]> => {
+  const ids = [...new Set(subVoucherIds)];
+  const result: BudgetHistorySubVoucherRef[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("petty_cash_sub_voucher")
+      .select(
+        `id, kode_sub_voucher, status,
+         petty_cash_voucher(kode_voucher, profiles!user_id(nama),
+           petty_cash_pengajuan(kode_pengajuan))`,
+      )
+      .in("id", ids.slice(i, i + 200));
+    if (error) throw error;
+    result.push(...((data ?? []) as unknown as BudgetHistorySubVoucherRef[]));
+  }
+  return result;
 };
 
 export const createBudget = async (

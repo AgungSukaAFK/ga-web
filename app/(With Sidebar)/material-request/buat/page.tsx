@@ -1012,12 +1012,6 @@ export default function BuatMRPage() {
           submitting: loading,
           disabled: isUploading,
           error: ajukanAlert,
-          nextSteps: (
-            <>
-              MR masuk status <strong>Pending Validation</strong> dan tim GA
-              akan dinotifikasi untuk memvalidasi sebelum lanjut ke approval.
-            </>
-          ),
           children: (
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-sm text-muted-foreground">

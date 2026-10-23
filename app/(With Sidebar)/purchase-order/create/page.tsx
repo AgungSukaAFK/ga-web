@@ -1237,13 +1237,6 @@ function CreatePOPageContent() {
               ))}
             </div>
           ),
-          nextSteps: (
-            <>
-              PO diajukan ke tim GA untuk divalidasi.
-              {!mrData &&
-                " Karena Direct PO, Anda akan diminta konfirmasi dulu."}
-            </>
-          ),
           children: (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">

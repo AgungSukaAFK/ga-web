@@ -21,31 +21,9 @@ const thinBorder = {
 const MAX_COL_WIDTH = 45;
 const MIN_COL_WIDTH = 10;
 
-// Supabase/PostgREST membatasi max 1000 baris per request,
-// jadi data export diambil bertahap per halaman.
-const FETCH_PAGE_SIZE = 1000;
-
-/**
- * Ambil SEMUA baris hasil query (tanpa terpotong limit 1000 Supabase).
- * `buildQuery` harus membuat query baru tiap dipanggil (sudah termasuk filter
- * & order); range per halaman ditambahkan di sini.
- */
-export async function fetchAllRows<T = any>(
-  buildQuery: () => any,
-  pageSize = FETCH_PAGE_SIZE,
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await buildQuery().range(
-      from,
-      from + pageSize - 1,
-    );
-    if (error) throw error;
-    rows.push(...((data as T[]) || []));
-    if (!data || data.length < pageSize) break;
-  }
-  return rows;
-}
+// Dipindah ke lib/supabase/fetch-all-rows.ts (dipakai juga di luar export,
+// mis. riwayat budget) - diekspor ulang supaya import lama tetap jalan.
+export { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 
 /**
  * Export array of flat objects (hasil map/flatMap seperti yang sudah ada

@@ -1653,14 +1653,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           submitting: actionLoading,
           disabled: isUploading,
           dirty,
-          nextSteps: isRevision ? (
-            <>
-              MR kembali ke status <strong>Pending Validation</strong> dan tim
-              GA dinotifikasi untuk memvalidasi ulang.
-            </>
-          ) : (
-            <>Perubahan disimpan ke MR ini dan tercatat di log aktivitas.</>
-          ),
           children: (
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-sm text-muted-foreground">
