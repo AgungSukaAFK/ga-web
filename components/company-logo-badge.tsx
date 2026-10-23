@@ -5,16 +5,18 @@ import { cn } from "@/lib/utils";
 // Logo perusahaan pemilik dokumen (GMI/GIS) - bantu akun LOURDES, yang bisa
 // lihat dokumen kedua perusahaan sekaligus, membedakan milik siapa sekilas
 // pandang. Ukuran width/height = ukuran asli file, supaya aspek rasio terjaga.
+// Versi landscape sudah punya stroke putih bawaan (gis-landscape,
+// gmi-landscape-stroke), jadi tetap terbaca di dark mode tanpa latar putih.
 const COMPANY_LOGOS = {
   GMI: {
     square: { src: "/gmi-logo.webp", width: 150, height: 150 },
     landscape: {
-      src: "/gmi-landscape.webp",
-      width: 1080,
-      height: 130,
-      // Rasio ~8:1 (jauh lebih lebar dari GIS) - dibuat lebih pendek
+      src: "/gmi-landscape-stroke.webp",
+      width: 1098,
+      height: 148,
+      // Rasio ~7:1 (jauh lebih lebar dari GIS) - dibuat lebih pendek
       // supaya bobot visual kedua logo kurang lebih setara.
-      className: "max-h-9",
+      className: "max-h-10",
     },
   },
   GIS: {
@@ -27,6 +29,12 @@ const COMPANY_LOGOS = {
     },
   },
 } as const;
+
+// Logo kotak belum punya stroke putih bawaan - outline putih tipis lewat
+// drop-shadow 4 arah, supaya bagian hitam/navy-nya tetap terbaca di dark
+// mode (di light mode outline putih ini tidak kelihatan).
+const WHITE_OUTLINE =
+  "[filter:drop-shadow(1px_0_0_#fff)_drop-shadow(-1px_0_0_#fff)_drop-shadow(0_1px_0_#fff)_drop-shadow(0_-1px_0_#fff)]";
 
 type LogoCompany = keyof typeof COMPANY_LOGOS;
 
@@ -43,7 +51,6 @@ const isLogoCompany = (code?: string | null): code is LogoCompany =>
  * aslinya tidak ikut dihitung & tidak mendorong tombol di sebelahnya
  * sampai turun baris).
  *
- * Latar putih tetap putih di dark mode agar logo (navy/hitam) terbaca.
  * Kode selain GMI/GIS (mis. LOURDES) tidak merender apa-apa.
  */
 export function CompanyLogoBadge({
@@ -60,35 +67,30 @@ export function CompanyLogoBadge({
 
   return (
     <>
-      <div
+      <Image
+        src={square.src}
+        alt={alt}
+        width={square.width}
+        height={square.height}
         className={cn(
-          "flex size-11 shrink-0 items-center justify-center rounded-lg bg-white p-1 md:size-14 md:p-1.5 @min-[60rem]:hidden",
+          "size-11 shrink-0 object-contain md:size-14 @min-[60rem]:hidden",
+          WHITE_OUTLINE,
           className,
         )}
-      >
-        <Image
-          src={square.src}
-          alt={alt}
-          width={square.width}
-          height={square.height}
-          className="h-full w-auto object-contain"
-        />
-      </div>
+      />
       <div
         className={cn(
           "hidden min-w-40 flex-1 items-center contain-inline-size @min-[60rem]:flex",
           className,
         )}
       >
-        <div className="min-w-0 rounded-md bg-white px-2 py-1">
-          <Image
-            src={landscape.src}
-            alt={alt}
-            width={landscape.width}
-            height={landscape.height}
-            className={cn("h-auto w-auto max-w-full", landscape.className)}
-          />
-        </div>
+        <Image
+          src={landscape.src}
+          alt={alt}
+          width={landscape.width}
+          height={landscape.height}
+          className={cn("h-auto w-auto max-w-full", landscape.className)}
+        />
       </div>
     </>
   );
