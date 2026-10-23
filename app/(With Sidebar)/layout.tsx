@@ -105,7 +105,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               Blur dibuat ringan di mobile - repaint tiap scroll berat di
               HP kelas bawah. */}
           <TopbarProvider>
-            <header className="no-print sticky top-0 z-40 mb-4 flex shrink-0 flex-col border-b border-border/60 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:backdrop-blur-xl md:backdrop-saturate-150 md:supports-[backdrop-filter]:bg-background/60 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-gradient-to-r after:from-transparent after:via-primary/30 after:to-transparent">
+            <header data-app-topbar className="no-print sticky top-0 z-40 mb-4 flex shrink-0 flex-col border-b border-border/60 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:backdrop-blur-xl md:backdrop-saturate-150 md:supports-[backdrop-filter]:bg-background/60 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-gradient-to-r after:from-transparent after:via-primary/30 after:to-transparent">
               <div className="flex h-14 items-center gap-2 transition-[height] ease-linear md:h-16 md:group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
                 <div className="flex min-w-0 items-center gap-2 pl-3 md:pl-4">
                   <SidebarTrigger className="-ml-1 shrink-0" />

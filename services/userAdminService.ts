@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isITAdmin } from "@/lib/constants/departments";
 
 export type CreateUserInput = {
   email: string;
@@ -110,4 +111,61 @@ export async function createUserByAdmin(
   }
 
   return { id: userId };
+}
+
+/**
+ * Admin departemen IT (isITAdmin) mengganti password user lain - untuk user
+ * yang lupa password (reset mandiri lewat email tidak tersedia, lihat dialog
+ * "Lupa password" di /auth/login). Password sendiri tetap diganti lewat
+ * /profile yang wajib verifikasi password lama.
+ */
+export async function resetUserPasswordByITAdmin(
+  userId: string,
+  newPassword: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const { data: adminProfile } = await supabase
+    .from("profiles")
+    .select("role, department, company")
+    .eq("id", user.id)
+    .single();
+
+  if (!isITAdmin(adminProfile)) {
+    throw new Error("Akses ditolak: khusus admin departemen IT.");
+  }
+  if (userId === user.id) {
+    throw new Error("Ganti password akun sendiri lewat halaman Profil.");
+  }
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error("Password minimal 6 karakter.");
+  }
+
+  const admin = createAdminClient();
+
+  const { data: target } = await admin
+    .from("profiles")
+    .select("company")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!target) throw new Error("User tidak ditemukan.");
+
+  // Admin non-LOURDES hanya boleh mengelola user company-nya sendiri
+  // (konsisten dengan filter di halaman Manajemen User).
+  if (
+    adminProfile!.company &&
+    adminProfile!.company !== "LOURDES" &&
+    target.company !== adminProfile!.company
+  ) {
+    throw new Error("Akses ditolak: user dari perusahaan lain.");
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    password: newPassword,
+  });
+  if (error) throw new Error("Gagal mereset password: " + error.message);
 }

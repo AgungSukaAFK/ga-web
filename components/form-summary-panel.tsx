@@ -83,7 +83,10 @@ const HIGHLIGHT_CLASSES = [
 export function scrollToFormSection(targetId: string) {
   const el = document.getElementById(targetId);
   if (!el) return;
-  const top = el.getBoundingClientRect().top + window.scrollY - 16;
+  // Berhenti di bawah topbar sticky, bukan di belakangnya.
+  const topbar = document.querySelector("[data-app-topbar]");
+  const offset = (topbar?.getBoundingClientRect().bottom ?? 0) + 16;
+  const top = el.getBoundingClientRect().top + window.scrollY - offset;
   window.scrollTo({ top, behavior: "smooth" });
   el.classList.add(...HIGHLIGHT_CLASSES, "transition-shadow");
   window.setTimeout(() => el.classList.remove(...HIGHLIGHT_CLASSES), 1600);
@@ -402,8 +405,9 @@ function SummaryPanelBody({
 /**
  * Layout form + panel ringkasan di kanan yang bisa di-show/hide.
  *
- * - Panel `fixed` setinggi layar & geser masuk/keluar dari kanan; isinya
- *   scroll sendiri, header & tombol submit tetap menempel.
+ * - Panel `fixed` setinggi layar (desktop: di bawah topbar) & geser
+ *   masuk/keluar dari kanan; isinya scroll sendiri, header & tombol submit
+ *   tetap menempel.
  * - Desktop (xl): saat terbuka, form ikut menyempit (tidak tertutup panel).
  *   Layar kecil: panel jadi overlay dengan backdrop, selalu mulai tertutup.
  * - Default tertutup; pilihan show/hide user diingat (localStorage, dipakai
@@ -584,7 +588,9 @@ export function FormSummaryLayout({
         aria-hidden={!open}
         inert={!open}
         className={cn(
-          "fixed inset-y-0 right-0 z-50 w-[min(360px,calc(100vw-3rem))] bg-card shadow-xl transition-transform xl:z-30 xl:shadow-none",
+          // Desktop: mulai di bawah topbar sticky (z-40) - tinggi topbar
+          // ikut layout: h-16, h-12 saat sidebar diciutkan ke ikon.
+          "fixed inset-y-0 right-0 z-50 w-[min(360px,calc(100vw-3rem))] bg-card shadow-xl transition-transform xl:top-16 xl:z-30 xl:shadow-none xl:group-has-data-[collapsible=icon]/sidebar-wrapper:top-12",
           transition,
           open ? "translate-x-0" : "translate-x-full",
         )}

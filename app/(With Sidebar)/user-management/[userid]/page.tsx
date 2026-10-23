@@ -37,6 +37,8 @@ import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
 import { AvatarViewerDialog } from "@/components/avatar-viewer-dialog";
 import { setCachedAvatar } from "@/lib/avatar-cache";
+import { isITAdmin } from "@/lib/constants/departments";
+import { ResetPasswordCard } from "./ResetPasswordCard";
 
 // REVISI: Tipe Profile diperbarui sesuai skema database
 type Profile = {
@@ -120,6 +122,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
   const [updateSuccess, setUpdateSuccess] = useState<boolean>(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [canResetPassword, setCanResetPassword] = useState(false);
   const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false);
   const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
   const router = useRouter();
@@ -138,19 +141,27 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         setCurrentUserId(authUser?.id ?? null);
 
         // REVISI: Mengambil semua kolom dari view + status aktif & foto profil
-        // dari tabel profiles.
-        const [{ data, error }, { data: statusData }] = await Promise.all([
-          supabase
-            .from("users_with_profiles")
-            .select("id, email, nama, role, lokasi, department, company, nrp")
-            .eq("id", userid)
-            .single(),
-          supabase
-            .from("profiles")
-            .select("is_active, avatar_url")
-            .eq("id", userid)
-            .single(),
-        ]);
+        // dari tabel profiles, plus role admin yang login (reset password
+        // khusus admin IT).
+        const [{ data, error }, { data: statusData }, { data: viewerData }] =
+          await Promise.all([
+            supabase
+              .from("users_with_profiles")
+              .select("id, email, nama, role, lokasi, department, company, nrp")
+              .eq("id", userid)
+              .single(),
+            supabase
+              .from("profiles")
+              .select("is_active, avatar_url")
+              .eq("id", userid)
+              .single(),
+            supabase
+              .from("profiles")
+              .select("role, department")
+              .eq("id", authUser?.id ?? "")
+              .maybeSingle(),
+          ]);
+        setCanResetPassword(isITAdmin(viewerData));
 
         if (error || !data) {
           console.error("User with profile not found:", error);
@@ -535,78 +546,88 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         </div>
       </Content>
 
-      {/* --- Kartu terpisah: Status Akun (Aktif / Nonaktif) --- */}
-      <Content
-        size="md"
-        title="Status Akun"
-        description="Kelola akses login akun ini ke sistem."
-      >
-        <div>
-          <div className="mb-4 flex items-center gap-2">
-            <span className="text-sm font-medium">Status saat ini:</span>
-            {user.is_active ? (
-              <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
-                Aktif
-              </Badge>
+      {/* Kolom kanan: Status Akun + Reset Password ditumpuk */}
+      <div className="col-span-12 flex flex-col gap-4 md:gap-6 lg:col-span-6">
+        {/* --- Kartu terpisah: Status Akun (Aktif / Nonaktif) --- */}
+        <Content
+          size="lg"
+          title="Status Akun"
+          description="Kelola akses login akun ini ke sistem."
+        >
+          <div>
+            <div className="mb-4 flex items-center gap-2">
+              <span className="text-sm font-medium">Status saat ini:</span>
+              {user.is_active ? (
+                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
+                  Aktif
+                </Badge>
+              ) : (
+                <Badge variant="destructive">Nonaktif</Badge>
+              )}
+            </div>
+            <h3 className="font-semibold">
+              {user.is_active ? "Nonaktifkan Akun" : "Aktifkan Akun"}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {user.is_active
+                ? "User yang dinonaktifkan tidak dapat login dan tidak akan muncul di sistem (misalnya saat pembuatan template approval). Datanya tetap tersimpan dan bisa diaktifkan kembali kapan saja."
+                : "Aktifkan kembali akun ini agar user dapat login dan kembali muncul di sistem."}
+            </p>
+
+            {user.id === currentUserId ? (
+              <p className="mt-3 text-sm text-amber-600">
+                Anda tidak dapat menonaktifkan akun Anda sendiri.
+              </p>
             ) : (
-              <Badge variant="destructive">Nonaktif</Badge>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant={user.is_active ? "destructive" : "default"}
+                    className="mt-3"
+                    disabled={isTogglingActive}
+                  >
+                    {isTogglingActive ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : user.is_active ? (
+                      <PowerOff className="mr-2 h-4 w-4" />
+                    ) : (
+                      <Power className="mr-2 h-4 w-4" />
+                    )}
+                    {user.is_active ? "Nonaktifkan Akun" : "Aktifkan Akun"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {user.is_active
+                        ? "Nonaktifkan akun ini?"
+                        : "Aktifkan kembali akun ini?"}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {user.is_active
+                        ? `Akun "${user.nama || user.email}" tidak akan bisa login dan akan disembunyikan dari sistem. Anda dapat mengaktifkannya kembali kapan saja.`
+                        : `Akun "${user.nama || user.email}" akan dapat login kembali dan muncul lagi di sistem.`}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleToggleActive}>
+                      {user.is_active ? "Ya, Nonaktifkan" : "Ya, Aktifkan"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
-          <h3 className="font-semibold">
-            {user.is_active ? "Nonaktifkan Akun" : "Aktifkan Akun"}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {user.is_active
-              ? "User yang dinonaktifkan tidak dapat login dan tidak akan muncul di sistem (misalnya saat pembuatan template approval). Datanya tetap tersimpan dan bisa diaktifkan kembali kapan saja."
-              : "Aktifkan kembali akun ini agar user dapat login dan kembali muncul di sistem."}
-          </p>
+        </Content>
 
-          {user.id === currentUserId ? (
-            <p className="mt-3 text-sm text-amber-600">
-              Anda tidak dapat menonaktifkan akun Anda sendiri.
-            </p>
-          ) : (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant={user.is_active ? "destructive" : "default"}
-                  className="mt-3"
-                  disabled={isTogglingActive}
-                >
-                  {isTogglingActive ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : user.is_active ? (
-                    <PowerOff className="mr-2 h-4 w-4" />
-                  ) : (
-                    <Power className="mr-2 h-4 w-4" />
-                  )}
-                  {user.is_active ? "Nonaktifkan Akun" : "Aktifkan Akun"}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    {user.is_active
-                      ? "Nonaktifkan akun ini?"
-                      : "Aktifkan kembali akun ini?"}
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {user.is_active
-                      ? `Akun "${user.nama || user.email}" tidak akan bisa login dan akan disembunyikan dari sistem. Anda dapat mengaktifkannya kembali kapan saja.`
-                      : `Akun "${user.nama || user.email}" akan dapat login kembali dan muncul lagi di sistem.`}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Batal</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleToggleActive}>
-                    {user.is_active ? "Ya, Nonaktifkan" : "Ya, Aktifkan"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
-      </Content>
+        {canResetPassword && user.id !== currentUserId && (
+          <ResetPasswordCard
+            userId={user.id}
+            userName={user.nama || user.email}
+          />
+        )}
+      </div>
 
       {user.avatar_url && (
         <AvatarViewerDialog
