@@ -2,7 +2,7 @@
 
 "use client";
 
-import { use, useEffect, useRef, useState, Suspense } from "react";
+import { Fragment, use, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { removeAttachmentVps } from "@/services/storageService";
@@ -133,6 +133,7 @@ import {
 } from "@/type/enum";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
+import { CompanyLogoBadge } from "@/components/company-logo-badge";
 import { processMrApproval } from "@/services/approvalService";
 import {
   fetchMaterialRequestById,
@@ -1666,23 +1667,42 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         }}
       >
         <div className="col-span-12">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-            <div>
-              <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">{mr.kode_mr}</h1>
-              <div className="flex flex-wrap items-center gap-2 mt-1">
-                <span className="text-muted-foreground text-sm">
-                  Dibuat pada {formatDateFriendly(mr.created_at)}
-                </span>
-                {getStatusBadge(mr.status)}
-                <span className="text-muted-foreground text-xs">
-                  Umur:{" "}
-                  {formatAge(
-                    mr.created_at,
-                    mr.full_received_at,
-                    mr.status === "Full Received",
-                  )}
-                </span>
+          {/* `@container`: logo GMI/GIS pilih versi kotak/landscape dari
+              lebar area konten (ikut buka-tutup sidebar), bukan lebar layar. */}
+          <div className="@container flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div className="flex w-full min-w-0 items-center gap-3 md:w-auto md:flex-auto md:gap-4">
+              <div className="min-w-0 flex-1 md:flex-initial">
+                {/* <wbr> setelah tiap "/" - kalau kode MR harus turun baris
+                    (mis. HP sempit + logo di sebelahnya), patahnya di garis
+                    miring, bukan di tengah nomor. Teks yang di-copy tetap utuh. */}
+                <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">
+                  {mr.kode_mr.split("/").map((part, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && (
+                        <>
+                          /<wbr />
+                        </>
+                      )}
+                      {part}
+                    </Fragment>
+                  ))}
+                </h1>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <span className="text-muted-foreground text-sm">
+                    Dibuat pada {formatDateFriendly(mr.created_at)}
+                  </span>
+                  {getStatusBadge(mr.status)}
+                  <span className="text-muted-foreground text-xs">
+                    Umur:{" "}
+                    {formatAge(
+                      mr.created_at,
+                      mr.full_received_at,
+                      mr.status === "Full Received",
+                    )}
+                  </span>
+                </div>
               </div>
+              <CompanyLogoBadge companyCode={mr.company_code} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ActivityLogDialog
