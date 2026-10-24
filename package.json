@@ -1,5 +1,7 @@
 {
   "private": true,
+  "license": "UNLICENSED",
+  "author": "Muhamad Agung Maulana <wismaagung23@gmail.com> (https://github.com/AgungSukaAFK)",
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",

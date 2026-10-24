@@ -1,0 +1,57 @@
+LISENSI PERANGKAT LUNAK PROPRIETARY
+
+Garuda Procure
+Sistem manajemen pengadaan internal PT. Garuda Mart Indonesia
+
+Hak Cipta (c) 2025-2026 PT. Garuda Mart Indonesia.
+Seluruh hak dilindungi undang-undang.
+
+
+PENGEMBANG
+
+Sistem ini dirancang dan dikembangkan seluruhnya oleh developer tunggal:
+
+    Muhamad Agung Maulana
+    GitHub : AgungSukaAFK (https://github.com/AgungSukaAFK)
+    Email  : wismaagung23@gmail.com
+
+
+KEPEMILIKAN
+
+Sesuai perjanjian kerja antara pengembang dan PT. Garuda Mart Indonesia,
+hak ekonomi atas perangkat lunak ini, termasuk kode sumber, skema dan
+migrasi database, desain antarmuka, dokumentasi, dan aset terkait
+(selanjutnya disebut "Perangkat Lunak"), dimiliki oleh PT. Garuda Mart
+Indonesia.
+
+Pencantuman nama pengembang di atas merupakan pengakuan atas hak moral
+pencipta sebagaimana diatur dalam Undang-Undang Nomor 28 Tahun 2014
+tentang Hak Cipta, dan tidak boleh dihapus atau diubah dari Perangkat
+Lunak maupun turunannya.
+
+
+KETENTUAN PENGGUNAAN
+
+1. Perangkat Lunak bersifat rahasia dan hanya boleh digunakan untuk
+   keperluan internal PT. Garuda Mart Indonesia beserta perusahaan dalam
+   grupnya.
+
+2. Tanpa izin tertulis dari PT. Garuda Mart Indonesia, siapa pun dilarang
+   menyalin, mengubah, menggabungkan, menerbitkan, mendistribusikan,
+   memberikan sublisensi, menjual, atau menyewakan Perangkat Lunak, baik
+   sebagian maupun seluruhnya.
+
+3. Akses ke repository kode sumber tidak memberikan lisensi atau hak apa
+   pun atas Perangkat Lunak.
+
+
+KOMPONEN PIHAK KETIGA
+
+Perangkat Lunak menggunakan pustaka open source (antara lain Next.js,
+React, Supabase, Tailwind CSS, dan shadcn/ui) yang tetap tunduk pada
+lisensinya masing-masing. Lisensi ini tidak berlaku untuk komponen
+tersebut.
+
+
+Permohonan izin penggunaan di luar ketentuan di atas dapat diajukan
+kepada manajemen PT. Garuda Mart Indonesia.

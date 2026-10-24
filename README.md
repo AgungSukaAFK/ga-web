@@ -138,3 +138,11 @@ public/               ikon, manifest PWA, service worker (sw.js), offline.html
 | [planning-update-web.md](planning-update-web.md)                    | Cara kerja fitur Update Web                                       |
 | [review-pc.md](review-pc.md), [planning-pc.md](planning-pc.md)      | Alur & rencana modul Petty Cash                                   |
 | [supabase/README.md](supabase/README.md)                            | Struktur folder supabase & aturan migrasi                         |
+
+## Lisensi
+
+Proprietary. Hak cipta © 2025–2026 PT. Garuda Mart Indonesia, seluruh hak
+dilindungi. Dikembangkan oleh **Muhamad Agung Maulana**
+([@AgungSukaAFK](https://github.com/AgungSukaAFK)) sebagai developer tunggal.
+Kode ini hanya untuk keperluan internal perusahaan; ketentuan lengkap ada di
+[LICENSE](LICENSE).
