@@ -122,6 +122,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { useWaitingApproverCompanies } from "@/hooks/use-waiting-approver-companies";
 import {
   ActiveFilter,
   FilterPanel,
@@ -215,6 +216,7 @@ export function MaterialRequestContent({
 
   // --- State Management ---
   const [dataMR, setDataMR] = useState<MaterialRequestListItem[]>([]);
+  const approverCompanies = useWaitingApproverCompanies(dataMR);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -823,12 +825,18 @@ export function MaterialRequestContent({
   const renderStatusCell = (mr: MaterialRequestListItem) => {
     const approver =
       mr.status === "Pending Approval" ? getCurrentApprover(mr.approvals) : null;
+    const approverCompany = approver ? approverCompanies[approver.userid] : null;
     return (
       <div className="flex flex-col items-start gap-1">
         {getStatusBadge(mr.status)}
         {approver && (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
             Menunggu: {approver.nama}
+            {approverCompany && (
+              <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                {approverCompany}
+              </Badge>
+            )}
           </span>
         )}
         {mr.status === "Pending Validation" && <PicGaPopover />}

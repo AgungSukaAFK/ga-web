@@ -7,8 +7,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2, UserRound } from "lucide-react";
+
+/** Akun seed demo (lihat supabase/scripts/seed-demo-users.mjs) - bukan PIC
+ * sungguhan, jadi tidak ditampilkan di daftar. */
+const isDemoAccount = (email: string | null) =>
+  !!email && email.toLowerCase().endsWith("@demo.com");
 
 interface PicPopoverProps {
   label: string;
@@ -26,6 +32,7 @@ interface PicUser {
   nama: string | null;
   email: string | null;
   department: string | null;
+  company: string | null;
 }
 
 export function PicPopover({
@@ -45,16 +52,16 @@ export function PicPopover({
     const supabase = createClient();
     let query = supabase
       .from("profiles")
-      .select("id, nama, email, department")
+      .select("id, nama, email, department, company")
       .in("department", departments)
       .eq("role", "approver")
       .eq("is_active", true);
 
     if (companyScope) query = query.in("company", companyScope);
 
-    const { data } = await query.order("nama");
+    const { data } = await query.order("company").order("nama");
 
-    setUsers(data || []);
+    setUsers((data || []).filter((u) => !isDemoAccount(u.email)));
     setLoaded(true);
     setLoading(false);
   };
@@ -88,7 +95,17 @@ export function PicPopover({
           <ul className="space-y-2">
             {users.map((u) => (
               <li key={u.id} className="text-xs">
-                <p className="font-medium">{u.nama || "Tanpa nama"}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{u.nama || "Tanpa nama"}</p>
+                  {u.company && (
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 px-1.5 py-0 text-[10px]"
+                    >
+                      {u.company}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-muted-foreground">{u.email}</p>
               </li>
             ))}

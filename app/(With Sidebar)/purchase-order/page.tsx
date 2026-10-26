@@ -111,6 +111,7 @@ import {
   getLastApprovedApprover,
 } from "@/type/enum";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { useWaitingApproverCompanies } from "@/hooks/use-waiting-approver-companies";
 import {
   ActiveFilter,
   FilterPanel,
@@ -258,6 +259,7 @@ function VendorDetailModal({
 
 function PurchaseOrderPageContent() {
   const [dataPO, setDataPO] = useState<PurchaseOrderListItem[]>([]);
+  const approverCompanies = useWaitingApproverCompanies(dataPO);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -614,9 +616,20 @@ function PurchaseOrderPageContent() {
               {po.status === "Pending Approval" &&
                 (() => {
                   const approver = getCurrentApprover(po.approvals);
+                  const company = approver
+                    ? approverCompanies[approver.userid]
+                    : null;
                   return approver ? (
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       Menunggu: {approver.nama}
+                      {company && (
+                        <Badge
+                          variant="outline"
+                          className="px-1.5 py-0 text-[10px]"
+                        >
+                          {company}
+                        </Badge>
+                      )}
                     </span>
                   ) : null;
                 })()}
