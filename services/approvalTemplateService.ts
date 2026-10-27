@@ -42,15 +42,20 @@ export const fetchTemplates = async (): Promise<ApprovalTemplate[]> => {
 };
 
 /**
- * Mencari user untuk ditambahkan ke template.
+ * Mencari user untuk ditambahkan ke jalur approval. Default cuma role
+ * approver; `includeAdmin` dipakai form Template Approval (MR/PO & Petty
+ * Cash) supaya admin juga bisa dijadikan approver.
  */
-export const searchUsers = async (query: string): Promise<User[]> => {
+export const searchUsers = async (
+  query: string,
+  { includeAdmin = false }: { includeAdmin?: boolean } = {},
+): Promise<User[]> => {
   if (!query) return [];
   const { data, error } = await supabase
     .from("profiles")
     .select("id, nama, email, role, department")
     .ilike("nama", `%${query}%`)
-    .ilike("role", `approver`)
+    .in("role", includeAdmin ? ["approver", "admin"] : ["approver"])
     .eq("is_active", true) // Sembunyikan user yang sudah dinonaktifkan
     .limit(5);
 

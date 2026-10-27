@@ -116,7 +116,9 @@ function buildMainItems(profile: NavProfile): NavItem[] {
     });
   }
 
-  if (profile?.role === "approver" || isITAdmin(profile)) {
+  // Semua admin (bukan cuma admin IT) - admin bisa dipasang sebagai approver
+  // di Template Approval, jadi butuh akses ke antrean approval-nya.
+  if (profile?.role === "approver" || profile?.role === "admin") {
     baseNav.splice(1, 0, {
       title: "Approval & Validation",
       url: "/approval-validation",

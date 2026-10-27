@@ -134,7 +134,7 @@ export function PcApprovalTemplateForm({
   const handleSearch = async () => {
     setIsSearching(true);
     try {
-      const results = await searchUsers(searchQuery);
+      const results = await searchUsers(searchQuery, { includeAdmin: true });
       setSearchResults(results);
     } catch (error: any) {
       toast.error("Gagal mencari user", { description: error.message });
@@ -344,7 +344,7 @@ export function PcApprovalTemplateForm({
         <Label>Bangun Jalur Approval</Label>
         <div className="flex gap-2">
           <Input
-            placeholder="Cari nama approver..."
+            placeholder="Cari nama approver / admin..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -374,6 +374,9 @@ export function PcApprovalTemplateForm({
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{user.nama}</p>
                     <Badge variant="outline">{user.department}</Badge>
+                    {user.role === "admin" && (
+                      <Badge variant="secondary">Admin</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
                     {user.email}

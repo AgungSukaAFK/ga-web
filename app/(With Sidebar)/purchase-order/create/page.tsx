@@ -57,7 +57,7 @@ import { logActivity } from "@/services/logService";
 import { removeAttachmentVps } from "@/services/storageService";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { isMarketplaceVendor } from "@/type/enum";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { withAssetMarker } from "@/lib/poAssetMarker";
 import { notifyGAOnPOSubmit } from "@/lib/notifications/client";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
@@ -86,6 +86,8 @@ import {
   MessageSquare,
   StickyNote,
   Printer,
+  CalendarDays,
+  CalendarClock,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -317,6 +319,15 @@ const InfoItem = ({
   </div>
 );
 
+// Label & warna prioritas MR - sama dengan PRIORITY_OPTIONS di halaman detail MR.
+const MR_PRIORITY_META: Record<string, { label: string; className: string }> = {
+  P0: { label: "Emergency", className: "bg-red-600 hover:bg-red-600" },
+  P1: { label: "High", className: "bg-orange-500 hover:bg-orange-500" },
+  P2: { label: "Medium", className: "bg-yellow-500 hover:bg-yellow-500" },
+  P3: { label: "Low", className: "bg-green-600 hover:bg-green-600" },
+  P4: { label: "Umum", className: "bg-gray-500 hover:bg-gray-500" },
+};
+
 // --- Main Component ---
 function CreatePOPageContent() {
   const router = useRouter();
@@ -481,15 +492,13 @@ function CreatePOPageContent() {
     };
   }, [previewCompany]);
 
-  const getCostCenterName = (data: any) => {
-    const cc = data.cost_centers;
-    if (Array.isArray(cc)) {
-      return cc[0]?.name || `ID: ${data.cost_center_id} (Nama tidak ditemukan)`;
-    }
-    if (cc && typeof cc === "object") {
-      return cc.name || `ID: ${data.cost_center_id} (Nama tidak ditemukan)`;
-    }
-    return `ID: ${data.cost_center_id} (Belum ditentukan)`;
+  // Cost center diisi GA saat approval MR - bisa masih kosong (null).
+  const getCostCenter = (data: any): { name: string; code?: string } | null => {
+    const cc = Array.isArray(data.cost_centers)
+      ? data.cost_centers[0]
+      : data.cost_centers;
+    if (cc?.name) return { name: cc.name, code: cc.code || undefined };
+    return null;
   };
 
   useEffect(() => {
@@ -1420,69 +1429,152 @@ function CreatePOPageContent() {
         {mrData ? (
           <Content
             id="po-section-source"
-            title={`Referensi MR: ${mrData.kode_mr}`}
+            title="Referensi Material Request"
+            description="Ringkasan MR yang menjadi dasar PO ini."
             cardAction={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-primary hover:text-primary/80 h-8"
-                onClick={() => setIsDiscussionOpen(true)}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Lihat Diskusi Internal
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setIsDiscussionOpen(true)}
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Diskusi Internal
+                </Button>
+                <Button variant="outline" size="sm" className="h-8" asChild>
+                  <Link
+                    href={`/material-request/${mrData.id}`}
+                    target="_blank"
+                    data-pwa-new-window
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Detail MR
+                  </Link>
+                </Button>
+              </div>
             }
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 [&>*]:min-w-0">
-              <InfoItem
-                icon={CircleUser}
-                label="Pembuat MR"
-                value={mrData.users_with_profiles?.nama || "N/A"}
-              />
-              <InfoItem
-                icon={Building}
-                label="Departemen"
-                value={mrData.department}
-              />
-              <InfoItem icon={Tag} label="Kategori" value={mrData.kategori} />
-              <InfoItem
-                icon={DollarSign}
-                label="Estimasi biaya"
-                value={formatCurrency(mrData.cost_estimation)}
-              />
-              <InfoItem
-                icon={Building2}
-                label="Cost Center"
-                value={getCostCenterName(mrData)}
-              />
-              <InfoItem
-                icon={Truck}
-                label="Tujuan"
-                value={mrData.tujuan_site || "N/A"}
-              />
-              <div className="md:col-span-2">
+            <div className="space-y-5">
+              {/* Identitas MR + estimasi biaya */}
+              <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <p className="font-mono text-lg font-semibold leading-none [overflow-wrap:anywhere]">
+                    {mrData.kode_mr}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline">{mrData.status}</Badge>
+                    {mrData.prioritas &&
+                      MR_PRIORITY_META[mrData.prioritas] && (
+                        <Badge
+                          className={cn(
+                            "text-white",
+                            MR_PRIORITY_META[mrData.prioritas].className,
+                          )}
+                        >
+                          {mrData.prioritas} ·{" "}
+                          {MR_PRIORITY_META[mrData.prioritas].label}
+                        </Badge>
+                      )}
+                    {mrData.kategori && (
+                      <Badge variant="secondary">
+                        <Tag className="mr-1 h-3 w-3" />
+                        {mrData.kategori}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="shrink-0 border-t pt-3 sm:border-t-0 sm:border-l sm:pl-6 sm:pt-0 sm:text-right">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 sm:justify-end">
+                    <DollarSign className="h-3.5 w-3.5" />
+                    Estimasi Biaya MR
+                  </p>
+                  <p className="text-xl font-bold tabular-nums">
+                    {formatCurrency(mrData.cost_estimation)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Detail MR */}
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
                 <InfoItem
-                  icon={Info}
-                  label="Remarks"
+                  icon={CircleUser}
+                  label="Pembuat MR"
+                  value={mrData.users_with_profiles?.nama || "-"}
+                  isBlock
+                />
+                <InfoItem
+                  icon={Building}
+                  label="Departemen"
+                  value={mrData.department || "-"}
+                  isBlock
+                />
+                <InfoItem
+                  icon={Truck}
+                  label="Tujuan Site"
+                  value={mrData.tujuan_site || "-"}
+                  isBlock
+                />
+                <InfoItem
+                  icon={CalendarDays}
+                  label="Tanggal Dibuat"
+                  value={formatDateFriendly(mrData.created_at)}
+                  isBlock
+                />
+                <InfoItem
+                  icon={CalendarClock}
+                  label="Due Date"
                   value={
-                    mrData.remarks ? (
-                      <RichContentView content={parseRichValue(mrData.remarks)} />
-                    ) : (
-                      "-"
-                    )
+                    mrData.due_date ? formatDateFriendly(mrData.due_date) : "-"
                   }
                   isBlock
                 />
-              </div>
-              <div className="md:col-span-2 border-t pt-2 mt-2">
-                <Link
-                  href={`/material-request/${mrData.id}`}
-                  target="_blank" data-pwa-new-window
-                  className="text-xs text-primary hover:underline flex items-center gap-1 w-fit"
-                >
-                  Buka Halaman Detail MR Lengkap{" "}
-                  <ExternalLink className="h-3 w-3" />
-                </Link>
+                <InfoItem
+                  icon={Building2}
+                  label="Cost Center"
+                  value={(() => {
+                    const costCenter = getCostCenter(mrData);
+                    return (
+                      <div className="space-y-0.5">
+                        {costCenter ? (
+                          <p>
+                            {costCenter.name}
+                            {costCenter.code && (
+                              <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">
+                                ({costCenter.code})
+                              </span>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-amber-700 dark:text-amber-400">
+                            Belum ditentukan
+                          </p>
+                        )}
+                        <p className="text-xs font-normal text-muted-foreground">
+                          Ditentukan oleh GA saat approval MR.
+                        </p>
+                      </div>
+                    );
+                  })()}
+                  isBlock
+                />
+              </dl>
+
+              {/* Remarks */}
+              <div className="space-y-1.5">
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Remarks
+                </p>
+                <div className="rounded-md border bg-muted/20 p-3 text-sm [overflow-wrap:anywhere]">
+                  {mrData.remarks ? (
+                    <RichContentView content={parseRichValue(mrData.remarks)} />
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Tidak ada remarks.
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </Content>

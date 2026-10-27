@@ -237,6 +237,7 @@ export interface MaterialRequest {
   cost_center?: string;
   cost_centers?: {
     name: string;
+    code?: string;
     current_budget: number;
   } | null;
 

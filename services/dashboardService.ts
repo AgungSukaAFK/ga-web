@@ -10,7 +10,7 @@ import {
   fetchPendingValidationPOs,
   fetchPosReadyForGaReceive,
 } from "./approvalService";
-import { isGADepartment, isITAdmin } from "@/lib/constants/departments";
+import { isGADepartment } from "@/lib/constants/departments";
 import {
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
@@ -598,7 +598,8 @@ export const fetchMyActionItems = async (
   profile: Profile,
 ): Promise<ActionItemGroup[]> => {
   const groups: ActionItemGroup[] = [];
-  const isApprover = profile.role === "approver" || isITAdmin(profile);
+  // Admin ikut dihitung: bisa dipasang sebagai approver di Template Approval.
+  const isApprover = profile.role === "approver" || profile.role === "admin";
   const isGA = isGADepartment(profile.department) || profile.role === "admin";
   const isPurchasing =
     profile.department === "Purchasing" || profile.role === "admin";
