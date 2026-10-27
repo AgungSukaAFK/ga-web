@@ -63,7 +63,8 @@ export function Section({
     <section
       id={id}
       className={cn(
-        "scroll-mt-20 rounded-xl border bg-card p-4 text-card-foreground shadow-sm sm:p-6",
+        // Mobile: topbar + chip daftar isi (TocMobile) sama-sama sticky.
+        "scroll-mt-32 rounded-xl border bg-card p-4 text-card-foreground shadow-sm sm:p-6 lg:scroll-mt-20",
         className,
       )}
     >
@@ -885,7 +886,8 @@ export function TocDesktop({
   onNavigate: (id: string) => void;
 }) {
   return (
-    <nav className="sticky top-4 hidden lg:block">
+    // Di bawah topbar sticky (h-16, h-12 saat sidebar diciutkan ke ikon) + jarak 16px.
+    <nav className="sticky top-20 hidden lg:block group-has-data-[collapsible=icon]/sidebar-wrapper:top-16">
       <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Daftar isi
       </p>
@@ -933,7 +935,8 @@ export function TocMobile({
   }, [active]);
 
   return (
-    <nav className="sticky top-0 z-20 -mx-4 border-b bg-background/90 px-4 py-2 backdrop-blur lg:hidden">
+    // Nempel tepat di bawah topbar sticky: h-14, md:h-16, h-12 saat sidebar diciutkan.
+    <nav className="sticky top-14 z-20 -mx-4 border-b bg-background/90 px-4 py-2 backdrop-blur md:top-16 md:group-has-data-[collapsible=icon]/sidebar-wrapper:top-12 lg:hidden">
       <ul
         ref={listRef}
         className="relative flex gap-1.5 overflow-x-auto [scrollbar-width:none]"
