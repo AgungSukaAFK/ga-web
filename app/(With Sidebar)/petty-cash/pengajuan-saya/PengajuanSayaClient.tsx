@@ -9,6 +9,12 @@
 // mode mana pun selalu membuka modal yang sama menampilkan rantai LENGKAP
 // dokumen terkait (mengikuti permintaan: "pengajuan diklik row muncul modal
 // detail berisi voucher, deklarasi, dan data lain ampe beres deklarasi").
+//
+// Langkah berikutnya (Buat Voucher, Tarik Dana) bisa langsung dikerjakan
+// dari sini - tombol shortcut di baris tabel & footer modal membuka dialog
+// yang sama dengan halaman Pengajuan Voucher (PcCreateVoucherDialog,
+// PcTarikDanaDialog). Tiap dokumen juga bisa langsung di-Download PDF
+// (PcDownloadMenu -> halaman detail `?print=`).
 
 "use client";
 
@@ -31,9 +37,11 @@ import {
 } from "@/services/pettyCashPengajuanService";
 import {
   PettyCashDeklarasi,
+  PettyCashPengajuan,
   PettyCashPengajuanItem,
   PettyCashPengajuanWithChain,
   PettyCashSubVoucherWithChain,
+  PettyCashVoucher,
   PettyCashVoucherWithChain,
 } from "@/type";
 import {
@@ -81,6 +89,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PcCreateVoucherDialog } from "@/components/petty-cash/PcCreateVoucherDialog";
+import {
+  PcTarikDanaDialog,
+  canDrawVoucher,
+  drawnOf,
+} from "@/components/petty-cash/PcTarikDanaDialog";
+import { PcDownloadMenu } from "@/components/petty-cash/PcPrintMenu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -102,9 +117,10 @@ import {
   PlusCircle,
   ReceiptText,
   RefreshCcw,
+  RotateCcw,
   Search,
+  Send,
   Wallet,
-  X,
 } from "lucide-react";
 
 type Mode = "pengajuan" | "voucher" | "deklarasi";
@@ -143,6 +159,37 @@ const buildHaystack = (
   return [...parts, itemText].join(" ").toLowerCase();
 };
 
+/** Pengajuan "Approved" yang belum punya Voucher aktif (belum dibuat / ditolak). */
+const canCreateVoucher = (pj: PettyCashPengajuanWithChain) =>
+  pj.status === "Approved" && !getActiveDoc(pj.petty_cash_voucher);
+
+/** Tarikan yang sudah dibayar Finance tapi belum punya Deklarasi aktif. */
+const isAwaitingDeklarasi = (sv: PettyCashSubVoucherWithChain) =>
+  sv.status === "Selesai" && !getActiveDoc(sv.petty_cash_deklarasi);
+
+// Tombol shortcut kecil di dalam sel tabel - stopPropagation supaya klik
+// tidak ikut membuka modal (klik baris).
+const cellButtonClass = "h-7 px-2.5";
+const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+const sectionsForFocus = (focus: string) => {
+  if (focus === "voucher") return ["pengajuan", "voucher"];
+  if (focus.startsWith("deklarasi-")) return ["pengajuan", "voucher", focus];
+  return ["pengajuan"];
+};
+
+/** Bar aksi di atas tiap dokumen dalam modal - Download PDF & buka halaman detailnya. */
+const DocSectionActions = ({ href }: { href: string }) => (
+  <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+    <PcDownloadMenu href={href} />
+    <Button asChild variant="outline" size="sm">
+      <Link href={href} target="_blank">
+        <ExternalLink /> Buka Halaman Detail
+      </Link>
+    </Button>
+  </div>
+);
+
 const StatusBadge = ({
   status,
   colors,
@@ -179,10 +226,15 @@ export default function PengajuanSayaClient() {
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
 
+  const [userId, setUserId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPengajuan, setSelectedPengajuan] =
     useState<PettyCashPengajuanWithChain | null>(null);
-  const [focusSection, setFocusSection] = useState<string>("pengajuan");
+  const [openSections, setOpenSections] = useState<string[]>(["pengajuan"]);
+  const [createTarget, setCreateTarget] = useState<PettyCashPengajuan | null>(
+    null,
+  );
+  const [drawTarget, setDrawTarget] = useState<PettyCashVoucher | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -191,6 +243,7 @@ export default function PengajuanSayaClient() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User tidak terautentikasi.");
+      setUserId(user.id);
 
       const profileRes = await supabase
         .from("profiles")
@@ -225,6 +278,14 @@ export default function PengajuanSayaClient() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Modal tetap menampilkan data terbaru setelah refetch (mis. habis Buat
+  // Voucher / Tarik Dana dari dalam modal), bukan objek lama.
+  useEffect(() => {
+    setSelectedPengajuan((prev) =>
+      prev ? (chain.find((p) => p.id === prev.id) ?? prev) : prev,
+    );
+  }, [chain]);
 
   // Reset status filter tiap ganti mode - opsinya beda per jenis dokumen
   // (mis. "Selesai" cuma ada di status Voucher).
@@ -336,8 +397,20 @@ export default function PengajuanSayaClient() {
     focus: string,
   ) => {
     setSelectedPengajuan(pengajuan);
-    setFocusSection(focus);
+    setOpenSections(sectionsForFocus(focus));
     setIsDialogOpen(true);
+  };
+
+  /** Buka (kalau tertutup) lalu scroll ke satu section accordion di modal. */
+  const focusSection = (section: string) => {
+    setOpenSections((prev) =>
+      prev.includes(section) ? prev : [...prev, section],
+    );
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`pc-section-${section}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   };
 
   // Deep-link "?open=<id pengajuan>" - dipakai Dashboard Petty Cash
@@ -365,12 +438,60 @@ export default function PengajuanSayaClient() {
     selectedPengajuan?.petty_cash_voucher,
   ).filter((v) => v.id !== selectedVoucher?.id);
 
-  const accordionDefaultValue = useMemo(() => {
-    if (focusSection === "voucher") return ["pengajuan", "voucher"];
-    if (focusSection.startsWith("deklarasi-"))
-      return ["pengajuan", "voucher", focusSection];
-    return ["pengajuan"];
-  }, [focusSection]);
+  // Langkah berikutnya utk rantai dokumen yang sedang dibuka di modal -
+  // tampil di footer modal sbg tombol utama.
+  const nextSteps: { hint: string; action: React.ReactNode }[] = [];
+  if (selectedPengajuan?.status === "Rejected") {
+    nextSteps.push({
+      hint: "Pengajuan ditolak - bisa diajukan ulang dengan data yang sama.",
+      action: (
+        <Button asChild key="ulang">
+          <Link href={`/petty-cash/input-pengajuan?ulang=${selectedPengajuan.id}`}>
+            <RotateCcw /> Ajukan Ulang
+          </Link>
+        </Button>
+      ),
+    });
+  }
+  if (selectedPengajuan && canCreateVoucher(selectedPengajuan)) {
+    nextSteps.push({
+      hint: selectedVoucher
+        ? `Voucher ${selectedVoucher.kode_voucher} ditolak - ajukan ulang Voucher dari Pengajuan ini.`
+        : "Pengajuan sudah disetujui - lanjut buat Voucher pencairan.",
+      action: (
+        <Button key="voucher" onClick={() => setCreateTarget(selectedPengajuan)}>
+          <Send /> {selectedVoucher ? "Ajukan Ulang Voucher" : "Buat Voucher"}
+        </Button>
+      ),
+    });
+  }
+  if (selectedVoucher && canDrawVoucher(selectedVoucher)) {
+    nextSteps.push({
+      hint: `Voucher disetujui - sisa ${formatCurrency(
+        selectedVoucher.total_amount - drawnOf(selectedVoucher),
+      )} bisa ditarik.`,
+      action: (
+        <Button key="tarik" onClick={() => setDrawTarget(selectedVoucher)}>
+          <Wallet /> Tarik Dana
+        </Button>
+      ),
+    });
+  }
+  const awaitingDeklarasi = (
+    selectedVoucher?.petty_cash_sub_voucher ?? []
+  ).filter(isAwaitingDeklarasi);
+  if (awaitingDeklarasi.length > 0) {
+    nextSteps.push({
+      hint: `${awaitingDeklarasi.length} tarikan sudah dibayar Finance & belum dideklarasikan.`,
+      action: (
+        <Button asChild key="deklarasi" variant="secondary">
+          <Link href="/petty-cash/deklarasi">
+            <FileCheck2 /> Buat Deklarasi
+          </Link>
+        </Button>
+      ),
+    });
+  }
 
   const modeMeta: Record<
     Mode,
@@ -573,17 +694,17 @@ export default function PengajuanSayaClient() {
             </div>
             {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[950px] table-fixed">
+              <Table className="min-w-[1060px] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead className="w-[190px]">Kode Pengajuan</TableHead>
                     <TableHead className="w-[130px]">Departemen</TableHead>
-                    <TableHead className="w-[80px] text-center">Jml Barang</TableHead>
+                    <TableHead className="w-[70px] text-center">Barang</TableHead>
                     <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[130px]">Status</TableHead>
-                    <TableHead className="w-[130px]">Voucher</TableHead>
-                    <TableHead className="w-[60px] text-center">Aksi</TableHead>
+                    <TableHead className="w-[140px]">Status</TableHead>
+                    <TableHead className="w-[160px]">Voucher</TableHead>
+                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -605,6 +726,7 @@ export default function PengajuanSayaClient() {
                   ) : (
                     filteredPengajuan.map((pj) => {
                       const voucher = pickCurrentDoc(pj.petty_cash_voucher);
+                      const voucherCreatable = canCreateVoucher(pj);
                       return (
                         <TableRow
                           key={pj.id}
@@ -619,41 +741,61 @@ export default function PengajuanSayaClient() {
                           <TableCell className="text-center text-sm">{pj.items?.length ?? 0}</TableCell>
                           <TableCell className="text-right font-semibold text-sm">{formatCurrency(pj.total_amount)}</TableCell>
                           <TableCell>
-                            <StatusBadge status={pj.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
-                          </TableCell>
-                          <TableCell>
-                            {voucher ? (
-                              <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">Belum ada</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <StatusBadge status={pj.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
                               {pj.status === "Rejected" && (
-                                <Button
-                                  asChild
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
+                                <Button asChild variant="outline" size="sm" className={cellButtonClass} onClick={stop}>
                                   <Link href={`/petty-cash/input-pengajuan?ulang=${pj.id}`}>
-                                    Ajukan Ulang
+                                    <RotateCcw /> Ajukan Ulang
                                   </Link>
                                 </Button>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-primary"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openChainModal(pj, "pengajuan");
-                                }}
-                              >
-                                <Eye className="h-4 w-4" />
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col items-start gap-1.5">
+                              {voucher ? (
+                                <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
+                              ) : (
+                                !voucherCreatable && (
+                                  <span className="text-xs text-muted-foreground italic">Belum ada</span>
+                                )
+                              )}
+                              {voucherCreatable ? (
+                                <Button
+                                  size="sm"
+                                  className={cellButtonClass}
+                                  onClick={(e) => {
+                                    stop(e);
+                                    setCreateTarget(pj);
+                                  }}
+                                >
+                                  <Send /> {voucher ? "Ajukan Ulang" : "Buat Voucher"}
+                                </Button>
+                              ) : (
+                                voucher &&
+                                canDrawVoucher(voucher) && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className={cellButtonClass}
+                                    onClick={(e) => {
+                                      stop(e);
+                                      setDrawTarget(voucher);
+                                    }}
+                                  >
+                                    <Wallet /> Tarik Dana
+                                  </Button>
+                                )
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell onClick={stop}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button variant="outline" size="sm" onClick={() => openChainModal(pj, "pengajuan")}>
+                                <Eye /> Detail
                               </Button>
+                              <PcDownloadMenu href={`/petty-cash/pengajuan/${pj.id}`} iconOnly />
                             </div>
                           </TableCell>
                         </TableRow>
@@ -674,17 +816,17 @@ export default function PengajuanSayaClient() {
             </div>
             {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[950px] table-fixed">
+              <Table className="min-w-[1130px] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead className="w-[190px]">Kode Voucher</TableHead>
-                    <TableHead className="w-[190px]">Asal Pengajuan</TableHead>
-                    <TableHead className="w-[130px]">Departemen</TableHead>
+                    <TableHead className="w-[170px]">Asal Pengajuan</TableHead>
+                    <TableHead className="w-[120px]">Departemen</TableHead>
                     <TableHead className="w-[130px] text-right">Total</TableHead>
                     <TableHead className="w-[110px]">Status</TableHead>
-                    <TableHead className="w-[150px]">Tarikan Dana</TableHead>
-                    <TableHead className="w-[60px] text-center">Aksi</TableHead>
+                    <TableHead className="w-[190px]">Tarikan Dana</TableHead>
+                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -729,25 +871,33 @@ export default function PengajuanSayaClient() {
                             <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
                           </TableCell>
                           <TableCell className="text-xs">
-                            <div className="font-medium text-sm text-foreground">
+                            <div className="font-medium text-sm text-foreground tabular-nums">
                               {formatCurrency(drawn)} / {formatCurrency(voucher.total_amount)}
                             </div>
                             <div className="text-muted-foreground">
                               {declaredCount}/{subVouchers.length} SV dideklarasikan
                             </div>
+                            {canDrawVoucher(voucher) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`${cellButtonClass} mt-1.5`}
+                                onClick={(e) => {
+                                  stop(e);
+                                  setDrawTarget(voucher);
+                                }}
+                              >
+                                <Wallet /> Tarik Dana
+                              </Button>
+                            )}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openChainModal(pengajuan, "voucher");
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                          <TableCell onClick={stop}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button variant="outline" size="sm" onClick={() => openChainModal(pengajuan, "voucher")}>
+                                <Eye /> Detail
+                              </Button>
+                              <PcDownloadMenu href={`/petty-cash/voucher/${voucher.id}`} iconOnly />
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -767,7 +917,7 @@ export default function PengajuanSayaClient() {
             </div>
             {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[950px] table-fixed">
+              <Table className="min-w-[1040px] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
@@ -776,7 +926,7 @@ export default function PengajuanSayaClient() {
                     <TableHead className="w-[130px]">Departemen</TableHead>
                     <TableHead className="w-[130px] text-right">Total</TableHead>
                     <TableHead className="w-[130px]">Status</TableHead>
-                    <TableHead className="w-[60px] text-center">Aksi</TableHead>
+                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -819,18 +969,17 @@ export default function PengajuanSayaClient() {
                         <TableCell>
                           <StatusBadge status={row.deklarasi.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-primary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`);
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                        <TableCell onClick={stop}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`)}
+                            >
+                              <Eye /> Detail
+                            </Button>
+                            <PcDownloadMenu href={`/petty-cash/deklarasi/${row.deklarasi.id}`} iconOnly />
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -842,37 +991,43 @@ export default function PengajuanSayaClient() {
         </Tabs>
       </Content>
 
-      {/* ===== DIALOG DETAIL: RANTAI DOKUMEN LENGKAP ===== */}
+      {/* ===== DIALOG DETAIL: RANTAI DOKUMEN LENGKAP =====
+          Header & footer tetap, isi yang scroll. Footer = langkah
+          berikutnya (nextSteps) supaya user tidak perlu pindah halaman. */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ReceiptText className="h-5 w-5 text-primary" />
-              {selectedPengajuan?.kode_pengajuan}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedPengajuan && (
-                <span className="inline-flex items-center gap-1">
-                  {selectedPengajuan.department} -{" "}
-                  <CalendarDays className="h-3 w-3" />
-                  Dibutuhkan {formatDate(selectedPengajuan.needed_date)}
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="gap-3 border-b px-4 pt-5 pb-4 text-left sm:px-6">
+            <div className="pr-8">
+              <DialogTitle className="flex items-center gap-2 [overflow-wrap:anywhere]">
+                <ReceiptText className="h-5 w-5 shrink-0 text-primary" />
+                {selectedPengajuan?.kode_pengajuan}
+              </DialogTitle>
+              <DialogDescription className="mt-1.5">
+                {selectedPengajuan && (
+                  <span className="inline-flex flex-wrap items-center gap-1">
+                    {selectedPengajuan.department} -{" "}
+                    <CalendarDays className="h-3 w-3" />
+                    Dibutuhkan {formatDate(selectedPengajuan.needed_date)}
+                  </span>
+                )}
+              </DialogDescription>
+            </div>
 
-          {selectedPengajuan && (
-            <div className="space-y-4">
-              {/* Ringkasan rantai dokumen */}
+            {/* Ringkasan rantai dokumen - klik utk lompat ke section-nya */}
+            {selectedPengajuan && (
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                <Badge variant="outline" className="gap-1">
-                  <ReceiptText className="h-3 w-3" /> {selectedPengajuan.kode_pengajuan}
-                </Badge>
+                <button type="button" onClick={() => focusSection("pengajuan")}>
+                  <Badge variant="outline" className="gap-1 hover:bg-muted">
+                    <ReceiptText className="h-3 w-3" /> {selectedPengajuan.kode_pengajuan}
+                  </Badge>
+                </button>
                 <ArrowRight className="h-3 w-3 text-muted-foreground" />
                 {selectedVoucher ? (
-                  <Badge variant="outline" className="gap-1">
-                    <Wallet className="h-3 w-3" /> {selectedVoucher.kode_voucher}
-                  </Badge>
+                  <button type="button" onClick={() => focusSection("voucher")}>
+                    <Badge variant="outline" className="gap-1 hover:bg-muted">
+                      <Wallet className="h-3 w-3" /> {selectedVoucher.kode_voucher}
+                    </Badge>
+                  </button>
                 ) : (
                   <Badge variant="outline" className="italic text-muted-foreground">
                     Belum ada Voucher
@@ -891,9 +1046,13 @@ export default function PengajuanSayaClient() {
                   </>
                 )}
               </div>
+            )}
+          </DialogHeader>
 
-              <Accordion type="multiple" defaultValue={accordionDefaultValue}>
-                <AccordionItem value="pengajuan">
+          {selectedPengajuan && (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2 sm:px-6">
+              <Accordion type="multiple" value={openSections} onValueChange={setOpenSections}>
+                <AccordionItem value="pengajuan" id="pc-section-pengajuan" className="scroll-mt-2">
                   <AccordionTrigger className="hover:no-underline">
                     <span className="flex items-center gap-2">
                       <ReceiptText className="h-4 w-4 text-primary" />
@@ -902,22 +1061,7 @@ export default function PengajuanSayaClient() {
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="flex items-center justify-end gap-3 mb-2">
-                      {selectedPengajuan.status === "Rejected" && (
-                        <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
-                          <Link href={`/petty-cash/input-pengajuan?ulang=${selectedPengajuan.id}`}>
-                            Ajukan Ulang
-                          </Link>
-                        </Button>
-                      )}
-                      <Link
-                        href={`/petty-cash/pengajuan/${selectedPengajuan.id}`}
-                        target="_blank"
-                        className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
-                      >
-                        Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    </div>
+                    <DocSectionActions href={`/petty-cash/pengajuan/${selectedPengajuan.id}`} />
                     <PcDocumentInfoPanel
                       requesterName={profile?.nama}
                       requesterEmail={profile?.email}
@@ -940,7 +1084,7 @@ export default function PengajuanSayaClient() {
                 </AccordionItem>
 
                 {selectedVoucher && (
-                  <AccordionItem value="voucher">
+                  <AccordionItem value="voucher" id="pc-section-voucher" className="scroll-mt-2">
                     <AccordionTrigger className="hover:no-underline">
                       <span className="flex items-center gap-2">
                         <Wallet className="h-4 w-4 text-primary" />
@@ -949,15 +1093,7 @@ export default function PengajuanSayaClient() {
                       </span>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <div className="flex justify-end mb-2">
-                        <Link
-                          href={`/petty-cash/voucher/${selectedVoucher.id}`}
-                          target="_blank"
-                          className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
-                        >
-                          Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      </div>
+                      <DocSectionActions href={`/petty-cash/voucher/${selectedVoucher.id}`} />
                       {rejectedVoucherHistory.length > 0 && (
                         <p className="text-xs text-muted-foreground mb-2">
                           Voucher sebelumnya ditolak:{" "}
@@ -1006,13 +1142,14 @@ export default function PengajuanSayaClient() {
                           </p>
                         ) : (
                           <div className="rounded-md border overflow-x-auto">
-                            <Table>
+                            <Table className="min-w-[620px]">
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Kode Sub-Voucher</TableHead>
                                   <TableHead className="text-right">Nominal</TableHead>
                                   <TableHead>Status Pembayaran</TableHead>
                                   <TableHead>Status Deklarasi</TableHead>
+                                  <TableHead className="w-[60px] text-right">PDF</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1029,29 +1166,29 @@ export default function PengajuanSayaClient() {
                                           {sv.kode_sub_voucher}
                                         </Link>
                                       </TableCell>
-                                      <TableCell className="text-right text-sm">{formatCurrency(sv.amount)}</TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums">{formatCurrency(sv.amount)}</TableCell>
                                       <TableCell className="text-sm">
-                                        <Badge
-                                          className={
-                                            PC_SUB_VOUCHER_STATUS_COLORS[sv.status] ||
-                                            PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT
-                                          }
-                                        >
-                                          {sv.status}
-                                        </Badge>
+                                        <StatusBadge status={sv.status} colors={PC_SUB_VOUCHER_STATUS_COLORS} fallback={PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT} />
                                       </TableCell>
                                       <TableCell className="text-sm">
                                         {dek ? (
                                           <button
                                             type="button"
-                                            className="text-primary hover:underline"
-                                            onClick={() => setFocusSection(`deklarasi-${dek.id}`)}
+                                            className="text-primary hover:underline text-left"
+                                            onClick={() => focusSection(`deklarasi-${dek.id}`)}
                                           >
                                             {dek.kode_deklarasi} - {dek.status}
                                           </button>
+                                        ) : isAwaitingDeklarasi(sv) ? (
+                                          <Link href="/petty-cash/deklarasi" className="text-primary hover:underline">
+                                            Belum dideklarasikan - buat sekarang
+                                          </Link>
                                         ) : (
                                           <span className="text-muted-foreground italic">Belum dideklarasikan</span>
                                         )}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <PcDownloadMenu href={`/petty-cash/sub-voucher/${sv.id}`} iconOnly />
                                       </TableCell>
                                     </TableRow>
                                   );
@@ -1067,24 +1204,21 @@ export default function PengajuanSayaClient() {
 
                 {(selectedVoucher?.petty_cash_sub_voucher ?? []).flatMap((sv) =>
                   sortDocsNewestFirst(sv.petty_cash_deklarasi).map((dek) => (
-                    <AccordionItem key={dek.id} value={`deklarasi-${dek.id}`}>
+                    <AccordionItem
+                      key={dek.id}
+                      value={`deklarasi-${dek.id}`}
+                      id={`pc-section-deklarasi-${dek.id}`}
+                      className="scroll-mt-2"
+                    >
                       <AccordionTrigger className="hover:no-underline">
-                        <span className="flex items-center gap-2">
+                        <span className="flex flex-wrap items-center gap-2 text-left">
                           <FileCheck2 className="h-4 w-4 text-primary" />
                           Deklarasi ({sv.kode_sub_voucher})
                           <StatusBadge status={dek.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
                         </span>
                       </AccordionTrigger>
                       <AccordionContent>
-                        <div className="flex justify-end mb-2">
-                          <Link
-                            href={`/petty-cash/deklarasi/${dek.id}`}
-                            target="_blank"
-                            className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
-                          >
-                            Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
-                          </Link>
-                        </div>
+                        <DocSectionActions href={`/petty-cash/deklarasi/${dek.id}`} />
                         <PcDocumentInfoPanel
                           requesterName={profile?.nama}
                           requesterEmail={profile?.email}
@@ -1107,8 +1241,40 @@ export default function PengajuanSayaClient() {
               </Accordion>
             </div>
           )}
+
+          <div className="flex flex-col gap-3 border-t bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <p className="min-w-0 text-xs text-muted-foreground">
+              {nextSteps.length > 0
+                ? nextSteps.map((step) => step.hint).join(" ")
+                : "Tidak ada langkah yang perlu Anda kerjakan untuk dokumen ini."}
+            </p>
+            <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Tutup
+              </Button>
+              {nextSteps.map((step) => step.action)}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
+
+      <PcCreateVoucherDialog
+        pengajuan={createTarget}
+        userId={userId}
+        onOpenChange={(open) => !open && setCreateTarget(null)}
+        onCreated={async () => {
+          await loadData();
+          setOpenSections((prev) =>
+            prev.includes("voucher") ? prev : [...prev, "voucher"],
+          );
+        }}
+      />
+
+      <PcTarikDanaDialog
+        voucher={drawTarget}
+        onOpenChange={(open) => !open && setDrawTarget(null)}
+        onCreated={loadData}
+      />
     </>
   );
 }

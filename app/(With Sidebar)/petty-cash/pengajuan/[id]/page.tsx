@@ -53,7 +53,11 @@ import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
-import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
+import {
+  PcPrintMenu,
+  PcPrintMode,
+  usePcPrintFromQuery,
+} from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { toast } from "@/lib/toast";
@@ -130,6 +134,10 @@ function PengajuanDetailContent({ id }: { id: string }) {
     setPrintMode(mode);
     setIsPrinting(true);
   };
+
+  // Tombol Download di list/modal (PcDownloadMenu) membuka halaman ini
+  // dengan ?print=qr|wet - langsung cetak begitu dokumen termuat.
+  usePcPrintFromQuery(!!doc, handlePrint);
 
   useEffect(() => {
     if (!isPrinting || !doc) return;

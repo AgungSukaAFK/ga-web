@@ -57,7 +57,11 @@ import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPay
 import { PcAdminSubVoucherPanel } from "@/components/petty-cash/PcAdminSubVoucherPanel";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
-import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
+import {
+  PcPrintMenu,
+  PcPrintMode,
+  usePcPrintFromQuery,
+} from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { toast } from "@/lib/toast";
@@ -133,6 +137,10 @@ function SubVoucherDetailContent({ id }: { id: string }) {
     setPrintMode(mode);
     setIsPrinting(true);
   };
+
+  // Tombol Download di list/modal (PcDownloadMenu) membuka halaman ini
+  // dengan ?print=qr|wet - langsung cetak begitu dokumen termuat.
+  usePcPrintFromQuery(!!doc, handlePrint);
 
   useEffect(() => {
     if (!isPrinting || !doc) return;
