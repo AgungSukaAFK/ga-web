@@ -39,7 +39,7 @@ const DOC_STATUS_COLORS: Record<string, string> = {
   "Pending Receive": `${SOLID} bg-yellow-500`,
   "Partial Receive": `${SOLID} bg-amber-600`,
   "Full Received": `${SOLID} bg-green-500`,
-  Rejected: "border-transparent bg-destructive text-destructive-foreground",
+  Rejected: "border-transparent bg-destructive text-destructive-foreground dark:bg-destructive/60",
 };
 
 const PC_STATUS_COLORS: Record<string, string> = {
@@ -285,7 +285,7 @@ export function MockButton({
         "docs-fade-up inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold",
         variant === "primary" && "bg-primary text-primary-foreground",
         variant === "outline" && "border bg-background",
-        variant === "danger" && "bg-destructive text-destructive-foreground",
+        variant === "danger" && "bg-destructive text-destructive-foreground dark:bg-destructive/60",
         pulse && "docs-ring",
       )}
       style={{ animationDelay: `${delay}s` }}

@@ -96,7 +96,10 @@
     --muted-foreground: 240 5% 64.9%;
     --accent: 240 3.7% 15.9%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    /* Merah terang (red-400) supaya text-destructive terbaca di background
+       gelap (6.4:1). Fill solid (Button/Badge destructive) diredam pakai
+       dark:bg-destructive/60 supaya teks putih di atasnya tetap lolos AA. */
+    --destructive: 0 91% 71%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
@@ -160,7 +163,8 @@
     --muted-foreground: 213 9% 64%;
     --accent: 215 12% 26%;
     --accent-foreground: 210 16% 87%;
-    --destructive: 0 60% 45%;
+    /* Lihat catatan --destructive di .dark (5.4:1 di atas card). */
+    --destructive: 0 90% 74%;
     --destructive-foreground: 0 0% 98%;
     --border: 215 11% 23.5%;
     --input: 215 11% 26%;

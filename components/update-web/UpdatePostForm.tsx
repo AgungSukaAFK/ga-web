@@ -783,7 +783,7 @@ export function UpdatePostForm({
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60 dark:hover:bg-destructive/50"
               onClick={handleClear}
             >
               {mode === "create" ? "Kosongkan" : "Buang"}

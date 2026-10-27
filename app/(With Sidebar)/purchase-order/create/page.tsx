@@ -2456,7 +2456,7 @@ function CreatePOPageContent() {
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleUnlinkMR}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 dark:hover:bg-destructive/50"
             >
               Putuskan & Reset
             </AlertDialogAction>

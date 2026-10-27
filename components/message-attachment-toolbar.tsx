@@ -45,7 +45,7 @@ export function MessageAttachmentToolbar({
           <button
             type="button"
             onClick={() => onPendingAttachmentChange(null)}
-            className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 shadow"
+            className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground dark:bg-destructive/60 rounded-full p-0.5 shadow"
             title="Hapus lampiran"
           >
             <X className="h-3 w-3" />

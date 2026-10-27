@@ -395,7 +395,7 @@ function ChatAdminManagementView() {
                 handleDelete();
               }}
               disabled={busy}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60 dark:hover:bg-destructive/50"
             >
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Hapus
