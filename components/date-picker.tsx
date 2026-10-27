@@ -15,9 +15,19 @@ type DatePickerProps = {
   value?: Date;
   onChange?: Dispatch<Date | undefined>;
   placeholder?: string;
+  /** Tanggal sebelum ini tidak bisa dipilih, navigasi kalender mulai dari bulannya. */
+  minDate?: Date;
+  /** Bulan terakhir di navigasi - default react-day-picker (mode dropdown) cuma s.d. akhir tahun ini. */
+  endMonth?: Date;
 };
 
-export function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  placeholder,
+  minDate,
+  endMonth,
+}: DatePickerProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -41,7 +51,11 @@ export function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
           <Calendar
             mode="single"
             selected={value}
+            defaultMonth={value}
             captionLayout="dropdown"
+            disabled={minDate ? { before: minDate } : undefined}
+            startMonth={minDate}
+            endMonth={endMonth}
             onSelect={(date) => {
               onChange?.(date);
               setOpen(false);

@@ -24,20 +24,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useGoBack } from "@/hooks/use-go-back";
+import { format } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/date-picker";
+import {
+  FormSummaryCheck,
+  FormSummaryLayout,
+} from "@/components/form-summary-panel";
 import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
-  Select,
-} from "@/components/ui/select";
+  extractPlainText,
+  parseRichValue,
+  stringifyRichContent,
+} from "@/lib/rich-content";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -45,13 +51,6 @@ import {
   SearchableSelectContent,
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
@@ -87,17 +86,17 @@ import {
   getSelectableWeeksOfCurrentMonth,
   getWeekOfMonth,
 } from "@/lib/weekOfMonth";
-import { formatCurrency, getLocalDateString } from "@/lib/utils";
+import { cn, formatCurrency, getLocalDateString } from "@/lib/utils";
 import {
   Loader2,
-  Save,
-  Package,
-  UploadCloud,
-  X,
+  Send,
   Info,
-  UserCircle,
   CalendarClock,
   AlertTriangle,
+  Building2,
+  FileStack,
+  Paperclip,
+  Trash2,
 } from "lucide-react";
 
 // Default value "Minggu ke-" = minggu SETELAH minggu tempat Tanggal
@@ -116,7 +115,6 @@ const getDefaultWeekForDate = (dateStr: string): number | "" => {
 export default function InputPengajuanClient() {
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const router = useRouter();
-  const goBack = useGoBack("/petty-cash");
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template");
   const ulangId = searchParams.get("ulang");
@@ -258,6 +256,9 @@ export default function InputPengajuanClient() {
       .catch(() => ({}))
       .then(setTemplateCatalogCoa);
   const [templateLoading, setTemplateLoading] = useState(!!templateId);
+  const [appliedTemplateName, setAppliedTemplateName] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (!templateId) return;
@@ -266,6 +267,7 @@ export default function InputPengajuanClient() {
       .then(async (tpl) => {
         await loadTemplateCatalogCoa(tpl.items || []);
         setTemplateItems(tpl.items || []);
+        setAppliedTemplateName(tpl.nama_template);
         toast.success(
           `Template "${tpl.nama_template}" diterapkan - ${
             tpl.items?.length ?? 0
@@ -366,9 +368,8 @@ export default function InputPengajuanClient() {
 
   const handleSubmit = async () => {
     // Dicek ulang pakai jam lokal SAAT INI (bukan minDate yang bisa sedikit
-    // basi kalau interval-nya belum tick) - jaga-jaga native date picker-nya
-    // dilewati (browser lama/aneh) atau tab dibiarkan terbuka lewat tengah
-    // malam lokal persis saat submit.
+    // basi kalau interval-nya belum tick) - jaga-jaga tab dibiarkan terbuka
+    // lewat tengah malam lokal persis saat submit.
     if (neededDate < getLocalDateString()) {
       return toast.error(
         "Tanggal Dibutuhkan tidak boleh tanggal yang sudah lewat.",
@@ -430,6 +431,76 @@ export default function InputPengajuanClient() {
     }
   };
 
+  // Nilai "YYYY-MM-DD" diparse sebagai jam lokal (bukan UTC), sama dengan
+  // getDefaultWeekForDate di atas.
+  const neededDateValue = new Date(`${neededDate}T00:00:00`);
+  const minDateValue = new Date(`${minDate}T00:00:00`);
+  const calendarEndMonth = new Date(minDateValue.getFullYear() + 1, 11, 1);
+
+  const notesText = extractPlainText(notes);
+  const incompleteItemCount = items.filter(
+    (it) => !it.part_name.trim() || !it.qty || it.qty <= 0 || !it.coa,
+  ).length;
+
+  const summaryChecks: FormSummaryCheck[] = [
+    ...(isLourdes
+      ? [
+          {
+            id: "company",
+            label: "Company pengajuan",
+            status: lourdesCoa ? "done" : "todo",
+            value: lourdesCoa ?? undefined,
+            hint: lourdesCoa ? undefined : "Pilih GMI atau GIS",
+            targetId: "pc-field-company",
+          } satisfies FormSummaryCheck,
+        ]
+      : []),
+    {
+      id: "tanggal",
+      label: "Tanggal dibutuhkan",
+      status: neededDate >= minDate ? "done" : "todo",
+      value: format(neededDateValue, "dd MMM yyyy", { locale: localeId }),
+      targetId: "pc-field-tanggal",
+    },
+    {
+      id: "minggu",
+      label: "Minggu ke-",
+      status: weekOfMonth ? "done" : "todo",
+      value: weekOfMonth ? `Minggu ke-${weekOfMonth}` : undefined,
+      targetId: "pc-field-minggu",
+    },
+    {
+      id: "items",
+      label: "Daftar barang",
+      status: items.length > 0 && incompleteItemCount === 0 ? "done" : "todo",
+      value: items.length > 0 ? `${items.length} barang` : undefined,
+      hint:
+        items.length === 0
+          ? "Minimal 1 barang"
+          : incompleteItemCount > 0
+            ? `${incompleteItemCount} barang belum lengkap (nama/qty/company)`
+            : undefined,
+      targetId: "pc-section-items",
+    },
+    {
+      id: "catatan",
+      label: "Catatan tambahan",
+      status: notes ? "done" : "optional",
+      value: notesText ? (
+        <span className="font-normal text-muted-foreground">{notesText}</span>
+      ) : undefined,
+      targetId: "pc-field-catatan",
+    },
+    {
+      id: "lampiran",
+      label: "Lampiran",
+      status: attachments.length > 0 ? "done" : "optional",
+      value:
+        attachments.length > 0 ? `${attachments.length} file` : undefined,
+      targetId: "pc-section-attachments",
+    },
+  ];
+
   if (eligibilityLoading) {
     return (
       <Content title="Input Pengajuan Petty Cash">
@@ -467,393 +538,345 @@ export default function InputPengajuanClient() {
   }
 
   return (
-    <Content
-      title="Input Pengajuan Petty Cash"
-      description="Ajukan kebutuhan barang Petty Cash - pilih dari katalog atau tambah manual."
+    <FormSummaryLayout
+      summary={{
+        title: "Ringkasan Pengajuan",
+        subtitle: [itemsCoa ?? profile?.company, profile?.department]
+          .filter(Boolean)
+          .join(" · "),
+        checks: summaryChecks,
+        submitLabel: "Kirim Pengajuan",
+        submittingLabel: "Mengirim...",
+        submitIcon: <Send className="mr-2 h-4 w-4" />,
+        onSubmit: handleSubmit,
+        submitting: loading,
+        disabled: uploading || templateLoading || ulangLoading,
+        children: (
+          <div className="space-y-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                Total pengajuan
+              </span>
+              <span className="text-lg font-bold tabular-nums">
+                {formatCurrency(totalAmount)}
+              </span>
+            </div>
+            <PcCoaBreakdown items={items} />
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">Sisa budget</span>
+              <span className="font-medium tabular-nums">
+                {resolvedBudget
+                  ? formatCurrency(resolvedBudget.current_budget)
+                  : "-"}
+              </span>
+            </div>
+          </div>
+        ),
+      }}
     >
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 pb-10 items-start">
-        {/* KOLOM KIRI: FORM UTAMA */}
-        <div className="xl:col-span-2 space-y-6">
+      <Content
+        title="Input Pengajuan Petty Cash"
+        description="Ajukan kebutuhan barang Petty Cash. Setelah dikirim, pengajuan otomatis masuk jalur approval sesuai Template Approval departemen Anda."
+      >
+        <div className="grid grid-cols-12 gap-4 [&>*]:min-w-0">
           {ulangSource && (
-            <Alert>
+            <Alert className="col-span-12">
               <Info className="h-4 w-4" />
               <AlertTitle>
                 Mengajukan ulang {ulangSource.kode_pengajuan} yang ditolak
               </AlertTitle>
               <AlertDescription>
-                Barang, catatan, dan lampiran sudah dimuat dari Pengajuan
-                lama. Perbaiki sesuai alasan penolakan (
-                <Link
-                  href={`/petty-cash/pengajuan/${ulangSource.id}`}
-                  target="_blank"
-                  className="text-primary hover:underline"
-                >
-                  lihat detail
-                </Link>
-                ), pilih ulang tanggal dibutuhkan, lalu kirim sebagai
-                Pengajuan baru.
+                <p>
+                  Barang, catatan, dan lampiran sudah dimuat dari Pengajuan
+                  lama. Perbaiki sesuai alasan penolakan (
+                  <Link
+                    href={`/petty-cash/pengajuan/${ulangSource.id}`}
+                    target="_blank"
+                    className="text-primary hover:underline"
+                  >
+                    lihat detail
+                  </Link>
+                  ), pilih ulang tanggal dibutuhkan, lalu kirim sebagai
+                  Pengajuan baru.
+                </p>
               </AlertDescription>
             </Alert>
           )}
-          <Card>
-            <CardHeader className="border-b bg-muted/20 pb-4">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Package className="h-5 w-5 text-primary" />
-                Detail Pengajuan
-              </CardTitle>
-              <CardDescription>
-                Tanggal dibutuhkan, minggu ke berapa, dan catatan tambahan
-                (opsional).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label>
-                    Tanggal Dibutuhkan <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    type="date"
-                    value={neededDate}
-                    min={minDate}
-                    onChange={(e) => setNeededDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    Minggu ke- (bulan ini){" "}
-                    <span className="text-red-500">*</span>
-                  </Label>
-                  <SearchableSelect
-                    value={weekOfMonth ? String(weekOfMonth) : ""}
-                    onValueChange={(val) => {
-                      setWeekOfMonth(Number(val));
-                      setWeekManuallySet(true);
-                    }}
-                  >
-                    <SearchableSelectTrigger>
-                      <SearchableSelectValue placeholder="Pilih minggu" />
-                    </SearchableSelectTrigger>
-                    <SearchableSelectContent>
-                      {selectableWeeks.map((w) => (
-                        <SearchableSelectItem key={w} value={String(w)}>
-                          Minggu ke-{w}
-                        </SearchableSelectItem>
-                      ))}
-                    </SearchableSelectContent>
-                  </SearchableSelect>
-                  <p className="text-xs text-muted-foreground">
-                    Hanya minggu ini atau minggu berikutnya di bulan berjalan -
-                    minggu yang sudah lewat tidak bisa dipilih.
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>
-                  Catatan Tambahan{" "}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    (Opsional)
-                  </span>
-                </Label>
-                <RichMentionEditor
-                  key={ulangSource ? `ulang-${ulangSource.id}` : "new"}
-                  ref={notesEditorRef}
-                  initialContent={
-                    ulangSource ? parseRichValue(ulangSource.notes) : undefined
-                  }
-                  placeholder="Konteks/keterangan tambahan untuk pengajuan ini..."
-                  onChange={() =>
-                    setNotes(
-                      notesEditorRef.current?.isEmpty()
-                        ? ""
-                        : stringifyRichContent(
-                            notesEditorRef.current?.getJSON() ?? {
-                              type: "doc",
-                            },
-                          ),
-                    )
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader className="border-b bg-muted/20 pb-4">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Package className="h-5 w-5 text-primary" />
-                Daftar Barang <span className="text-red-500">*</span>
-              </CardTitle>
-              <CardDescription>
-                Cari dari katalog Barang Petty Cash, atau tambah barang manual
-                kalau belum ada di katalog.
-                {isLourdes &&
-                  " Pilih dulu company (GMI/GIS) untuk pengajuan ini - katalog barang yang muncul ikut company yang dipilih."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex justify-end">
-                <PcPengajuanTemplatePicker
-                  hasItems={items.length > 0}
-                  onSelect={applyTemplate}
-                />
-              </div>
-              {isLourdes && (
-                <div className="space-y-2 max-w-[220px]">
-                  <Label>
-                    Company Pengajuan <span className="text-red-500">*</span>
-                  </Label>
-                  <SearchableSelect
-                    value={lourdesCoa ?? ""}
-                    onValueChange={(val) =>
-                      setLourdesCoa(val as "GMI" | "GIS")
-                    }
-                  >
-                    <SearchableSelectTrigger>
-                      <SearchableSelectValue placeholder="Pilih GMI/GIS" />
-                    </SearchableSelectTrigger>
-                    <SearchableSelectContent>
-                      <SearchableSelectItem value="GMI">GMI</SearchableSelectItem>
-                      <SearchableSelectItem value="GIS">GIS</SearchableSelectItem>
-                    </SearchableSelectContent>
-                  </SearchableSelect>
-                </div>
-              )}
-              {templateLoading || ulangLoading ? (
-                <p className="text-sm text-muted-foreground italic flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
-                  {ulangLoading ? "Memuat Pengajuan lama..." : "Memuat template..."}
-                </p>
-              ) : isLourdes && !lourdesCoa ? (
-                <p className="text-sm text-muted-foreground italic">
-                  Pilih company di atas dulu sebelum menambahkan barang.
-                </p>
-              ) : (
-                <PcItemsEditor
-                  key={`${isLourdes ? lourdesCoa : "fixed"}-${
-                    templateId ?? (ulangSource ? `ulang-${ulangSource.id}` : "blank")
-                  }`}
-                  initialItems={templateItems.map((it) => {
-                    const catalog = it.barang_id
-                      ? templateCatalogCoa[it.barang_id]
-                      : undefined;
-                    return {
-                      ...it,
-                      coa: itemsCoa,
-                      category:
-                        (catalog &&
-                          itemsCoa &&
-                          pettyCashBarangCoaFor(catalog, itemsCoa)) ||
-                        it.category,
-                      subtotal: it.qty * it.unit_price,
-                    };
-                  })}
-                  onChange={setItems}
-                  coaMode="locked"
-                  lockedCoa={itemsCoa}
-                  coaSearchFilter={itemsCoa}
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="border-b bg-muted/20 pb-4">
-              <CardTitle className="text-lg">
-                Lampiran{" "}
-                <span className="text-xs font-normal text-muted-foreground">
-                  (Opsional)
+          <div className="col-span-12 flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+            {appliedTemplateName ? (
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                <FileStack className="h-4 w-4 shrink-0 text-primary" />
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                  Menggunakan template <strong>{appliedTemplateName}</strong>.
+                  Semua isian tetap bisa diedit.
                 </span>
-              </CardTitle>
-              <CardDescription>
-                Referensi pendukung, misal quotation/link produk.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="p-4 border-2 border-dashed rounded-lg bg-muted/10 transition-colors hover:bg-muted/30">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="text-sm text-muted-foreground text-center sm:text-left">
-                    <p className="font-medium text-foreground">
-                      Upload Bukti Pendukung
-                    </p>
-                    <p className="text-xs">Format: JPG, PNG, PDF. Maks: 5MB.</p>
-                  </div>
-                  <Input
-                    type="file"
-                    className="hidden"
-                    id="pengajuan-file-upload"
-                    onChange={handleFileUpload}
-                    disabled={uploading}
-                  />
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="cursor-pointer shrink-0"
-                    disabled={uploading}
-                  >
-                    <label htmlFor="pengajuan-file-upload">
-                      {uploading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <UploadCloud className="h-4 w-4 mr-2" />
-                      )}
-                      {uploading ? "Mengunggah..." : "Pilih File"}
-                    </label>
-                  </Button>
-                </div>
               </div>
-
-              {attachments.length > 0 && (
-                <div className="grid gap-2">
-                  {attachments.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-3 bg-background border rounded-md shadow-sm"
-                    >
-                      <a
-                        href={file.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-primary hover:underline truncate max-w-[85%]"
-                      >
-                        {file.name}
-                      </a>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive/80 hover:bg-destructive/10"
-                        onClick={() => removeAttachment(index)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="flex justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={goBack}
-              disabled={loading}
-            >
-              Batal
-            </Button>
-            <Button onClick={handleSubmit} disabled={loading}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              Kirim Pengajuan
-            </Button>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileStack className="h-4 w-4 shrink-0" />
+                Pengajuan rutin? Pakai Template Pengajuan supaya tidak perlu
+                input barang satu per satu.
+              </div>
+            )}
+            <div className="flex shrink-0">
+              <PcPengajuanTemplatePicker
+                hasItems={items.length > 0}
+                onSelect={applyTemplate}
+              />
+            </div>
           </div>
-        </div>
 
-        {/* KOLOM KANAN: PANEL INFO */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-3 border-b bg-muted/20">
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserCircle className="h-5 w-5 text-muted-foreground" />
-                Data Pemohon
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 text-sm space-y-4">
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">
-                  Nama Lengkap
-                </p>
-                <p className="font-semibold">{profile?.nama || "Memuat..."}</p>
+          {isLourdes && (
+            <div
+              id="pc-field-company"
+              className="col-span-12 flex flex-col gap-2 rounded-md"
+            >
+              <Label className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                Company Pengajuan <span className="text-red-500">*</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+                {(["GMI", "GIS"] as const).map((company) => (
+                  <button
+                    key={company}
+                    type="button"
+                    onClick={() => setLourdesCoa(company)}
+                    className={cn(
+                      "py-4 rounded-lg border-2 font-bold text-lg transition-all",
+                      lourdesCoa === company
+                        ? "border-primary bg-primary/10 text-primary shadow-sm"
+                        : "border-border hover:border-primary/40 text-muted-foreground",
+                    )}
+                  >
+                    {company}
+                  </button>
+                ))}
               </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Departemen</p>
-                <p className="font-semibold">{profile?.department || "-"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">
-                  Perusahaan (Company)
-                </p>
-                <p className="font-semibold">{profile?.company || "-"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Site</p>
-                <p className="font-semibold">{profile?.lokasi || "-"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Budget</p>
-                {resolvedBudget ? (
-                  <p className="font-semibold">
-                    {resolvedBudget.name}{" "}
-                    <span className="font-normal text-muted-foreground">
-                      (Sisa {formatCurrency(resolvedBudget.current_budget)})
-                    </span>
-                  </p>
+              <p className="text-xs text-muted-foreground">
+                {lourdesCoa ? (
+                  <>
+                    Pengajuan ini dicatat untuk company{" "}
+                    <strong>{lourdesCoa}</strong> dan katalog barang mengikuti
+                    company tersebut.{" "}
+                  </>
                 ) : (
-                  <p className="font-semibold text-muted-foreground">
-                    Belum ada budget aktif utk departemen ini
-                  </p>
+                  "Katalog barang yang muncul mengikuti company yang dipilih. "
                 )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {items.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3 border-b bg-muted/20">
-                <CardTitle className="text-base">Ringkasan</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <p className="text-sm text-muted-foreground">
-                    Total Pengajuan
-                  </p>
-                  <p className="text-lg font-bold text-primary">
-                    {formatCurrency(totalAmount)}
-                  </p>
-                </div>
-                <PcCoaBreakdown items={items} />
-              </CardContent>
-            </Card>
+                Mengganti company akan mengosongkan daftar barang.
+              </p>
+            </div>
           )}
 
-          <Card className="bg-primary/5 border-primary/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2 text-primary">
-                <Info className="h-4 w-4" />
-                Informasi Penting
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground space-y-3 pb-4">
-              <p>
-                Begitu dikirim, pengajuan{" "}
-                <strong className="text-foreground">
-                  otomatis masuk jalur approval
-                </strong>{" "}
-                sesuai Template Approval yang berlaku untuk departemen Anda -
-                tidak perlu validasi manual GA.
-              </p>
-              <p>
-                Barang yang belum ada di katalog bisa ditambahkan lewat{" "}
-                <strong className="text-foreground">
-                  &quot;Barang Manual&quot;
-                </strong>
-                , tapi kalau sering dipakai, minta GA menambahkannya ke
-                katalog Barang Petty Cash.
-              </p>
-              <p>
-                * Departemen Anda wajib punya Template Approval & Budget
-                Petty Cash aktif, dan Anda tidak sedang punya Sub-Voucher
-                yang belum dideklarasikan, sebelum bisa mengirim pengajuan
-                baru - hubungi GA/Admin kalau ada yang belum diatur.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+            <Label>Nama Pemohon</Label>
+            <Input readOnly disabled value={profile?.nama || "Memuat..."} />
+          </div>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-6">
+            <Label>Budget</Label>
+            <Input
+              readOnly
+              disabled
+              value={
+                resolvedBudget
+                  ? `${resolvedBudget.name} (Sisa ${formatCurrency(resolvedBudget.current_budget)})`
+                  : "Belum ada budget aktif untuk departemen ini"
+              }
+            />
+          </div>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+            <Label>Perusahaan</Label>
+            <Input readOnly disabled value={profile?.company || "Memuat..."} />
+          </div>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+            <Label>Departemen</Label>
+            <Input
+              readOnly
+              disabled
+              value={profile?.department || "Memuat..."}
+            />
+          </div>
+          <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
+            <Label>Site</Label>
+            <Input readOnly disabled value={profile?.lokasi || "-"} />
+          </div>
+
+          <div
+            id="pc-field-tanggal"
+            className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
+          >
+            <Label>
+              Tanggal Dibutuhkan <span className="text-red-500">*</span>
+            </Label>
+            <DatePicker
+              value={neededDateValue}
+              onChange={(date) => date && setNeededDate(getLocalDateString(date))}
+              minDate={minDateValue}
+              endMonth={calendarEndMonth}
+            />
+            <p className="text-xs text-muted-foreground">
+              Tanggal yang sudah lewat tidak bisa dipilih.
+            </p>
+          </div>
+          <div
+            id="pc-field-minggu"
+            className="flex flex-col gap-2 col-span-12 md:col-span-6 rounded-md"
+          >
+            <Label className="flex items-center gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5" />
+              Minggu ke- (bulan ini) <span className="text-red-500">*</span>
+            </Label>
+            <SearchableSelect
+              value={weekOfMonth ? String(weekOfMonth) : ""}
+              onValueChange={(val) => {
+                setWeekOfMonth(Number(val));
+                setWeekManuallySet(true);
+              }}
+            >
+              <SearchableSelectTrigger>
+                <SearchableSelectValue placeholder="Pilih minggu" />
+              </SearchableSelectTrigger>
+              <SearchableSelectContent>
+                {selectableWeeks.map((w) => (
+                  <SearchableSelectItem key={w} value={String(w)}>
+                    Minggu ke-{w}
+                  </SearchableSelectItem>
+                ))}
+              </SearchableSelectContent>
+            </SearchableSelect>
+            <p className="text-xs text-muted-foreground">
+              Hanya minggu ini atau minggu berikutnya di bulan berjalan -
+              minggu yang sudah lewat tidak bisa dipilih.
+            </p>
+          </div>
+
+          <div
+            id="pc-field-catatan"
+            className="flex flex-col gap-2 col-span-12 rounded-md"
+          >
+            <Label>
+              Catatan Tambahan{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                (Opsional)
+              </span>
+            </Label>
+            <RichMentionEditor
+              key={ulangSource ? `ulang-${ulangSource.id}` : "new"}
+              ref={notesEditorRef}
+              initialContent={
+                ulangSource ? parseRichValue(ulangSource.notes) : undefined
+              }
+              placeholder="Konteks/keterangan tambahan untuk pengajuan ini..."
+              onChange={() =>
+                setNotes(
+                  notesEditorRef.current?.isEmpty()
+                    ? ""
+                    : stringifyRichContent(
+                        notesEditorRef.current?.getJSON() ?? {
+                          type: "doc",
+                        },
+                      ),
+                )
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Gunakan @ (orang), # (barang), $ (vendor), / (dokumen) untuk
+              menandai (tag).
+            </p>
+          </div>
         </div>
-      </div>
-    </Content>
+      </Content>
+
+      <Content
+        id="pc-section-items"
+        title="Daftar Barang"
+        description="Cari dari katalog Barang Petty Cash, atau tambahkan Barang Manual jika belum ada di katalog. Barang manual yang sering diajukan sebaiknya diminta ke GA untuk ditambahkan ke katalog."
+      >
+        {templateLoading || ulangLoading ? (
+          <p className="text-sm text-muted-foreground italic flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />{" "}
+            {ulangLoading ? "Memuat Pengajuan lama..." : "Memuat template..."}
+          </p>
+        ) : isLourdes && !lourdesCoa ? (
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            Pilih Company Pengajuan (GMI/GIS) terlebih dahulu sebelum
+            menambahkan barang.
+          </div>
+        ) : (
+          <PcItemsEditor
+            key={`${isLourdes ? lourdesCoa : "fixed"}-${
+              templateId ?? (ulangSource ? `ulang-${ulangSource.id}` : "blank")
+            }`}
+            initialItems={templateItems.map((it) => {
+              const catalog = it.barang_id
+                ? templateCatalogCoa[it.barang_id]
+                : undefined;
+              return {
+                ...it,
+                coa: itemsCoa,
+                category:
+                  (catalog &&
+                    itemsCoa &&
+                    pettyCashBarangCoaFor(catalog, itemsCoa)) ||
+                  it.category,
+                subtotal: it.qty * it.unit_price,
+              };
+            })}
+            onChange={setItems}
+            coaMode="locked"
+            lockedCoa={itemsCoa}
+            coaSearchFilter={itemsCoa}
+          />
+        )}
+      </Content>
+
+      <Content
+        id="pc-section-attachments"
+        title="Lampiran File"
+        description="Opsional - referensi pendukung, misalnya quotation atau link produk. Format JPG, PNG, PDF, maksimal 5MB."
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            type="file"
+            onChange={handleFileUpload}
+            disabled={uploading}
+          />
+          {uploading && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Mengunggah lampiran...
+            </p>
+          )}
+          {attachments.length > 0 && (
+            <ul className="space-y-2">
+              {attachments.map((file, index) => (
+                <li
+                  key={index}
+                  className="flex justify-between items-center gap-2 p-2 bg-muted rounded text-sm"
+                >
+                  <a
+                    href={file.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 min-w-0 hover:underline"
+                  >
+                    <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{file.name}</span>
+                  </a>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => removeAttachment(index)}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Content>
+    </FormSummaryLayout>
   );
 }
