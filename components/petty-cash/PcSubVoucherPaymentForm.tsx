@@ -32,6 +32,7 @@ import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { Attachment, PettyCashSubVoucher } from "@/type";
+import { PcCoaBadge } from "./PcCoaBadge";
 import { Landmark, Loader2, UploadCloud, X } from "lucide-react";
 
 interface PcSubVoucherPaymentFormProps {
@@ -92,6 +93,8 @@ export function PcSubVoucherPaymentForm({
           <TableHeader>
             <TableRow>
               <TableHead>Nama Barang</TableHead>
+              <TableHead className="w-[80px]">Company</TableHead>
+              <TableHead>COA</TableHead>
               <TableHead className="w-[70px]">Qty</TableHead>
               <TableHead className="w-[120px] text-right">Subtotal</TableHead>
             </TableRow>
@@ -102,6 +105,10 @@ export function PcSubVoucherPaymentForm({
                 <TableCell className="font-medium text-sm">
                   {it.part_name}
                 </TableCell>
+                <TableCell>
+                  <PcCoaBadge coa={it.coa} />
+                </TableCell>
+                <TableCell className="text-sm">{it.category || "-"}</TableCell>
                 <TableCell className="text-sm">
                   {it.qty} {it.uom || ""}
                 </TableCell>

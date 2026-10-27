@@ -52,6 +52,7 @@ import {
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { PettyCashSubVoucherItem } from "@/type";
+import { PcCoaBadge } from "./PcCoaBadge";
 import { Loader2, ShieldAlert } from "lucide-react";
 
 export interface PcAdminForceEditSubVoucherValues {
@@ -164,6 +165,8 @@ export function PcAdminForceEditSubVoucherDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead>Barang</TableHead>
+                  <TableHead className="w-[80px]">Company</TableHead>
+                  <TableHead>COA</TableHead>
                   <TableHead className="w-[110px]">Qty</TableHead>
                   <TableHead className="w-[160px]">Harga Satuan</TableHead>
                   <TableHead className="w-[140px] text-right">
@@ -174,13 +177,14 @@ export function PcAdminForceEditSubVoucherDialog({
               <TableBody>
                 {items.map((row, idx) => (
                   <TableRow key={idx}>
+                    <TableCell className="text-sm font-medium">
+                      {row.part_name}
+                    </TableCell>
+                    <TableCell>
+                      <PcCoaBadge coa={row.coa} />
+                    </TableCell>
                     <TableCell className="text-sm">
-                      <p className="font-medium">{row.part_name}</p>
-                      {row.coa && (
-                        <p className="text-xs text-muted-foreground">
-                          COA {row.coa}
-                        </p>
-                      )}
+                      {row.category || "-"}
                     </TableCell>
                     <TableCell>
                       <Input

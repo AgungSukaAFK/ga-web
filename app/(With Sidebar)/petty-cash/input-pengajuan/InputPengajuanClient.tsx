@@ -6,13 +6,13 @@
 // approval-nya OTOMATIS diambil dari Template Approval Petty Cash sesuai
 // departemen requester (lihat services/pcApprovalTemplateService.ts).
 //
-// COA (lihat PcItemsEditor, components/petty-cash/) - requester non-Lourdes
-// dikunci ke company sendiri (coaMode="locked", combobox katalog otomatis
-// cuma nampilin barang yang coa-nya memuat company itu). Akun Lourdes wajib
-// pilih SATU COA (GMI/GIS) dulu utk SELURUH pengajuan ini (lourdesCoa di
-// bawah) SEBELUM bisa nambah barang - bukan per baris lagi - biar konsisten
-// sama requester company lain & combobox katalognya ikut terfilter ke COA
-// yang dipilih itu.
+// Company baris item (field `coa`, lihat PcItemsEditor,
+// components/petty-cash/) - requester non-Lourdes dikunci ke company sendiri
+// (coaMode="locked", combobox katalog otomatis cuma nampilin barang yang
+// COA-nya terisi di company itu). Akun Lourdes wajib pilih SATU company
+// (GMI/GIS) dulu utk SELURUH pengajuan ini (lourdesCoa di bawah) SEBELUM
+// bisa nambah barang - bukan per baris lagi - biar konsisten sama requester
+// company lain & combobox katalognya ikut terfilter ke company itu.
 //
 // `?ulang=<id>` = "Ajukan Ulang" Pengajuan yang ditolak: barang, catatan, &
 // lampiran Pengajuan lama dimuat ke form, requester tinggal memperbaiki lalu
@@ -66,6 +66,10 @@ import {
   PengajuanEligibility,
 } from "@/services/pettyCashPengajuanService";
 import { fetchPengajuanTemplateById } from "@/services/pettyCashPengajuanTemplateService";
+import {
+  fetchPettyCashBarangCoaByIds,
+  pettyCashBarangCoaFor,
+} from "@/services/pettyCashBarangService";
 import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
 import {
   PettyCashBudget,
@@ -228,6 +232,9 @@ export default function InputPengajuanClient() {
   // barang yang sudah ditambah bisa jadi tidak relevan lagi dengan COA
   // baru, jadi dianggap sebagai pengajuan baru daripada disinkron manual.
   const [lourdesCoa, setLourdesCoa] = useState<"GMI" | "GIS" | null>(null);
+  const itemsCoa: "GMI" | "GIS" | null = isLourdes
+    ? lourdesCoa
+    : ((profile?.company as "GMI" | "GIS" | undefined) ?? null);
   const totalAmount = items.reduce((sum, it) => sum + it.subtotal, 0);
 
   // Terapkan Template Pengajuan (?template=<id>, lihat
@@ -238,13 +245,26 @@ export default function InputPengajuanClient() {
   const [templateItems, setTemplateItems] = useState<PettyCashPengajuanItem[]>(
     [],
   );
+  // COA katalog per company tiap barang di templateItems - `category` baris
+  // diresolusi ulang ke COA itemsCoa (sama alasannya dengan `coa` di atas).
+  // Gagal ambil = pakai category tersimpan apa adanya.
+  const [templateCatalogCoa, setTemplateCatalogCoa] = useState<
+    Awaited<ReturnType<typeof fetchPettyCashBarangCoaByIds>>
+  >({});
+  const loadTemplateCatalogCoa = (items: PettyCashPengajuanItem[]) =>
+    fetchPettyCashBarangCoaByIds(
+      items.flatMap((it) => (it.barang_id ? [it.barang_id] : [])),
+    )
+      .catch(() => ({}))
+      .then(setTemplateCatalogCoa);
   const [templateLoading, setTemplateLoading] = useState(!!templateId);
 
   useEffect(() => {
     if (!templateId) return;
     setTemplateLoading(true);
     fetchPengajuanTemplateById(Number(templateId))
-      .then((tpl) => {
+      .then(async (tpl) => {
+        await loadTemplateCatalogCoa(tpl.items || []);
         setTemplateItems(tpl.items || []);
         toast.success(
           `Template "${tpl.nama_template}" diterapkan - ${
@@ -283,6 +303,7 @@ export default function InputPengajuanClient() {
         }
         const coa = src.items?.find((it) => it.coa)?.coa ?? null;
         if (coa) setLourdesCoa(coa);
+        await loadTemplateCatalogCoa(src.items || []);
         setTemplateItems(src.items || []);
         setNotes(src.notes || "");
         setAttachments(src.attachments || []);
@@ -354,7 +375,7 @@ export default function InputPengajuanClient() {
       );
     }
     if (isLourdes && !lourdesCoa) {
-      return toast.error("Pilih COA (GMI/GIS) untuk pengajuan ini dulu.");
+      return toast.error("Pilih company (GMI/GIS) untuk pengajuan ini dulu.");
     }
     if (items.length === 0) {
       return toast.error("Tambahkan minimal 1 barang.");
@@ -367,7 +388,7 @@ export default function InputPengajuanClient() {
     }
     if (hasUnresolvedCoa(items)) {
       return toast.error(
-        "Setiap barang wajib punya COA (GMI/GIS) - lengkapi dulu baris yang belum dipilih.",
+        "Setiap barang wajib punya company (GMI/GIS) - lengkapi dulu baris yang belum dipilih.",
       );
     }
     if (!weekOfMonth) {
@@ -568,7 +589,7 @@ export default function InputPengajuanClient() {
                 Cari dari katalog Barang Petty Cash, atau tambah barang manual
                 kalau belum ada di katalog.
                 {isLourdes &&
-                  " Pilih dulu COA (GMI/GIS) untuk pengajuan ini - katalog barang yang muncul ikut COA yang dipilih."}
+                  " Pilih dulu company (GMI/GIS) untuk pengajuan ini - katalog barang yang muncul ikut company yang dipilih."}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
@@ -581,7 +602,7 @@ export default function InputPengajuanClient() {
               {isLourdes && (
                 <div className="space-y-2 max-w-[220px]">
                   <Label>
-                    COA Pengajuan <span className="text-red-500">*</span>
+                    Company Pengajuan <span className="text-red-500">*</span>
                   </Label>
                   <SearchableSelect
                     value={lourdesCoa ?? ""}
@@ -606,35 +627,32 @@ export default function InputPengajuanClient() {
                 </p>
               ) : isLourdes && !lourdesCoa ? (
                 <p className="text-sm text-muted-foreground italic">
-                  Pilih COA di atas dulu sebelum menambahkan barang.
+                  Pilih company di atas dulu sebelum menambahkan barang.
                 </p>
               ) : (
                 <PcItemsEditor
                   key={`${isLourdes ? lourdesCoa : "fixed"}-${
                     templateId ?? (ulangSource ? `ulang-${ulangSource.id}` : "blank")
                   }`}
-                  initialItems={templateItems.map((it) => ({
-                    ...it,
-                    coa: isLourdes
-                      ? lourdesCoa
-                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
-                        null),
-                    subtotal: it.qty * it.unit_price,
-                  }))}
+                  initialItems={templateItems.map((it) => {
+                    const catalog = it.barang_id
+                      ? templateCatalogCoa[it.barang_id]
+                      : undefined;
+                    return {
+                      ...it,
+                      coa: itemsCoa,
+                      category:
+                        (catalog &&
+                          itemsCoa &&
+                          pettyCashBarangCoaFor(catalog, itemsCoa)) ||
+                        it.category,
+                      subtotal: it.qty * it.unit_price,
+                    };
+                  })}
                   onChange={setItems}
                   coaMode="locked"
-                  lockedCoa={
-                    isLourdes
-                      ? lourdesCoa
-                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
-                        null)
-                  }
-                  coaSearchFilter={
-                    isLourdes
-                      ? lourdesCoa
-                      : ((profile?.company as "GMI" | "GIS" | undefined) ??
-                        null)
-                  }
+                  lockedCoa={itemsCoa}
+                  coaSearchFilter={itemsCoa}
                 />
               )}
             </CardContent>

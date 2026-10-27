@@ -384,14 +384,14 @@ export const MR_ITEM_LEVEL_COLORS: Record<string, string> = {
 // ENUM & KOSNTANTA PETTY CASH
 // ==========================================
 
-// Kategori untuk katalog Barang Petty Cash (lihat petty_cash_barang &
-// PettyCashBarangClient.tsx) - beda dari kategori barang MR/PO utama.
-// Kategori RELATIF terhadap COA (GMI/GIS punya makna/daftar kategori
-// masing-masing, bukan satu daftar global) - makanya dipecah per COA, bukan
-// satu array flat seperti sebelumnya. Semua barang di production saat ini
-// COA GMI, jadi daftar GMI di bawah = daftar kategori lama apa adanya;
-// daftar GIS masih kosong (barang/kategori GIS baru akan diisi manual lewat
-// sistem belakangan - tambahkan valuenya di sini begitu sudah ditentukan).
+// Saran COA (= kategori) per company untuk katalog Barang Petty Cash (lihat
+// PettyCashBarang.coa_gmi/coa_gis di type/index.ts) - beda dari kategori
+// barang MR/PO utama. Cuma SARAN awal di combobox form barang: GA tetap bisa
+// mengetik COA baru, dan COA yang sudah dipakai barang lain ikut muncul
+// sebagai pilihan (lihat fetchPettyCashBarangCoaOptions,
+// services/pettyCashBarangService.ts). Daftar GMI = daftar kategori lama
+// apa adanya; daftar GIS masih kosong (terbentuk sendiri seiring GA mengisi
+// COA GIS tiap barang - tambahkan di sini kalau mau dibakukan).
 export const PETTY_CASH_BARANG_KATEGORI_OPTIONS_GMI = [
   "Kebutuhan Dapur",
   "Rutin Bulanan",
@@ -408,9 +408,8 @@ export const PETTY_CASH_BARANG_KATEGORI_OPTIONS_GMI = [
 
 export const PETTY_CASH_BARANG_KATEGORI_OPTIONS_GIS: readonly string[] = [];
 
-// Dipakai form Barang Petty Cash (PettyCashBarangClient.tsx) buat nentuin
-// pilihan kategori yang tampil di combobox tergantung COA yang dicentang -
-// lihat kategoriOptionsForCoa di sana.
+// Dipakai form Barang Petty Cash (PettyCashBarangClient.tsx) buat saran
+// combobox COA GMI & COA GIS masing-masing.
 export const PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA: Record<
   "GMI" | "GIS",
   readonly string[]
@@ -616,8 +615,8 @@ export const PC_OVERALL_STATUS_COLORS: Record<string, string> = {
 export const PC_OVERALL_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
-// COA (company) yang boleh ditandai ke barang Petty Cash / baris item
-// pengajuan - lihat PettyCashBarang.coa & PettyCashPengajuanItem.coa di
+// Company (GMI/GIS) tempat baris item pengajuan dibebankan - lihat
+// PettyCashPengajuanItem.coa & PettyCashBarang.coa_gmi/coa_gis di
 // type/index.ts. "LOURDES" SENGAJA tidak masuk di sini - Lourdes bukan COA,
 // tapi company yang bisa melihat & memilih di antara GMI/GIS per baris.
 export const PC_COA_OPTIONS = ["GMI", "GIS"] as const;

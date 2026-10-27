@@ -558,9 +558,13 @@ function main() {
     const users = await ensureUsers(key);
     const admin = query("select id from public.profiles where role = 'admin' order by email limit 1")[0]?.id ?? users.dimas.id;
 
-    const barang = query("select id, part_name, category, uom, coa from public.petty_cash_barang order by id");
+    const barang = query("select id, part_name, coa_gmi, coa_gis, uom from public.petty_cash_barang order by id");
     const barangByCat = {};
     for (const b of barang) {
+      // Data katalog lama ada di coa_gmi (lihat 0012_petty_cash_barang_coa_per_company.sql)
+      // - dipakai sbg kunci kategori demo di bawah.
+      b.category = b.coa_gmi;
+      b.coa = [b.coa_gmi && "GMI", b.coa_gis && "GIS"].filter(Boolean);
       b.price = priceFor(b);
       (barangByCat[b.category] ||= []).push(b);
     }
@@ -643,6 +647,7 @@ function main() {
         }
         const coaOptions = it._barang?.coa ?? ["GMI", "GIS"];
         it.coa = chance(0.85) && coaOptions.includes(company) ? company : pick(coaOptions);
+        if (it._barang) it.category = it.coa === "GIS" ? it._barang.coa_gis : it._barang.coa_gmi;
         it.subtotal = it.qty * it.unit_price;
         it.note = chance(0.15) ? pick(["Untuk stok 2 minggu", "Urgent", "Harga sesuai nota toko", "Cash ke koordinator lapangan"]) : null;
         items.push(it);

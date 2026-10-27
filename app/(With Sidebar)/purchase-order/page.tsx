@@ -1368,6 +1368,7 @@ function PurchaseOrderPageContent() {
         <CreatePOModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
+          companyCode={userProfile?.company}
         />
       )}
 

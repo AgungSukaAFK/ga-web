@@ -13,7 +13,6 @@ import {
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
 import {
-  extractPlainText,
   parseRichValue,
   stringifyRichContent,
 } from "@/lib/rich-content";
@@ -45,8 +44,11 @@ import {
   fetchPoQtyBreakdownForMr,
   PoQtyBreakdownEntry,
   generatePoCode,
+  fetchMrsForPoPicker,
+  getOrderRemainingQty,
+  PoPickerMaterialRequest,
 } from "@/services/purchaseOrderService";
-import { fetchAvailableMRsForPO } from "@/services/mrService";
+import { MrPickerList } from "../MrPickerList";
 import {
   fetchItemVendorHistory,
   getItemVendorHistoryKey,
@@ -353,7 +355,9 @@ function CreatePOPageContent() {
 
   // State Dialogs & Modals
   const [isLinkMROpen, setIsLinkMROpen] = useState(false);
-  const [availableMRs, setAvailableMRs] = useState<any[]>([]);
+  const [availableMRs, setAvailableMRs] = useState<PoPickerMaterialRequest[]>(
+    [],
+  );
   const [isLoadingMRs, setIsLoadingMRs] = useState(false);
   const [searchMrQuery, setSearchMrQuery] = useState("");
   const [isConfirmDirectPOOpen, setIsConfirmDirectPOOpen] = useState(false);
@@ -596,24 +600,14 @@ function CreatePOPageContent() {
     setSelectedOrderIndices([]);
   };
 
-  const handleOpenLinkMR = async () => {
+  // Fetch daftar MR-nya di useEffect di bawah (jalan begitu dialog terbuka).
+  const handleOpenLinkMR = () => {
     if (!userProfile?.company) return;
-    setIsLinkMROpen(true);
     setIsLoadingMRs(true);
-    try {
-      const res = await fetchAvailableMRsForPO(
-        userProfile.company,
-        searchMrQuery,
-      );
-      setAvailableMRs(res || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoadingMRs(false);
-    }
+    setIsLinkMROpen(true);
   };
 
-  const handleSelectMR = async (mr: any) => {
+  const handleSelectMR = async (mr: PoPickerMaterialRequest) => {
     if (poForm.items.length > 0) {
       if (!confirm("Menautkan MR akan mereset item yang sudah ada. Lanjutkan?"))
         return;
@@ -640,10 +634,13 @@ function CreatePOPageContent() {
     if (!isLinkMROpen || !userProfile?.company) return;
     const handler = setTimeout(() => {
       setIsLoadingMRs(true);
-      fetchAvailableMRsForPO(userProfile.company, searchMrQuery)
+      fetchMrsForPoPicker(userProfile.company, searchMrQuery)
         .then(setAvailableMRs)
+        .catch((err) =>
+          toast.error("Gagal memuat daftar MR", { description: err.message }),
+        )
         .finally(() => setIsLoadingMRs(false));
-    }, 500);
+    }, 300);
     return () => clearTimeout(handler);
   }, [searchMrQuery, isLinkMROpen]);
 
@@ -1060,24 +1057,10 @@ function CreatePOPageContent() {
   const getOrderIsAsset = (order: any): boolean =>
     order.barang_id ? !!barangAssetMap[order.barang_id] : false;
 
-  // Qty yang masih tersisa & belum ke-cover PO manapun utk item MR ini
-  // (qty MR dikurangi qty kumulatif dari semua PO yang sudah nyantol,
-  // termasuk link manual, DAN qty yang sudah dipenuhi langsung dari Stok GA
-  // - lihat addStockFulfillment/services/mrService.ts - supaya Purchasing
-  // tidak diminta bikin PO utk qty yang sudah selesai dari stok).
-  const getRemainingQty = (order: any): number => {
-    const covered = order.part_number
-      ? (poBreakdown[order.part_number] || []).reduce(
-          (sum, e) => sum + (e.qty || 0),
-          0,
-        )
-      : 0;
-    const fromStock = (order.stock_fulfillments || []).reduce(
-      (sum: number, e: { qty: number }) => sum + (e.qty || 0),
-      0,
-    );
-    return Math.max(0, Number(order.qty) - covered - fromStock);
-  };
+  // Qty yang masih tersisa & belum ke-cover PO / Stok GA utk item MR ini -
+  // aturan yang sama dipakai dialog pencarian MR (fetchMrsForPoPicker).
+  const getRemainingQty = (order: any): number =>
+    getOrderRemainingQty(order, poBreakdown);
 
   const isOrderSelectable = (order: any): boolean => getRemainingQty(order) > 0;
 
@@ -2416,57 +2399,17 @@ function CreatePOPageContent() {
           </DialogHeader>
           <div className="p-6 pt-2 flex-1 overflow-y-auto">
             <Input
-              placeholder="Cari No MR atau Remarks..."
+              placeholder="Cari Kode MR, remarks, atau departemen..."
               value={searchMrQuery}
               onChange={(e) => setSearchMrQuery(e.target.value)}
               className="mb-4"
             />
 
-            {isLoadingMRs ? (
-              <div className="py-8 text-center">
-                <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
-              </div>
-            ) : availableMRs.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">
-                Tidak ada MR yang tersedia (Approved).
-              </div>
-            ) : (
-              <div className="border rounded-md overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Kode MR</TableHead>
-                      <TableHead>Remarks</TableHead>
-                      <TableHead>Nilai Est.</TableHead>
-                      <TableHead className="text-right">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {availableMRs.map((mr) => (
-                      <TableRow key={mr.id}>
-                        <TableCell className="font-medium">
-                          {mr.kode_mr}
-                        </TableCell>
-                        <TableCell
-                          className="text-xs text-muted-foreground max-w-[200px] truncate"
-                          title={extractPlainText(mr.remarks)}
-                        >
-                          {extractPlainText(mr.remarks) || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(mr.cost_estimation)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" onClick={() => handleSelectMR(mr)}>
-                            Pilih
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+            <MrPickerList
+              mrs={availableMRs}
+              loading={isLoadingMRs}
+              onSelect={handleSelectMR}
+            />
           </div>
           <DialogFooter className="p-4 border-t bg-muted/20">
             <Button variant="outline" onClick={() => setIsLinkMROpen(false)}>

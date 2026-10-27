@@ -224,6 +224,7 @@ export default function ApprovalPcVoucherPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama Barang</TableHead>
+                  <TableHead>Company</TableHead>
                   <TableHead>COA</TableHead>
                   <TableHead>Qty</TableHead>
                   <TableHead className="text-right">Subtotal</TableHead>
@@ -236,6 +237,7 @@ export default function ApprovalPcVoucherPage() {
                     <TableCell>
                       <PcCoaBadge coa={it.coa} />
                     </TableCell>
+                    <TableCell>{it.category || "-"}</TableCell>
                     <TableCell>
                       {it.qty} {it.uom || ""}
                     </TableCell>

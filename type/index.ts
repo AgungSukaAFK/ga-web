@@ -434,15 +434,6 @@ export interface PurchaseOrderListItem {
   full_received_at?: string | null;
 }
 
-export interface ApprovedMaterialRequest {
-  id: number;
-  kode_mr: string;
-  remarks: string;
-  department: string;
-  status: string; // REVISI: Added status
-  created_at: string; // REVISI: Added created_at
-}
-
 export interface Barang {
   id: number;
   created_at: string;
@@ -464,19 +455,20 @@ export interface PettyCashBarang {
   id: number;
   part_number: string | null;
   part_name: string;
-  category: string | null;
   uom: string | null;
   vendor: string | null;
   last_purchase_price: number | null;
   link: string | null;
   description: string | null;
-  // COA (company) barang ini boleh dipakai - "GMI", "GIS", atau keduanya.
-  // Dipakai buat filter katalog saat submit Input Pengajuan (lihat
-  // searchPettyCashBarang, services/pettyCashBarangService.ts) - user non-
-  // Lourdes cuma lihat barang yang coa-nya memuat company dia sendiri.
-  // Halaman kelola katalog (Barang Petty Cash) TIDAK difilter oleh ini -
-  // GA/Admin selalu lihat semua barang apa pun company mereka.
-  coa: ("GMI" | "GIS")[];
+  // COA (= kategori) barang ini PER COMPANY - barang yang sama bisa beda
+  // COA di GMI & GIS (mis. "Kebutuhan Dapur" vs "Pantry"). null = barang
+  // nonaktif di company tsb: tidak muncul di pencarian Input Pengajuan
+  // requester company itu (lihat searchPettyCashBarang,
+  // services/pettyCashBarangService.ts). Halaman kelola katalog (Barang
+  // Petty Cash) TIDAK difilter oleh ini - GA/Admin selalu lihat semua barang
+  // apa pun company mereka. Lihat 0012_petty_cash_barang_coa_per_company.sql.
+  coa_gmi: string | null;
+  coa_gis: string | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;

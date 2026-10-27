@@ -87,7 +87,7 @@ type DeklarasiRow =
 // tanda tangan & garis hilang). Di-scope ke #printable-po-a4 (id halaman
 // cetak PaginatedPrintDocument) supaya juga menang atas utilitas Tailwind
 // bawaan (mis. text-xs di <table>).
-const PRINT_CSS = `#printable-po-a4 .pcx-font-size-5-5pt{font-size:5.5pt}#printable-po-a4 .pcx-font-size-6-5pt{font-size:6.5pt}#printable-po-a4 .pcx-font-size-6pt{font-size:6pt}#printable-po-a4 .pcx-font-size-7-5pt{font-size:7.5pt}#printable-po-a4 .pcx-font-size-8pt{font-size:8pt}#printable-po-a4 .pcx-height-16mm{height:16mm}#printable-po-a4 .pcx-height-48px{height:48px}#printable-po-a4 .pcx-height-50px{height:50px}#printable-po-a4 .pcx-overflow-wrap-anywhere{overflow-wrap:anywhere}#printable-po-a4 .pcx-width-14{width:14%}#printable-po-a4 .pcx-width-15{width:15%}#printable-po-a4 .pcx-width-21{width:21%}#printable-po-a4 .pcx-width-29{width:29%}#printable-po-a4 .pcx-width-34{width:34%}#printable-po-a4 .pcx-width-42{width:42%}#printable-po-a4 .pcx-width-48px{width:48px}#printable-po-a4 .pcx-width-5{width:5%}#printable-po-a4 .pcx-width-6{width:6%}#printable-po-a4 .pcx-width-60{width:60%}#printable-po-a4 .pcx-width-7{width:7%}#printable-po-a4 .pcx-width-71{width:71%}#printable-po-a4 .pcx-width-85{width:85%}#printable-po-a4 .pcx-width-9{width:9%}#printable-po-a4 .pcx-width-90px{width:90px}#printable-po-a4 .pcx-total-row{background:#fef08a}#printable-po-a4 .pcx-row-gap-3{row-gap:0.75rem}#printable-po-a4 .pcx-pt-1px{padding-top:1px}`;
+const PRINT_CSS = `#printable-po-a4 .pcx-font-size-5-5pt{font-size:5.5pt}#printable-po-a4 .pcx-font-size-6-5pt{font-size:6.5pt}#printable-po-a4 .pcx-font-size-6pt{font-size:6pt}#printable-po-a4 .pcx-font-size-7-5pt{font-size:7.5pt}#printable-po-a4 .pcx-font-size-8pt{font-size:8pt}#printable-po-a4 .pcx-height-16mm{height:16mm}#printable-po-a4 .pcx-height-48px{height:48px}#printable-po-a4 .pcx-height-50px{height:50px}#printable-po-a4 .pcx-overflow-wrap-anywhere{overflow-wrap:anywhere}#printable-po-a4 .pcx-width-12{width:12%}#printable-po-a4 .pcx-width-14{width:14%}#printable-po-a4 .pcx-width-15{width:15%}#printable-po-a4 .pcx-width-21{width:21%}#printable-po-a4 .pcx-width-22{width:22%}#printable-po-a4 .pcx-width-34{width:34%}#printable-po-a4 .pcx-width-42{width:42%}#printable-po-a4 .pcx-width-48px{width:48px}#printable-po-a4 .pcx-width-5{width:5%}#printable-po-a4 .pcx-width-6{width:6%}#printable-po-a4 .pcx-width-60{width:60%}#printable-po-a4 .pcx-width-7{width:7%}#printable-po-a4 .pcx-width-71{width:71%}#printable-po-a4 .pcx-width-85{width:85%}#printable-po-a4 .pcx-width-90px{width:90px}#printable-po-a4 .pcx-total-row{background:#fef08a}#printable-po-a4 .pcx-row-gap-3{row-gap:0.75rem}#printable-po-a4 .pcx-pt-1px{padding-top:1px}`;
 
 const formatNumber = (value: number | null | undefined) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(
@@ -353,11 +353,12 @@ export function PrintablePettyCashDocument({
     ) : (
       <tr>
         <th className={`${headCell} pcx-width-5`}>No</th>
-        <th className={`${headCell} pcx-width-29`}>Item</th>
-        <th className={`${headCell} pcx-width-7`}>COA</th>
-        <th className={`${headCell} pcx-width-7`}>Qty</th>
-        <th className={`${headCell} pcx-width-9`}>Satuan</th>
-        <th className={`${headCell} pcx-width-14`}>Harga (Rp)</th>
+        <th className={`${headCell} pcx-width-22`}>Item</th>
+        <th className={`${headCell} pcx-width-7`}>Company</th>
+        <th className={`${headCell} pcx-width-12`}>COA</th>
+        <th className={`${headCell} pcx-width-6`}>Qty</th>
+        <th className={`${headCell} pcx-width-7`}>Satuan</th>
+        <th className={`${headCell} pcx-width-12`}>Harga (Rp)</th>
         <th className={`${headCell} pcx-width-15`}>Jumlah (Rp)</th>
         <th className={`${headCell} pcx-width-14`}>Note</th>
       </tr>
@@ -374,6 +375,7 @@ export function PrintablePettyCashDocument({
         {clamp(item.part_name, PRINT_LIMIT.itemName)}
       </td>
       <td className={`${cell} text-center`}>{item.coa || "-"}</td>
+      <td className={cell}>{item.category || "-"}</td>
       <td className={`${cell} text-center`}>{formatNumber(item.qty)}</td>
       <td className={`${cell} text-center pcx-overflow-wrap-anywhere`}>{item.uom || "-"}</td>
       <td className={`${cell} text-right whitespace-nowrap`}>
@@ -553,7 +555,7 @@ export function PrintablePettyCashDocument({
               Array.from(coaTotals.entries()).map(([coa, amount]) => (
                 <tr key={coa}>
                   <td className={`${cell} text-right pcx-width-71`}>
-                    Subtotal COA {coa}
+                    Subtotal {coa}
                   </td>
                   <td className={`${cell} text-right whitespace-nowrap pcx-width-15`}>
                     {formatNumber(amount)}

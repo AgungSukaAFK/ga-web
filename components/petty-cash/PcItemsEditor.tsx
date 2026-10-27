@@ -1,19 +1,23 @@
 // src/components/petty-cash/PcItemsEditor.tsx
 //
 // Tabel baris item Pengajuan/Voucher/Deklarasi Petty Cash - kombinasi
-// combobox katalog + tombol tambah manual + baris qty/harga/catatan/COA
+// combobox katalog + tombol tambah manual + baris qty/harga/catatan/company
 // yang bisa diedit. Diekstrak dari InputPengajuanClient.tsx supaya dipakai
 // ulang di form Input Pengajuan ATAUPUN dialog "Edit & Setujui" approver
 // (PcEditAndApproveDialog) - dan, dalam mode `readOnly`, buat menampilkan
 // snapshot item apa adanya di riwayat revisi (PcRevisionHistory) & panel
 // info dokumen (PcDocumentInfoPanel).
 //
-// COA per baris (lihat komentar PettyCashPengajuanItem.coa, type/index.ts):
+// Company per baris (field `coa`, lihat komentar PettyCashPengajuanItem.coa,
+// type/index.ts):
 //  - coaMode="locked": company submitter sendiri (non-Lourdes) - dikunci,
 //    tidak bisa diganti, meski barang katalognya berlaku utk GMI & GIS.
-//  - coaMode="choose": akun Lourdes - barang katalog ber-COA tunggal tetap
-//    auto-terisi (tidak ambigu), tapi barang ber-COA ganda (atau barang
-//    manual) WAJIB dipilih salah satu lewat Select per baris sebelum submit.
+//  - coaMode="choose": akun Lourdes - barang katalog yang cuma aktif di satu
+//    company tetap auto-terisi (tidak ambigu), tapi barang yang aktif di GMI
+//    & GIS (atau barang manual) WAJIB dipilih salah satu lewat Select per
+//    baris sebelum submit.
+// `category` baris katalog = COA barang itu di company baris tsb (lihat
+// PettyCashBarang.coa_gmi/coa_gis) - ikut berubah kalau company diganti.
 
 "use client";
 
@@ -44,6 +48,10 @@ import { PettyCashItemSearchCombobox } from "./PettyCashItemSearchCombobox";
 import { PcCoaBadge } from "./PcCoaBadge";
 import { PettyCashBarang, PettyCashPengajuanItem } from "@/type";
 import { PC_COA_OPTIONS, UOM_OPTIONS } from "@/type/enum";
+import {
+  pettyCashBarangActiveCompanies,
+  pettyCashBarangCoaFor,
+} from "@/services/pettyCashBarangService";
 import { formatCurrency } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -66,10 +74,11 @@ type ItemRow = {
   unit_price: number;
   note: string;
   coa: "GMI" | "GIS" | null;
-  // COA yang berlaku di katalog barang ini (kalau row berasal dari
-  // katalog) - dipakai membatasi opsi Select saat coaMode="choose". null/
-  // undefined = barang manual, kedua opsi GMI/GIS berlaku.
-  catalogCoa?: ("GMI" | "GIS")[] | null;
+  // COA katalog barang ini per company (kalau row baru ditambah dari
+  // katalog) - dipakai membatasi opsi Select saat coaMode="choose" & mengisi
+  // `category` begitu company dipilih. null/undefined = barang manual atau
+  // baris lama, kedua opsi GMI/GIS berlaku.
+  catalogCoa?: Pick<PettyCashBarang, "coa_gmi" | "coa_gis"> | null;
 };
 
 const toDraftRow = (item: PettyCashPengajuanItem): ItemRow => ({
@@ -131,12 +140,12 @@ export function PcItemsEditor({
   }, [rows]);
 
   const addItemFromCatalog = (barang: PettyCashBarang) => {
-    const catalogCoa = barang.coa ?? [];
+    const activeCompanies = pettyCashBarangActiveCompanies(barang);
     const coa: "GMI" | "GIS" | null =
       coaMode === "locked"
         ? (lockedCoa ?? null)
-        : catalogCoa.length === 1
-          ? catalogCoa[0]
+        : activeCompanies.length === 1
+          ? activeCompanies[0]
           : null;
 
     setRows((prev) => [
@@ -145,13 +154,13 @@ export function PcItemsEditor({
         _rowKey: makeRowKey(),
         barang_id: barang.id,
         part_name: barang.part_name,
-        category: barang.category,
+        category: coa ? pettyCashBarangCoaFor(barang, coa) : null,
         uom: barang.uom,
         qty: "1",
         unit_price: barang.last_purchase_price || 0,
         note: "",
         coa,
-        catalogCoa,
+        catalogCoa: { coa_gmi: barang.coa_gmi, coa_gis: barang.coa_gis },
       },
     ]);
   };
@@ -190,19 +199,28 @@ export function PcItemsEditor({
 
   const renderCoaCell = (row: ItemRow) => {
     if (coaMode === "locked") return <PcCoaBadge coa={lockedCoa} />;
-    const options = row.catalogCoa?.length ? row.catalogCoa : PC_COA_OPTIONS;
+    const activeCompanies = row.catalogCoa
+      ? pettyCashBarangActiveCompanies(row.catalogCoa)
+      : [];
+    const options = activeCompanies.length ? activeCompanies : PC_COA_OPTIONS;
     if (options.length === 1) return <PcCoaBadge coa={options[0]} />;
     return (
       <SearchableSelect
         value={row.coa ?? ""}
-        onValueChange={(val) =>
-          updateRow(row._rowKey, { coa: val as "GMI" | "GIS" })
-        }
+        onValueChange={(val) => {
+          const coa = val as "GMI" | "GIS";
+          updateRow(row._rowKey, {
+            coa,
+            ...(row.catalogCoa && {
+              category: pettyCashBarangCoaFor(row.catalogCoa, coa),
+            }),
+          });
+        }}
       >
         <SearchableSelectTrigger
           className={`h-9 w-[90px] ${!row.coa ? "border-red-400" : ""}`}
         >
-          <SearchableSelectValue placeholder="Pilih COA" />
+          <SearchableSelectValue placeholder="GMI/GIS" />
         </SearchableSelectTrigger>
         <SearchableSelectContent>
           {options.map((opt) => (
@@ -219,11 +237,12 @@ export function PcItemsEditor({
     const items = initialItems ?? [];
     return (
       <div className="overflow-x-auto rounded-md border">
-        <Table className="min-w-[720px]">
+        <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[180px]">Nama Barang</TableHead>
-              <TableHead className="w-[80px]">COA</TableHead>
+              <TableHead className="w-[80px]">Company</TableHead>
+              <TableHead className="min-w-[120px]">COA</TableHead>
               <TableHead className="w-[100px]">UoM</TableHead>
               <TableHead className="w-[70px]">Qty</TableHead>
               <TableHead className="w-[130px] text-right">
@@ -237,7 +256,7 @@ export function PcItemsEditor({
             {items.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center h-16 text-muted-foreground"
                 >
                   Tidak ada barang.
@@ -246,17 +265,11 @@ export function PcItemsEditor({
             ) : (
               items.map((it, i) => (
                 <TableRow key={i}>
-                  <TableCell>
-                    <div className="font-medium">{it.part_name}</div>
-                    {it.category && (
-                      <div className="text-xs text-muted-foreground">
-                        {it.category}
-                      </div>
-                    )}
-                  </TableCell>
+                  <TableCell className="font-medium">{it.part_name}</TableCell>
                   <TableCell>
                     <PcCoaBadge coa={it.coa} />
                   </TableCell>
+                  <TableCell className="text-sm">{it.category || "-"}</TableCell>
                   <TableCell className="text-sm">{it.uom || "-"}</TableCell>
                   <TableCell className="text-sm">{it.qty}</TableCell>
                   <TableCell className="text-right text-sm">
@@ -292,11 +305,12 @@ export function PcItemsEditor({
       </div>
 
       <div className="overflow-x-auto rounded-md border">
-        <Table className="min-w-[900px]">
+        <Table className="min-w-[1020px]">
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[180px]">Nama Barang</TableHead>
-              <TableHead className="w-[100px]">COA</TableHead>
+              <TableHead className="w-[100px]">Company</TableHead>
+              <TableHead className="min-w-[120px]">COA</TableHead>
               <TableHead className="w-[110px]">UoM</TableHead>
               <TableHead className="w-[90px]">Qty</TableHead>
               <TableHead className="w-[150px]">Harga Satuan</TableHead>
@@ -309,7 +323,7 @@ export function PcItemsEditor({
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Belum ada barang ditambahkan.
@@ -320,14 +334,7 @@ export function PcItemsEditor({
                 <TableRow key={it._rowKey}>
                   <TableCell>
                     {it.barang_id ? (
-                      <div>
-                        <div className="font-medium">{it.part_name}</div>
-                        {it.category && (
-                          <div className="text-xs text-muted-foreground">
-                            {it.category}
-                          </div>
-                        )}
-                      </div>
+                      <div className="font-medium">{it.part_name}</div>
                     ) : (
                       <Input
                         value={it.part_name}
@@ -340,6 +347,11 @@ export function PcItemsEditor({
                     )}
                   </TableCell>
                   <TableCell>{renderCoaCell(it)}</TableCell>
+                  <TableCell className="text-sm">
+                    {it.category || (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {it.barang_id ? (
                       <span className="text-sm">{it.uom || "-"}</span>
@@ -419,6 +431,6 @@ export function PcItemsEditor({
   );
 }
 
-/** True kalau ada baris yang belum punya COA - dipakai validasi submit. */
+/** True kalau ada baris yang belum punya company - dipakai validasi submit. */
 export const hasUnresolvedCoa = (items: PettyCashPengajuanItem[]): boolean =>
   items.some((it) => !it.coa);

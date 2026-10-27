@@ -274,8 +274,8 @@ export default function PettyCashPengajuanTemplateClient() {
             </DialogTitle>
             <DialogDescription>
               Daftar barang di sini akan otomatis dimuat ke Input Pengajuan
-              saat Anda pilih &quot;Gunakan&quot; - COA & tanggal dibutuhkan
-              tetap diisi baru tiap kali submit.
+              saat Anda pilih &quot;Gunakan&quot; - company, COA & tanggal
+              dibutuhkan tetap diisi baru tiap kali submit.
             </DialogDescription>
           </DialogHeader>
 

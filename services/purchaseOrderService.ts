@@ -3,7 +3,6 @@
 import { createClient } from "@/lib/supabase/client";
 import {
   Approval,
-  ApprovedMaterialRequest,
   Barang,
   MaterialRequest,
   MrConversionRecord,
@@ -184,30 +183,152 @@ export const fetchPurchaseOrders = async (
   return { data: data as PurchaseOrderListItem[], count };
 };
 
-export const fetchApprovedMaterialRequests = async (
+// Status MR yang boleh dibuatkan PO: sudah disetujui ("Waiting PO") atau
+// sedang berjalan - status sesudahnya tetap boleh selama masih ada qty item
+// yang belum ter-cover (mis. PO lamanya di-reject). Status pra-PO (lihat
+// MR_PRE_PO_STATUSES, lib/approvalOverride.ts) & Full Received tidak boleh:
+// budget MR baru dipotong saat masuk Waiting PO (handle_mr_budget_deduction).
+export const PO_ELIGIBLE_MR_STATUSES = [
+  "Waiting PO",
+  "On Process",
+  PO_STATUS_PENDING_RECEIVE,
+  PO_STATUS_PARTIAL_RECEIVE,
+];
+
+const MR_PO_INELIGIBLE_STATUS_REASONS: Record<string, string> = {
+  "Pending Validation": "MR belum divalidasi GA",
+  "On Hold": "MR sedang di-hold",
+  "Pending Approval": "Approval MR belum selesai",
+  Rejected: "MR ditolak",
+  [PO_STATUS_FULL_RECEIVED]: "MR sudah selesai (Full Received)",
+};
+
+export interface PoPickerMaterialRequest {
+  id: number;
+  kode_mr: string;
+  remarks: string;
+  department: string;
+  status: string;
+  cost_estimation: string | number | null;
+  created_at: string;
+  // null = bisa dibuatkan PO; selain itu syarat yang belum terpenuhi.
+  ineligible_reason: string | null;
+}
+
+// Daftar MR untuk dialog "Cari MR untuk PO" (CreatePOModal) & "Kaitkan
+// Material Request" (purchase-order/create/page.tsx). MR yang belum memenuhi
+// syarat tetap dikembalikan (dengan `ineligible_reason`) supaya Purchasing
+// tahu kenapa MR yang dicari belum bisa dipilih - urutannya yang eligible
+// dulu. MR berstatus eligible & lainnya di-query terpisah supaya MR baru yang
+// masih Pending Approval tidak menggeser MR Waiting PO keluar dari limit.
+export const fetchMrsForPoPicker = async (
+  companyCode: string | null | undefined,
   searchQuery?: string,
   limit: number = 50,
-) => {
-  let query = supabase
-    .from("material_requests")
-    .select("id, kode_mr, remarks, department, status, created_at");
+): Promise<PoPickerMaterialRequest[]> => {
+  // Scope company disamakan dengan Riwayat MR (fetchMaterialRequests di
+  // services/mrService.ts): LOURDES lihat semua, GMI/GIS lihat company
+  // sendiri + LOURDES, lainnya company sendiri.
+  const companyScope =
+    !companyCode || companyCode === "LOURDES"
+      ? null
+      : ["GMI", "GIS"].includes(companyCode)
+        ? [companyCode, "LOURDES"]
+        : [companyCode];
+  const eligibleStatusList = `(${PO_ELIGIBLE_MR_STATUSES.map((s) => `"${s}"`).join(",")})`;
 
-  if (searchQuery) {
-    const searchTerm = `"%${searchQuery.trim()}%"`;
-    query = query.or(
-      `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`,
-    );
-  }
+  const buildQuery = (eligibleStatus: boolean) => {
+    let query = supabase
+      .from("material_requests")
+      .select(
+        "id, kode_mr, remarks, department, status, cost_estimation, created_at, orders",
+      );
 
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    query = eligibleStatus
+      ? query.in("status", PO_ELIGIBLE_MR_STATUSES)
+      : query.not("status", "in", eligibleStatusList);
 
+    if (companyScope) query = query.in("company_code", companyScope);
+
+    if (searchQuery?.trim()) {
+      const searchTerm = `"%${searchQuery.trim()}%"`;
+      query = query.or(
+        `kode_mr.ilike.${searchTerm},remarks.ilike.${searchTerm},department.ilike.${searchTerm}`,
+      );
+    }
+
+    return query
+      .order("created_at", { ascending: false })
+      .limit(eligibleStatus ? limit : 20);
+  };
+
+  const [eligibleResult, otherResult] = await Promise.all([
+    buildQuery(true),
+    buildQuery(false),
+  ]);
+  const error = eligibleResult.error || otherResult.error;
   if (error) {
     console.error("Error fetching material requests for PO:", error);
     throw error;
   }
-  return data as ApprovedMaterialRequest[];
+  const eligibleStatusMrs = eligibleResult.data || [];
+
+  // Status sudah eligible -> cek masih ada item yang qty-nya belum ter-cover
+  // (aturan yang sama dengan checkbox item di halaman Buat PO).
+  const posByMr = new Map<number, PoForBreakdown[]>();
+  if (eligibleStatusMrs.length > 0) {
+    const { data: pos, error: posError } = await supabase
+      .from("purchase_orders")
+      .select("id, kode_po, status, items, mr_id")
+      .in(
+        "mr_id",
+        eligibleStatusMrs.map((mr) => mr.id),
+      )
+      .neq("status", "Rejected");
+    if (posError) {
+      console.error("Error fetching PO breakdown for MR picker:", posError);
+      throw posError;
+    }
+    for (const po of pos || []) {
+      posByMr.set(po.mr_id, [...(posByMr.get(po.mr_id) || []), po]);
+    }
+  }
+
+  const getQtyIneligibleReason = (mr: { id: number; orders: any }) => {
+    const rawOrders = Array.isArray(mr.orders) ? mr.orders : [];
+    const activeOrders = normalizeMrOrders(rawOrders).filter(
+      (o) => o.status !== "Cancelled" && o.status !== "Replaced",
+    );
+    if (activeOrders.length === 0) return "Semua item MR sudah dibatalkan";
+    const breakdown = buildPoQtyBreakdown(posByMr.get(mr.id) || [], rawOrders);
+    return activeOrders.some((o) => getOrderRemainingQty(o, breakdown) > 0)
+      ? null
+      : "Semua item sudah ter-PO / terpenuhi dari Stok GA";
+  };
+
+  const toPickerItem = (
+    { orders, ...mr }: (typeof eligibleStatusMrs)[number],
+    ineligible_reason: string | null,
+  ): PoPickerMaterialRequest => ({ ...mr, ineligible_reason });
+
+  const eligible: PoPickerMaterialRequest[] = [];
+  const ineligible: PoPickerMaterialRequest[] = [];
+  for (const mr of eligibleStatusMrs) {
+    const reason = getQtyIneligibleReason(mr);
+    (reason ? ineligible : eligible).push(toPickerItem(mr, reason));
+  }
+  for (const mr of otherResult.data || []) {
+    ineligible.push(
+      toPickerItem(
+        mr,
+        MR_PO_INELIGIBLE_STATUS_REASONS[mr.status] ||
+          `Status MR "${mr.status}" tidak bisa dibuatkan PO`,
+      ),
+    );
+  }
+  ineligible.sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  return [...eligible, ...ineligible];
 };
 
 export const fetchMaterialRequestById = async (mrId: number) => {
@@ -344,11 +465,28 @@ export const fetchPoQtyBreakdownForMr = async (
   const { data, error } = posResult;
   if (error || !data) return {};
 
-  const poStatusByCode = new Map(data.map((po) => [po.kode_po, po.status]));
-  const poIdByCode = new Map(data.map((po) => [po.kode_po, po.id]));
+  return buildPoQtyBreakdown(data, (mrResult.data?.orders as any[]) || []);
+};
+
+type PoForBreakdown = {
+  id: number;
+  kode_po: string;
+  status: string;
+  items: POItem[] | null;
+};
+
+// Inti fetchPoQtyBreakdownForMr tanpa fetch - dipisah supaya bisa dipakai
+// batch untuk banyak MR sekaligus (fetchMrsForPoPicker). `orders` = Order
+// MR mentah (dibaca manual_po_links & conversion_history-nya).
+const buildPoQtyBreakdown = (
+  pos: PoForBreakdown[],
+  orders: any[],
+): Record<string, PoQtyBreakdownEntry[]> => {
+  const poStatusByCode = new Map(pos.map((po) => [po.kode_po, po.status]));
+  const poIdByCode = new Map(pos.map((po) => [po.kode_po, po.id]));
 
   const breakdown: Record<string, PoQtyBreakdownEntry[]> = {};
-  for (const po of data) {
+  for (const po of pos) {
     const items: POItem[] = Array.isArray(po.items) ? po.items : [];
     for (const item of items) {
       if (!item.part_number) continue;
@@ -362,7 +500,6 @@ export const fetchPoQtyBreakdownForMr = async (
     }
   }
 
-  const orders = (mrResult.data?.orders as any[]) || [];
   for (const order of orders) {
     if (!order.part_number || !Array.isArray(order.manual_po_links)) continue;
     for (const link of order.manual_po_links) {
@@ -415,6 +552,29 @@ export const fetchPoQtyBreakdownForMr = async (
   }
 
   return breakdown;
+};
+
+// Qty item MR yang masih tersisa & belum ke-cover PO manapun (qty MR
+// dikurangi qty kumulatif dari semua PO yang sudah nyantol, termasuk link
+// manual, DAN qty yang sudah dipenuhi langsung dari Stok GA - lihat
+// addStockFulfillment/services/mrService.ts - supaya Purchasing tidak diminta
+// bikin PO utk qty yang sudah selesai dari stok). Dipakai halaman Buat PO
+// (per item) & fetchMrsForPoPicker (MR masih bisa di-PO-kan atau tidak).
+export const getOrderRemainingQty = (
+  order: any,
+  breakdown: Record<string, PoQtyBreakdownEntry[]>,
+): number => {
+  const covered = order.part_number
+    ? (breakdown[order.part_number] || []).reduce(
+        (sum, e) => sum + (e.qty || 0),
+        0,
+      )
+    : 0;
+  const fromStock = (order.stock_fulfillments || []).reduce(
+    (sum: number, e: { qty: number }) => sum + (e.qty || 0),
+    0,
+  );
+  return Math.max(0, Number(order.qty) - covered - fromStock);
 };
 
 // Daftar PO milik satu MR (dipakai utk picker "link manual ke PO").

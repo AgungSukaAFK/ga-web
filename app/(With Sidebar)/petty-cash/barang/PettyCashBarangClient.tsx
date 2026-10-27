@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Select,
@@ -43,11 +42,13 @@ import { toast } from "sonner";
 import { PettyCashBarang, Profile } from "@/type";
 import {
   fetchPettyCashBarang,
+  fetchPettyCashBarangCoaOptions,
   createPettyCashBarang,
   updatePettyCashBarang,
   deletePettyCashBarang,
   PettyCashBarangFormInput,
 } from "@/services/pettyCashBarangService";
+import { PcCoaCombobox } from "@/components/petty-cash/PcCoaCombobox";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   LIMIT_OPTIONS,
@@ -60,25 +61,20 @@ import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 
-// Kategori RELATIF terhadap COA (lihat komentar
-// PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA, type/enum.ts) - gabungkan
-// daftar kategori tiap COA yang sedang dicentang di form (union, bukan
-// interseksi, supaya barang yang berlaku utk GMI & GIS tetap bisa pilih
-// kategori dari keduanya), lalu diurutkan A-Z di sini biar gampang di-scan.
-const kategoriComboboxDataForCoa = (
-  coa: readonly string[],
-): ComboboxData => {
-  const source = coa.length > 0 ? coa : (["GMI", "GIS"] as const);
-  const merged = new Set<string>();
-  source.forEach((c) => {
-    (PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA[c as "GMI" | "GIS"] ?? []).forEach(
-      (k) => merged.add(k),
-    );
-  });
-  return [...merged]
-    .sort((a, b) => a.localeCompare(b))
-    .map((k) => ({ value: k, label: k }));
-};
+// Saran COA satu company = daftar baku (PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA,
+// type/enum.ts) + COA yang sudah dipakai barang lain di company itu,
+// diurutkan A-Z biar gampang di-scan. GA tetap bisa ketik COA baru lewat
+// PcCoaCombobox.
+const coaOptionsFor = (
+  company: "GMI" | "GIS",
+  used: Record<"GMI" | "GIS", string[]>,
+): string[] =>
+  [
+    ...new Set([
+      ...PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA[company],
+      ...used[company],
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
 const UOM_COMBOBOX_DATA: ComboboxData = [...UOM_OPTIONS]
   .sort((a, b) => a.localeCompare(b))
   .map((u) => ({ value: u, label: u }));
@@ -86,14 +82,30 @@ const UOM_COMBOBOX_DATA: ComboboxData = [...UOM_OPTIONS]
 const EMPTY_FORM: PettyCashBarangFormInput = {
   part_number: "",
   part_name: "",
-  category: "",
   uom: "",
   vendor: "",
   last_purchase_price: 0,
   link: "",
   description: "",
-  coa: ["GMI", "GIS"],
+  coa_gmi: "",
+  coa_gis: "",
 };
+
+// Badge "Nonaktif" utk COA kosong di tabel - barang tidak muncul di Input
+// Pengajuan company tsb.
+const CoaValue = ({ text }: { text: string | null }) =>
+  text ? (
+    <div className="truncate max-w-[160px]" title={text}>
+      {text}
+    </div>
+  ) : (
+    <Badge
+      variant="outline"
+      className="text-[10px] px-1.5 py-0 font-normal text-muted-foreground border-dashed"
+    >
+      Nonaktif
+    </Badge>
+  );
 
 // --- Dialog Tambah / Edit Barang Petty Cash ---
 function BarangDialog({
@@ -110,20 +122,31 @@ function BarangDialog({
   const [formData, setFormData] =
     useState<PettyCashBarangFormInput>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
+  const [usedCoa, setUsedCoa] = useState<Record<"GMI" | "GIS", string[]>>({
+    GMI: [],
+    GIS: [],
+  });
   const isCreateMode = !initialData;
+
+  useEffect(() => {
+    if (!open) return;
+    fetchPettyCashBarangCoaOptions()
+      .then(setUsedCoa)
+      .catch(() => setUsedCoa({ GMI: [], GIS: [] }));
+  }, [open]);
 
   useEffect(() => {
     if (initialData) {
       setFormData({
         part_number: initialData.part_number ?? "",
         part_name: initialData.part_name ?? "",
-        category: initialData.category ?? "",
         uom: initialData.uom ?? "",
         vendor: initialData.vendor ?? "",
         last_purchase_price: initialData.last_purchase_price ?? 0,
         link: initialData.link ?? "",
         description: initialData.description ?? "",
-        coa: initialData.coa?.length ? initialData.coa : ["GMI", "GIS"],
+        coa_gmi: initialData.coa_gmi ?? "",
+        coa_gis: initialData.coa_gis ?? "",
       });
     } else {
       setFormData(EMPTY_FORM);
@@ -137,22 +160,13 @@ function BarangDialog({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const toggleCoa = (value: "GMI" | "GIS", checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      coa: checked
-        ? [...prev.coa, value]
-        : prev.coa.filter((c) => c !== value),
-    }));
-  };
-
   const handleSubmit = async () => {
     if (!formData.part_name?.trim()) {
       toast.error("Nama Barang wajib diisi.");
       return;
     }
-    if (formData.coa.length === 0) {
-      toast.error("Pilih minimal satu COA (GMI/GIS).");
+    if (!formData.coa_gmi?.trim() && !formData.coa_gis?.trim()) {
+      toast.error("Isi minimal satu COA (GMI atau GIS).");
       return;
     }
 
@@ -161,7 +175,8 @@ function BarangDialog({
       const payload: PettyCashBarangFormInput = {
         ...formData,
         part_number: formData.part_number?.trim() || null,
-        category: formData.category?.trim() || null,
+        coa_gmi: formData.coa_gmi?.trim() || null,
+        coa_gis: formData.coa_gis?.trim() || null,
         uom: formData.uom?.trim() || null,
         vendor: formData.vendor?.trim() || null,
         link: formData.link?.trim() || null,
@@ -186,7 +201,7 @@ function BarangDialog({
 
   return (
     // modal={false}: Radix Dialog secara default mengunci scroll di body,
-    // yang juga mem-block wheel-scroll di dalam Popover (Combobox Kategori/
+    // yang juga mem-block wheel-scroll di dalam Popover (Combobox COA/
     // Satuan) yang di-portal terpisah - nonaktifkan lock itu supaya list
     // combobox tetap bisa di-scroll saat dialog ini terbuka.
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
@@ -235,46 +250,6 @@ function BarangDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="category">Kategori</Label>
-              <Combobox
-                id="category"
-                data={kategoriComboboxDataForCoa(formData.coa)}
-                defaultValue={formData.category || ""}
-                onChange={(val) =>
-                  setFormData((prev) => ({ ...prev, category: val }))
-                }
-                placeholder="Cari kategori..."
-                disabled={loading}
-              />
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <Label>
-              COA <span className="text-red-500">*</span>
-            </Label>
-            <div className="flex items-center gap-6">
-              {PC_COA_OPTIONS.map((opt) => (
-                <div key={opt} className="flex items-center gap-2">
-                  <Checkbox
-                    id={`coa-${opt}`}
-                    checked={formData.coa.includes(opt)}
-                    onCheckedChange={(checked) => toggleCoa(opt, !!checked)}
-                    disabled={loading}
-                  />
-                  <Label htmlFor={`coa-${opt}`} className="font-normal">
-                    {opt}
-                  </Label>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Barang cuma muncul di pencarian Input Pengajuan milik requester
-              dengan company yang sama - centang keduanya kalau berlaku utk
-              GMI & GIS.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
               <Label htmlFor="uom">Satuan (UoM)</Label>
               <Combobox
                 id="uom"
@@ -287,6 +262,37 @@ function BarangDialog({
                 disabled={loading}
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <div className="grid grid-cols-2 gap-4">
+              {PC_COA_OPTIONS.map((company) => {
+                const field = company === "GMI" ? "coa_gmi" : "coa_gis";
+                return (
+                  <div key={company} className="grid gap-2">
+                    <Label htmlFor={field}>COA {company}</Label>
+                    <PcCoaCombobox
+                      id={field}
+                      value={formData[field] || ""}
+                      onChange={(val) =>
+                        setFormData((prev) => ({ ...prev, [field]: val }))
+                      }
+                      options={coaOptionsFor(company, usedCoa)}
+                      placeholder="Nonaktif"
+                      disabled={loading}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              COA sekaligus jadi kategori barang di company tsb (mis. GMI
+              &quot;Kebutuhan Dapur&quot;, GIS &quot;Pantry&quot;). Kosongkan
+              kalau barang tidak dipakai di company itu - barang cuma muncul
+              di Input Pengajuan company yang COA-nya terisi. Minimal satu
+              wajib diisi.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="last_purchase_price">Harga Referensi</Label>
               <CurrencyInput
@@ -301,22 +307,22 @@ function BarangDialog({
                 placeholder="Rp 0"
               />
             </div>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="vendor">
-              Vendor / Toko Langganan{" "}
-              <span className="text-xs font-normal text-muted-foreground">
-                (Opsional)
-              </span>
-            </Label>
-            <Input
-              id="vendor"
-              name="vendor"
-              value={formData.vendor || ""}
-              onChange={handleInputChange}
-              disabled={loading}
-              placeholder="Ex: Indomaret / Toko ATK Jaya"
-            />
+            <div className="grid gap-2">
+              <Label htmlFor="vendor">
+                Vendor / Toko{" "}
+                <span className="text-xs font-normal text-muted-foreground">
+                  (Opsional)
+                </span>
+              </Label>
+              <Input
+                id="vendor"
+                name="vendor"
+                value={formData.vendor || ""}
+                onChange={handleInputChange}
+                disabled={loading}
+                placeholder="Ex: Indomaret"
+              />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="link">
@@ -500,7 +506,7 @@ export default function PettyCashBarangClient() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Cari Nama, Kode, Kategori, atau Vendor..."
+              placeholder="Cari Nama, Kode, COA, atau Vendor..."
               className="pl-10"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -515,8 +521,8 @@ export default function PettyCashBarangClient() {
                 <TableHead className="w-[50px]">No</TableHead>
                 <TableHead className="w-[120px]">Kode</TableHead>
                 <TableHead>Nama Barang</TableHead>
-                <TableHead className="w-[120px]">Kategori</TableHead>
-                <TableHead className="w-[100px]">COA</TableHead>
+                <TableHead className="w-[150px]">COA GMI</TableHead>
+                <TableHead className="w-[150px]">COA GIS</TableHead>
                 <TableHead className="w-[90px]">UoM</TableHead>
                 <TableHead className="w-[140px] text-right">
                   Harga Ref
@@ -557,26 +563,10 @@ export default function PettyCashBarangClient() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {item.category || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                      <CoaValue text={item.coa_gmi} />
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        {(item.coa ?? []).length > 0 ? (
-                          item.coa.map((c) => (
-                            <Badge
-                              key={c}
-                              variant="outline"
-                              className="text-[10px] px-1.5 py-0 font-normal"
-                            >
-                              {c}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </div>
+                      <CoaValue text={item.coa_gis} />
                     </TableCell>
                     <TableCell>
                       {item.uom || (

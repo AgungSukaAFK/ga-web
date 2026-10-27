@@ -25,15 +25,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { searchPettyCashBarang } from "@/services/pettyCashBarangService";
+import {
+  pettyCashBarangActiveCompanies,
+  pettyCashBarangCoaFor,
+  searchPettyCashBarang,
+} from "@/services/pettyCashBarangService";
 import { PettyCashBarang } from "@/type";
 import { formatCurrency } from "@/lib/utils";
 
 interface PettyCashItemSearchComboboxProps {
   onSelect: (barang: PettyCashBarang) => void;
-  // Batasi hasil pencarian ke barang yang COA-nya memuat company ini - null/
-  // undefined = tidak difilter (dipakai utk akun Lourdes, lihat komentar
-  // PettyCashBarang.coa di type/index.ts).
+  // Batasi hasil pencarian ke barang yang aktif (COA-nya terisi) di company
+  // ini - null/undefined = tidak difilter (dipakai utk akun Lourdes, lihat
+  // komentar PettyCashBarang.coa_gmi/coa_gis di type/index.ts).
   coaFilter?: "GMI" | "GIS" | null;
 }
 
@@ -69,7 +73,7 @@ export function PettyCashItemSearchCombobox({
       <PopoverContent className="w-[420px] p-0">
         <Command>
           <CommandInput
-            placeholder="Ketik nama, kode, atau kategori..."
+            placeholder="Ketik nama, kode, atau COA..."
             value={searchQuery}
             onValueChange={setSearchQuery}
           />
@@ -107,14 +111,19 @@ export function PettyCashItemSearchCombobox({
                       ) : null}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {barang.category && (
+                      {(coaFilter
+                        ? [coaFilter]
+                        : pettyCashBarangActiveCompanies(barang)
+                      ).map((company) => (
                         <Badge
+                          key={company}
                           variant="outline"
                           className="text-[10px] px-1.5 py-0 font-normal"
                         >
-                          {barang.category}
+                          {!coaFilter && `${company}: `}
+                          {pettyCashBarangCoaFor(barang, company)}
                         </Badge>
-                      )}
+                      ))}
                       {barang.uom && <span>{barang.uom}</span>}
                     </div>
                   </div>

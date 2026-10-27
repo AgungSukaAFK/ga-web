@@ -166,7 +166,7 @@ export function PcEditAndApproveDialog({
     if (items.some((it) => !it.qty || it.qty <= 0))
       return toast.error("Qty setiap barang wajib diisi dan lebih dari 0.");
     if (hasUnresolvedCoa(items))
-      return toast.error("Setiap barang wajib punya COA (GMI/GIS).");
+      return toast.error("Setiap barang wajib punya company (GMI/GIS).");
 
     setSubmitting(true);
     try {

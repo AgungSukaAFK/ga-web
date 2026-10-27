@@ -1,9 +1,10 @@
 // src/components/petty-cash/PcCoaBreakdown.tsx
 //
-// Subtotal per COA (GMI/GIS) - cuma dirender kalau baris item sebuah
-// dokumen memang campuran GMI+GIS (paling relevan buat akun Lourdes yang
-// boleh mencampur COA dalam satu Pengajuan). Kalau semua baris satu COA
-// yang sama, komponen ini sengaja tidak menampilkan apa-apa - breakdown
+// Subtotal per company (GMI/GIS, field `coa` baris item) - cuma dirender
+// kalau baris item sebuah dokumen memang campuran GMI+GIS (paling relevan
+// buat akun Lourdes yang boleh mencampur company dalam satu Pengajuan).
+// Kalau semua baris satu company yang sama, komponen ini sengaja tidak
+// menampilkan apa-apa - breakdown
 // cuma berguna kalau ada campuran utk dibandingkan.
 
 import { formatCurrency } from "@/lib/utils";
@@ -25,7 +26,7 @@ export function PcCoaBreakdown({ items }: PcCoaBreakdownProps) {
   return (
     <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
       <p className="text-xs font-medium text-muted-foreground">
-        Rincian per COA
+        Rincian per Company
       </p>
       {entries.map(([coa, amount]) => (
         <div key={coa} className="flex items-center justify-between text-sm">

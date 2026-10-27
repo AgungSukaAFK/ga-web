@@ -85,6 +85,7 @@ import {
 import { pickCurrentDoc } from "@/lib/pcChain";
 import { PcPengembalianForm } from "@/components/petty-cash/PcPengembalianForm";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
+import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import {
@@ -694,12 +695,14 @@ export default function DeklarasiClient() {
           {selected && (
             <div className="space-y-4">
               <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[650px]">
+                <Table className="min-w-[850px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[160px]">
                         Nama Barang
                       </TableHead>
+                      <TableHead className="w-[80px]">Company</TableHead>
+                      <TableHead className="min-w-[120px]">COA</TableHead>
                       <TableHead className="w-[90px]">Qty</TableHead>
                       <TableHead className="w-[150px]">
                         Harga Satuan
@@ -713,12 +716,15 @@ export default function DeklarasiClient() {
                   <TableBody>
                     {rows.map((r, i) => (
                       <TableRow key={i}>
+                        <TableCell className="font-medium">
+                          {r.part_name}
+                        </TableCell>
                         <TableCell>
-                          <div className="font-medium">{r.part_name}</div>
-                          {r.category && (
-                            <div className="text-xs text-muted-foreground">
-                              {r.category}
-                            </div>
+                          <PcCoaBadge coa={r.coa} />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {r.category || (
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell>

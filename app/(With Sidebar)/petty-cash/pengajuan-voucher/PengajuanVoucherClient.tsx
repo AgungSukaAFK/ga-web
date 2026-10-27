@@ -85,6 +85,7 @@ import {
 } from "@/services/pettyCashSubVoucherService";
 import { pickCurrentDoc } from "@/lib/pcChain";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
+import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import {
   Loader2,
   RefreshCcw,
@@ -144,6 +145,8 @@ const drawnOf = (v: PettyCashVoucher) =>
 type DrawRow = {
   item_index: number;
   part_name: string;
+  category: string | null;
+  coa: "GMI" | "GIS" | null;
   uom: string | null;
   unit_price: number;
   remainingQty: number;
@@ -167,6 +170,8 @@ const buildDrawRows = (voucher: PettyCashVoucher): DrawRow[] => {
     .map((it, idx) => ({
       item_index: idx,
       part_name: it.part_name,
+      category: it.category,
+      coa: it.coa,
       uom: it.uom,
       unit_price: it.unit_price,
       remainingQty: it.qty - (drawnByIndex.get(idx) ?? 0),
@@ -695,10 +700,12 @@ export default function PengajuanVoucherClient() {
                 </div>
               )}
               <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[500px]">
+                <Table className="min-w-[700px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nama Barang</TableHead>
+                      <TableHead className="w-[80px]">Company</TableHead>
+                      <TableHead className="min-w-[120px]">COA</TableHead>
                       <TableHead className="w-[70px]">Qty</TableHead>
                       <TableHead className="w-[110px] text-right">
                         Harga Satuan
@@ -713,6 +720,12 @@ export default function PengajuanVoucherClient() {
                       <TableRow key={i}>
                         <TableCell className="font-medium">
                           {it.part_name}
+                        </TableCell>
+                        <TableCell>
+                          <PcCoaBadge coa={it.coa} />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {it.category || "-"}
                         </TableCell>
                         <TableCell>
                           {it.qty} {it.uom || ""}
@@ -781,7 +794,7 @@ export default function PengajuanVoucherClient() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[560px]">
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[40px]">
@@ -792,6 +805,8 @@ export default function PengajuanVoucherClient() {
                         />
                       </TableHead>
                       <TableHead>Nama Barang</TableHead>
+                      <TableHead className="w-[80px]">Company</TableHead>
+                      <TableHead className="min-w-[120px]">COA</TableHead>
                       <TableHead className="w-[100px] text-right">
                         Sisa Qty
                       </TableHead>
@@ -814,6 +829,12 @@ export default function PengajuanVoucherClient() {
                         </TableCell>
                         <TableCell className="font-medium text-sm">
                           {row.part_name}
+                        </TableCell>
+                        <TableCell>
+                          <PcCoaBadge coa={row.coa} />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {row.category || "-"}
                         </TableCell>
                         <TableCell className="text-right text-sm">
                           {row.remainingQty} {row.uom || ""}

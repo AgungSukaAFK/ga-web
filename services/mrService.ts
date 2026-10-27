@@ -1144,45 +1144,6 @@ export const fetchActiveCostCenters = async (company_code: string) => {
   return data;
 };
 
-export const fetchAvailableMRsForPO = async (
-  companyCode: string,
-  searchQuery: string = "",
-) => {
-  let query = supabase
-    .from("material_requests")
-    .select(
-      `id, kode_mr, status, remarks, cost_estimation, created_at, department, users_with_profiles (nama)`,
-    )
-    .order("created_at", { ascending: false })
-    .limit(10);
-
-  // LOGIC VISIBILITAS UNTUK PEMBUATAN PO (Disamakan dengan Riwayat MR)
-  if (companyCode) {
-    if (companyCode === "LOURDES") {
-      // LOURDES melihat semua
-    } else if (["GMI", "GIS"].includes(companyCode)) {
-      // GMI/GIS melihat company mereka + LOURDES
-      query = query.in("company_code", [companyCode, "LOURDES"]);
-    } else {
-      // Default behavior
-      query = query.eq("company_code", companyCode);
-    }
-  }
-
-  if (searchQuery) {
-    query = query.or(
-      `kode_mr.ilike.%${searchQuery}%,remarks.ilike.%${searchQuery}%`,
-    );
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error("Error fetching available MRs:", error);
-    return [];
-  }
-  return data;
-};
-
 export const fetchMaterialRequests = async (
   page: number,
   limit: number,

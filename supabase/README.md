@@ -41,3 +41,4 @@ tetap bisa dicari.
 | `0009_petty_cash_pengembalian.sql` | Petty Cash: Deklarasi boleh diajukan ulang setelah ditolak, batas total Deklarasi = nominal tarikan, Pengembalian Dana Lebih (tabel + RPC konfirmasi Finance) (belum dijalankan di production) |
 | `0010_petty_cash_voucher_ulang.sql` | Petty Cash: Voucher boleh diajukan ulang setelah ditolak (unique Voucher aktif per Pengajuan), hapus berantai Pengajuan oleh admin ikut semua Voucher-nya (belum dijalankan di production) |
 | `0011_mr_budget_refund.sql` | Budget Cost Center MR: potongan saat Waiting PO tidak dobel kalau MR di-approve ulang, dan dikembalikan saat MR dimundurkan ke tahap sebelum PO (belum dijalankan di production) |
+| `0012_petty_cash_barang_coa_per_company.sql` | Barang Petty Cash: `category` + `coa` (centang GMI/GIS) diganti `coa_gmi` & `coa_gis` - COA per company sekaligus kategori, kosong = nonaktif di company itu (belum dijalankan di production) |

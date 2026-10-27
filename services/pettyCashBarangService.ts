@@ -9,6 +9,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { PettyCashBarang } from "@/type";
+import { PC_COA_OPTIONS } from "@/type/enum";
 
 const supabase = createClient();
 
@@ -33,7 +34,7 @@ export const fetchPettyCashBarang = async (
   if (searchQuery) {
     const search = `%${searchQuery}%`;
     query = query.or(
-      `part_name.ilike.${search},part_number.ilike.${search},category.ilike.${search},vendor.ilike.${search}`,
+      `part_name.ilike.${search},part_number.ilike.${search},coa_gmi.ilike.${search},coa_gis.ilike.${search},vendor.ilike.${search}`,
     );
   }
 
@@ -49,14 +50,27 @@ export type PettyCashBarangFormInput = Pick<
   PettyCashBarang,
   | "part_number"
   | "part_name"
-  | "category"
   | "uom"
   | "vendor"
   | "last_purchase_price"
   | "link"
   | "description"
-  | "coa"
+  | "coa_gmi"
+  | "coa_gis"
 >;
+
+// COA barang ini di satu company - null = nonaktif di company tsb (lihat
+// PettyCashBarang.coa_gmi/coa_gis di type/index.ts).
+export const pettyCashBarangCoaFor = (
+  barang: Pick<PettyCashBarang, "coa_gmi" | "coa_gis">,
+  company: "GMI" | "GIS",
+): string | null => (company === "GMI" ? barang.coa_gmi : barang.coa_gis);
+
+// Company tempat barang ini aktif (COA-nya terisi).
+export const pettyCashBarangActiveCompanies = (
+  barang: Pick<PettyCashBarang, "coa_gmi" | "coa_gis">,
+): ("GMI" | "GIS")[] =>
+  PC_COA_OPTIONS.filter((c) => !!pettyCashBarangCoaFor(barang, c));
 
 export const createPettyCashBarang = async (
   newData: PettyCashBarangFormInput,
@@ -100,15 +114,53 @@ export const deletePettyCashBarang = async (id: number) => {
   if (error) throw error;
 };
 
+// Semua COA yang sudah pernah dipakai per company - dipakai sebagai saran
+// combobox COA di form barang (digabung dengan
+// PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA, type/enum.ts). Katalog cuma
+// ratusan baris, jadi cukup ambil dua kolom ini semua lalu dedupe di sini.
+export const fetchPettyCashBarangCoaOptions = async (): Promise<
+  Record<"GMI" | "GIS", string[]>
+> => {
+  const { data, error } = await supabase
+    .from("petty_cash_barang")
+    .select("coa_gmi, coa_gis");
+  if (error) throw error;
+  const gmi = new Set<string>();
+  const gis = new Set<string>();
+  (data ?? []).forEach((r) => {
+    if (r.coa_gmi) gmi.add(r.coa_gmi);
+    if (r.coa_gis) gis.add(r.coa_gis);
+  });
+  return { GMI: [...gmi], GIS: [...gis] };
+};
+
+// COA katalog per company utk barang-barang ini - dipakai saat Template
+// Pengajuan / Ajukan Ulang diterapkan supaya `category` tiap baris ikut COA
+// company pengajuan yang baru, bukan yang tersimpan saat template dibuat
+// (lihat InputPengajuanClient.tsx).
+export const fetchPettyCashBarangCoaByIds = async (
+  ids: number[],
+): Promise<Record<number, Pick<PettyCashBarang, "coa_gmi" | "coa_gis">>> => {
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from("petty_cash_barang")
+    .select("id, coa_gmi, coa_gis")
+    .in("id", ids);
+  if (error) throw error;
+  return Object.fromEntries(
+    (data ?? []).map((r) => [r.id, { coa_gmi: r.coa_gmi, coa_gis: r.coa_gis }]),
+  );
+};
+
 // Dipakai combobox pencarian barang di form Input Pengajuan (lihat
 // PettyCashItemSearchCombobox.tsx) - ringan, tanpa join profil pembuat/
 // pengubah yang tidak relevan buat requester biasa milih barang.
 //
-// `coaFilter` membatasi hasil ke barang yang COA-nya memuat company itu -
-// dipakai utk requester non-Lourdes (cuma boleh lihat barang company
-// sendiri, lihat komentar PettyCashBarang.coa di type/index.ts). Lourdes
-// (atau kalau dipanggil dari halaman kelola katalog) kirim null/undefined
-// supaya tidak difilter sama sekali.
+// `coaFilter` membatasi hasil ke barang yang aktif (COA-nya terisi) di
+// company itu - pencarian teks juga cuma ke COA company tsb. Lourdes (atau
+// kalau dipanggil dari halaman kelola katalog) kirim null/undefined supaya
+// tidak difilter sama sekali. Lihat PettyCashBarang.coa_gmi/coa_gis di
+// type/index.ts.
 export const searchPettyCashBarang = async (
   query: string,
   coaFilter?: "GMI" | "GIS" | null,
@@ -116,20 +168,28 @@ export const searchPettyCashBarang = async (
   let dbQuery = supabase
     .from("petty_cash_barang")
     .select(
-      "id, part_number, part_name, category, uom, vendor, last_purchase_price, link, description, coa, created_at, created_by, updated_at, updated_by",
+      "id, part_number, part_name, uom, vendor, last_purchase_price, link, description, coa_gmi, coa_gis, created_at, created_by, updated_at, updated_by",
     )
     .order("part_name", { ascending: true })
     .limit(10);
 
+  const coaColumns = coaFilter
+    ? [coaFilter === "GMI" ? "coa_gmi" : "coa_gis"]
+    : ["coa_gmi", "coa_gis"];
+
   if (query) {
     const search = `%${query}%`;
     dbQuery = dbQuery.or(
-      `part_name.ilike.${search},part_number.ilike.${search},category.ilike.${search}`,
+      [
+        `part_name.ilike.${search}`,
+        `part_number.ilike.${search}`,
+        ...coaColumns.map((col) => `${col}.ilike.${search}`),
+      ].join(","),
     );
   }
 
   if (coaFilter) {
-    dbQuery = dbQuery.contains("coa", [coaFilter]);
+    dbQuery = dbQuery.not(coaColumns[0], "is", null);
   }
 
   const { data, error } = await dbQuery;

@@ -192,7 +192,11 @@ export const FLOWS: Record<FlowId, Flow> = {
           </>
         ),
         details: [
-          <>MR yang siap diproses muncul di daftar Waiting PO.</>,
+          <>
+            MR yang belum bisa dibuatkan PO (belum disetujui, atau semua
+            item-nya sudah ter-PO) tetap muncul di daftar tapi abu-abu, dengan
+            keterangan syarat yang belum terpenuhi.
+          </>,
           <>Cari barang di master data &quot;Barang&quot; dan isi harga beli final dari vendor.</>,
           <>
             Isi Vendor, Payment Term, dan PPN. Vendor {b("wajib")} sudah punya
