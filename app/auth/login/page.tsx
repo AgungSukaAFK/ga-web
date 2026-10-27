@@ -100,27 +100,29 @@ export default function LoginPage() {
             disabled={loading}
           />
         </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
-            <button
-              type="button"
-              onClick={() => setIsForgotPasswordOpen(true)}
-              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Lupa password?
-            </button>
+        {/* "Lupa password?" ditaruh SETELAH input di DOM supaya Tab dari
+            email langsung ke password; posisinya tetap di baris label lewat grid. */}
+        <div className="grid grid-cols-[1fr_auto] items-center gap-y-2">
+          <Label htmlFor="password">Password</Label>
+          <div className="col-span-2">
+            <AuthInput
+              icon={LockKeyhole}
+              id="password"
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              placeholder="••••••••"
+              disabled={loading}
+            />
           </div>
-          <AuthInput
-            icon={LockKeyhole}
-            id="password"
-            name="password"
-            type="password"
-            required
-            autoComplete="current-password"
-            placeholder="••••••••"
-            disabled={loading}
-          />
+          <button
+            type="button"
+            onClick={() => setIsForgotPasswordOpen(true)}
+            className="col-start-2 row-start-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Lupa password?
+          </button>
         </div>
         {error && (
           <Alert variant="destructive">
