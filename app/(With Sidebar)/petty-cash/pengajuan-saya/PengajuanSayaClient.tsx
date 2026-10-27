@@ -18,6 +18,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
+import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
+import {
+  getActiveDoc,
+  pickCurrentDoc,
+  sortDocsNewestFirst,
+} from "@/lib/pcChain";
 import {
   checkPengajuanEligibility,
   fetchMyPengajuanWithChain,
@@ -238,22 +244,27 @@ export default function PengajuanSayaClient() {
 
   const voucherRows: VoucherRow[] = useMemo(
     () =>
-      chain.flatMap((pengajuan) => {
-        const voucher = pengajuan.petty_cash_voucher?.[0];
-        return voucher ? [{ pengajuan, voucher }] : [];
-      }),
+      // Semua Voucher per Pengajuan, termasuk yang ditolak lalu diajukan
+      // ulang - masing-masing tetap dokumen sendiri.
+      chain.flatMap((pengajuan) =>
+        sortDocsNewestFirst(pengajuan.petty_cash_voucher).map((voucher) => ({
+          pengajuan,
+          voucher,
+        })),
+      ),
     [chain],
   );
 
   const deklarasiRows: DeklarasiRow[] = useMemo(
     () =>
       voucherRows.flatMap(({ pengajuan, voucher }) =>
-        (voucher.petty_cash_sub_voucher ?? []).flatMap((subVoucher) => {
-          const deklarasi = subVoucher.petty_cash_deklarasi?.[0];
-          return deklarasi
-            ? [{ pengajuan, voucher, subVoucher, deklarasi }]
-            : [];
-        }),
+        // Semua Deklarasi per tarikan, termasuk yang ditolak lalu diajukan
+        // ulang - masing-masing tetap dokumen sendiri.
+        (voucher.petty_cash_sub_voucher ?? []).flatMap((subVoucher) =>
+          sortDocsNewestFirst(subVoucher.petty_cash_deklarasi).map(
+            (deklarasi) => ({ pengajuan, voucher, subVoucher, deklarasi }),
+          ),
+        ),
       ),
     [voucherRows],
   );
@@ -348,7 +359,11 @@ export default function PengajuanSayaClient() {
     openedFromQueryRef.current = true;
   }, [chain, loading, searchParams]);
 
-  const selectedVoucher = selectedPengajuan?.petty_cash_voucher?.[0] ?? null;
+  const selectedVoucher = pickCurrentDoc(selectedPengajuan?.petty_cash_voucher);
+  // Voucher lain milik Pengajuan ini = yang ditolak sebelum diajukan ulang.
+  const rejectedVoucherHistory = sortDocsNewestFirst(
+    selectedPengajuan?.petty_cash_voucher,
+  ).filter((v) => v.id !== selectedVoucher?.id);
 
   const accordionDefaultValue = useMemo(() => {
     if (focusSection === "voucher") return ["pengajuan", "voucher"];
@@ -511,10 +526,13 @@ export default function PengajuanSayaClient() {
         title="Dokumen Petty Cash Saya"
         description="Pusat dokumen Pengajuan, Voucher, dan Deklarasi Petty Cash Anda - klik baris mana pun untuk melihat rantai dokumen lengkapnya."
         cardAction={
-          <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
-            <RefreshCcw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-1">
+            <PcGlossaryButton />
+            <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+              <RefreshCcw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         }
       >
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
@@ -586,7 +604,7 @@ export default function PengajuanSayaClient() {
                     </TableRow>
                   ) : (
                     filteredPengajuan.map((pj) => {
-                      const voucher = pj.petty_cash_voucher?.[0];
+                      const voucher = pickCurrentDoc(pj.petty_cash_voucher);
                       return (
                         <TableRow
                           key={pj.id}
@@ -611,17 +629,32 @@ export default function PengajuanSayaClient() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openChainModal(pj, "pengajuan");
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              {pj.status === "Rejected" && (
+                                <Button
+                                  asChild
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Link href={`/petty-cash/input-pengajuan?ulang=${pj.id}`}>
+                                    Ajukan Ulang
+                                  </Link>
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openChainModal(pj, "pengajuan");
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -675,7 +708,7 @@ export default function PengajuanSayaClient() {
                       const subVouchers = voucher.petty_cash_sub_voucher ?? [];
                       const drawn = subVouchers.reduce((sum, sv) => sum + sv.amount, 0);
                       const declaredCount = subVouchers.filter(
-                        (sv) => (sv.petty_cash_deklarasi?.length ?? 0) > 0,
+                        (sv) => !!getActiveDoc(sv.petty_cash_deklarasi),
                       ).length;
                       return (
                         <TableRow
@@ -851,7 +884,7 @@ export default function PengajuanSayaClient() {
                     <Badge variant="outline" className="gap-1">
                       <FileCheck2 className="h-3 w-3" />
                       {(selectedVoucher.petty_cash_sub_voucher ?? []).filter(
-                        (sv) => (sv.petty_cash_deklarasi?.length ?? 0) > 0,
+                        (sv) => !!getActiveDoc(sv.petty_cash_deklarasi),
                       ).length}
                       /{(selectedVoucher.petty_cash_sub_voucher ?? []).length} Deklarasi
                     </Badge>
@@ -869,7 +902,14 @@ export default function PengajuanSayaClient() {
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="flex justify-end mb-2">
+                    <div className="flex items-center justify-end gap-3 mb-2">
+                      {selectedPengajuan.status === "Rejected" && (
+                        <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
+                          <Link href={`/petty-cash/input-pengajuan?ulang=${selectedPengajuan.id}`}>
+                            Ajukan Ulang
+                          </Link>
+                        </Button>
+                      )}
                       <Link
                         href={`/petty-cash/pengajuan/${selectedPengajuan.id}`}
                         target="_blank"
@@ -918,6 +958,23 @@ export default function PengajuanSayaClient() {
                           Detail Lengkap / Cetak <ExternalLink className="h-3 w-3" />
                         </Link>
                       </div>
+                      {rejectedVoucherHistory.length > 0 && (
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Voucher sebelumnya ditolak:{" "}
+                          {rejectedVoucherHistory.map((v, i) => (
+                            <span key={v.id}>
+                              {i > 0 && ", "}
+                              <Link
+                                href={`/petty-cash/voucher/${v.id}`}
+                                target="_blank"
+                                className="text-primary hover:underline"
+                              >
+                                {v.kode_voucher}
+                              </Link>
+                            </span>
+                          ))}
+                        </p>
+                      )}
                       <PcDocumentInfoPanel
                         requesterName={profile?.nama}
                         requesterEmail={profile?.email}
@@ -960,7 +1017,7 @@ export default function PengajuanSayaClient() {
                               </TableHeader>
                               <TableBody>
                                 {(selectedVoucher.petty_cash_sub_voucher ?? []).map((sv) => {
-                                  const dek = sv.petty_cash_deklarasi?.[0];
+                                  const dek = pickCurrentDoc(sv.petty_cash_deklarasi);
                                   return (
                                     <TableRow key={sv.id}>
                                       <TableCell className="font-medium text-sm">
@@ -1008,10 +1065,8 @@ export default function PengajuanSayaClient() {
                   </AccordionItem>
                 )}
 
-                {(selectedVoucher?.petty_cash_sub_voucher ?? []).map((sv) => {
-                  const dek = sv.petty_cash_deklarasi?.[0];
-                  if (!dek) return null;
-                  return (
+                {(selectedVoucher?.petty_cash_sub_voucher ?? []).flatMap((sv) =>
+                  sortDocsNewestFirst(sv.petty_cash_deklarasi).map((dek) => (
                     <AccordionItem key={dek.id} value={`deklarasi-${dek.id}`}>
                       <AccordionTrigger className="hover:no-underline">
                         <span className="flex items-center gap-2">
@@ -1047,8 +1102,8 @@ export default function PengajuanSayaClient() {
                         />
                       </AccordionContent>
                     </AccordionItem>
-                  );
-                })}
+                  )),
+                )}
               </Accordion>
             </div>
           )}

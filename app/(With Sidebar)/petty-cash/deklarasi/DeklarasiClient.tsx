@@ -9,7 +9,14 @@
 // riil (struk asli kadang beda dari rencana) - lihat
 // createDeklarasiFromSubVoucher, services/pettyCashDeklarasiService.ts.
 // Begitu dikirim, Deklarasi langsung masuk jalur approval-nya sendiri
-// (Template Approval ber-approval_type "Approval Deklarasi").
+// (Template Approval ber-approval_type "Approval Deklarasi"). Total
+// Deklarasi tidak boleh melebihi nominal tarikan, dan kalau ditolak tarikan
+// itu muncul lagi di sini utk diajukan ulang (lihat
+// supabase/migrations/0009_petty_cash_pengembalian.sql).
+//
+// Kalau Deklarasi yang disetujui lebih kecil dari nominal tarikan, sisanya
+// bisa dikembalikan lewat tabel "Sisa Dana Bisa Dikembalikan" (wajib bukti
+// setor, dikonfirmasi Finance - lihat services/pettyCashPengembalianService.ts).
 
 "use client";
 
@@ -18,7 +25,6 @@ import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   RichMentionEditor,
   RichMentionEditorHandle,
@@ -50,10 +56,17 @@ import {
 } from "@/lib/attachments";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import { Attachment, PettyCashDeklarasi, PettyCashSubVoucher } from "@/type";
+import {
+  Attachment,
+  PettyCashDeklarasi,
+  PettyCashPengembalian,
+  PettyCashSubVoucher,
+} from "@/type";
 import {
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
+  PC_PENGEMBALIAN_STATUS_COLORS,
+  PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
 import {
   fetchMyDeklarasi,
@@ -63,6 +76,15 @@ import {
   fetchPendingSubVouchers,
   fetchSubVouchersForDeklarasi,
 } from "@/services/pettyCashSubVoucherService";
+import {
+  SubVoucherWithSisa,
+  createPengembalian,
+  fetchMyPengembalian,
+  fetchSubVouchersForPengembalian,
+} from "@/services/pettyCashPengembalianService";
+import { pickCurrentDoc } from "@/lib/pcChain";
+import { PcPengembalianForm } from "@/components/petty-cash/PcPengembalianForm";
+import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import {
@@ -75,6 +97,8 @@ import {
   X,
   Eye,
   Clock,
+  AlertTriangle,
+  Undo2,
 } from "lucide-react";
 
 const formatDate = (dateStr: string | Date) =>
@@ -84,12 +108,16 @@ const formatDate = (dateStr: string | Date) =>
     year: "numeric",
   });
 
-const StatusBadge = ({ status }: { status: string }) => (
-  <Badge
-    className={`whitespace-nowrap ${
-      PC_DEKLARASI_STATUS_COLORS[status] || PC_DEKLARASI_STATUS_COLOR_DEFAULT
-    }`}
-  >
+const StatusBadge = ({
+  status,
+  colors = PC_DEKLARASI_STATUS_COLORS,
+  fallback = PC_DEKLARASI_STATUS_COLOR_DEFAULT,
+}: {
+  status: string;
+  colors?: Record<string, string>;
+  fallback?: string;
+}) => (
+  <Badge className={`whitespace-nowrap ${colors[status] || fallback}`}>
     {status}
   </Badge>
 );
@@ -123,6 +151,13 @@ export default function DeklarasiClient() {
     [],
   );
   const [deklarasiList, setDeklarasiList] = useState<PettyCashDeklarasi[]>([]);
+  const [returnable, setReturnable] = useState<SubVoucherWithSisa[]>([]);
+  const [pengembalianList, setPengembalianList] = useState<
+    PettyCashPengembalian[]
+  >([]);
+  const [selectedReturn, setSelectedReturn] =
+    useState<SubVoucherWithSisa | null>(null);
+  const [returning, setReturning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -141,16 +176,26 @@ export default function DeklarasiClient() {
       if (!user) throw new Error("Tidak terautentikasi.");
       setUserId(user.id);
 
-      const [eligibleData, pendingData, deklarasiData] = await Promise.all([
+      const [
+        eligibleData,
+        pendingData,
+        deklarasiData,
+        returnableData,
+        pengembalianData,
+      ] = await Promise.all([
         fetchSubVouchersForDeklarasi(user.id),
         fetchPendingSubVouchers(user.id),
         fetchMyDeklarasi(user.id),
+        fetchSubVouchersForPengembalian(user.id),
+        fetchMyPengembalian(user.id),
       ]);
       setEligible(eligibleData);
       setAwaitingPayment(
         pendingData.filter((sv) => sv.status !== "Selesai"),
       );
       setDeklarasiList(deklarasiData);
+      setReturnable(returnableData);
+      setPengembalianList(pengembalianData);
     } catch (error: any) {
       toast.error("Gagal memuat data", { description: error.message });
     } finally {
@@ -185,6 +230,11 @@ export default function DeklarasiClient() {
     setRows([]);
   };
 
+  // Tarikan di tabel "Siap Dideklarasikan" yang Deklarasi terakhirnya
+  // ditolak (fetchSubVouchersForDeklarasi sudah menyaring yang masih aktif).
+  const rejectedOf = (sv: PettyCashSubVoucher) =>
+    pickCurrentDoc(sv.petty_cash_deklarasi);
+
   const updateRow = (index: number, patch: Partial<DeclareRow>) => {
     setRows((prev) =>
       prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
@@ -195,6 +245,8 @@ export default function DeklarasiClient() {
     (sum, r) => sum + (Number(r.qty) || 0) * (r.unit_price || 0),
     0,
   );
+  // Batas yang sama dijaga trigger check_petty_cash_deklarasi_total di DB.
+  const overLimit = !!selected && totalAmount > selected.amount;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -236,6 +288,11 @@ export default function DeklarasiClient() {
     if (rows.some((r) => !Number(r.qty) || Number(r.qty) <= 0)) {
       return toast.error("Qty setiap barang wajib diisi dan lebih dari 0.");
     }
+    if (overLimit) {
+      return toast.error("Total Deklarasi melebihi nominal tarikan.", {
+        description: `Maksimal ${formatCurrency(selected.amount)}.`,
+      });
+    }
 
     setCreating(true);
     try {
@@ -276,23 +333,55 @@ export default function DeklarasiClient() {
     }
   };
 
+  const handleSubmitPengembalian = async (
+    amount: number,
+    returnNotes: string,
+    proof: Attachment[],
+  ) => {
+    if (!selectedReturn) return;
+    setReturning(true);
+    try {
+      const pengembalian = await createPengembalian(
+        selectedReturn.subVoucher.id,
+        selectedReturn.subVoucher.petty_cash_voucher?.company_code || "",
+        amount,
+        returnNotes,
+        proof,
+      );
+      toast.success(
+        `Pengembalian ${pengembalian.kode_pengembalian} terkirim, menunggu konfirmasi Finance.`,
+      );
+      setSelectedReturn(null);
+      await loadData();
+    } catch (error: any) {
+      toast.error("Gagal mengirim pengembalian", {
+        description: error.message,
+      });
+    } finally {
+      setReturning(false);
+    }
+  };
+
   return (
     <>
       <Content
         title="Deklarasi Petty Cash"
         description="Laporkan pemakaian riil dana Petty Cash yang sudah dicairkan."
         cardAction={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadData}
-            disabled={loading}
-          >
-            <RefreshCcw
-              className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-1">
+            <PcGlossaryButton focus="deklarasi" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              disabled={loading}
+            >
+              <RefreshCcw
+                className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
         }
       >
         <div className="space-y-8">
@@ -350,8 +439,20 @@ export default function DeklarasiClient() {
                   ) : (
                     eligible.map((sv) => (
                       <TableRow key={sv.id}>
-                        <TableCell className="font-semibold text-sm">
-                          {sv.kode_sub_voucher}
+                        <TableCell className="text-sm">
+                          <div className="font-semibold">
+                            {sv.kode_sub_voucher}
+                          </div>
+                          {rejectedOf(sv) && (
+                            <Link
+                              href={`/petty-cash/deklarasi/${rejectedOf(sv)!.id}`}
+                              target="_blank"
+                              className="text-[11px] text-red-600 dark:text-red-400 hover:underline"
+                            >
+                              Deklarasi {rejectedOf(sv)!.kode_deklarasi} ditolak
+                              - lihat alasan
+                            </Link>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {sv.petty_cash_voucher?.kode_voucher || "-"}
@@ -367,7 +468,7 @@ export default function DeklarasiClient() {
                             size="sm"
                             onClick={() => openDeclareForm(sv)}
                           >
-                            Buat Deklarasi
+                            {rejectedOf(sv) ? "Ajukan Ulang" : "Buat Deklarasi"}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -451,6 +552,119 @@ export default function DeklarasiClient() {
               </Table>
             </div>
           </div>
+
+          {returnable.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <Undo2 className="h-4 w-4 text-primary" />
+                Sisa Dana Bisa Dikembalikan
+              </h3>
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[750px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[200px]">
+                        Kode Sub-Voucher
+                      </TableHead>
+                      <TableHead className="w-[150px] text-right">
+                        Nominal Tarikan
+                      </TableHead>
+                      <TableHead className="w-[150px] text-right">
+                        Deklarasi Disetujui
+                      </TableHead>
+                      <TableHead className="w-[150px] text-right">
+                        Sisa Dana
+                      </TableHead>
+                      <TableHead className="w-[160px] text-center">
+                        Aksi
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {returnable.map((r) => (
+                      <TableRow key={r.subVoucher.id}>
+                        <TableCell className="font-semibold text-sm">
+                          {r.subVoucher.kode_sub_voucher}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {formatCurrency(r.subVoucher.amount)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {formatCurrency(r.declared)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-sm">
+                          {formatCurrency(r.sisa)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedReturn(r)}
+                          >
+                            Kembalikan Sisa
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {pengembalianList.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <Undo2 className="h-4 w-4 text-primary" />
+                Pengembalian Saya
+              </h3>
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[750px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[220px]">
+                        Kode Pengembalian
+                      </TableHead>
+                      <TableHead className="w-[140px]">Diajukan</TableHead>
+                      <TableHead className="w-[150px] text-right">
+                        Nominal
+                      </TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pengembalianList.map((pg) => (
+                      <TableRow key={pg.id}>
+                        <TableCell className="font-semibold text-sm">
+                          {pg.kode_pengembalian}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {formatDate(pg.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-sm">
+                          {formatCurrency(pg.amount)}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div className="flex flex-col items-start gap-1">
+                            <StatusBadge
+                              status={pg.status}
+                              colors={PC_PENGEMBALIAN_STATUS_COLORS}
+                              fallback={PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT}
+                            />
+                            {pg.status === "Ditolak" && pg.reject_reason && (
+                              <span className="text-[11px] text-muted-foreground">
+                                Alasan: {pg.reject_reason}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
         </div>
       </Content>
 
@@ -550,7 +764,7 @@ export default function DeklarasiClient() {
 
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="text-sm text-muted-foreground">
-                  Nominal Tarikan (rencana):{" "}
+                  Nominal Tarikan (maksimal):{" "}
                   <span className="font-medium text-foreground">
                     {formatCurrency(selected.amount)}
                   </span>
@@ -559,11 +773,32 @@ export default function DeklarasiClient() {
                   <p className="text-xs text-muted-foreground">
                     Total Deklarasi (riil)
                   </p>
-                  <p className="text-xl font-bold text-primary">
+                  <p
+                    className={`text-xl font-bold ${overLimit ? "text-destructive" : "text-primary"}`}
+                  >
                     {formatCurrency(totalAmount)}
                   </p>
                 </div>
               </div>
+
+              {overLimit ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Melebihi nominal tarikan</AlertTitle>
+                  <AlertDescription>
+                    Total Deklarasi tidak boleh lebih dari{" "}
+                    {formatCurrency(selected.amount)}. Kelebihan pemakaian
+                    diajukan lewat tarikan baru.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                totalAmount < selected.amount && (
+                  <p className="text-xs text-muted-foreground">
+                    Sisa {formatCurrency(selected.amount - totalAmount)} bisa
+                    dikembalikan ke Finance setelah Deklarasi ini disetujui.
+                  </p>
+                )
+              )}
 
               <div className="space-y-2">
                 <Label>
@@ -670,11 +905,42 @@ export default function DeklarasiClient() {
             >
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={creating || uploading}>
+            <Button
+              onClick={handleSubmit}
+              disabled={creating || uploading || overLimit}
+            >
               {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Kirim Deklarasi
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG PENGEMBALIAN SISA DANA */}
+      <Dialog
+        open={!!selectedReturn}
+        onOpenChange={(open) => !open && setSelectedReturn(null)}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Kembalikan Sisa {selectedReturn?.subVoucher.kode_sub_voucher}
+            </DialogTitle>
+            <DialogDescription>
+              Setor/transfer sisa dana ke Finance, lalu unggah buktinya. Budget
+              bertambah lagi setelah Finance mengkonfirmasi.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedReturn && (
+            <PcPengembalianForm
+              key={selectedReturn.subVoucher.id}
+              subVoucherId={selectedReturn.subVoucher.id}
+              sisa={selectedReturn.sisa}
+              processing={returning}
+              onSubmit={handleSubmitPengembalian}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>

@@ -65,6 +65,7 @@ import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
+import { pickCurrentDoc } from "@/lib/pcChain";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
@@ -353,8 +354,9 @@ function VoucherDetailContent({ id }: { id: string }) {
                             </TableHeader>
                             <TableBody>
                               {subVouchers.map((sv) => {
-                                const deklarasi =
-                                  sv.petty_cash_deklarasi?.[0];
+                                const deklarasi = pickCurrentDoc(
+                                  sv.petty_cash_deklarasi,
+                                );
                                 return (
                                   <TableRow key={sv.id}>
                                     <TableCell className="font-medium text-sm">

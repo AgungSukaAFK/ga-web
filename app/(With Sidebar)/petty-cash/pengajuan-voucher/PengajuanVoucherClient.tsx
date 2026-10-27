@@ -83,6 +83,8 @@ import {
   createSubVoucher,
   SubVoucherDraw,
 } from "@/services/pettyCashSubVoucherService";
+import { pickCurrentDoc } from "@/lib/pcChain";
+import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import {
   Loader2,
   RefreshCcw,
@@ -361,17 +363,20 @@ export default function PengajuanVoucherClient() {
         title="Pengajuan Voucher"
         description="Buat Voucher pencairan dari Pengajuan yang sudah disetujui, lalu tarik dananya bertahap (sub-voucher) sesuai kebutuhan."
         cardAction={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadData}
-            disabled={loading}
-          >
-            <RefreshCcw
-              className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-1">
+            <PcGlossaryButton focus="voucher" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              disabled={loading}
+            >
+              <RefreshCcw
+                className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
         }
       >
         <div className="space-y-8">
@@ -412,24 +417,46 @@ export default function PengajuanVoucherClient() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    eligible.map((pj) => (
-                      <TableRow key={pj.id}>
-                        <TableCell className="font-semibold text-sm">
-                          {pj.kode_pengajuan}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-sm">
-                          {formatCurrency(pj.total_amount)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {formatDate(pj.needed_date)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button size="sm" onClick={() => setSelected(pj)}>
-                            Buat Voucher
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    eligible.map((pj) => {
+                      // fetchApprovedPengajuanForVoucher cuma mengembalikan
+                      // Pengajuan tanpa Voucher aktif - kalau masih ada
+                      // Voucher di sini, berarti itu yang ditolak.
+                      const rejectedVoucher = pickCurrentDoc(
+                        pj.petty_cash_voucher,
+                      );
+                      return (
+                        <TableRow key={pj.id}>
+                          <TableCell className="text-sm">
+                            <div className="font-semibold">
+                              {pj.kode_pengajuan}
+                            </div>
+                            {rejectedVoucher && (
+                              <Link
+                                href={`/petty-cash/voucher/${rejectedVoucher.id}`}
+                                target="_blank"
+                                className="text-[11px] text-red-600 dark:text-red-400 hover:underline"
+                              >
+                                Voucher {rejectedVoucher.kode_voucher} ditolak
+                                - lihat alasan
+                              </Link>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-sm">
+                            {formatCurrency(pj.total_amount)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {formatDate(pj.needed_date)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button size="sm" onClick={() => setSelected(pj)}>
+                              {rejectedVoucher
+                                ? "Ajukan Ulang Voucher"
+                                : "Buat Voucher"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -545,7 +572,7 @@ export default function PengajuanVoucherClient() {
                             </TableCell>
                           </TableRow>
                           {subs.map((sv) => {
-                            const dek = sv.petty_cash_deklarasi?.[0];
+                            const dek = pickCurrentDoc(sv.petty_cash_deklarasi);
                             return (
                               <TableRow
                                 key={`sv-${sv.id}`}

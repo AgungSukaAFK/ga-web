@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { PcActionItem } from "@/services/pettyCashDashboardService";
+import { statusTermTitle } from "@/components/petty-cash/PcGlossary";
 
 export function PcActionNeededList({ items }: { items: PcActionItem[] }) {
   if (items.length === 0) {
@@ -42,7 +43,10 @@ export function PcActionNeededList({ items }: { items: PcActionItem[] }) {
               <span className="font-mono text-sm font-medium">
                 {pengajuan.kode_pengajuan}
               </span>
-              <Badge className={`${status.badgeClass} whitespace-nowrap`}>
+              <Badge
+                className={`${status.badgeClass} whitespace-nowrap`}
+                title={statusTermTitle(status.key)}
+              >
                 {status.label}
               </Badge>
               {status.detail && (

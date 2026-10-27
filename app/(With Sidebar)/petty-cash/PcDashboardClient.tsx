@@ -29,6 +29,7 @@ import {
   Banknote,
   Building2,
   Clock,
+  FileStack,
   FileText,
   Hourglass,
   Inbox,
@@ -62,6 +63,12 @@ import {
   fetchSubVoucherPaymentQueue,
 } from "@/services/pettyCashSubVoucherService";
 import { fetchActiveBudgets } from "@/services/pettyCashBudgetService";
+import { fetchPengembalianQueue } from "@/services/pettyCashPengembalianService";
+import { toEmbedArray } from "@/lib/pcChain";
+import {
+  PcGlossaryButton,
+  statusTermTitle,
+} from "@/components/petty-cash/PcGlossary";
 
 import {
   buildActionItems,
@@ -76,6 +83,7 @@ import {
   PettyCashDeklarasi,
   PettyCashPengajuan,
   PettyCashPengajuanWithChain,
+  PettyCashPengembalian,
   PettyCashSubVoucher,
   PettyCashVoucher,
 } from "@/type";
@@ -139,6 +147,9 @@ export default function PcDashboardClient() {
   const [voucherQueue, setVoucherQueue] = useState<PettyCashVoucher[]>([]);
   const [deklarasiQueue, setDeklarasiQueue] = useState<PettyCashDeklarasi[]>([]);
   const [paymentQueue, setPaymentQueue] = useState<PettyCashSubVoucher[]>([]);
+  const [pengembalianQueue, setPengembalianQueue] = useState<
+    PettyCashPengembalian[]
+  >([]);
   const [activeBudgets, setActiveBudgets] = useState<
     Awaited<ReturnType<typeof fetchActiveBudgets>>
   >([]);
@@ -196,6 +207,7 @@ export default function PcDashboardClient() {
         voucherQ,
         deklarasiQ,
         paymentQ,
+        pengembalianQ,
         budgets,
         allPengajuanData,
         allVouchersData,
@@ -209,6 +221,9 @@ export default function PcDashboardClient() {
         finance
           ? fetchSubVoucherPaymentQueue(currentProfile.company)
           : Promise.resolve([]),
+        finance
+          ? fetchPengembalianQueue(currentProfile.company)
+          : Promise.resolve([]),
         fetchActiveBudgets(budgetCompanyFilter),
         adminGA ? fetchAllPengajuan() : Promise.resolve([]),
         adminGA ? fetchAllVouchers() : Promise.resolve([]),
@@ -221,6 +236,7 @@ export default function PcDashboardClient() {
       setVoucherQueue(voucherQ);
       setDeklarasiQueue(deklarasiQ);
       setPaymentQueue(paymentQ);
+      setPengembalianQueue(pengembalianQ);
       setActiveBudgets(budgets);
       setAllPengajuan(allPengajuanData);
       setAllVouchers(allVouchersData);
@@ -251,7 +267,10 @@ export default function PcDashboardClient() {
     const now = new Date();
     let total = 0;
     for (const p of chain) {
-      for (const sv of p.petty_cash_voucher?.[0]?.petty_cash_sub_voucher ?? []) {
+      const subVouchers = toEmbedArray(p.petty_cash_voucher).flatMap(
+        (v) => v.petty_cash_sub_voucher ?? [],
+      );
+      for (const sv of subVouchers) {
         if (sv.status === "Selesai" && isSameMonth(sv.paid_at ?? sv.created_at, now)) {
           total += sv.amount;
         }
@@ -289,7 +308,8 @@ export default function PcDashboardClient() {
     pengajuanQueue.length +
     voucherQueue.length +
     deklarasiQueue.length +
-    paymentQueue.length;
+    paymentQueue.length +
+    pengembalianQueue.length;
 
   // --- Turunan data admin/GA (lintas perusahaan) ---
   const adminGA = isAdminGA(profile);
@@ -450,10 +470,13 @@ export default function PcDashboardClient() {
           </h1>
           <p className="text-sm text-muted-foreground">{today}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadData} className="w-fit">
-          <RefreshCcw className="h-3.5 w-3.5" />
-          Muat Ulang
-        </Button>
+        <div className="flex items-center gap-1">
+          <PcGlossaryButton />
+          <Button variant="outline" size="sm" onClick={loadData} className="w-fit">
+            <RefreshCcw className="h-3.5 w-3.5" />
+            Muat Ulang
+          </Button>
+        </div>
       </div>
 
       {/* Kartu ringkasan */}
@@ -504,7 +527,7 @@ export default function PcDashboardClient() {
         <Content
           size="lg"
           title="Perlu Anda Proses"
-          description="Dokumen Petty Cash yang sedang giliran Anda approve atau bayarkan."
+          description="Dokumen Petty Cash yang sedang giliran Anda approve, bayarkan, atau konfirmasi."
           cardAction={
             <Button asChild size="sm" variant="outline">
               <Link href="/petty-cash/approval">
@@ -534,6 +557,11 @@ export default function PcDashboardClient() {
               {
                 label: "Tarikan Menunggu Dibayar",
                 count: paymentQueue.length,
+                type: null,
+              },
+              {
+                label: "Pengembalian Menunggu Konfirmasi",
+                count: pengembalianQueue.length,
                 type: null,
               },
             ]
@@ -580,7 +608,10 @@ export default function PcDashboardClient() {
                     <span className="font-mono text-sm font-medium">
                       {p.kode_pengajuan}
                     </span>
-                    <Badge className={cn(status.badgeClass, "whitespace-nowrap")}>
+                    <Badge
+                      className={cn(status.badgeClass, "whitespace-nowrap")}
+                      title={statusTermTitle(status.key)}
+                    >
                       {status.label}
                     </Badge>
                   </Link>
@@ -643,6 +674,12 @@ export default function PcDashboardClient() {
             <Link href="/petty-cash/deklarasi">
               <Wallet className="h-4 w-4" />
               Ajukan Deklarasi
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="justify-start">
+            <Link href="/petty-cash/template-pengajuan">
+              <FileStack className="h-4 w-4" />
+              Template Pengajuan
             </Link>
           </Button>
           <Button asChild variant="ghost" className="justify-start">

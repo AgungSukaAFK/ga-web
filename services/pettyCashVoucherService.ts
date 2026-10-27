@@ -5,8 +5,9 @@
 // pettyCashPengajuanService.ts) selesai di-approve. Satu Voucher = SNAPSHOT
 // persis dari satu Pengajuan berstatus "Approved" (item/qty/harga/catatan/
 // lampiran di-copy apa adanya, requester tidak bisa mengubahnya di sini) -
-// satu Pengajuan cuma boleh dipakai untuk SATU Voucher (unique pengajuan_id
-// di DB, lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_setup.sql)).
+// satu Pengajuan paling banyak punya SATU Voucher aktif; kalau ditolak,
+// requester boleh mengajukan ulang dari Pengajuan yang sama (unique index
+// parsial, lihat supabase/migrations/0010_petty_cash_voucher_ulang.sql).
 //
 // Jalur approval Voucher TERPISAH dari jalur approval Pengajuan-nya -
 // diambil dari Template Approval ber-approval_type "Approval Voucher" (lihat
@@ -33,6 +34,11 @@ import {
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
+import { getActiveDoc } from "@/lib/pcChain";
+import {
+  notifyOnPcApproval,
+  notifyOnPcSubmitted,
+} from "@/lib/notifications/client";
 
 const supabase = createClient();
 
@@ -127,26 +133,25 @@ export const generateVoucherCode = async (
 };
 
 /**
- * Pengajuan milik `userId` yang sudah "Approved" dan BELUM punya Voucher -
- * inilah daftar yang boleh dipilih requester di halaman Pengajuan Voucher.
- * `petty_cash_voucher(id)` di-embed lewat FK pengajuan_id supaya bisa
- * difilter "belum ada voucher"-nya tanpa query terpisah.
+ * Pengajuan milik `userId` yang sudah "Approved" dan BELUM punya Voucher
+ * aktif (belum pernah dibuatkan, atau Voucher-nya ditolak) - inilah daftar
+ * yang boleh dipilih requester di halaman Pengajuan Voucher.
+ * `petty_cash_voucher(...)` di-embed lewat FK pengajuan_id supaya bisa
+ * difilter tanpa query terpisah, sekaligus jadi riwayat Voucher yang ditolak.
  */
 export const fetchApprovedPengajuanForVoucher = async (
   userId: string,
 ): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select("*, petty_cash_voucher(id)")
+    .select("*, petty_cash_voucher(id, kode_voucher, status, created_at)")
     .eq("user_id", userId)
     .eq("status", "Approved")
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   const rows = (data ?? []) as unknown as PettyCashPengajuan[];
-  return rows.filter(
-    (row) => !row.petty_cash_voucher || row.petty_cash_voucher.length === 0,
-  );
+  return rows.filter((row) => !getActiveDoc(row.petty_cash_voucher));
 };
 
 /**
@@ -163,7 +168,7 @@ export const fetchMyVouchers = async (
     .select(
       `*, petty_cash_pengajuan(kode_pengajuan),
        petty_cash_sub_voucher(id, kode_sub_voucher, amount, items, status, paid_at, created_at,
-         petty_cash_deklarasi(id, kode_deklarasi, status)),
+         petty_cash_deklarasi(id, kode_deklarasi, status, created_at)),
        petty_cash_budget(name, current_budget)`,
     )
     .eq("user_id", userId)
@@ -265,7 +270,7 @@ export const fetchVoucherById = async (
        petty_cash_pengajuan(kode_pengajuan),
        petty_cash_budget(name, current_budget),
        petty_cash_sub_voucher(id, kode_sub_voucher, amount, notes, status, created_at,
-         petty_cash_deklarasi(id, kode_deklarasi, status))`,
+         petty_cash_deklarasi(id, kode_deklarasi, status, created_at))`,
     )
     .eq("id", id)
     .single();
@@ -349,10 +354,10 @@ export const createVoucherFromPengajuan = async (
     if (error) {
       if (
         error.code === "23505" &&
-        error.message.includes("petty_cash_voucher_pengajuan_id_key")
+        error.message.includes("petty_cash_voucher_pengajuan_active_key")
       ) {
         throw new Error(
-          "Pengajuan ini sudah pernah dibuatkan Voucher sebelumnya.",
+          "Pengajuan ini sudah punya Voucher yang sedang diproses atau sudah disetujui.",
         );
       }
       if (
@@ -380,7 +385,15 @@ export const createVoucherFromPengajuan = async (
       throw error;
     }
 
-    return data as unknown as PettyCashVoucher;
+    const created = data as unknown as PettyCashVoucher;
+    notifyOnPcSubmitted({
+      actorId: userId,
+      docType: "voucher",
+      docId: created.id,
+      kode: created.kode_voucher,
+      firstApproverId: created.approvals?.[0]?.userid,
+    });
+    return created;
   }
 
   throw new Error("Gagal membuat voucher setelah beberapa percobaan.");
@@ -412,7 +425,10 @@ export const fetchVoucherApprovalQueue = async (
 };
 
 export const approveVoucherStep = async (
-  voucher: Pick<PettyCashVoucher, "id" | "approvals">,
+  voucher: Pick<
+    PettyCashVoucher,
+    "id" | "approvals" | "kode_voucher" | "user_id"
+  >,
   userId: string,
 ): Promise<void> => {
   const result = advanceApproval(voucher.approvals, userId);
@@ -428,10 +444,22 @@ export const approveVoucherStep = async (
     .eq("id", voucher.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "voucher",
+    docId: voucher.id,
+    kode: voucher.kode_voucher,
+    creatorId: voucher.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };
 
 export const rejectVoucherStep = async (
-  voucher: Pick<PettyCashVoucher, "id" | "approvals" | "discussions">,
+  voucher: Pick<
+    PettyCashVoucher,
+    "id" | "approvals" | "discussions" | "kode_voucher" | "user_id"
+  >,
   userId: string,
   userName: string,
   reason: string,
@@ -458,6 +486,14 @@ export const rejectVoucherStep = async (
     .eq("id", voucher.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "voucher",
+    docId: voucher.id,
+    kode: voucher.kode_voucher,
+    creatorId: voucher.user_id,
+    decision: "rejected",
+  });
 };
 
 export interface EditVoucherEdits {
@@ -485,6 +521,8 @@ export const editAndApproveVoucherStep = async (
     | "notes"
     | "items"
     | "attachments"
+    | "kode_voucher"
+    | "user_id"
   >,
   userId: string,
   userName: string,
@@ -512,4 +550,13 @@ export const editAndApproveVoucherStep = async (
     .eq("id", voucher.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "voucher",
+    docId: voucher.id,
+    kode: voucher.kode_voucher,
+    creatorId: voucher.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };

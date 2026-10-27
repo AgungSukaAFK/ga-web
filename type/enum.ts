@@ -531,6 +531,28 @@ export const PC_SUB_VOUCHER_STATUS_COLORS: Record<string, string> = {
 export const PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
 
+// Status Pengembalian Dana Lebih (petty_cash_pengembalian) - 'Menunggu
+// Konfirmasi' begitu requester mengajukan, 'Selesai' begitu Finance approver
+// mengkonfirmasi uangnya diterima (budget bertambah), 'Ditolak' kalau tidak
+// sesuai (budget tidak berubah, requester boleh mengajukan ulang) - lihat
+// supabase/migrations/0009_petty_cash_pengembalian.sql.
+export const PC_PENGEMBALIAN_STATUS_OPTIONS = [
+  "Menunggu Konfirmasi",
+  "Selesai",
+  "Ditolak",
+] as const;
+
+export const PC_PENGEMBALIAN_STATUS_COLORS: Record<string, string> = {
+  "Menunggu Konfirmasi":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Selesai:
+    "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Ditolak:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+};
+export const PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
 // Status Deklarasi Petty Cash (petty_cash_deklarasi) - sama bentuknya dengan
 // PC_PENGAJUAN_STATUS_OPTIONS (tidak ada tahap "Permintaan Klaim" seperti
 // Voucher, karena Deklarasi sendiri sudah tahap SETELAH klaim diajukan).

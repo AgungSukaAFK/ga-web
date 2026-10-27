@@ -12,6 +12,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { GA_DEPARTMENTS } from "@/lib/constants/departments";
+import { formatCurrency } from "@/lib/utils";
 
 // ─────────────────────────────────────────────
 // Types
@@ -36,6 +37,11 @@ export type NotificationEventType =
   | "pc_approved_step"
   | "pc_fully_approved"
   | "pc_rejected"
+  | "pc_payment_requested"
+  | "pc_paid"
+  | "pc_return_submitted"
+  | "pc_return_confirmed"
+  | "pc_return_rejected"
   | "mr_followup_requested"
   | "po_followup_requested"
   | "support_message"
@@ -577,132 +583,322 @@ export async function notifyOnApprovalFollowup({
   });
 }
 
+// ─────────────────────────────────────────────
+// Petty Cash - alur Pengajuan -> Voucher -> Tarikan Dana (Sub-Voucher) ->
+// Deklarasi, plus Pengembalian Dana Lebih. Dipanggil dari
+// services/pettyCash*Service.ts setelah tulis DB berhasil, fire-and-forget
+// seperti MR/PO (gagal kirim notif tidak boleh menggagalkan aksinya).
+// ─────────────────────────────────────────────
+
+export type PcApprovalDocType = "pengajuan" | "voucher" | "deklarasi";
+
+const PC_DOC_LABEL: Record<PcApprovalDocType, string> = {
+  pengajuan: "Pengajuan",
+  voucher: "Voucher",
+  deklarasi: "Deklarasi",
+};
+
+const pcDocLink = (docType: PcApprovalDocType, docId: string | number) =>
+  `/petty-cash/${docType}/${docId}`;
+
+// Langkah requester berikutnya begitu dokumen disetujui penuh - link ke
+// halaman tempat aksinya dilakukan, bukan cuma halaman detail.
+const PC_NEXT_STEP: Record<
+  PcApprovalDocType,
+  { message: string; link: (docId: string | number) => string }
+> = {
+  pengajuan: {
+    message: "Silakan ajukan Voucher-nya.",
+    link: () => "/petty-cash/pengajuan-voucher",
+  },
+  voucher: {
+    message: "Dana sudah bisa ditarik.",
+    link: () => "/petty-cash/pengajuan-voucher",
+  },
+  deklarasi: {
+    message: "Kalau ada sisa dana, kembalikan lewat halaman Deklarasi.",
+    link: (docId) => pcDocLink("deklarasi", docId),
+  },
+};
+
+// Ketiga dokumen boleh diajukan ulang setelah ditolak - link ke halaman
+// tempat requester melakukannya (detail Pengajuan punya tombol "Ajukan
+// Ulang"; Voucher & Deklarasi diajukan ulang dari halaman pembuatannya,
+// yang juga menautkan alasan penolakannya).
+const PC_RESUBMIT: Record<
+  PcApprovalDocType,
+  { message: string; link: (docId: string | number) => string }
+> = {
+  pengajuan: {
+    message: "Lihat alasannya, lalu ajukan ulang dari halaman detail.",
+    link: (docId) => pcDocLink("pengajuan", docId),
+  },
+  voucher: {
+    message: "Lihat alasannya, lalu ajukan ulang Voucher.",
+    link: () => "/petty-cash/pengajuan-voucher",
+  },
+  deklarasi: {
+    message: "Lihat alasannya, lalu ajukan ulang Deklarasi.",
+    link: () => "/petty-cash/deklarasi",
+  },
+};
+
 /**
- * Notify GA/Finance that a new Petty Cash was submitted.
+ * Pemanggil service tidak selalu punya id user login - ambil dari sesi
+ * lokal (tanpa request jaringan). Dipakai buang penerima = pelaku: RPC
+ * create_notifications sudah melewati diri sendiri, tapi channel push tidak.
  */
-export async function notifyGAOnPCSubmit({
+async function resolveActorId(actorId?: string): Promise<string | undefined> {
+  if (actorId) return actorId;
+  try {
+    const { data } = await createClient().auth.getSession();
+    return data.session?.user.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Finance approver yang memproses pembayaran tarikan & konfirmasi
+ * pengembalian utk `companyCode` - sama cakupannya dgn antrian di halaman
+ * Approval Petty Cash (Finance company sendiri + Finance LOURDES).
+ */
+export async function getPcFinanceApproverIds(
+  companyCode: string,
+): Promise<string[]> {
+  try {
+    const supabase = createClient();
+    const companyCodes =
+      companyCode === "LOURDES" ? ["LOURDES"] : [companyCode, "LOURDES"];
+    const { data } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("department", "Finance")
+      .eq("role", "approver")
+      .in("company", companyCodes);
+    return (data ?? []).map((p: { id: string }) => p.id);
+  } catch {
+    return [];
+  }
+}
+
+/** Dokumen PC baru masuk jalur approval -> approver pertama. */
+export async function notifyOnPcSubmitted({
   actorId,
-  companyCode,
-  kodePC,
-  pcId,
+  docType,
+  docId,
+  kode,
+  firstApproverId,
 }: {
-  actorId: string;
-  companyCode: string;
-  kodePC: string;
-  pcId: string | number;
+  actorId?: string;
+  docType: PcApprovalDocType;
+  docId: string | number;
+  kode: string;
+  firstApproverId?: string;
 }): Promise<void> {
-  const ids = await getGAAndFinanceUserIds(companyCode);
-  const recipients = ids.filter((id) => id !== actorId);
-  await sendNotifications(recipients, {
-    actorId,
+  const actor = await resolveActorId(actorId);
+  if (!firstApproverId || firstApproverId === actor) return;
+  const label = PC_DOC_LABEL[docType];
+  await sendNotification({
+    userId: firstApproverId,
+    actorId: actor,
     type: "pc_submitted",
-    title: "Petty Cash Baru Menunggu Validasi",
-    message: `Petty Cash ${kodePC} baru masuk dan menunggu routing dari GA/Finance.`,
-    link: `/petty-cash/${pcId}`,
-    resourceId: String(pcId),
+    title: `Persetujuan ${label} Petty Cash Dibutuhkan`,
+    message: `${label} ${kode} menunggu persetujuan Anda.`,
+    link: pcDocLink(docType, docId),
+    resourceId: String(docId),
     resourceType: "petty_cash",
   });
 }
 
 /**
- * After GA routes Petty Cash → notify creator + first approver.
+ * Setelah approve/reject satu step -> approver berikutnya (kalau masih ada),
+ * atau requester (disetujui penuh / ditolak).
  */
-export async function notifyOnPCRouted({
+export async function notifyOnPcApproval({
   actorId,
-  creatorId,
-  firstApproverId,
-  kodePC,
-  pcId,
-}: {
-  actorId: string;
-  creatorId: string;
-  firstApproverId?: string;
-  kodePC: string;
-  pcId: string | number;
-}): Promise<void> {
-  if (creatorId && creatorId !== actorId) {
-    await sendNotification({
-      userId: creatorId,
-      actorId,
-      type: "pc_routed",
-      title: "Petty Cash Kamu Divalidasi",
-      message: `Petty Cash ${kodePC} telah diarahkan ke jalur persetujuan.`,
-      link: `/petty-cash/${pcId}`,
-      resourceId: String(pcId),
-      resourceType: "petty_cash",
-    });
-  }
-  if (firstApproverId && firstApproverId !== actorId) {
-    await sendNotification({
-      userId: firstApproverId,
-      actorId,
-      type: "pc_routed",
-      title: "Persetujuan Petty Cash Dibutuhkan",
-      message: `Petty Cash ${kodePC} menunggu persetujuan Anda.`,
-      link: `/petty-cash/${pcId}`,
-      resourceId: String(pcId),
-      resourceType: "petty_cash",
-    });
-  }
-}
-
-/**
- * After PC approve/reject step.
- */
-export async function notifyOnPCApproval({
-  actorId,
+  docType,
+  docId,
+  kode,
   creatorId,
   nextApproverId,
   decision,
-  kodePC,
-  pcId,
 }: {
-  actorId: string;
+  actorId?: string;
+  docType: PcApprovalDocType;
+  docId: string | number;
+  kode: string;
   creatorId: string;
   nextApproverId?: string;
   decision: "approved" | "rejected";
-  kodePC: string;
-  pcId: string | number;
 }): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  const label = PC_DOC_LABEL[docType];
+
   if (decision === "rejected") {
-    if (creatorId && creatorId !== actorId) {
-      await sendNotification({
-        userId: creatorId,
-        actorId,
-        type: "pc_rejected",
-        title: "Petty Cash Kamu Ditolak",
-        message: `Petty Cash ${kodePC} telah ditolak.`,
-        link: `/petty-cash/${pcId}`,
-        resourceId: String(pcId),
-        resourceType: "petty_cash",
-      });
-    }
+    if (!creatorId || creatorId === actor) return;
+    const resubmit = PC_RESUBMIT[docType];
+    await sendNotification({
+      userId: creatorId,
+      actorId: actor,
+      type: "pc_rejected",
+      title: `${label} Petty Cash Kamu Ditolak`,
+      message: `${label} ${kode} ditolak. ${resubmit.message}`,
+      link: resubmit.link(docId),
+      resourceId: String(docId),
+      resourceType: "petty_cash",
+    });
     return;
   }
 
   if (nextApproverId) {
+    if (nextApproverId === actor) return;
     await sendNotification({
       userId: nextApproverId,
-      actorId,
+      actorId: actor,
       type: "pc_approved_step",
-      title: "Persetujuan Petty Cash Dibutuhkan",
-      message: `Petty Cash ${kodePC} kini menunggu persetujuan Anda.`,
-      link: `/petty-cash/${pcId}`,
-      resourceId: String(pcId),
+      title: `Persetujuan ${label} Petty Cash Dibutuhkan`,
+      message: `${label} ${kode} kini menunggu persetujuan Anda.`,
+      link: pcDocLink(docType, docId),
+      resourceId: String(docId),
       resourceType: "petty_cash",
     });
-  } else {
-    if (creatorId && creatorId !== actorId) {
-      await sendNotification({
-        userId: creatorId,
-        actorId,
-        type: "pc_fully_approved",
-        title: "Petty Cash Kamu Disetujui",
-        message: `Petty Cash ${kodePC} telah disetujui semua pihak.`,
-        link: `/petty-cash/${pcId}`,
-        resourceId: String(pcId),
-        resourceType: "petty_cash",
-      });
-    }
+    return;
   }
+
+  if (!creatorId || creatorId === actor) return;
+  const next = PC_NEXT_STEP[docType];
+  await sendNotification({
+    userId: creatorId,
+    actorId: actor,
+    type: "pc_fully_approved",
+    title: `${label} Petty Cash Kamu Disetujui`,
+    message: `${label} ${kode} telah disetujui semua pihak. ${next.message}`,
+    link: next.link(docId),
+    resourceId: String(docId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Requester menarik dana -> Finance approver, tarikan menunggu dibayar. */
+export async function notifyFinanceOnPcPaymentRequested({
+  actorId,
+  companyCode,
+  subVoucherId,
+  kode,
+  amount,
+}: {
+  actorId?: string;
+  companyCode: string;
+  subVoucherId: string | number;
+  kode: string;
+  amount: number;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  const recipients = (await getPcFinanceApproverIds(companyCode)).filter(
+    (id) => id !== actor,
+  );
+  await sendNotifications(recipients, {
+    actorId: actor,
+    type: "pc_payment_requested",
+    title: "Tarikan Dana Petty Cash Menunggu Dibayar",
+    message: `Tarikan ${kode} sebesar ${formatCurrency(amount)} menunggu pembayaran Finance.`,
+    link: `/petty-cash/sub-voucher/${subVoucherId}`,
+    resourceId: String(subVoucherId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Finance menandai tarikan selesai dibayar -> requester. */
+export async function notifyOnPcPaid({
+  actorId,
+  requesterId,
+  subVoucherId,
+  kode,
+  amount,
+}: {
+  actorId?: string;
+  requesterId: string;
+  subVoucherId: string | number;
+  kode: string;
+  amount: number;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  if (!requesterId || requesterId === actor) return;
+  await sendNotification({
+    userId: requesterId,
+    actorId: actor,
+    type: "pc_paid",
+    title: "Dana Petty Cash Sudah Dibayar",
+    message: `Tarikan ${kode} sebesar ${formatCurrency(amount)} sudah dibayar Finance. Ajukan Deklarasi setelah dana dipakai.`,
+    link: "/petty-cash/deklarasi",
+    resourceId: String(subVoucherId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Requester mengembalikan sisa dana -> Finance approver, menunggu konfirmasi. */
+export async function notifyFinanceOnPcReturnSubmitted({
+  actorId,
+  companyCode,
+  pengembalianId,
+  kode,
+  amount,
+}: {
+  actorId?: string;
+  companyCode: string;
+  pengembalianId: string | number;
+  kode: string;
+  amount: number;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  const recipients = (await getPcFinanceApproverIds(companyCode)).filter(
+    (id) => id !== actor,
+  );
+  await sendNotifications(recipients, {
+    actorId: actor,
+    type: "pc_return_submitted",
+    title: "Pengembalian Dana Petty Cash Menunggu Konfirmasi",
+    message: `Pengembalian ${kode} sebesar ${formatCurrency(amount)} menunggu konfirmasi Finance.`,
+    link: "/petty-cash/approval",
+    resourceId: String(pengembalianId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Finance mengkonfirmasi / menolak pengembalian -> requester. */
+export async function notifyOnPcReturnProcessed({
+  actorId,
+  requesterId,
+  pengembalianId,
+  kode,
+  amount,
+  decision,
+  reason,
+}: {
+  actorId?: string;
+  requesterId: string;
+  pengembalianId: string | number;
+  kode: string;
+  amount: number;
+  decision: "confirmed" | "rejected";
+  reason?: string;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  if (!requesterId || requesterId === actor) return;
+  const confirmed = decision === "confirmed";
+  await sendNotification({
+    userId: requesterId,
+    actorId: actor,
+    type: confirmed ? "pc_return_confirmed" : "pc_return_rejected",
+    title: confirmed
+      ? "Pengembalian Dana Dikonfirmasi"
+      : "Pengembalian Dana Ditolak",
+    message: confirmed
+      ? `Pengembalian ${kode} sebesar ${formatCurrency(amount)} sudah diterima Finance.`
+      : `Pengembalian ${kode} ditolak Finance${reason ? ` - alasan: ${reason}` : ""}. Silakan ajukan ulang.`,
+    link: "/petty-cash/deklarasi",
+    resourceId: String(pengembalianId),
+    resourceType: "petty_cash",
+  });
 }

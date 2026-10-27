@@ -57,7 +57,8 @@ import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePet
 import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, ArrowLeft, RotateCcw } from "lucide-react";
 
 const DetailSkeleton = () => (
   <Content className="col-span-12">
@@ -253,6 +254,10 @@ function PengajuanDetailContent({ id }: { id: string }) {
   const statusColor =
     PC_PENGAJUAN_STATUS_COLORS[doc.status] || PC_PENGAJUAN_STATUS_COLOR_DEFAULT;
   const isMyTurn = viewer ? isMyApprovalTurn(doc.approvals, viewer.id) : false;
+  // Pengajuan yang ditolak bisa diajukan ulang pemiliknya sbg Pengajuan baru
+  // (form Input Pengajuan terisi dari dokumen ini, lihat ?ulang= di
+  // InputPengajuanClient.tsx).
+  const canResubmit = doc.status === "Rejected" && viewer?.id === doc.user_id;
 
   return (
     <>
@@ -265,6 +270,13 @@ function PengajuanDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
+            {canResubmit && (
+              <Button asChild size="sm">
+                <Link href={`/petty-cash/input-pengajuan?ulang=${doc.id}`}>
+                  <RotateCcw className="h-4 w-4 mr-1" /> Ajukan Ulang
+                </Link>
+              </Button>
+            )}
             <PcPrintMenu onPrint={handlePrint} />
           </div>
         }

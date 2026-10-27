@@ -6,9 +6,10 @@
 // melaporkan pemakaian RIIL dana yang sudah dicairkan lewat tarikan itu -
 // item disalin dari Voucher asalnya tapi qty/unit_price/note per baris
 // BOLEH disesuaikan ke pemakaian riil (beda dari createVoucherFromPengajuan
-// yang snapshot apa adanya) - satu Sub-Voucher cuma boleh dipakai untuk SATU
-// Deklarasi (unique sub_voucher_id di DB, lihat
-// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_deklarasi_sub_voucher_setup.sql)).
+// yang snapshot apa adanya) - satu Sub-Voucher paling banyak punya SATU
+// Deklarasi aktif; yang ditolak boleh diajukan ulang, dan total Deklarasi
+// tidak boleh melebihi nominal tarikan (dijaga index parsial & trigger di
+// supabase/migrations/0009_petty_cash_pengembalian.sql).
 //
 // Jalur approval Deklarasi TERPISAH dari jalur approval Voucher-nya -
 // diambil dari Template Approval ber-approval_type "Approval Deklarasi"
@@ -33,6 +34,10 @@ import {
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
+import {
+  notifyOnPcApproval,
+  notifyOnPcSubmitted,
+} from "@/lib/notifications/client";
 
 const supabase = createClient();
 
@@ -327,10 +332,10 @@ export const createDeklarasiFromSubVoucher = async (
     if (error) {
       if (
         error.code === "23505" &&
-        error.message.includes("petty_cash_deklarasi_sub_voucher_id_key")
+        error.message.includes("petty_cash_deklarasi_sub_voucher_active_key")
       ) {
         throw new Error(
-          "Sub-Voucher ini sudah pernah dibuatkan Deklarasi sebelumnya.",
+          "Sub-Voucher ini sudah punya Deklarasi yang sedang diproses atau sudah disetujui.",
         );
       }
       if (
@@ -358,7 +363,15 @@ export const createDeklarasiFromSubVoucher = async (
       throw error;
     }
 
-    return data as unknown as PettyCashDeklarasi;
+    const created = data as unknown as PettyCashDeklarasi;
+    notifyOnPcSubmitted({
+      actorId: userId,
+      docType: "deklarasi",
+      docId: created.id,
+      kode: created.kode_deklarasi,
+      firstApproverId: created.approvals?.[0]?.userid,
+    });
+    return created;
   }
 
   throw new Error("Gagal membuat deklarasi setelah beberapa percobaan.");
@@ -390,7 +403,10 @@ export const fetchDeklarasiApprovalQueue = async (
 };
 
 export const approveDeklarasiStep = async (
-  deklarasi: Pick<PettyCashDeklarasi, "id" | "approvals">,
+  deklarasi: Pick<
+    PettyCashDeklarasi,
+    "id" | "approvals" | "kode_deklarasi" | "user_id"
+  >,
   userId: string,
 ): Promise<void> => {
   const result = advanceApproval(deklarasi.approvals, userId);
@@ -406,10 +422,22 @@ export const approveDeklarasiStep = async (
     .eq("id", deklarasi.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "deklarasi",
+    docId: deklarasi.id,
+    kode: deklarasi.kode_deklarasi,
+    creatorId: deklarasi.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };
 
 export const rejectDeklarasiStep = async (
-  deklarasi: Pick<PettyCashDeklarasi, "id" | "approvals" | "discussions">,
+  deklarasi: Pick<
+    PettyCashDeklarasi,
+    "id" | "approvals" | "discussions" | "kode_deklarasi" | "user_id"
+  >,
   userId: string,
   userName: string,
   reason: string,
@@ -436,6 +464,14 @@ export const rejectDeklarasiStep = async (
     .eq("id", deklarasi.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "deklarasi",
+    docId: deklarasi.id,
+    kode: deklarasi.kode_deklarasi,
+    creatorId: deklarasi.user_id,
+    decision: "rejected",
+  });
 };
 
 export interface EditDeklarasiEdits {
@@ -456,7 +492,14 @@ export interface EditDeklarasiEdits {
 export const editAndApproveDeklarasiStep = async (
   deklarasi: Pick<
     PettyCashDeklarasi,
-    "id" | "approvals" | "revisions" | "notes" | "items" | "attachments"
+    | "id"
+    | "approvals"
+    | "revisions"
+    | "notes"
+    | "items"
+    | "attachments"
+    | "kode_deklarasi"
+    | "user_id"
   >,
   userId: string,
   userName: string,
@@ -482,4 +525,13 @@ export const editAndApproveDeklarasiStep = async (
     .eq("id", deklarasi.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "deklarasi",
+    docId: deklarasi.id,
+    kode: deklarasi.kode_deklarasi,
+    creatorId: deklarasi.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };

@@ -301,6 +301,8 @@ function pcHistoryKind(item: PettyCashBudgetHistory): BudgetHistoryKind {
       return "deduction";
     case "refund":
       return "refund";
+    case "pengembalian":
+      return "pengembalian";
     case "deactivate":
       return "status";
     default:

@@ -8,6 +8,7 @@
 import { CheckIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PcChainStep } from "@/services/pettyCashDashboardService";
+import { pcTermTitle } from "@/components/petty-cash/PcGlossary";
 
 const dotClassFor = (state: PcChainStep["state"]) => {
   switch (state) {
@@ -36,7 +37,7 @@ export function PcChainStepper({ steps }: { steps: PcChainStep[] }) {
                 "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold",
                 dotClassFor(step.state),
               )}
-              title={step.label}
+              title={pcTermTitle(step.key)}
             >
               {step.state === "done" ? (
                 <CheckIcon className="h-3.5 w-3.5" />
@@ -46,7 +47,10 @@ export function PcChainStepper({ steps }: { steps: PcChainStep[] }) {
                 idx + 1
               )}
             </div>
-            <span className="max-w-16 text-center text-[10px] leading-tight text-muted-foreground">
+            <span
+              className="max-w-16 text-center text-[10px] leading-tight text-muted-foreground"
+              title={pcTermTitle(step.key)}
+            >
               {step.label}
               {step.detail && (
                 <>

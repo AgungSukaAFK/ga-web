@@ -242,6 +242,14 @@ function buildPettyCashItems(profile: NavProfile): NavItem[] {
       visible: true,
     },
     {
+      // Template barang pribadi tiap user (bukan katalog bersama), dipakai
+      // lewat "Pakai Template" di Input Pengajuan.
+      title: "Template Pengajuan",
+      url: "/petty-cash/template-pengajuan",
+      icon: FileStack,
+      visible: true,
+    },
+    {
       title: "Deklarasi",
       url: "/petty-cash/deklarasi",
       icon: FileText,

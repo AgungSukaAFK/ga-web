@@ -23,6 +23,10 @@ import {
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
+import {
+  notifyOnPcApproval,
+  notifyOnPcSubmitted,
+} from "@/lib/notifications/client";
 
 const supabase = createClient();
 
@@ -312,7 +316,15 @@ export const createPettyCashPengajuan = async (
       throw error;
     }
 
-    return data as unknown as PettyCashPengajuan;
+    const created = data as unknown as PettyCashPengajuan;
+    notifyOnPcSubmitted({
+      actorId: userId,
+      docType: "pengajuan",
+      docId: created.id,
+      kode: created.kode_pengajuan,
+      firstApproverId: created.approvals?.[0]?.userid,
+    });
+    return created;
   }
 
   throw new Error("Gagal membuat pengajuan setelah beberapa percobaan.");
@@ -490,7 +502,10 @@ export const fetchPengajuanApprovalQueue = async (
  * fetchApprovedPengajuanForVoucher, services/pettyCashVoucherService.ts).
  */
 export const approvePengajuanStep = async (
-  pengajuan: Pick<PettyCashPengajuan, "id" | "approvals">,
+  pengajuan: Pick<
+    PettyCashPengajuan,
+    "id" | "approvals" | "kode_pengajuan" | "user_id"
+  >,
   userId: string,
 ): Promise<void> => {
   const result = advanceApproval(pengajuan.approvals, userId);
@@ -506,6 +521,15 @@ export const approvePengajuanStep = async (
     .eq("id", pengajuan.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "pengajuan",
+    docId: pengajuan.id,
+    kode: pengajuan.kode_pengajuan,
+    creatorId: pengajuan.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };
 
 /**
@@ -514,7 +538,10 @@ export const approvePengajuanStep = async (
  * entri diskusi.
  */
 export const rejectPengajuanStep = async (
-  pengajuan: Pick<PettyCashPengajuan, "id" | "approvals" | "discussions">,
+  pengajuan: Pick<
+    PettyCashPengajuan,
+    "id" | "approvals" | "discussions" | "kode_pengajuan" | "user_id"
+  >,
   userId: string,
   userName: string,
   reason: string,
@@ -541,6 +568,14 @@ export const rejectPengajuanStep = async (
     .eq("id", pengajuan.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "pengajuan",
+    docId: pengajuan.id,
+    kode: pengajuan.kode_pengajuan,
+    creatorId: pengajuan.user_id,
+    decision: "rejected",
+  });
 };
 
 export interface EditPengajuanEdits {
@@ -574,6 +609,8 @@ export const editAndApprovePengajuanStep = async (
     | "notes"
     | "items"
     | "attachments"
+    | "kode_pengajuan"
+    | "user_id"
   >,
   userId: string,
   userName: string,
@@ -602,4 +639,13 @@ export const editAndApprovePengajuanStep = async (
     .eq("id", pengajuan.id);
 
   if (error) throw error;
+  notifyOnPcApproval({
+    actorId: userId,
+    docType: "pengajuan",
+    docId: pengajuan.id,
+    kode: pengajuan.kode_pengajuan,
+    creatorId: pengajuan.user_id,
+    nextApproverId: result.nextApprover?.userid,
+    decision: "approved",
+  });
 };

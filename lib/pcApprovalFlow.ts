@@ -133,6 +133,7 @@ export interface EditAndApproveResult<
 > {
   approvals: T[];
   isLastApprover: boolean;
+  nextApprover: T | null;
   status: "Approved" | "In Approval";
   revisions: PcRevisionEntry<TItem, TAttachment>[];
 }
@@ -177,6 +178,7 @@ export const buildEditAndApproveUpdate = <
   return {
     approvals: advanced.approvals,
     isLastApprover: advanced.isLastApprover,
+    nextApprover: advanced.nextApprover,
     status: advanced.isLastApprover ? "Approved" : "In Approval",
     revisions: [...(current.revisions ?? []), previousVersion],
   };

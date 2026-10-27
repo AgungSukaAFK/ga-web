@@ -13,11 +13,17 @@
 // bawah) SEBELUM bisa nambah barang - bukan per baris lagi - biar konsisten
 // sama requester company lain & combobox katalognya ikut terfilter ke COA
 // yang dipilih itu.
+//
+// `?ulang=<id>` = "Ajukan Ulang" Pengajuan yang ditolak: barang, catatan, &
+// lampiran Pengajuan lama dimuat ke form, requester tinggal memperbaiki lalu
+// mengirimnya sbg Pengajuan BARU (kode & jalur approval baru - Pengajuan lama
+// tetap "Rejected" sbg riwayat). Tanggal & minggu dibutuhkan diisi ulang.
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
@@ -28,7 +34,7 @@ import {
   RichMentionEditor,
   RichMentionEditorHandle,
 } from "@/components/rich-mention-editor";
-import { stringifyRichContent } from "@/lib/rich-content";
+import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
 import {
   Select,
 } from "@/components/ui/select";
@@ -56,16 +62,22 @@ import { toast } from "sonner";
 import {
   checkPengajuanEligibility,
   createPettyCashPengajuan,
+  fetchPengajuanById,
   PengajuanEligibility,
 } from "@/services/pettyCashPengajuanService";
 import { fetchPengajuanTemplateById } from "@/services/pettyCashPengajuanTemplateService";
 import { resolveAutoBudget } from "@/services/pettyCashBudgetService";
-import { PettyCashBudget, PettyCashPengajuanItem } from "@/type";
+import {
+  PettyCashBudget,
+  PettyCashPengajuan,
+  PettyCashPengajuanItem,
+} from "@/type";
 import {
   PcItemsEditor,
   hasUnresolvedCoa,
 } from "@/components/petty-cash/PcItemsEditor";
 import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
+import { PcPengajuanTemplatePicker } from "@/components/petty-cash/PcPengajuanTemplatePicker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   getSelectableWeeksOfCurrentMonth,
@@ -103,6 +115,7 @@ export default function InputPengajuanClient() {
   const goBack = useGoBack("/petty-cash");
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template");
+  const ulangId = searchParams.get("ulang");
   const supabase = createClient();
 
   const [profile, setProfile] = useState<{
@@ -245,6 +258,48 @@ export default function InputPengajuanClient() {
       .finally(() => setTemplateLoading(false));
   }, [templateId]);
 
+  // Ajukan Ulang (?ulang=<id>) - lihat komentar di atas file ini. Barang
+  // lewat jalur yang sama dgn template (templateItems -> initialItems), COA
+  // dibawa dari Pengajuan lama supaya akun Lourdes tidak perlu memilih ulang.
+  const [ulangSource, setUlangSource] = useState<PettyCashPengajuan | null>(
+    null,
+  );
+  const [ulangLoading, setUlangLoading] = useState(!!ulangId);
+
+  useEffect(() => {
+    if (!ulangId) return;
+    setUlangLoading(true);
+    (async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const src = await fetchPengajuanById(Number(ulangId));
+        if (src.user_id !== user?.id) {
+          throw new Error("Pengajuan ini bukan milik Anda.");
+        }
+        if (src.status !== "Rejected") {
+          throw new Error("Hanya Pengajuan yang ditolak yang bisa diajukan ulang.");
+        }
+        const coa = src.items?.find((it) => it.coa)?.coa ?? null;
+        if (coa) setLourdesCoa(coa);
+        setTemplateItems(src.items || []);
+        setNotes(src.notes || "");
+        setAttachments(src.attachments || []);
+        setUlangSource(src);
+        toast.success(
+          `Data dari ${src.kode_pengajuan} dimuat - perbaiki lalu kirim sebagai Pengajuan baru.`,
+        );
+      } catch (error: any) {
+        toast.error("Gagal memuat Pengajuan yang ditolak", {
+          description: error.message,
+        });
+      } finally {
+        setUlangLoading(false);
+      }
+    })();
+  }, [ulangId]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -279,6 +334,14 @@ export default function InputPengajuanClient() {
 
   const removeAttachment = (index: number) =>
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+
+  // "Pakai Template" - lewat ?template=<id> yang sama dgn tombol "Gunakan" di
+  // halaman Template Pengajuan; param lain (mis. ?ulang=) dipertahankan.
+  const applyTemplate = (id: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("template", String(id));
+    router.replace(`/petty-cash/input-pengajuan?${params.toString()}`);
+  };
 
   const handleSubmit = async () => {
     // Dicek ulang pakai jam lokal SAAT INI (bukan minDate yang bisa sedikit
@@ -390,6 +453,27 @@ export default function InputPengajuanClient() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 pb-10 items-start">
         {/* KOLOM KIRI: FORM UTAMA */}
         <div className="xl:col-span-2 space-y-6">
+          {ulangSource && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>
+                Mengajukan ulang {ulangSource.kode_pengajuan} yang ditolak
+              </AlertTitle>
+              <AlertDescription>
+                Barang, catatan, dan lampiran sudah dimuat dari Pengajuan
+                lama. Perbaiki sesuai alasan penolakan (
+                <Link
+                  href={`/petty-cash/pengajuan/${ulangSource.id}`}
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  lihat detail
+                </Link>
+                ), pilih ulang tanggal dibutuhkan, lalu kirim sebagai
+                Pengajuan baru.
+              </AlertDescription>
+            </Alert>
+          )}
           <Card>
             <CardHeader className="border-b bg-muted/20 pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -452,7 +536,11 @@ export default function InputPengajuanClient() {
                   </span>
                 </Label>
                 <RichMentionEditor
+                  key={ulangSource ? `ulang-${ulangSource.id}` : "new"}
                   ref={notesEditorRef}
+                  initialContent={
+                    ulangSource ? parseRichValue(ulangSource.notes) : undefined
+                  }
                   placeholder="Konteks/keterangan tambahan untuk pengajuan ini..."
                   onChange={() =>
                     setNotes(
@@ -484,6 +572,12 @@ export default function InputPengajuanClient() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
+              <div className="flex justify-end">
+                <PcPengajuanTemplatePicker
+                  hasItems={items.length > 0}
+                  onSelect={applyTemplate}
+                />
+              </div>
               {isLourdes && (
                 <div className="space-y-2 max-w-[220px]">
                   <Label>
@@ -505,10 +599,10 @@ export default function InputPengajuanClient() {
                   </SearchableSelect>
                 </div>
               )}
-              {templateLoading ? (
+              {templateLoading || ulangLoading ? (
                 <p className="text-sm text-muted-foreground italic flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Memuat
-                  template...
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {ulangLoading ? "Memuat Pengajuan lama..." : "Memuat template..."}
                 </p>
               ) : isLourdes && !lourdesCoa ? (
                 <p className="text-sm text-muted-foreground italic">
@@ -516,7 +610,9 @@ export default function InputPengajuanClient() {
                 </p>
               ) : (
                 <PcItemsEditor
-                  key={`${isLourdes ? lourdesCoa : "fixed"}-${templateId ?? "blank"}`}
+                  key={`${isLourdes ? lourdesCoa : "fixed"}-${
+                    templateId ?? (ulangSource ? `ulang-${ulangSource.id}` : "blank")
+                  }`}
                   initialItems={templateItems.map((it) => ({
                     ...it,
                     coa: isLourdes

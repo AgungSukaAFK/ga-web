@@ -9,6 +9,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { CheckCircle2, FileText, Receipt, Wallet, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -79,10 +80,10 @@ export function PcActivityFeed({ events }: { events: PcActivityEvent[] }) {
           {filtered.map((event) => {
             const Icon = iconFor(event);
             return (
-              <li key={event.id}>
+              <li key={event.id} className="flex items-center gap-2">
                 <Link
                   href={event.href}
-                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0 hover:bg-accent/30 rounded-md px-1 -mx-1 transition-colors"
+                  className="flex min-w-0 flex-1 items-center gap-3 py-2.5 first:pt-0 last:pb-0 hover:bg-accent/30 rounded-md px-1 -mx-1 transition-colors"
                 >
                   <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -100,6 +101,16 @@ export function PcActivityFeed({ events }: { events: PcActivityEvent[] }) {
                     {formatRelativeTime(event.timestamp)}
                   </Badge>
                 </Link>
+                {event.action && (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 px-2 text-xs"
+                  >
+                    <Link href={event.action.href}>{event.action.label}</Link>
+                  </Button>
+                )}
               </li>
             );
           })}

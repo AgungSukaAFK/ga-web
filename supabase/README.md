@@ -38,3 +38,5 @@ tetap bisa dicari.
 | `0006_feedback.sql` | Feedback user |
 | `0007_chat_admin.sql` | Chat Admin (belum dijalankan di production) |
 | `0008_global_search.sql` | Global search top bar: RPC `global_search` & `global_search_pending`, index trigram (belum dijalankan di production) |
+| `0009_petty_cash_pengembalian.sql` | Petty Cash: Deklarasi boleh diajukan ulang setelah ditolak, batas total Deklarasi = nominal tarikan, Pengembalian Dana Lebih (tabel + RPC konfirmasi Finance) (belum dijalankan di production) |
+| `0010_petty_cash_voucher_ulang.sql` | Petty Cash: Voucher boleh diajukan ulang setelah ditolak (unique Voucher aktif per Pengajuan), hapus berantai Pengajuan oleh admin ikut semua Voucher-nya (belum dijalankan di production) |

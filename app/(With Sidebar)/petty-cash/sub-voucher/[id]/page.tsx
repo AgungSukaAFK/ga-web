@@ -41,9 +41,17 @@ import {
 } from "@/services/pcDiscussionService";
 import { Attachment, PettyCashSubVoucher } from "@/type";
 import {
+  PC_DEKLARASI_STATUS_COLORS,
+  PC_DEKLARASI_STATUS_COLOR_DEFAULT,
+  PC_PENGEMBALIAN_STATUS_COLORS,
+  PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT,
   PC_SUB_VOUCHER_STATUS_COLORS,
   PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
 } from "@/type/enum";
+import {
+  computeSisaPengembalian,
+  sortDocsNewestFirst,
+} from "@/lib/pcChain";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
 import { PcAdminSubVoucherPanel } from "@/components/petty-cash/PcAdminSubVoucherPanel";
@@ -52,6 +60,7 @@ import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePet
 import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { toast } from "sonner";
+import Link from "next/link";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
@@ -209,6 +218,11 @@ function SubVoucherDetailContent({ id }: { id: string }) {
   const statusColor =
     PC_SUB_VOUCHER_STATUS_COLORS[doc.status] || PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT;
   const voucher = doc.petty_cash_voucher;
+  // Riwayat Deklarasi (termasuk yang ditolak) & Pengembalian Dana Lebih
+  // tarikan ini - lihat supabase/migrations/0009_petty_cash_pengembalian.sql.
+  const deklarasiHistory = sortDocsNewestFirst(doc.petty_cash_deklarasi);
+  const pengembalianList = doc.petty_cash_pengembalian ?? [];
+  const sisaDana = computeSisaPengembalian(doc);
 
   return (
     <>
@@ -304,6 +318,71 @@ function SubVoucherDetailContent({ id }: { id: string }) {
                       ))}
                     </div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(deklarasiHistory.length > 0 || pengembalianList.length > 0) && (
+            <Card className="print:hidden">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Deklarasi & Pengembalian Dana
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {deklarasiHistory.map((d) => (
+                  <div
+                    key={`dkl-${d.id}`}
+                    className="flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <Link
+                      href={`/petty-cash/deklarasi/${d.id}`}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Deklarasi {d.kode_deklarasi}
+                    </Link>
+                    <span className="flex items-center gap-2">
+                      {formatCurrency(d.total_amount ?? 0)}
+                      <Badge
+                        className={
+                          PC_DEKLARASI_STATUS_COLORS[d.status ?? ""] ||
+                          PC_DEKLARASI_STATUS_COLOR_DEFAULT
+                        }
+                      >
+                        {d.status}
+                      </Badge>
+                    </span>
+                  </div>
+                ))}
+                {pengembalianList.map((pg) => (
+                  <div
+                    key={`pgb-${pg.id}`}
+                    className="flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span className="font-medium">
+                      Pengembalian {pg.kode_pengembalian}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {formatCurrency(pg.amount)}
+                      <Badge
+                        className={
+                          PC_PENGEMBALIAN_STATUS_COLORS[pg.status] ||
+                          PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT
+                        }
+                      >
+                        {pg.status}
+                      </Badge>
+                    </span>
+                  </div>
+                ))}
+                {sisaDana !== null && sisaDana > 0 && (
+                  <p className="text-xs text-muted-foreground border-t pt-3">
+                    Sisa dana yang belum dikembalikan:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(sisaDana)}
+                    </span>
+                  </p>
                 )}
               </CardContent>
             </Card>

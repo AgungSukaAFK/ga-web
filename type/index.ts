@@ -697,6 +697,11 @@ export type NotificationType =
   | "pc_approved_step"
   | "pc_fully_approved"
   | "pc_rejected"
+  | "pc_payment_requested"
+  | "pc_paid"
+  | "pc_return_submitted"
+  | "pc_return_confirmed"
+  | "pc_return_rejected"
   | "mr_followup_requested"
   | "po_followup_requested"
   | "support_message";
@@ -901,10 +906,19 @@ export interface PettyCashPengajuan {
   users_with_profiles?: { nama: string; email?: string } | null;
   petty_cash_budget?: { name: string; current_budget: number } | null;
   // Voucher yang sudah dibuat dari Pengajuan ini (kalau ada) - dipakai utk
-  // filter "belum di-voucher-kan" (lihat fetchApprovedPengajuanForVoucher,
-  // services/pettyCashVoucherService.ts). Satu Pengajuan cuma boleh punya
-  // SATU Voucher (unique pengajuan_id di DB), jadi arraynya panjang 0 atau 1.
-  petty_cash_voucher?: { id: number }[] | null;
+  // filter "belum punya Voucher aktif" (lihat fetchApprovedPengajuanForVoucher,
+  // services/pettyCashVoucherService.ts). Satu Pengajuan paling banyak punya
+  // SATU Voucher aktif; yang ditolak boleh diajukan ulang dan tetap ikut di
+  // sini sbg riwayat (supabase/migrations/0010_petty_cash_voucher_ulang.sql) -
+  // pilih lewat getActiveDoc/pickCurrentDoc, lib/pcChain.ts.
+  petty_cash_voucher?:
+    | {
+        id: number;
+        kode_voucher?: string;
+        status?: string;
+        created_at?: string | Date;
+      }[]
+    | null;
 }
 
 // ==========================================
@@ -1042,10 +1056,60 @@ export interface PettyCashSubVoucher {
   // sama pola dengan petty_cash_voucher?/petty_cash_deklarasi? di tabel
   // lain. fetchVoucherById (services/pettyCashVoucherService.ts) join lebih
   // lengkap (kode_deklarasi/status) utk tabel "Riwayat Sub-Voucher" di
-  // halaman detail Voucher.
+  // halaman detail Voucher. Bisa lebih dari 1 baris (Deklarasi yang ditolak
+  // + pengajuan ulangnya) - pilih yang berlaku lewat pickCurrentDoc
+  // (lib/pcChain.ts), jangan `[0]`.
   petty_cash_deklarasi?:
-    | { id: number; kode_deklarasi?: string; status?: string }[]
+    | {
+        id: number;
+        kode_deklarasi?: string;
+        status?: string;
+        total_amount?: number;
+        created_at?: string | Date;
+      }[]
     | null;
+  petty_cash_pengembalian?:
+    | Pick<PettyCashPengembalian, "id" | "kode_pengembalian" | "amount" | "status">[]
+    | null;
+}
+
+// ==========================================
+// PENGEMBALIAN DANA LEBIH - tabel `petty_cash_pengembalian`
+// (supabase/migrations/0009_petty_cash_pengembalian.sql). Kalau Deklarasi
+// yang disetujui lebih kecil dari nominal tarikan, requester mengembalikan
+// sisanya (wajib bukti setor) lewat RPC create_petty_cash_pengembalian.
+// Budget baru bertambah setelah Finance approver mengkonfirmasi
+// (confirm_petty_cash_pengembalian). Tidak ikut syarat Voucher "Selesai".
+// ==========================================
+export interface PettyCashPengembalian {
+  id: number;
+  kode_pengembalian: string;
+  sub_voucher_id: number;
+  voucher_id: number;
+  user_id: string;
+  amount: number;
+  notes: string | null;
+  // Bukti setor/transfer balik dari requester.
+  attachments: Attachment[];
+  // Lihat PC_PENGEMBALIAN_STATUS_OPTIONS, type/enum.ts.
+  status: string;
+  reject_reason: string | null;
+  processed_at: string | Date | null;
+  processed_by: string | null;
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain).
+  petty_cash_sub_voucher?: { kode_sub_voucher: string; amount: number } | null;
+  petty_cash_voucher?: {
+    kode_voucher: string;
+    company_code?: string;
+    department?: string;
+  } | null;
+  users_with_profiles?: { nama: string; email?: string } | null;
+  processed_by_profile?: { nama: string } | null;
 }
 
 // ==========================================
@@ -1094,14 +1158,18 @@ export interface PettyCashBudgetHistory {
   // ditarik dikembalikan ke current_budget, simetris kebalikan dari
   // "deduction". "adjustment" juga dipakai selisih nominal dari
   // admin_force_update_sub_voucher (edit paksa qty/harga admin), bukan cuma
-  // top-up manual GA/Admin di halaman Budgeting.
+  // top-up manual GA/Admin di halaman Budgeting. "pengembalian" = Finance
+  // mengkonfirmasi Pengembalian Dana Lebih (confirm_petty_cash_pengembalian,
+  // supabase/migrations/0009_petty_cash_pengembalian.sql) - ref_id tetap id
+  // Sub-Voucher-nya, sama seperti "deduction"/"refund".
   ref_type:
     | "initial"
     | "topup"
     | "adjustment"
     | "deduction"
     | "deactivate"
-    | "refund";
+    | "refund"
+    | "pengembalian";
   ref_id: number | null;
   user_id: string | null;
   change_amount: number;
@@ -1117,9 +1185,11 @@ export interface PettyCashBudgetHistory {
 // Sub-Voucher ditarik (lihat PettyCashSubVoucher di atas) - requester
 // melaporkan pemakaian RIIL dana yang sudah dicairkan lewat sub-voucher itu
 // - lihat createDeklarasiFromSubVoucher,
-// services/pettyCashDeklarasiService.ts. Satu Sub-Voucher cuma boleh dipakai
-// untuk SATU Deklarasi (unique sub_voucher_id di DB, lihat
-// supabase/migrations/0004_petty_cash.sql (asal: petty_cash_deklarasi_sub_voucher_setup.sql)).
+// services/pettyCashDeklarasiService.ts. Satu Sub-Voucher paling banyak
+// punya SATU Deklarasi aktif (status selain "Rejected") - yang ditolak boleh
+// diajukan ulang, baris lamanya tetap jadi riwayat (unique index parsial,
+// lihat supabase/migrations/0009_petty_cash_pengembalian.sql & helper
+// pickCurrentDoc, lib/pcChain.ts).
 //
 // BEDA dari Voucher (snapshot APA ADANYA dari Pengajuan): item Deklarasi
 // disalin dari Voucher asalnya TAPI qty/unit_price/note per baris BOLEH
@@ -1183,8 +1253,9 @@ export interface PettyCashDeklarasi {
 // Sub-Voucher -> Deklarasi) dalam satu nested select, BEDA dari field
 // petty_cash_voucher?/petty_cash_deklarasi? di tipe dasar yang cuma
 // existence-check (id/kode/status seadanya). Struktur array tetap dipakai
-// utk relasi 1:0..1 (voucher per pengajuan, deklarasi per sub-voucher) sama
-// seperti konvensi tipe dasarnya - selalu panjang 0 atau 1.
+// utk relasi 1:0..1 (voucher per pengajuan) sama seperti konvensi tipe
+// dasarnya. Deklarasi per sub-voucher bisa lebih dari 1 (yang ditolak +
+// pengajuan ulangnya) - pakai pickCurrentDoc (lib/pcChain.ts).
 // ==========================================
 
 export interface PettyCashSubVoucherWithChain extends PettyCashSubVoucher {

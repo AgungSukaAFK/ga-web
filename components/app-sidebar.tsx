@@ -30,6 +30,7 @@ import { AVATAR_UPDATED_EVENT } from "@/lib/avatar";
 import { useNotification } from "@/components/providers/NotificationProvider";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
 import { useSupportChatBadge } from "@/hooks/use-support-chat-badge";
+import { usePcBadge } from "@/hooks/use-pc-badge";
 import { GalleryVerticalEnd, SearchX } from "lucide-react";
 import Image from "next/image";
 
@@ -59,6 +60,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { isNew: hasNewUpdateWebPost } = useUpdateWebBadge(user?.id);
   // Badge Chat Admin - lihat hooks/use-support-chat-badge.ts.
   const supportBadge = useSupportChatBadge(user?.id);
+  // Badge Petty Cash (antrian approval/Finance & "Perlu Tindakan Anda") -
+  // lihat hooks/use-pc-badge.ts utk kenapa di-refresh lewat key ini.
+  const pcBadge = usePcBadge(
+    user?.id,
+    profile,
+    `${unreadCount}|${currentPath.startsWith("/petty-cash") ? currentPath : ""}`,
+  );
 
   React.useEffect(() => {
     const getUser = async () => {
@@ -121,11 +129,21 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const baseNavGroups = React.useMemo(() => buildNavGroups(profile), [profile]);
 
   const navGroups = React.useMemo(() => {
+    // Approver PC tidak harus ber-role approver (siapa pun bisa tercantum di
+    // Template Approval) - kalau menu Approval-nya tersembunyi, antriannya
+    // ikut dihitung di badge Dashboard (panel "Perlu Anda Proses" ada di sana).
+    const hasPcApprovalMenu = baseNavGroups.some((g) =>
+      g.items.some((item) => item.url === "/petty-cash/approval"),
+    );
     const badges: Record<string, number | undefined> = {
       "/notifications": unreadCount,
       "/update-web": hasNewUpdateWebPost ? 1 : undefined,
       "/chat-admin": supportBadge.userUnread || undefined,
       "/chat-admin-management": supportBadge.adminWaiting || undefined,
+      "/petty-cash":
+        pcBadge.myActions + (hasPcApprovalMenu ? 0 : pcBadge.approvals) ||
+        undefined,
+      "/petty-cash/approval": pcBadge.approvals || undefined,
     };
     return baseNavGroups.map((g) => ({
       ...g,
@@ -142,6 +160,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     hasNewUpdateWebPost,
     supportBadge.userUnread,
     supportBadge.adminWaiting,
+    pcBadge.myActions,
+    pcBadge.approvals,
   ]);
 
   const searching = normalizeSearch(query) !== "";

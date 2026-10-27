@@ -74,6 +74,7 @@ export type BudgetHistoryKind =
   | "deduction"
   | "correction"
   | "refund"
+  | "pengembalian"
   | "status";
 
 export const BUDGET_HISTORY_KINDS: Record<
@@ -111,6 +112,10 @@ export const BUDGET_HISTORY_KINDS: Record<
   refund: {
     label: "Refund",
     className: "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300",
+  },
+  pengembalian: {
+    label: "Pengembalian Dana",
+    className: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
   },
   status: {
     label: "Status Aktif",

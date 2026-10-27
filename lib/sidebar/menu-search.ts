@@ -43,6 +43,7 @@ const MENU_KEYWORDS: Record<string, string[]> = {
   "/petty-cash/template-approval": ["pc", "approval", "persetujuan", "alur persetujuan", "workflow", "template"],
   "/petty-cash/approval": ["pc", "approval", "persetujuan", "setuju", "validasi", "approve", "acc"],
   "/petty-cash/pengajuan-saya": ["pc", "pengajuan", "request saya", "kas kecil"],
+  "/petty-cash/template-pengajuan": ["pc", "template", "format pengajuan", "barang rutin", "atk", "kas kecil"],
   "/petty-cash/deklarasi": ["pc", "deklarasi", "laporan", "realisasi", "reimburse", "pertanggungjawaban", "nota", "struk"],
   "/dokumentasi": ["docs", "panduan", "bantuan", "help", "manual", "tutorial", "cara"],
   "/update-web": ["changelog", "rilis", "release", "versi", "pengumuman", "berita", "info terbaru", "whats new"],

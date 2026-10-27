@@ -16,6 +16,11 @@
 // sudah "Menunggu Pembayaran" (lihat komentar PettyCashSubVoucher,
 // type/index.ts). Menyelesaikan pembayaran WAJIB sertakan bukti transfer -
 // dijamin di RPC mark_petty_cash_sub_voucher_paid, bukan cuma validasi UI.
+//
+// Sesi ke-5 ("Konfirmasi Pengembalian Dana") kebalikan dari sesi ke-4 -
+// requester mengembalikan sisa dana tarikan (lihat
+// services/pettyCashPengembalianService.ts), Finance mengkonfirmasi uangnya
+// sudah diterima (budget bertambah) atau menolak dengan alasan.
 
 "use client";
 
@@ -46,6 +51,7 @@ import {
   Attachment,
   PettyCashDeklarasi,
   PettyCashPengajuan,
+  PettyCashPengembalian,
   PettyCashSubVoucher,
   PettyCashVoucher,
 } from "@/type";
@@ -71,10 +77,16 @@ import {
   fetchSubVoucherPaymentQueue,
   markSubVoucherPaid,
 } from "@/services/pettyCashSubVoucherService";
+import {
+  fetchPengembalianQueue,
+  confirmPengembalian,
+  rejectPengembalian,
+} from "@/services/pettyCashPengembalianService";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcRequesterHistoryDialog } from "@/components/petty-cash/PcRequesterHistoryDialog";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
+import { PcPengembalianConfirmPanel } from "@/components/petty-cash/PcPengembalianConfirmPanel";
 import {
   Loader2,
   RefreshCcw,
@@ -112,6 +124,9 @@ export default function ApprovalPettyCashClient() {
     [],
   );
   const [paymentQueue, setPaymentQueue] = useState<PettyCashSubVoucher[]>([]);
+  const [pengembalianQueue, setPengembalianQueue] = useState<
+    PettyCashPengembalian[]
+  >([]);
 
   const [selectedPengajuan, setSelectedPengajuan] =
     useState<PettyCashPengajuan | null>(null);
@@ -121,11 +136,14 @@ export default function ApprovalPettyCashClient() {
     useState<PettyCashDeklarasi | null>(null);
   const [selectedPayment, setSelectedPayment] =
     useState<PettyCashSubVoucher | null>(null);
+  const [selectedPengembalian, setSelectedPengembalian] =
+    useState<PettyCashPengembalian | null>(null);
 
   const [processingPengajuan, setProcessingPengajuan] = useState(false);
   const [processingVoucher, setProcessingVoucher] = useState(false);
   const [processingDeklarasi, setProcessingDeklarasi] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [processingPengembalian, setProcessingPengembalian] = useState(false);
 
   const isFinanceApprover = (p: Profile | null) =>
     !!p && (p.role === "admin" || (p.department === "Finance" && p.role === "approver"));
@@ -153,18 +171,24 @@ export default function ApprovalPettyCashClient() {
       };
       setProfile(currentProfile);
 
-      const [pengajuan, voucher, deklarasi, payment] = await Promise.all([
-        fetchPengajuanApprovalQueue(user.id),
-        fetchVoucherApprovalQueue(user.id),
-        fetchDeklarasiApprovalQueue(user.id),
-        isFinanceApprover(currentProfile)
-          ? fetchSubVoucherPaymentQueue(currentProfile.company)
-          : Promise.resolve([]),
-      ]);
+      const finance = isFinanceApprover(currentProfile);
+      const [pengajuan, voucher, deklarasi, payment, pengembalian] =
+        await Promise.all([
+          fetchPengajuanApprovalQueue(user.id),
+          fetchVoucherApprovalQueue(user.id),
+          fetchDeklarasiApprovalQueue(user.id),
+          finance
+            ? fetchSubVoucherPaymentQueue(currentProfile.company)
+            : Promise.resolve([]),
+          finance
+            ? fetchPengembalianQueue(currentProfile.company)
+            : Promise.resolve([]),
+        ]);
       setPengajuanQueue(pengajuan);
       setVoucherQueue(voucher);
       setDeklarasiQueue(deklarasi);
       setPaymentQueue(payment);
+      setPengembalianQueue(pengembalian);
     } catch (error: any) {
       toast.error("Gagal memuat antrian approval", {
         description: error.message,
@@ -193,6 +217,10 @@ export default function ApprovalPettyCashClient() {
   const refetchPayment = async () => {
     if (!profile || !isFinanceApprover(profile)) return;
     setPaymentQueue(await fetchSubVoucherPaymentQueue(profile.company));
+  };
+  const refetchPengembalian = async () => {
+    if (!profile || !isFinanceApprover(profile)) return;
+    setPengembalianQueue(await fetchPengembalianQueue(profile.company));
   };
 
   // --- Pengajuan ---
@@ -394,6 +422,43 @@ export default function ApprovalPettyCashClient() {
       });
     } finally {
       setProcessingPayment(false);
+    }
+  };
+
+  // --- Konfirmasi Pengembalian Dana (Finance) ---
+  const handleConfirmPengembalian = async () => {
+    if (!selectedPengembalian) return;
+    setProcessingPengembalian(true);
+    try {
+      await confirmPengembalian(selectedPengembalian.id);
+      toast.success(
+        `${selectedPengembalian.kode_pengembalian} dikonfirmasi, budget sudah bertambah.`,
+      );
+      setSelectedPengembalian(null);
+      await refetchPengembalian();
+    } catch (error: any) {
+      toast.error("Gagal mengkonfirmasi pengembalian", {
+        description: error.message,
+      });
+    } finally {
+      setProcessingPengembalian(false);
+    }
+  };
+
+  const handleRejectPengembalian = async (reason: string) => {
+    if (!selectedPengembalian) return;
+    setProcessingPengembalian(true);
+    try {
+      await rejectPengembalian(selectedPengembalian.id, reason);
+      toast.success(`${selectedPengembalian.kode_pengembalian} ditolak.`);
+      setSelectedPengembalian(null);
+      await refetchPengembalian();
+    } catch (error: any) {
+      toast.error("Gagal menolak pengembalian", {
+        description: error.message,
+      });
+    } finally {
+      setProcessingPengembalian(false);
     }
   };
 
@@ -683,6 +748,79 @@ export default function ApprovalPettyCashClient() {
                           size="sm"
                           variant="secondary"
                           onClick={() => openPaymentDialog(sv)}
+                        >
+                          Proses
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
+      )}
+
+      {/* --- SESI 5: KONFIRMASI PENGEMBALIAN DANA (Finance/admin only) --- */}
+      {isFinanceApprover(profile) && (
+        <Content
+          title="Konfirmasi Pengembalian Dana"
+          description="Sisa dana tarikan yang dikembalikan requester - konfirmasi setelah uangnya benar-benar diterima."
+        >
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[850px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Kode Pengembalian</TableHead>
+                  <TableHead className="w-[180px]">Dari Tarikan</TableHead>
+                  <TableHead>Pemohon</TableHead>
+                  <TableHead className="w-[140px]">Departemen</TableHead>
+                  <TableHead className="w-[150px] text-right">
+                    Nominal Dikembalikan
+                  </TableHead>
+                  <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center h-32">
+                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                    </TableCell>
+                  </TableRow>
+                ) : pengembalianQueue.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center h-32 text-muted-foreground"
+                    >
+                      <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                      Tidak ada pengembalian dana yang menunggu konfirmasi.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pengembalianQueue.map((pg) => (
+                    <TableRow key={pg.id}>
+                      <TableCell className="font-semibold text-sm">
+                        {pg.kode_pengembalian}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {pg.petty_cash_sub_voucher?.kode_sub_voucher || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {pg.users_with_profiles?.nama || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {pg.petty_cash_voucher?.department || "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm">
+                        {formatCurrency(pg.amount)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setSelectedPengembalian(pg)}
                         >
                           Proses
                         </Button>
@@ -989,6 +1127,43 @@ export default function ApprovalPettyCashClient() {
               subVoucher={selectedPayment}
               processing={processingPayment}
               onSubmit={handleSubmitPayment}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG KONFIRMASI PENGEMBALIAN DANA */}
+      <Dialog
+        open={!!selectedPengembalian}
+        onOpenChange={(open) => !open && setSelectedPengembalian(null)}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>Pengembalian {selectedPengembalian?.kode_pengembalian}</span>
+              {selectedPengembalian && (
+                <Link
+                  href={`/petty-cash/sub-voucher/${selectedPengembalian.sub_voucher_id}`}
+                  target="_blank"
+                  className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
+                >
+                  Detail Tarikan <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Cek bukti setor/transfer dari requester. Budget baru bertambah
+              setelah dikonfirmasi.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPengembalian && (
+            <PcPengembalianConfirmPanel
+              key={selectedPengembalian.id}
+              pengembalian={selectedPengembalian}
+              processing={processingPengembalian}
+              onConfirm={handleConfirmPengembalian}
+              onReject={handleRejectPengembalian}
             />
           )}
         </DialogContent>

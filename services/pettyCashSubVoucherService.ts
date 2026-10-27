@@ -32,6 +32,11 @@ import {
   PettyCashVoucher,
 } from "@/type";
 import { generateRandomId } from "@/lib/utils";
+import { getActiveDoc } from "@/lib/pcChain";
+import {
+  notifyFinanceOnPcPaymentRequested,
+  notifyOnPcPaid,
+} from "@/lib/notifications/client";
 
 const supabase = createClient();
 
@@ -40,7 +45,9 @@ const SUB_VOUCHER_WITH_VOUCHER = `
     department, week_of_month, site, petty_cash_pengajuan(kode_pengajuan),
     petty_cash_budget(name, current_budget)),
   users_with_profiles:profiles!user_id(nama, email),
-  paid_by_profile:profiles!paid_by(nama)
+  paid_by_profile:profiles!paid_by(nama),
+  petty_cash_deklarasi(id, kode_deklarasi, status, total_amount, created_at),
+  petty_cash_pengembalian(id, kode_pengembalian, amount, status)
 `;
 
 /**
@@ -61,8 +68,9 @@ const generateSubVoucherCode = async (
 };
 
 /**
- * SEMUA Sub-Voucher milik `userId` yang belum ada Deklarasi-nya, TANPA
- * filter status pembayaran - dipakai checkPengajuanEligibility
+ * SEMUA Sub-Voucher milik `userId` yang belum punya Deklarasi aktif
+ * (belum pernah dideklarasikan, atau Deklarasi-nya ditolak), TANPA filter
+ * status pembayaran - dipakai checkPengajuanEligibility
  * (services/pettyCashPengajuanService.ts) supaya requester tetap tidak boleh
  * membuat Pengajuan baru selama masih ada tarikan yang belum tuntas, baik
  * yang masih "Menunggu Pembayaran" MAUPUN yang sudah "Selesai" tapi belum
@@ -74,24 +82,23 @@ export const fetchPendingSubVouchers = async (
 ): Promise<PettyCashSubVoucher[]> => {
   const { data, error } = await supabase
     .from("petty_cash_sub_voucher")
-    .select("id, kode_sub_voucher, status, petty_cash_deklarasi(id)")
+    .select("id, kode_sub_voucher, status, petty_cash_deklarasi(id, status)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   const rows = (data ?? []) as unknown as PettyCashSubVoucher[];
-  return rows.filter(
-    (row) =>
-      !row.petty_cash_deklarasi || row.petty_cash_deklarasi.length === 0,
-  );
+  return rows.filter((row) => !getActiveDoc(row.petty_cash_deklarasi));
 };
 
 /**
  * Sub-voucher milik `userId` yang SUDAH "Selesai" (sudah dibayar Finance)
- * dan BELUM dideklarasikan - dipakai halaman Deklarasi (menggantikan
- * fetchClaimedVouchersForDeklarasi yang lama). Sub-voucher yang masih
- * "Menunggu Pembayaran" SENGAJA tidak ikut - requester belum benar-benar
- * menerima dananya, jadi belum ada yang bisa dideklarasikan.
+ * dan belum punya Deklarasi aktif - dipakai halaman Deklarasi (menggantikan
+ * fetchClaimedVouchersForDeklarasi yang lama). Termasuk yang Deklarasi-nya
+ * ditolak (boleh diajukan ulang, riwayatnya ikut di `petty_cash_deklarasi`).
+ * Sub-voucher yang masih "Menunggu Pembayaran" SENGAJA tidak ikut -
+ * requester belum benar-benar menerima dananya, jadi belum ada yang bisa
+ * dideklarasikan.
  */
 export const fetchSubVouchersForDeklarasi = async (
   userId: string,
@@ -101,7 +108,7 @@ export const fetchSubVouchersForDeklarasi = async (
     .select(
       `*, petty_cash_voucher(kode_voucher, total_amount, items, company_code,
         department, week_of_month, site),
-       petty_cash_deklarasi(id)`,
+       petty_cash_deklarasi(id, kode_deklarasi, status, created_at)`,
     )
     .eq("user_id", userId)
     .eq("status", "Selesai")
@@ -109,10 +116,7 @@ export const fetchSubVouchersForDeklarasi = async (
 
   if (error) throw error;
   const rows = (data ?? []) as unknown as PettyCashSubVoucher[];
-  return rows.filter(
-    (row) =>
-      !row.petty_cash_deklarasi || row.petty_cash_deklarasi.length === 0,
-  );
+  return rows.filter((row) => !getActiveDoc(row.petty_cash_deklarasi));
 };
 
 export const fetchSubVoucherById = async (
@@ -236,7 +240,7 @@ export interface SubVoucherDraw {
  * dkk.).
  */
 export const createSubVoucher = async (
-  voucher: Pick<PettyCashVoucher, "id" | "kode_voucher">,
+  voucher: Pick<PettyCashVoucher, "id" | "kode_voucher" | "company_code">,
   draws: SubVoucherDraw[],
   notes: string,
 ): Promise<PettyCashSubVoucher> => {
@@ -290,7 +294,14 @@ export const createSubVoucher = async (
       throw error;
     }
 
-    return data as unknown as PettyCashSubVoucher;
+    const created = data as unknown as PettyCashSubVoucher;
+    notifyFinanceOnPcPaymentRequested({
+      companyCode: voucher.company_code,
+      subVoucherId: created.id,
+      kode: created.kode_sub_voucher,
+      amount: created.amount,
+    });
+    return created;
   }
 
   throw new Error("Gagal membuat sub-voucher setelah beberapa percobaan.");
@@ -306,9 +317,19 @@ export const markSubVoucherPaid = async (
   id: number,
   paymentProof: Attachment[],
 ): Promise<void> => {
-  const { error } = await supabase.rpc("mark_petty_cash_sub_voucher_paid", {
-    p_id: id,
-    p_payment_proof: paymentProof,
-  });
+  const { data, error } = await supabase.rpc(
+    "mark_petty_cash_sub_voucher_paid",
+    {
+      p_id: id,
+      p_payment_proof: paymentProof,
+    },
+  );
   if (error) throw error;
+  const paid = data as unknown as PettyCashSubVoucher;
+  notifyOnPcPaid({
+    requesterId: paid.user_id,
+    subVoucherId: paid.id,
+    kode: paid.kode_sub_voucher,
+    amount: paid.amount,
+  });
 };

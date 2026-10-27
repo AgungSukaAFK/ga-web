@@ -16,6 +16,12 @@
 
 import { formatCurrency } from "@/lib/utils";
 import {
+  getActiveDoc,
+  pickCurrentDoc,
+  sortDocsNewestFirst,
+  toEmbedArray,
+} from "@/lib/pcChain";
+import {
   PettyCashPengajuanWithChain,
   PettyCashSubVoucherWithChain,
   PettyCashVoucherWithChain,
@@ -97,9 +103,11 @@ export const computePcOverallStatus = (
     });
   }
 
-  // pengajuan.status === "Approved" mulai dari sini.
-  const voucher: PettyCashVoucherWithChain | null =
-    pengajuan.petty_cash_voucher?.[0] ?? null;
+  // pengajuan.status === "Approved" mulai dari sini. Voucher yang berlaku =
+  // yang aktif, atau yang ditolak paling akhir kalau belum diajukan ulang.
+  const voucher: PettyCashVoucherWithChain | null = pickCurrentDoc(
+    pengajuan.petty_cash_voucher,
+  );
 
   if (!voucher) {
     return statusOf("menunggu_ajukan_voucher", {
@@ -109,10 +117,14 @@ export const computePcOverallStatus = (
     });
   }
 
+  // Voucher yang ditolak BOLEH diajukan ulang dari Pengajuan yang sama
+  // (sejak supabase/migrations/0010_petty_cash_voucher_ulang.sql), jadi ini
+  // giliran requester, bukan jalan buntu.
   if (voucher.status === "Rejected") {
     return statusOf("voucher_ditolak", {
-      label: "Voucher Ditolak",
-      tone: "rejected",
+      label: "Voucher Ditolak, Ajukan Ulang",
+      tone: "action",
+      turn: "Anda",
     });
   }
   if (voucher.status === "In Approval") {
@@ -141,21 +153,29 @@ export const computePcOverallStatus = (
   const total = subVouchers.length;
   const fraction = (n: number) => `${n} dari ${total} tarikan`;
 
-  const deklarasiDitolak = subVouchers.filter((sv) =>
-    (sv.petty_cash_deklarasi ?? []).some((d) => d.status === "Rejected"),
+  // Status Deklarasi per tarikan = Deklarasi yang berlaku (aktif, atau yang
+  // ditolak paling akhir kalau belum diajukan ulang) - lihat
+  // pickCurrentDoc, lib/pcChain.ts.
+  const deklarasiStatusOf = (sv: PettyCashSubVoucherWithChain) =>
+    pickCurrentDoc(sv.petty_cash_deklarasi)?.status ?? null;
+
+  // Deklarasi yang ditolak BOLEH diajukan ulang (sejak
+  // supabase/migrations/0009_petty_cash_pengembalian.sql), jadi ini giliran
+  // requester, bukan jalan buntu.
+  const deklarasiDitolak = subVouchers.filter(
+    (sv) => deklarasiStatusOf(sv) === "Rejected",
   );
   if (deklarasiDitolak.length > 0) {
     return statusOf("deklarasi_ditolak", {
-      label: "Deklarasi Ditolak, Perlu Tindak Lanjut",
-      tone: "rejected",
+      label: "Deklarasi Ditolak, Ajukan Ulang",
+      tone: "action",
+      turn: "Anda",
       detail: fraction(deklarasiDitolak.length),
     });
   }
 
   const belumDiajukanDeklarasi = subVouchers.filter(
-    (sv) =>
-      sv.status === "Selesai" &&
-      (!sv.petty_cash_deklarasi || sv.petty_cash_deklarasi.length === 0),
+    (sv) => sv.status === "Selesai" && deklarasiStatusOf(sv) === null,
   );
   if (belumDiajukanDeklarasi.length > 0) {
     return statusOf("menunggu_ajukan_deklarasi", {
@@ -176,8 +196,8 @@ export const computePcOverallStatus = (
     });
   }
 
-  const deklarasiMenunggu = subVouchers.filter((sv) =>
-    (sv.petty_cash_deklarasi ?? []).some((d) => d.status === "In Approval"),
+  const deklarasiMenunggu = subVouchers.filter(
+    (sv) => deklarasiStatusOf(sv) === "In Approval",
   );
   if (deklarasiMenunggu.length > 0) {
     return statusOf("deklarasi_menunggu_approval", {
@@ -227,8 +247,9 @@ export interface PcChainStep {
 export const computeChainSteps = (
   pengajuan: PettyCashPengajuanWithChain,
 ): PcChainStep[] => {
-  const voucher: PettyCashVoucherWithChain | null =
-    pengajuan.petty_cash_voucher?.[0] ?? null;
+  const voucher: PettyCashVoucherWithChain | null = pickCurrentDoc(
+    pengajuan.petty_cash_voucher,
+  );
   const subVouchers: PettyCashSubVoucherWithChain[] =
     voucher?.petty_cash_sub_voucher ?? [];
 
@@ -281,15 +302,12 @@ export const computeChainSteps = (
   if (subVouchers.length === 0) {
     deklarasiStep = { key: "deklarasi", label: "Deklarasi", state: "pending" };
   } else {
-    const adaDeklarasi = subVouchers.filter(
-      (sv) => (sv.petty_cash_deklarasi ?? []).length > 0,
+    const current = subVouchers.map((sv) =>
+      pickCurrentDoc(sv.petty_cash_deklarasi),
     );
-    const approved = subVouchers.filter((sv) =>
-      (sv.petty_cash_deklarasi ?? []).some((d) => d.status === "Approved"),
-    );
-    const rejected = subVouchers.some((sv) =>
-      (sv.petty_cash_deklarasi ?? []).some((d) => d.status === "Rejected"),
-    );
+    const adaDeklarasi = current.filter(Boolean);
+    const approved = current.filter((d) => d?.status === "Approved");
+    const rejected = current.some((d) => d?.status === "Rejected");
     deklarasiStep = {
       key: "deklarasi",
       label: "Deklarasi",
@@ -339,6 +357,12 @@ export const buildActionItems = (
       ctaHref = "/petty-cash/pengajuan-voucher";
     } else if (status.key === "menunggu_ajukan_deklarasi") {
       ctaLabel = "Ajukan Deklarasi";
+      ctaHref = "/petty-cash/deklarasi";
+    } else if (status.key === "voucher_ditolak") {
+      ctaLabel = "Ajukan Ulang Voucher";
+      ctaHref = "/petty-cash/pengajuan-voucher";
+    } else if (status.key === "deklarasi_ditolak") {
+      ctaLabel = "Ajukan Ulang Deklarasi";
       ctaHref = "/petty-cash/deklarasi";
     }
 
@@ -393,6 +417,8 @@ export interface PcActivityEvent {
   kode: string;
   timestamp: Date;
   href: string;
+  /** Aksi lanjutan di samping baris, mis. "Ajukan Ulang" utk dokumen yang ditolak. */
+  action?: { label: string; href: string };
 }
 
 /**
@@ -434,83 +460,102 @@ export const buildActivityFeed = (
         kode: pengajuan.kode_pengajuan,
         timestamp: new Date(pengajuan.updated_at),
         href: pengajuanHref,
+        action:
+          pengajuan.status === "Rejected"
+            ? {
+                label: "Ajukan Ulang",
+                href: `/petty-cash/input-pengajuan?ulang=${pengajuan.id}`,
+              }
+            : undefined,
       });
     }
 
-    const voucher = pengajuan.petty_cash_voucher?.[0];
-    if (!voucher) continue;
-
-    events.push({
-      id: `voucher-created-${voucher.id}`,
-      type: "voucher",
-      label: "Voucher diajukan",
-      kode: voucher.kode_voucher,
-      timestamp: new Date(voucher.created_at),
-      href: pengajuanHref,
-    });
-    if (
-      voucher.status !== "In Approval" &&
-      voucher.updated_at &&
-      String(voucher.updated_at) !== String(voucher.created_at)
-    ) {
+    // Semua Voucher (yang ditolak + pengajuan ulangnya) - aksi "Ajukan
+    // Ulang" cuma muncul selama belum ada Voucher aktif.
+    const vouchers = sortDocsNewestFirst(pengajuan.petty_cash_voucher);
+    const hasActiveVoucher = !!getActiveDoc(vouchers);
+    for (const voucher of vouchers) {
       events.push({
-        id: `voucher-final-${voucher.id}`,
+        id: `voucher-created-${voucher.id}`,
         type: "voucher",
-        label:
-          voucher.status === "Rejected"
-            ? "Voucher ditolak"
-            : voucher.status === "Selesai"
-              ? "Voucher tuntas"
-              : "Voucher disetujui",
+        label: "Voucher diajukan",
         kode: voucher.kode_voucher,
-        timestamp: new Date(voucher.updated_at),
+        timestamp: new Date(voucher.created_at),
         href: pengajuanHref,
       });
-    }
-
-    for (const sv of voucher.petty_cash_sub_voucher ?? []) {
-      events.push({
-        id: `sub-voucher-created-${sv.id}`,
-        type: "tarikan",
-        label: "Tarikan dana diajukan",
-        kode: sv.kode_sub_voucher,
-        timestamp: new Date(sv.created_at),
-        href: pengajuanHref,
-      });
-      if (sv.status === "Selesai" && sv.paid_at) {
+      if (
+        voucher.status !== "In Approval" &&
+        voucher.updated_at &&
+        String(voucher.updated_at) !== String(voucher.created_at)
+      ) {
         events.push({
-          id: `sub-voucher-paid-${sv.id}`,
-          type: "tarikan",
-          label: "Tarikan dana dibayar",
-          kode: sv.kode_sub_voucher,
-          timestamp: new Date(sv.paid_at),
+          id: `voucher-final-${voucher.id}`,
+          type: "voucher",
+          label:
+            voucher.status === "Rejected"
+              ? "Voucher ditolak"
+              : voucher.status === "Selesai"
+                ? "Voucher tuntas"
+                : "Voucher disetujui",
+          kode: voucher.kode_voucher,
+          timestamp: new Date(voucher.updated_at),
           href: pengajuanHref,
+          action:
+            voucher.status === "Rejected" && !hasActiveVoucher
+              ? { label: "Ajukan Ulang", href: "/petty-cash/pengajuan-voucher" }
+              : undefined,
         });
       }
 
-      for (const d of sv.petty_cash_deklarasi ?? []) {
+      for (const sv of voucher.petty_cash_sub_voucher ?? []) {
         events.push({
-          id: `deklarasi-created-${d.id}`,
-          type: "deklarasi",
-          label: "Deklarasi diajukan",
-          kode: d.kode_deklarasi,
-          timestamp: new Date(d.created_at),
+          id: `sub-voucher-created-${sv.id}`,
+          type: "tarikan",
+          label: "Tarikan dana diajukan",
+          kode: sv.kode_sub_voucher,
+          timestamp: new Date(sv.created_at),
           href: pengajuanHref,
         });
-        if (
-          d.status !== "In Approval" &&
-          d.updated_at &&
-          String(d.updated_at) !== String(d.created_at)
-        ) {
+        if (sv.status === "Selesai" && sv.paid_at) {
           events.push({
-            id: `deklarasi-final-${d.id}`,
-            type: "deklarasi",
-            label:
-              d.status === "Approved" ? "Deklarasi disetujui" : "Deklarasi ditolak",
-            kode: d.kode_deklarasi,
-            timestamp: new Date(d.updated_at),
+            id: `sub-voucher-paid-${sv.id}`,
+            type: "tarikan",
+            label: "Tarikan dana dibayar",
+            kode: sv.kode_sub_voucher,
+            timestamp: new Date(sv.paid_at),
             href: pengajuanHref,
           });
+        }
+
+        const hasActiveDeklarasi = !!getActiveDoc(sv.petty_cash_deklarasi);
+        for (const d of toEmbedArray(sv.petty_cash_deklarasi)) {
+          events.push({
+            id: `deklarasi-created-${d.id}`,
+            type: "deklarasi",
+            label: "Deklarasi diajukan",
+            kode: d.kode_deklarasi,
+            timestamp: new Date(d.created_at),
+            href: pengajuanHref,
+          });
+          if (
+            d.status !== "In Approval" &&
+            d.updated_at &&
+            String(d.updated_at) !== String(d.created_at)
+          ) {
+            events.push({
+              id: `deklarasi-final-${d.id}`,
+              type: "deklarasi",
+              label:
+                d.status === "Approved" ? "Deklarasi disetujui" : "Deklarasi ditolak",
+              kode: d.kode_deklarasi,
+              timestamp: new Date(d.updated_at),
+              href: pengajuanHref,
+              action:
+                d.status === "Rejected" && !hasActiveDeklarasi
+                  ? { label: "Ajukan Ulang", href: "/petty-cash/deklarasi" }
+                  : undefined,
+            });
+          }
         }
       }
     }
