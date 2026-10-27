@@ -31,7 +31,6 @@ import {
   approvePengajuanStep,
   rejectPengajuanStep,
   editAndApprovePengajuanStep,
-  adminUpdatePengajuan,
   adminForceUpdatePengajuan,
 } from "@/services/pettyCashPengajuanService";
 import {
@@ -58,6 +57,7 @@ import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { toast } from "sonner";
+import { adminUpdatePcApprovals } from "@/services/adminApprovalOverrideService";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, RotateCcw } from "lucide-react";
 
@@ -202,7 +202,12 @@ function PengajuanDetailContent({ id }: { id: string }) {
   }) => {
     if (!doc) return;
     try {
-      await adminUpdatePengajuan(doc.id, patch);
+      await adminUpdatePcApprovals("pengajuan", doc.id, {
+        baselineApprovals: doc.approvals,
+        nextApprovals: patch.approvals,
+        baselineStatus: doc.status,
+        requestedStatus: patch.status,
+      });
       toast.success(`${doc.kode_pengajuan} berhasil diperbarui (override).`);
       await load();
     } catch (error: any) {

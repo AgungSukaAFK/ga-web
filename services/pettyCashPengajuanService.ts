@@ -9,7 +9,6 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Attachment,
   PettyCashPengajuan,
-  PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
   PettyCashPengajuanWithChain,
 } from "@/type";
@@ -384,28 +383,6 @@ export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashPengajuan[];
-};
-
-/**
- * Override status & approvals sebuah Pengajuan apa pun - hanya bisa
- * dieksekusi user dengan role admin (dijamin di level RLS oleh
- * petty_cash_pengajuan_update_admin, bukan cuma di client). Dipakai halaman
- * Management Petty Cash untuk membenahi dokumen yang nyangkut (mis. approver
- * resign, salah pencet, dsb) tanpa harus lewat alur approve/reject normal.
- */
-export const adminUpdatePengajuan = async (
-  id: number,
-  patch: {
-    status?: string;
-    approvals?: PettyCashPengajuanApprover[];
-  },
-): Promise<void> => {
-  const { error } = await supabase
-    .from("petty_cash_pengajuan")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) throw error;
 };
 
 export interface AdminForceEditPengajuan {

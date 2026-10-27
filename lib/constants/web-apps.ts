@@ -19,7 +19,8 @@ export const GOA_URL = (
 ).replace(/\/$/, "");
 
 /**
- * Daftar web di Team Switcher sidebar (khusus akun departemen GA). Urutan &
+ * Daftar web di Team Switcher sidebar (khusus akun departemen GA & admin
+ * IT). Urutan &
  * tampilannya disamakan dengan module switcher di web GOA.
  */
 export const WEB_APPS: WebApp[] = [

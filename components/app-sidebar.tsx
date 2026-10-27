@@ -5,7 +5,7 @@
 import * as React from "react";
 import { redirect, usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { isGADepartment } from "@/lib/constants/departments";
+import { isGADepartment, isITAdmin } from "@/lib/constants/departments";
 import {
   Sidebar,
   SidebarContent,
@@ -203,8 +203,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             priority
           />
         </div>
-        {/* Pindah ke web lain: khusus departemen GA */}
-        {isGADepartment(profile?.department) && (
+        {/* Pindah ke web lain: khusus departemen GA & admin IT */}
+        {(isGADepartment(profile?.department) || isITAdmin(profile)) && (
           <TeamSwitcher
             apps={WEB_APPS}
             roleLabel={WEB_ROLE_LABELS[profile?.role]}

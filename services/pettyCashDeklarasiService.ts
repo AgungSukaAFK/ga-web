@@ -22,7 +22,6 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Attachment,
   PettyCashDeklarasi,
-  PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
 } from "@/type";
 import { PC_APPROVAL_TYPE_DEKLARASI } from "@/type/enum";
@@ -187,26 +186,6 @@ export const fetchAllDeklarasi = async (): Promise<PettyCashDeklarasi[]> => {
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashDeklarasi[];
-};
-
-/**
- * Override status & approvals sebuah Deklarasi apa pun - admin only (dijamin
- * di RLS, lihat komentar adminUpdatePengajuan,
- * services/pettyCashPengajuanService.ts untuk alasan yang sama).
- */
-export const adminUpdateDeklarasi = async (
-  id: number,
-  patch: {
-    status?: string;
-    approvals?: PettyCashPengajuanApprover[];
-  },
-): Promise<void> => {
-  const { error } = await supabase
-    .from("petty_cash_deklarasi")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) throw error;
 };
 
 export interface AdminForceEditDeklarasi {

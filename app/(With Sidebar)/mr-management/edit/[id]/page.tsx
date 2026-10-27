@@ -119,6 +119,16 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { logActivity } from "@/services/logService";
+import {
+  applyAdminMrApprovalEffects,
+  planAdminMrApprovalUpdate,
+} from "@/services/adminApprovalOverrideService";
+import {
+  MR_APPROVAL_PHASE_STATUSES,
+  deriveApprovalOutcome,
+  deriveMrStatus,
+  resolveApprovalPhaseStatus,
+} from "@/lib/approvalOverride";
 import { LinkAttachmentForm } from "@/components/link-attachment-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
@@ -188,6 +198,13 @@ const InfoItem = ({
 
 function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   const remarksEditorRef = useRef<RichMentionEditorHandle>(null);
+  // Approvals & status MR saat terakhir dimuat dari DB - pembanding saat
+  // simpan (perubahan admin vs keputusan approver yang masuk belakangan),
+  // lihat planAdminMrApprovalUpdate.
+  const approvalBaselineRef = useRef<{
+    approvals: Approval[];
+    status: string;
+  } | null>(null);
   const mrId = parseInt(params.id);
   const router = useRouter();
 
@@ -279,6 +296,10 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
+      approvalBaselineRef.current = {
+        approvals: JSON.parse(JSON.stringify(initialData.approvals)),
+        status: initialData.status,
+      };
       // Data baru dari DB = titik "sudah tersimpan" yang baru.
       resetBaseline();
 
@@ -336,9 +357,29 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   }, [mrId, router]);
 
   const handleSaveChanges = async () => {
-    if (!mr || !currentUser) return;
+    if (!mr || !currentUser || !approvalBaselineRef.current) return;
     setActionLoading(true);
     const toastId = toast.loading("Menyimpan semua perubahan...");
+
+    // Approvals & status diproses seperti approve/reject normal (status
+    // ikut jalur approval, cek aman kalau mundur) - lihat
+    // services/adminApprovalOverrideService.ts.
+    let approvalPlan: Awaited<ReturnType<typeof planAdminMrApprovalUpdate>>;
+    try {
+      approvalPlan = await planAdminMrApprovalUpdate(Number(mr.id), {
+        baselineApprovals: approvalBaselineRef.current.approvals,
+        nextApprovals: mr.approvals,
+        baselineStatus: approvalBaselineRef.current.status,
+        requestedStatus: mr.status,
+      });
+    } catch (err: any) {
+      setActionLoading(false);
+      toast.error("Gagal menyimpan perubahan", {
+        id: toastId,
+        description: err.message,
+      });
+      return;
+    }
 
     // Hapus field relasi sebelum update
     const { cost_center, users_with_profiles, ...restOfData } = mr as any;
@@ -350,6 +391,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       prioritas: mr.prioritas,
       level: mr.level,
       due_date: mr.due_date,
+      approvals: approvalPlan.approvals,
+      status: approvalPlan.status,
     };
 
     const { error: updateError } = await supabase
@@ -373,6 +416,13 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         `Admin ${userProfile?.nama || "Unknown"} melakukan perubahan data MR ${mr.kode_mr}`,
         { updated_fields: Object.keys(updateData) }, // Simpan field apa saja yang diupdate
       );
+      await applyAdminMrApprovalEffects(approvalPlan, {
+        mrId: Number(mr.id),
+        kodeMr: mr.kode_mr,
+        creatorId: mr.userid,
+        actorId: currentUser.id,
+        actorName: userProfile?.nama || "Unknown",
+      });
 
       toast.success("Perubahan berhasil disimpan!", { id: toastId });
       setIsEditing(false);
@@ -441,22 +491,37 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     newStatus: Approval["status"],
   ) => {
     if (!mr) return;
-    const updatedApprovals = [...mr.approvals];
-    const oldStatus = updatedApprovals[index].status;
-    updatedApprovals[index].status = newStatus;
+    const oldStatus = mr.approvals[index].status;
+    // processed_at diisi saat simpan (lihat stampProcessedAt).
+    const updatedApprovals = mr.approvals.map((a, i) =>
+      i === index ? { ...a, status: newStatus } : a,
+    );
 
-    // Update timestamp jika bukan pending
-    if (newStatus !== "pending") {
-      updatedApprovals[index].processed_at = new Date().toISOString();
-    } else {
-      updatedApprovals[index].processed_at = null; // Reset jika dikembalikan ke pending
-    }
-
-    setMr({ ...mr, approvals: updatedApprovals });
+    // Status MR ikut jalur approval (Waiting PO kalau semua approve, dst.)
+    // - divalidasi ulang saat simpan.
+    const nextMrStatus = resolveApprovalPhaseStatus({
+      currentStatus: mr.status,
+      approvals: updatedApprovals,
+      phaseStatuses: MR_APPROVAL_PHASE_STATUSES,
+      derive: deriveMrStatus,
+    });
+    setMr({ ...mr, approvals: updatedApprovals, status: nextMrStatus });
     toast.info(
-      `Status approval ${updatedApprovals[index].nama} diubah: ${oldStatus} -> ${newStatus}`,
+      `Status approval ${updatedApprovals[index].nama} diubah: ${oldStatus} -> ${newStatus}` +
+        (nextMrStatus !== mr.status
+          ? `. Status MR menjadi ${nextMrStatus} setelah disimpan.`
+          : ""),
     );
   };
+
+  const expectedMrStatus = mr
+    ? deriveMrStatus(deriveApprovalOutcome(mr.approvals))
+    : null;
+  const mrStatusMismatch =
+    !!mr &&
+    expectedMrStatus !== null &&
+    (MR_APPROVAL_PHASE_STATUSES as readonly string[]).includes(mr.status) &&
+    mr.status !== expectedMrStatus;
 
   // Substitusi approver hanya boleh selama status approval masih "pending".
   // Approver yang sudah approve/reject tidak boleh diganti agar riwayat
@@ -1114,6 +1179,12 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                   </SearchableSelectContent>
                 </SearchableSelect>
               </div>
+              {mrStatusMismatch && (
+                <p className="text-xs text-destructive basis-full text-right">
+                  Status tidak sesuai jalur approval - seharusnya &quot;
+                  {expectedMrStatus}&quot;.
+                </p>
+              )}
             </div>
           </div>
         </div>

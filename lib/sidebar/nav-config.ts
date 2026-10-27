@@ -116,7 +116,7 @@ function buildMainItems(profile: NavProfile): NavItem[] {
     });
   }
 
-  if (profile?.role === "approver") {
+  if (profile?.role === "approver" || isITAdmin(profile)) {
     baseNav.splice(1, 0, {
       title: "Approval & Validation",
       url: "/approval-validation",
@@ -150,7 +150,7 @@ function buildMainItems(profile: NavProfile): NavItem[] {
     });
   }
 
-  if (profile?.role === "requester") {
+  if (profile?.role === "requester" || isITAdmin(profile)) {
     const mrIndex = baseNav.findIndex(
       (item) => item.title === "Material Request",
     );

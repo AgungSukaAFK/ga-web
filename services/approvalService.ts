@@ -363,39 +363,60 @@ export const processMrApproval = async (
 
   if (error) throw error;
 
-  // MR full approved => naikkan level tiap item non-cancelled dari
-  // "Open 1" ke "Open 2" (level MR sendiri sekarang murni agregat dari
-  // item, lihat recalculateMrLevel di mrService.ts - bukan ditulis
-  // langsung di sini lagi).
   if (isAllApproved) {
-    const orders = normalizeMrOrders((mr.orders as any[]) || []);
-    // Loop langsung atas `orders` (bukan list eksternal) - index-nya (`i`)
-    // dikasihkan sebagai preferredIndex ke updateMrItemStatus supaya kalau
-    // ada baris duplikat (part_number sama diminta 2x terpisah), tiap baris
-    // tetap ke-update di posisinya sendiri, bukan cuma baris pertama yang
-    // ke-reach (lihat komentar findMrOrderIndex di mrService.ts).
-    for (let i = 0; i < orders.length; i++) {
-      const item = orders[i];
-      if (!item.part_number) continue;
-      if (item.status === "Cancelled" || item.status === "Replaced") continue;
-      if (item.level && item.level !== "Open 1") continue;
-      try {
-        await updateMrItemStatus(
-          mrId,
-          item.part_number,
-          { level: "Open 2" },
-          userId,
-          i,
-        );
-      } catch (err) {
-        console.error(
-          `Gagal update level item MR (Open 2) untuk Part ${item.part_number}:`,
-          err,
-        );
-      }
-    }
-    await recalculateMrLevel(mrId);
+    await promoteMrItemsAfterFullApproval(mrId, userId);
   }
 
   return { success: true, newStatus };
 };
+
+// Geser level item MR (non-cancelled) `from` -> `to`, lalu hitung ulang
+// level MR (level MR murni agregat dari item, lihat recalculateMrLevel di
+// mrService.ts).
+const shiftMrItemLevels = async (
+  mrId: number,
+  userId: string,
+  from: string,
+  to: string,
+) => {
+  const { data: mr } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+  const orders = normalizeMrOrders((mr?.orders as any[]) || []);
+  // Loop langsung atas `orders` (bukan list eksternal) - index-nya (`i`)
+  // dikasihkan sebagai preferredIndex ke updateMrItemStatus supaya kalau
+  // ada baris duplikat (part_number sama diminta 2x terpisah), tiap baris
+  // tetap ke-update di posisinya sendiri, bukan cuma baris pertama yang
+  // ke-reach (lihat komentar findMrOrderIndex di mrService.ts).
+  for (let i = 0; i < orders.length; i++) {
+    const item = orders[i];
+    if (!item.part_number) continue;
+    if (item.status === "Cancelled" || item.status === "Replaced") continue;
+    // Item tanpa level dianggap masih "Open 1" (data lama).
+    if ((item.level || "Open 1") !== from) continue;
+    try {
+      await updateMrItemStatus(mrId, item.part_number, { level: to }, userId, i);
+    } catch (err) {
+      console.error(
+        `Gagal update level item MR (${to}) untuk Part ${item.part_number}:`,
+        err,
+      );
+    }
+  }
+  await recalculateMrLevel(mrId);
+};
+
+/** MR full approved => level item "Open 1" naik ke "Open 2". */
+export const promoteMrItemsAfterFullApproval = (mrId: number, userId: string) =>
+  shiftMrItemLevels(mrId, userId, "Open 1", "Open 2");
+
+/**
+ * Kebalikan promoteMrItemsAfterFullApproval - dipakai saat admin
+ * memundurkan MR dari "Waiting PO" (lihat adminApprovalOverrideService.ts).
+ */
+export const demoteMrItemsAfterApprovalRollback = (
+  mrId: number,
+  userId: string,
+) => shiftMrItemLevels(mrId, userId, "Open 2", "Open 1");

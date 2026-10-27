@@ -116,7 +116,13 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { searchVendors } from "@/services/vendorService";
-import { isMarketplaceVendor } from "@/type/enum";
+import { APPROVAL_TYPE_RECEIVER, isMarketplaceVendor } from "@/type/enum";
+import {
+  applyAdminPoApprovalEffects,
+  computePoStatusAfterApprovalChange,
+  isPoStatusBehindApprovals,
+  planAdminPoApprovalUpdate,
+} from "@/services/adminApprovalOverrideService";
 import { UserAvatar } from "@/components/user-avatar";
 import {
   FormSummaryLayout,
@@ -375,6 +381,12 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   const originalAssetRef = useRef<{ is_asset: boolean; kode_po: string } | null>(
     null,
   );
+  // Approvals & status PO saat dimuat - pembanding override approval admin
+  // (lihat planAdminPoApprovalUpdate).
+  const approvalBaselineRef = useRef<{
+    approvals: Approval[];
+    status: string;
+  } | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -502,6 +514,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
         originalAssetRef.current = {
           is_asset: !!initialData.is_asset,
           kode_po: initialData.kode_po,
+        };
+        approvalBaselineRef.current = {
+          approvals: JSON.parse(JSON.stringify(initialData.approvals)),
+          status: initialData.status,
         };
 
         // --- Init Payment Term ---
@@ -830,7 +846,23 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     const updatedApprovals = [...poForm.approvals];
     if (updatedApprovals[index]) {
       updatedApprovals[index] = { ...updatedApprovals[index], status: newStatus };
-      setPoForm({ ...poForm, approvals: updatedApprovals });
+      // Status PO ikut jalur approval, dihitung dari kondisi saat dimuat
+      // (sama seperti approver menekan Setujui/Tolak) - divalidasi ulang
+      // saat simpan.
+      const baseline = approvalBaselineRef.current;
+      const nextStatus = baseline
+        ? computePoStatusAfterApprovalChange({
+            currentStatus: baseline.status,
+            baselineApprovals: baseline.approvals,
+            nextApprovals: updatedApprovals,
+            receiveRecord: poForm.receive_record,
+          })
+        : poForm.status;
+      setPoForm({
+        ...poForm,
+        approvals: updatedApprovals,
+        status: nextStatus as PurchaseOrderPayload["status"],
+      });
     }
   };
 
@@ -865,11 +897,50 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     delete (payload as any).created_at;
     delete (payload as any).updated_at;
     delete (payload as any).id;
+    // Kolom workflow (pembayaran & penerimaan) tidak diedit di form ini -
+    // jangan ditimpa nilai lama form kalau approver/GA memprosesnya selagi
+    // form terbuka. Approvals & status: mode admin lewat
+    // planAdminPoApprovalUpdate, mode user tidak menyentuhnya.
+    delete payload.receive_record;
+    delete payload.dp_paid;
+    delete payload.bp_paid;
+    delete payload.full_received_at;
+    if (!isAdmin) {
+      delete payload.approvals;
+      delete payload.status;
+    }
 
     setActionLoading(true);
     const toastId = toast.loading(`Memperbarui PO...`);
     try {
+      const approvalPlan =
+        isAdmin && approvalBaselineRef.current
+          ? await planAdminPoApprovalUpdate(poId, {
+              baselineApprovals: approvalBaselineRef.current.approvals,
+              nextApprovals: poForm.approvals ?? [],
+              baselineStatus: approvalBaselineRef.current.status,
+              requestedStatus: poForm.status,
+            })
+          : null;
+      if (approvalPlan) {
+        Object.assign(payload, {
+          approvals: approvalPlan.approvals,
+          status: approvalPlan.status,
+          ...approvalPlan.extraPayload,
+        });
+      }
+
       await updatePurchaseOrder(poId, payload);
+
+      if (approvalPlan && currentUser) {
+        await applyAdminPoApprovalEffects(approvalPlan, {
+          poId,
+          kodePo: poForm.kode_po,
+          creatorId: poForm.user_id,
+          actorId: currentUser.id,
+          actorName: userProfile?.nama || currentUser.email || "Unknown",
+        });
+      }
 
       if (currentUser) {
         const actor = `${isAdmin ? "Admin " : ""}${userProfile?.nama || currentUser.email || "Unknown"}`;
@@ -1090,6 +1161,14 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     ),
   );
   const approvedCount = approvals.filter((a) => a.status === "approved").length;
+  // Status PO yang nyangkut di belakang approval-nya (mis. approver terakhir
+  // sudah approve tapi status masih "Pending Approval") - pilih status yang
+  // disarankan lalu simpan untuk melanjutkan workflow.
+  const poStatusBehind = isPoStatusBehindApprovals(
+    poForm.status,
+    approvals,
+    poForm.receive_record,
+  );
 
   const summaryChecks: FormSummaryCheck[] = [
     {
@@ -1330,6 +1409,12 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                   </SearchableSelectContent>
                 </SearchableSelect>
               </div>
+            )}
+            {isAdmin && poStatusBehind && (
+              <p className="text-xs text-destructive basis-full text-right">
+                Status tertinggal dari jalur approval - seharusnya &quot;
+                {poStatusBehind}&quot;.
+              </p>
             )}
             <Button onClick={handleSubmit} disabled={isBusy}>
               {actionLoading ? (
@@ -2067,12 +2152,28 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                             key={opt}
                             value={opt}
                             className="capitalize"
+                            // Receiver wajib lewat checklist Terima Barang
+                            // (lihat planAdminPoApprovalUpdate).
+                            disabled={
+                              opt === "approved" &&
+                              approver.type === APPROVAL_TYPE_RECEIVER &&
+                              approvalBaselineRef.current?.approvals[index]
+                                ?.status !== "approved"
+                            }
                           >
                             {opt}
                           </SearchableSelectItem>
                         ))}
                       </SearchableSelectContent>
                     </SearchableSelect>
+                    {approver.type === APPROVAL_TYPE_RECEIVER &&
+                      approver.status !== "approved" && (
+                        <p className="basis-full text-xs text-muted-foreground">
+                          Step Receiver di-approve lewat tombol &quot;Terima
+                          Barang&quot; di halaman detail PO (checklist qty
+                          barang diterima).
+                        </p>
+                      )}
                   </div>
                 ))}
               </div>

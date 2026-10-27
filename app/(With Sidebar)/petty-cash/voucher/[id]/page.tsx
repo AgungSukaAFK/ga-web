@@ -38,7 +38,6 @@ import {
   approveVoucherStep,
   rejectVoucherStep,
   editAndApproveVoucherStep,
-  adminUpdateVoucher,
   adminForceUpdateVoucher,
 } from "@/services/pettyCashVoucherService";
 import {
@@ -68,6 +67,7 @@ import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { pickCurrentDoc } from "@/lib/pcChain";
 import { toast } from "sonner";
+import { adminUpdatePcApprovals } from "@/services/adminApprovalOverrideService";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
@@ -211,7 +211,12 @@ function VoucherDetailContent({ id }: { id: string }) {
   }) => {
     if (!doc) return;
     try {
-      await adminUpdateVoucher(doc.id, patch);
+      await adminUpdatePcApprovals("voucher", doc.id, {
+        baselineApprovals: doc.approvals,
+        nextApprovals: patch.approvals,
+        baselineStatus: doc.status,
+        requestedStatus: patch.status,
+      });
       toast.success(`${doc.kode_voucher} berhasil diperbarui (override).`);
       await load();
     } catch (error: any) {

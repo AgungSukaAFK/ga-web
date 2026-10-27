@@ -5,7 +5,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { isGADepartment } from "@/lib/constants/departments";
+import { isGADepartment, isITAdmin } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,8 +86,9 @@ function ApprovalValidationContent() {
           setPendingApprovalMRs(myMrApprovals);
           setPendingApprovalPOs(myPoApprovals);
 
-          // 2. Fetch data tambahan KHUSUS jika user adalah General Affair (atau setara)
-          if (isGADepartment(profile?.department)) {
+          // 2. Fetch data tambahan KHUSUS jika user adalah General Affair (atau
+          // setara), atau admin IT (setara superadmin)
+          if (isGADepartment(profile?.department) || isITAdmin(profile)) {
             const [validationMRs, validationPOs] = await Promise.all([
               fetchPendingValidationMRs(),
               fetchPendingValidationPOs(),
@@ -130,7 +131,7 @@ function ApprovalValidationContent() {
 
   return (
     <>
-      {isGADepartment(userProfile?.department) && (
+      {(isGADepartment(userProfile?.department) || isITAdmin(userProfile)) && (
         <>
           <Content
             title="Menunggu Validasi Anda (Material Request)"

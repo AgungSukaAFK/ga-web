@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isITAdmin } from "@/lib/constants/departments";
 import { PettyCashSubVoucherItem } from "@/type";
 import { formatCurrency, formatDateFriendly, formatDateWithTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -117,8 +118,8 @@ export default function ApprovalPcSubVoucherPage() {
     detailHref: `/petty-cash/sub-voucher/${id}`,
     needsActionFrom: (viewer) =>
       doc?.status === "Menunggu Pembayaran" &&
-      viewer.role === "approver" &&
-      viewer.department === "Finance",
+      ((viewer.role === "approver" && viewer.department === "Finance") ||
+        isITAdmin(viewer)),
   });
 
   if (loading) {

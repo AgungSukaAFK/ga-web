@@ -15,9 +15,13 @@ export const isGADepartment = (department?: string | null): boolean =>
   !!department && (GA_DEPARTMENTS as readonly string[]).includes(department);
 
 /**
- * True jika user adalah admin departemen IT - satu-satunya yang boleh melihat
- * & mengelola feedback user (/feedback-management). Harus sama dengan
- * `public.is_it_admin()` di supabase/migrations/0006_feedback.sql.
+ * True jika user adalah admin departemen IT - dianggap setara superadmin:
+ * selain fitur khusus IT (feedback user, inbox chat admin, reset password),
+ * semua fitur yang dikunci ke role/departemen lain (validasi GA, menu
+ * Approval & Validation, MR Saya, dst.) ikut terbuka. Pengecualian: approval
+ * tetap hanya oleh orang yang ditunjuk di chain, dan scope company tetap
+ * ikut profil. Harus sama dengan `public.is_it_admin()` di
+ * supabase/migrations/0006_feedback.sql.
  */
 export const isITAdmin = (
   profile?: { role?: string | null; department?: string | null } | null,

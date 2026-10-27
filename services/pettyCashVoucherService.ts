@@ -20,7 +20,6 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Attachment,
   PettyCashPengajuan,
-  PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
   PettyCashVoucher,
   PettyCashVoucherWithChain,
@@ -197,26 +196,6 @@ export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
 
   if (error) throw error;
   return (data ?? []) as unknown as PettyCashVoucher[];
-};
-
-/**
- * Override status & approvals sebuah Voucher apa pun - admin only (dijamin
- * di RLS, lihat komentar adminUpdatePengajuan,
- * services/pettyCashPengajuanService.ts untuk alasan yang sama).
- */
-export const adminUpdateVoucher = async (
-  id: number,
-  patch: {
-    status?: string;
-    approvals?: PettyCashPengajuanApprover[];
-  },
-): Promise<void> => {
-  const { error } = await supabase
-    .from("petty_cash_voucher")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) throw error;
 };
 
 export interface AdminForceEditVoucher {

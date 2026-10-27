@@ -6,12 +6,13 @@
 // beda, tidak punya approvals array). Empat kemampuan, disusun dari yang
 // paling ringan ke paling berat:
 //
-//  1. Override Status & Jalur Approval (paling lama ada) - paksa ubah
-//     status dokumen & status tiap approver satu-satu, dipakai utk dokumen
-//     nyangkut (mis. approver resign). Tetap lewat adminUpdate{Pengajuan,
-//     Voucher,Deklarasi} (blanket RLS admin, lihat
-//     supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)) - TIDAK tercatat ke
-//     jejak audit baru (perilaku lama dipertahankan apa adanya).
+//  1. Override Status & Jalur Approval (paling lama ada) - ubah status
+//     tiap approver satu-satu, dipakai utk dokumen nyangkut (mis. approver
+//     resign). Status dokumen otomatis mengikuti jalur approval & workflow
+//     lanjut seperti approve normal - lihat adminUpdatePcApprovals
+//     (services/adminApprovalOverrideService.ts, blanket RLS admin di
+//     supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql)).
+//     TIDAK tercatat ke jejak audit baru (perilaku lama dipertahankan).
 //  2. Ganti Kode Dokumen - lewat RPC admin_rename_petty_cash_kode. Kalau
 //     dokumen ini Voucher, kode Sub-Voucher turunannya OTOMATIS ikut
 //     berubah (lihat catatan di bawah tombolnya).
@@ -53,6 +54,12 @@ import {
 } from "@/components/petty-cash/PcAdminForceEditDialog";
 import { PcAdminDeleteDialog } from "@/components/petty-cash/PcAdminDeleteDialog";
 import { getDeleteImpactWarning } from "@/services/pettyCashAdminService";
+import {
+  PC_APPROVAL_PHASE_STATUSES,
+  deriveApprovalOutcome,
+  derivePcStatus,
+  resolveApprovalPhaseStatus,
+} from "@/lib/approvalOverride";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -127,14 +134,31 @@ export function PcAdminOverridePanel({
   const [forceEditOpen, setForceEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Status dokumen ikut jalur approval (status di luar fase approval, mis.
+  // Voucher "Selesai", tidak disentuh) - divalidasi ulang saat simpan.
   const updateApprovalStatus = (
     idx: number,
     val: "pending" | "approved" | "rejected",
   ) => {
-    setEditApprovals((prev) =>
-      prev.map((app, i) => (i === idx ? { ...app, status: val } : app)),
+    const next = editApprovals.map((app, i) =>
+      i === idx ? { ...app, status: val } : app,
+    );
+    setEditApprovals(next);
+    setEditStatus((current) =>
+      resolveApprovalPhaseStatus({
+        currentStatus: current,
+        approvals: next,
+        phaseStatuses: PC_APPROVAL_PHASE_STATUSES,
+        derive: derivePcStatus,
+      }),
     );
   };
+
+  const expectedStatus = derivePcStatus(deriveApprovalOutcome(editApprovals));
+  const statusMismatch =
+    expectedStatus !== null &&
+    (PC_APPROVAL_PHASE_STATUSES as readonly string[]).includes(editStatus) &&
+    editStatus !== expectedStatus;
 
   const handleSaveStatus = async () => {
     setSavingStatus(true);
@@ -189,6 +213,16 @@ export function PcAdminOverridePanel({
               ))}
             </SearchableSelectContent>
           </SearchableSelect>
+          {statusMismatch ? (
+            <p className="text-xs text-destructive">
+              Status tidak sesuai jalur approval - seharusnya &quot;
+              {expectedStatus}&quot;.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Otomatis mengikuti jalur approval di bawah.
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

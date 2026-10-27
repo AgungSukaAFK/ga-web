@@ -28,7 +28,6 @@ import {
   approveDeklarasiStep,
   rejectDeklarasiStep,
   editAndApproveDeklarasiStep,
-  adminUpdateDeklarasi,
   adminForceUpdateDeklarasi,
 } from "@/services/pettyCashDeklarasiService";
 import {
@@ -55,6 +54,7 @@ import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { toast } from "sonner";
+import { adminUpdatePcApprovals } from "@/services/adminApprovalOverrideService";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 const DetailSkeleton = () => (
@@ -198,7 +198,12 @@ function DeklarasiDetailContent({ id }: { id: string }) {
   }) => {
     if (!doc) return;
     try {
-      await adminUpdateDeklarasi(doc.id, patch);
+      await adminUpdatePcApprovals("deklarasi", doc.id, {
+        baselineApprovals: doc.approvals,
+        nextApprovals: patch.approvals,
+        baselineStatus: doc.status,
+        requestedStatus: patch.status,
+      });
       toast.success(`${doc.kode_deklarasi} berhasil diperbarui (override).`);
       await load();
     } catch (error: any) {

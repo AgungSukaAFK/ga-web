@@ -874,6 +874,56 @@ export const deriveReceiveDrivenStatus = (
 };
 
 /**
+ * Payment Validator baru approve (via approval turn, edit DP/BP di luar
+ * turn, atau override admin - semuanya titik "pembayaran baru lunas") -
+ * barang mulai dikirim vendor. Naikkan level item yang di-cover PO ini ke
+ * "Open 4" + tandai status "Dikirim Vendor" biar jelas beda sama
+ * "Processing" biasa (yang ambigu - bisa berarti "belum di-PO-kan sama
+ * sekali" ATAU "sudah di-PO-kan tapi belum dibayar"). Item yang sudah
+ * lebih maju (level Open 5/Close, atau status sudah lewat Processing -
+ * dari PO lain yang juga meng-cover part_number yang sama) dilewati,
+ * tidak dimundurkan.
+ */
+export const markPoItemsShippedByVendor = async (
+  mrId: number,
+  poItems: POItem[],
+  userId: string,
+) => {
+  const { data: mrRow } = await supabase
+    .from("material_requests")
+    .select("orders")
+    .eq("id", mrId)
+    .single();
+  const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
+  for (const item of poItems) {
+    if (!item.part_number) continue;
+    const order = orders.find((o) => o.part_number === item.part_number);
+    if (
+      !order ||
+      order.level === "Open 5" ||
+      order.level === "Close" ||
+      order.status !== MR_ITEM_STATUSES.PROCESSING
+    ) {
+      continue;
+    }
+    try {
+      await updateMrItemStatus(
+        mrId,
+        item.part_number,
+        { level: "Open 4", status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR },
+        userId,
+      );
+    } catch (err) {
+      console.error(
+        `Gagal update status item MR (Dikirim Vendor) untuk Part ${item.part_number}:`,
+        err,
+      );
+    }
+  }
+  await recalculateMrLevel(mrId);
+};
+
+/**
  * Payload tambahan buat stempel "umur PO" (full_received_at) - dipanggil di
  * SEMUA titik yang nulis status PO hasil deriveReceiveDrivenStatus (di sini
  * & purchase-order/[id]/page.tsx), biar konsisten. Cuma nyetel field itu pas

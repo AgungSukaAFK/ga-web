@@ -291,6 +291,8 @@ function CostCenterDialog({
 // handle_mr_budget_deduction / services/costCenterService.ts.
 function costCenterHistoryKind(item: CostCenterHistory): BudgetHistoryKind {
   const desc = item.description.toLowerCase();
+  // Pengembalian saat MR dimundurkan (0011_mr_budget_refund.sql).
+  if (desc.startsWith("refund via mr")) return "refund";
   if (item.mr_id || desc.startsWith("deduction via mr")) return "deduction";
   if (desc.startsWith("initial budget")) return "initial";
   if (desc.includes("diaktifkan") || desc.includes("dinonaktifkan"))

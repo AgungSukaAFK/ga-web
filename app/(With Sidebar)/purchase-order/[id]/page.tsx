@@ -81,10 +81,12 @@ import {
   deriveReceiveDrivenStatus,
   fetchBarangAssetFlags,
   getFullReceivedStamp,
+  markPoItemsShippedByVendor,
   fetchPoQtyBreakdownForMr,
   fetchPosForMr,
   PoQtyBreakdownEntry,
 } from "@/services/purchaseOrderService";
+import { getReceiverTurnIndex } from "@/services/adminApprovalOverrideService";
 import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
 import { PaginatedPrintDocument } from "./PaginatedPrintDocument";
 import { PrintablePO } from "../PrintablePO";
@@ -92,7 +94,6 @@ import {
   updateMrItemStatus, // Pastikan ini sudah ada dari Langkah 2
   normalizeMrOrders, // Pastikan ini sudah ada dari Langkah 1
   recalculateMrStatus,
-  recalculateMrLevel,
   removeBastForMrItem,
   sendItemsToRequester,
   editItemsDeliveryToRequester,
@@ -953,11 +954,18 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const canManuallyReceiveGoods =
     userProfile?.role === "admin" ||
     (isSiteVendorPO ? isMrRequesterForThisPO : isGA);
+  // Admin boleh mengisi checklist atas nama step Receiver yang sedang
+  // giliran (PO Management tidak bisa approve Receiver langsung, lihat
+  // planAdminPoApprovalUpdate) - termasuk saat "Pending Payment" (template
+  // Termin: Receiver sebelum Payment Validator).
+  const adminReceiverTurnIndex =
+    userProfile?.role === "admin" ? getReceiverTurnIndex(po?.approvals) : -1;
   const showManualReceiveButton =
     canManuallyReceiveGoods &&
     (po?.status === PO_STATUS_PENDING_RECEIVE ||
       po?.status === PO_STATUS_PARTIAL_RECEIVE ||
-      po?.status === PO_STATUS_FULL_RECEIVED);
+      po?.status === PO_STATUS_FULL_RECEIVED ||
+      adminReceiverTurnIndex !== -1);
   // "Sudah pernah diterima" ditentukan dari ada/tidaknya receive_record (bukan
   // cuma status Partial Receive) - supaya begitu Full Received juga kebaca
   // sebagai "sudah pernah diterima" dan tombolnya jadi label edit.
@@ -981,49 +989,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setIsDpBpDialogOpen(true);
   };
 
-  // Payment Validator baru approve (via approval turn ATAU edit DP/BP di
-  // luar turn - keduanya bisa jadi titik "pembayaran baru lunas") - barang
-  // mulai dikirim vendor. Naikkan level item yang di-cover PO ini ke
-  // "Open 4" + tandai status "Dikirim Vendor" biar jelas beda sama
-  // "Processing" biasa (yang ambigu - bisa berarti "belum di-PO-kan sama
-  // sekali" ATAU "sudah di-PO-kan tapi belum dibayar"). Item yang sudah
-  // lebih maju (level Open 5/Close, atau status sudah lewat Processing -
-  // dari PO lain yang juga meng-cover part_number yang sama) dilewati,
-  // tidak dimundurkan.
+  // Lihat markPoItemsShippedByVendor (purchaseOrderService.ts) - dipakai
+  // juga oleh override approval admin di PO Management.
   const markItemsShippedByVendor = async (mrId: number, poItems: POItem[]) => {
     if (!currentUser) return;
-    const { data: mrRow } = await supabase
-      .from("material_requests")
-      .select("orders")
-      .eq("id", mrId)
-      .single();
-    const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
-    for (const item of poItems) {
-      if (!item.part_number) continue;
-      const order = orders.find((o) => o.part_number === item.part_number);
-      if (
-        !order ||
-        order.level === "Open 5" ||
-        order.level === "Close" ||
-        order.status !== MR_ITEM_STATUSES.PROCESSING
-      ) {
-        continue;
-      }
-      try {
-        await updateMrItemStatus(
-          mrId,
-          item.part_number,
-          { level: "Open 4", status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR },
-          currentUser.id,
-        );
-      } catch (err) {
-        console.error(
-          `Gagal update status item MR (Dikirim Vendor) untuk Part ${item.part_number}:`,
-          err,
-        );
-      }
-    }
-    await recalculateMrLevel(mrId);
+    await markPoItemsShippedByVendor(mrId, poItems, currentUser.id);
   };
 
   // Edit dp_paid/bp_paid di luar approval turn (row Payment Validator sudah
@@ -1120,17 +1090,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     if (!po || !currentUser) return;
     setActionLoading(true);
     try {
-      const isReceiverTurn =
+      // Step Receiver yang ikut di-approve: milik user ini sendiri, atau -
+      // khusus admin - step Receiver yang sedang giliran.
+      const receiverStepIndex =
         myApprovalIndex !== -1 &&
-        po.approvals?.[myApprovalIndex]?.type === APPROVAL_TYPE_RECEIVER;
+        po.approvals?.[myApprovalIndex]?.type === APPROVAL_TYPE_RECEIVER
+          ? myApprovalIndex
+          : adminReceiverTurnIndex;
+      const isReceiverTurn = receiverStepIndex !== -1;
 
       let updatedApprovals = po.approvals;
       if (isReceiverTurn) {
         updatedApprovals = JSON.parse(
           JSON.stringify(po.approvals),
         ) as Approval[];
-        updatedApprovals[myApprovalIndex].status = "approved";
-        updatedApprovals[myApprovalIndex].processed_at =
+        updatedApprovals[receiverStepIndex].status = "approved";
+        updatedApprovals[receiverStepIndex].processed_at =
           new Date().toISOString();
         const { error: approvalError } = await supabase
           .from("purchase_orders")
@@ -1148,7 +1123,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
       if (isReceiverTurn) {
         const nextApprover = updatedApprovals?.find(
-          (app, i) => i > myApprovalIndex && app.status === "pending",
+          (app, i) => i > receiverStepIndex && app.status === "pending",
         );
         notifyOnPOApproval({
           actorId: currentUser.id,
