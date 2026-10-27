@@ -12,6 +12,7 @@ import { ArrowRight, PartyPopper } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
+import { extractPlainText } from "@/lib/rich-content";
 import { PcActionItem } from "@/services/pettyCashDashboardService";
 import { statusTermTitle } from "@/components/petty-cash/PcGlossary";
 
@@ -56,7 +57,7 @@ export function PcActionNeededList({ items }: { items: PcActionItem[] }) {
               )}
             </div>
             <span className="line-clamp-1 text-xs text-muted-foreground">
-              {pengajuan.notes || "Tanpa catatan"} ·{" "}
+              {extractPlainText(pengajuan.notes) || "Tanpa catatan"} ·{" "}
               {formatCurrency(pengajuan.total_amount)}
             </span>
           </div>

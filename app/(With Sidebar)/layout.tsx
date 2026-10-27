@@ -23,6 +23,22 @@ import { redirect, usePathname, useRouter } from "next/navigation";
 import { Fragment, ReactNode, useEffect } from "react";
 import { toast } from "@/lib/toast";
 
+// Segmen URL yang cuma folder pembungkus route dinamis ([id]) tanpa page.tsx
+// sendiri - kalau dijadikan link di breadcrumb, ngekliknya jatuh ke 404.
+// Tambahkan di sini tiap bikin folder `x/[id]` baru yang `x`-nya tanpa page.
+const NON_PAGE_SEGMENTS = new Set([
+  "/barang/edit",
+  "/material-request/validate",
+  "/mr-management/edit",
+  "/petty-cash/pengajuan",
+  "/petty-cash/sub-voucher",
+  "/petty-cash/voucher",
+  "/po-management/edit",
+  "/purchase-order/edit",
+  "/purchase-order/validate",
+  "/update-web/edit",
+]);
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,6 +69,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           >
             {isPage ? (
               <BreadcrumbPage className="truncate">{readablePart}</BreadcrumbPage>
+            ) : NON_PAGE_SEGMENTS.has(href) ? (
+              <span className="truncate">{readablePart}</span>
             ) : (
               <BreadcrumbLink href={href} className="truncate">
                 {readablePart}

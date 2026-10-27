@@ -423,7 +423,7 @@ export default function InputPengajuanClient() {
       toast.success(
         `Pengajuan ${newPengajuan.kode_pengajuan} berhasil dikirim dan masuk jalur approval.`,
       );
-      router.push("/petty-cash");
+      router.push("/petty-cash/pengajuan-saya");
     } catch (error: any) {
       toast.error("Gagal mengirim pengajuan", { description: error.message });
     } finally {
