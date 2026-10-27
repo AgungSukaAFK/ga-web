@@ -4,7 +4,7 @@
 // pesan pertama (+ lampiran opsional). Sisanya lanjut di thread chat.
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, Paperclip, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -36,7 +36,7 @@ import {
   SearchableSelectContent,
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   ArrowDown,
   ArrowUp,
@@ -277,10 +277,10 @@ export function PcApprovalTemplateForm({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Kalau diisi, template ini otomatis diterapkan begitu user dari
+          Jika diisi, template ini otomatis diterapkan begitu user dari
           kombinasi Departemen + Site/Lokasi + Perusahaan berikut submit
           Input Pengajuan - tanpa validasi manual GA. Satu kombinasi
-          departemen+site+perusahaan cuma boleh terhubung ke satu template
+          departemen+site+perusahaan hanya boleh terhubung ke satu template
           per tipe approval.
         </p>
         {autoRules.length === 0 ? (

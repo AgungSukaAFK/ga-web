@@ -58,7 +58,7 @@ import {
   getAttachmentSizeError,
   getUploadErrorMessage,
 } from "@/lib/attachments";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   checkPengajuanEligibility,
   createPettyCashPengajuan,
@@ -544,7 +544,7 @@ export default function InputPengajuanClient() {
                     </SearchableSelectContent>
                   </SearchableSelect>
                   <p className="text-xs text-muted-foreground">
-                    Cuma minggu ini atau minggu berikutnya di bulan berjalan -
+                    Hanya minggu ini atau minggu berikutnya di bulan berjalan -
                     minggu yang sudah lewat tidak bisa dipilih.
                   </p>
                 </div>

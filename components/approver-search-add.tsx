@@ -6,7 +6,7 @@ import { searchUsers } from "@/services/approvalTemplateService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Plus, Search } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 

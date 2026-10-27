@@ -54,7 +54,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import {
@@ -1154,8 +1154,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
       toast.success(
         receiveRecord.is_full_match
-          ? "Barang diterima lengkap sesuai PO. Status jadi Full Received."
-          : "Ada barang yang tidak sesuai qty PO. Status jadi Partial Receive - checklist ini bisa diedit lagi nanti.",
+          ? "Barang diterima lengkap sesuai PO. Status menjadi Full Received."
+          : "Ada barang yang tidak sesuai qty PO. Status menjadi Partial Receive - checklist ini bisa diedit lagi nanti.",
       );
       setIsReceiveDialogOpen(false);
       await fetchPoData();
@@ -3579,7 +3579,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <p>
-                    Barang ini tidak punya Part Number, jadi info Breakdown PO
+                    Barang ini tidak punya Part Number, sehingga info Breakdown PO
                     &amp; Link PO Manual di bawah tidak bisa ditampilkan.
                     Kalau ini seharusnya barang dari Master Data, perbaiki
                     Part Number-nya lewat halaman detail MR (&quot;Edit
@@ -3699,9 +3699,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     Link Manual ke PO
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Dipakai kalau barang yang dibeli disubstitusi/diganti pas
-                    belanja (part_number PO beda dari part_number MR ini),
-                    sehingga tidak ke-detect otomatis.
+                    Digunakan jika barang yang dibeli disubstitusi/diganti saat
+                    pembelian (part_number PO berbeda dari part_number MR ini),
+                    sehingga tidak terdeteksi otomatis.
                   </p>
                   {po?.kode_po &&
                     !isMrItemInPO(selectedItemToEdit) &&

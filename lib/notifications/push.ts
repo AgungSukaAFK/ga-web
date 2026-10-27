@@ -79,7 +79,7 @@ export async function subscribeToPush(userId: string): Promise<void> {
       true;
   if (isIOS && !isStandalone) {
     throw new Error(
-      "Di iPhone, notifikasi cuma bisa aktif kalau web ini sudah di-install ke Home Screen. Install dulu lewat tombol Install di atas, buka dari ikonnya, baru aktifkan Notifikasi HP.",
+      "Di iPhone, notifikasi hanya dapat diaktifkan jika web ini sudah di-install ke Home Screen. Install terlebih dahulu melalui tombol Install di atas, buka dari ikonnya, lalu aktifkan Notifikasi HP.",
     );
   }
 

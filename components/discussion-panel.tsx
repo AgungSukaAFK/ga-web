@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DiscussionMessageBubble } from "@/components/discussion-message-bubble";
 import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Reply, Send, X } from "lucide-react";
 import {
   Discussion,

@@ -16,7 +16,7 @@ import { NoteWithLinks } from "@/components/note-with-links";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue } from "@/lib/rich-content";
 import { DiscussionSection } from "../../[id]/discussion-component";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   MaterialRequest,
   Approval,
@@ -496,7 +496,7 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
           userId: mr.userid,
           actorId: profile.id,
           type: "mr_rejected",
-          title: "MR Kamu Ditolak oleh GA",
+          title: "MR Anda Ditolak oleh GA",
           message: `Material Request ${mr.kode_mr} ditolak dengan alasan: ${rejectionReason}`,
           link: `/material-request/${mrId}`,
           resourceId: String(mrId),

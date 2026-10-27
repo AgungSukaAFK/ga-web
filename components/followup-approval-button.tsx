@@ -14,7 +14,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { BellRing, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { FollowupRequest } from "@/type";
 import { requestApprovalFollowup } from "@/services/approvalService";
 import { notifyOnApprovalFollowup } from "@/lib/notifications/client";

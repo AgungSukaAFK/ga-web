@@ -59,7 +59,7 @@ import {
   useCallback,
   useTransition,
 } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
@@ -1062,7 +1062,7 @@ export function MaterialRequestContent({
       title={onlyMine ? "MR Saya" : "Daftar Material Request"}
       description={
         onlyMine
-          ? "Daftar Material Request yang kamu buat"
+          ? "Daftar Material Request yang Anda buat"
           : "Kelola seluruh data Material Request"
       }
       cardAction={

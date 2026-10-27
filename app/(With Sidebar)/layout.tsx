@@ -21,7 +21,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { redirect, usePathname, useRouter } from "next/navigation";
 import { Fragment, ReactNode, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();

@@ -84,7 +84,7 @@ export const assertSequentialApprovals = (
     throw new Error(
       prev.status === "rejected"
         ? `${stepLabel(prev, blocker)} sudah menolak - step sesudahnya harus tetap pending.`
-        : `Approval harus berurutan: ${stepLabel(prev, blocker)} belum approved, ${stepLabel(step, i)} tidak bisa diproses duluan.`,
+        : `Approval harus berurutan: ${stepLabel(prev, blocker)} belum approved, ${stepLabel(step, i)} tidak bisa diproses lebih dahulu.`,
     );
   });
 };

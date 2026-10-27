@@ -58,7 +58,7 @@ import {
   DialogTitle,
   DialogHeader,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { createClient } from "@/lib/supabase/client";
 import {
   getActiveUserProfile,
@@ -1262,8 +1262,8 @@ export default function BuatMRPage() {
               />
               <p className="text-xs text-muted-foreground">
                 Isi jelas & detail (alasan, kondisi saat ini, urgensi) - remarks
-                yang lengkap mempercepat keputusan approver. Bisa pakai @ (orang),
-                # (barang), $ (vendor), / (dokumen) buat tag.
+                yang lengkap mempercepat keputusan approver. Gunakan @ (orang),
+                # (barang), $ (vendor), / (dokumen) untuk menandai (tag).
               </p>
             </div>
             <div className="flex flex-col gap-2 col-span-12">
@@ -1375,8 +1375,8 @@ export default function BuatMRPage() {
                 )}
                 {isDuplicateItem && (
                   <p className="text-xs text-destructive mt-1">
-                    Barang ini sudah ada di daftar item. Edit item yang sudah
-                    ada kalau mau ubah quantity-nya, jangan ditambah lagi.
+                    Barang ini sudah ada di daftar item. Untuk mengubah
+                    quantity, edit item yang sudah ada, jangan ditambah lagi.
                   </p>
                 )}
               </div>

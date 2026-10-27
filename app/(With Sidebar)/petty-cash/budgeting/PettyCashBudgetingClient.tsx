@@ -58,7 +58,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { isGADepartment } from "@/lib/constants/departments";
 import { cn, formatCurrency } from "@/lib/utils";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
 import {
   fetchBudgets,
@@ -709,7 +709,7 @@ export function PettyCashBudgetingClientContent() {
                           description={
                             isInactive
                               ? `Aktifkan kembali Budget "${item.name}"?`
-                              : `Nonaktifkan Budget "${item.name}"? Kombinasi departemen+site+perusahaan ini tidak akan otomatis ke-assign budget ini lagi ke Pengajuan baru.`
+                              : `Nonaktifkan Budget "${item.name}"? Budget ini tidak akan lagi otomatis dipasangkan ke Pengajuan baru dari kombinasi departemen+site+perusahaan ini.`
                           }
                           confirmText={isInactive ? "Aktifkan" : "Nonaktifkan"}
                           cancelText="Batal"

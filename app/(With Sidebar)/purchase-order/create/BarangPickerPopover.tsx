@@ -282,7 +282,7 @@ export function BarangPickerPopover({
                                     : "Barang aset, PO ini bukan PO Aset"
                                 }
                               >
-                                Beda tipe PO
+                                Tipe PO berbeda
                               </Badge>
                             )}
                           </span>

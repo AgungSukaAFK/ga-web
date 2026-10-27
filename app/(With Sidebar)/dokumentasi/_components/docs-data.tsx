@@ -256,8 +256,8 @@ export const FLOWS: Record<FlowId, Flow> = {
             tombol &quot;Edit DP/BP&quot;.
           </>,
           <>
-            Kalau pembayaran beres duluan → PO menjadi Pending Receive. Kalau
-            barang diterima duluan → PO menjadi Pending Payment.
+            Jika pembayaran selesai lebih dahulu → PO menjadi Pending Receive.
+            Jika barang diterima lebih dahulu → PO menjadi Pending Payment.
           </>,
         ],
         status: { from: "Pending Approval", to: "Pending Receive" },
@@ -281,8 +281,8 @@ export const FLOWS: Record<FlowId, Flow> = {
             tombol &quot;Terima Barang&quot; manual oleh GA.
           </>,
           <>
-            Semua qty pas → {b("Full Received")}. Ada yang kurang atau tidak
-            datang → {b("Partial Receive")}.
+            Semua qty sesuai → {b("Full Received")}. Ada yang kurang atau
+            tidak datang → {b("Partial Receive")}.
           </>,
           <>
             Checklist bisa diedit ulang (&quot;Edit Penerimaan Barang&quot;)
@@ -399,7 +399,7 @@ export const FLOWS: Record<FlowId, Flow> = {
         ),
         details: [
           <>Pilih Pengajuan berstatus Approved yang belum punya Voucher.</>,
-          <>Barang, qty, harga, dan lampiran disalin apa adanya. 1 Pengajuan hanya bisa jadi 1 Voucher.</>,
+          <>Barang, qty, harga, dan lampiran disalin apa adanya. 1 Pengajuan hanya bisa menjadi 1 Voucher.</>,
           <>Voucher mendapat jalur approval baru yang terpisah (Template &quot;Approval Voucher&quot;).</>,
         ],
         status: { to: "In Approval", domain: "pc" },
@@ -427,7 +427,7 @@ export const FLOWS: Record<FlowId, Flow> = {
         menu: "Pengajuan Voucher → Voucher Saya → Tarik Dana",
         summary: (
           <>
-            Tarik dana {b("bertahap")}: pilih barang dan qty yang mau ditarik.
+            Tarik dana {b("bertahap")}: pilih barang dan qty yang ingin ditarik.
             Setiap tarikan menjadi Sub-Voucher dengan kode sendiri.
           </>
         ),
@@ -565,7 +565,7 @@ export const ROLE_INFO: Record<
     tasks: [
       { text: "Kelola akun (User Management) & budget (Cost Center Management)" },
       { text: "Koreksi MR/PO lewat MR Management / PO Management" },
-      { text: "Benahi dokumen Petty Cash yang nyangkut di Management Petty Cash" },
+      { text: "Benahi dokumen Petty Cash yang tertahan di Management Petty Cash" },
       { text: "Atur Kode Global untuk scan QR penerimaan barang", jump: { flow: "po", step: 4 } },
     ],
   },
@@ -782,7 +782,7 @@ export const STATUS_GROUPS: {
       { status: "Processing", label: "Proses PO", domain: "item", main: true, desc: "Sudah masuk PO dan menunggu pembayaran/pengiriman." },
       { status: "Dikirim Vendor", label: "Dikirim dari Vendor", domain: "item", main: true, desc: "Pembayaran sudah divalidasi dan vendor mulai mengirim, tapi belum diterima fisik." },
       { status: "Diterima GA", domain: "item", main: true, desc: "Sudah diterima dan di-checklist GA/Receiver, belum dikirim ke Requester." },
-      { status: "On Delivery", label: "Dalam Pengiriman", domain: "item", main: true, desc: "Sedang dikirim ke Requester (atau langsung untuk vendor Site). Requester tinggal konfirmasi." },
+      { status: "On Delivery", label: "Dalam Pengiriman", domain: "item", main: true, desc: "Sedang dikirim ke Requester (atau langsung untuk vendor Site). Requester cukup melakukan konfirmasi." },
       { status: "Completed", label: "Barang Diterima User", domain: "item", main: true, desc: "Requester sudah upload bukti/scan QR. Dipakai untuk laporan." },
       { status: "Pending BAST", label: "Pending Terima User", domain: "item", desc: "Status lama (data lama) dengan arti yang sama seperti Dalam Pengiriman: menunggu konfirmasi Requester." },
       { status: "Replaced", label: "Diganti", domain: "item", desc: "Barang disubstitusi dengan barang lain saat proses belanja." },
@@ -797,7 +797,7 @@ export const STATUS_GROUPS: {
       { status: "Pending Validation", domain: "doc", main: true, desc: "PO baru dibuat Purchasing dan menunggu GA memasang template approval." },
       { status: "Pending Approval", domain: "doc", main: true, desc: "Sedang dalam antrian persetujuan sesuai template." },
       { status: "Pending Payment", domain: "doc", main: true, desc: "Menunggu step pembayaran selesai. Bisa muncul sebelum atau sesudah barang diterima, tergantung jalur pembayarannya." },
-      { status: "Pending Receive", domain: "doc", main: true, desc: "Approval & pembayaran beres, menunggu barang diterima dan di-checklist." },
+      { status: "Pending Receive", domain: "doc", main: true, desc: "Approval & pembayaran selesai, menunggu barang diterima dan di-checklist." },
       { status: "Partial Receive", domain: "doc", main: true, desc: "Barang sudah di-checklist tapi qty belum sesuai PO. Checklist bisa diedit ulang." },
       { status: "Full Received", domain: "doc", main: true, desc: "Semua barang diterima sesuai qty PO. Ini status akhir PO." },
       { status: "Rejected", domain: "doc", desc: "Ditolak salah satu approver PO." },
@@ -823,17 +823,17 @@ export const STATUS_GROUPS: {
 
 export const FAQS: { q: string; a: React.ReactNode; tags: RoleId[] }[] = [
   {
-    q: "Kenapa saya tidak bisa memilih Cost Center saat membuat MR?",
+    q: "Mengapa saya tidak bisa memilih Cost Center saat membuat MR?",
     a: <>Cost Center ditentukan GA saat validasi, bukan oleh Requester. Tujuannya supaya kontrol budget lebih rapi.</>,
     tags: ["requester"],
   },
   {
-    q: "Kenapa input \"Estimasi Biaya\" tidak bisa diisi?",
+    q: "Mengapa input \"Estimasi Biaya\" tidak bisa diisi?",
     a: <>Karena dihitung otomatis dari {b("Qty × Estimasi Harga")} setiap barang di Order Items.</>,
     tags: ["requester"],
   },
   {
-    q: "Kenapa Due Date terisi sendiri?",
+    q: "Mengapa Due Date terisi sendiri?",
     a: <>Due Date diisi otomatis dari Prioritas yang Anda pilih (P0 = 2 hari … P4 = 30 hari). Ganti prioritasnya kalau ingin due date yang berbeda.</>,
     tags: ["requester"],
   },
@@ -865,8 +865,8 @@ export const FAQS: { q: string; a: React.ReactNode; tags: RoleId[] }[] = [
     tags: ["requester", "admin"],
   },
   {
-    q: "Kapan saya (Receiver/GA) bisa mulai isi checklist penerimaan?",
-    a: <>Saat PO sudah Pending Receive (pembayaran beres duluan), atau saat tiba giliran step &quot;Receiver&quot; (jalur Termin/DP-setelah-DP). Tombol &quot;Terima Barang&quot; muncul di detail PO.</>,
+    q: "Kapan saya (Receiver/GA) bisa mulai mengisi checklist penerimaan?",
+    a: <>Saat PO sudah Pending Receive (pembayaran selesai lebih dahulu), atau saat tiba giliran step &quot;Receiver&quot; (jalur Termin/DP-setelah-DP). Tombol &quot;Terima Barang&quot; muncul di detail PO.</>,
     tags: ["receiver", "ga"],
   },
   {
@@ -880,17 +880,17 @@ export const FAQS: { q: string; a: React.ReactNode; tags: RoleId[] }[] = [
     tags: ["finance"],
   },
   {
-    q: "Kenapa saya tidak bisa membuat Pengajuan Petty Cash baru?",
+    q: "Mengapa saya tidak bisa membuat Pengajuan Petty Cash baru?",
     a: <>Ada 3 kemungkinan: departemen Anda belum punya Template Approval Pengajuan, belum punya Budget Petty Cash aktif, atau Anda masih punya tarikan dana (Sub-Voucher) yang belum dideklarasikan. Selesaikan Deklarasinya dulu, atau hubungi GA/Admin.</>,
     tags: ["requester"],
   },
   {
-    q: "Tarik Dana sudah saya buat, kok dananya belum masuk?",
+    q: "Tarik Dana sudah saya buat, mengapa dananya belum masuk?",
     a: <>Tarikan baru berstatus Menunggu Pembayaran. Dana masuk setelah Finance mentransfer dan mengubahnya menjadi Selesai.</>,
     tags: ["requester", "finance"],
   },
   {
-    q: "Dokumen Petty Cash nyangkut (approver resign / salah klik). Harus bagaimana?",
+    q: "Dokumen Petty Cash tertahan (approver resign / salah klik). Apa yang harus dilakukan?",
     a: <>Admin bisa membenahi status dan jalur approval dokumen apa pun lewat menu Management Petty Cash, tanpa perlu mengulang dari awal.</>,
     tags: ["admin", "requester"],
   },

@@ -56,7 +56,7 @@ import {
   XCircle,
   ExternalLink,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Barang } from "@/type";
 import { formatCurrency, cn } from "@/lib/utils"; // Pastikan cn ada di utils atau hapus jika tidak pakai

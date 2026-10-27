@@ -17,7 +17,7 @@ import {
   PoPickerMaterialRequest,
 } from "@/services/purchaseOrderService";
 import { Search } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { MrPickerList } from "./MrPickerList";
 
 interface CreatePOModalProps {

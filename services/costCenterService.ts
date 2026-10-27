@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { CostCenter, CostCenterHistory, Profile } from "@/type";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 
 const supabase = createClient();

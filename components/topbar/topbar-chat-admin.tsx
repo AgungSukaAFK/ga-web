@@ -79,8 +79,8 @@ export function TopbarChatAdmin({
           <>
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
               {userUnread > 0
-                ? `Ada ${userUnread} balasan dari tim IT yang belum kamu baca.`
-                : "Ada kendala atau pertanyaan soal aplikasi? Chat langsung dengan tim IT."}
+                ? `Ada ${userUnread} balasan dari tim IT yang belum Anda baca.`
+                : "Ada kendala atau pertanyaan mengenai aplikasi? Chat langsung dengan tim IT."}
             </p>
             <DropdownMenuItem asChild>
               <Link href="/chat-admin">

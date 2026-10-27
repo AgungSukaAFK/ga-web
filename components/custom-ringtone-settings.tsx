@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useNotifSettings } from "@/lib/notifications/settings";
 import { unlockAudio, playCustomSound } from "@/lib/notifications/sound";
@@ -243,7 +243,7 @@ export function CustomRingtoneSettings() {
       <p className="text-xs text-muted-foreground -mt-2">
         Upload file audio atau rekam suara langsung, maks {MAX_DURATION_SEC}{" "}
         detik. Tersimpan lokal di perangkat ini saja (tidak diunggah ke
-        server) - perlu di-set ulang kalau ganti device/browser.
+        server) - perlu diatur ulang jika berganti perangkat/browser.
       </p>
 
       {/* Ringtone custom yang sudah tersimpan */}

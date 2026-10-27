@@ -9,7 +9,7 @@ import React, {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useRouter } from "next/navigation";
 import { Notification as AppNotification } from "@/type";
 import { unlockAudio, playSound, playCustomSound } from "@/lib/notifications/sound";

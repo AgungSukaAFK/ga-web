@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Pencil, Trash2, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { DiscussionSubmitPayload } from "@/type";
 import { sendNotification } from "@/lib/notifications/client";

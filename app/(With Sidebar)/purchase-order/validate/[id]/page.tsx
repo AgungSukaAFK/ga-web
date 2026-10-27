@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { NoteWithLinks } from "@/components/note-with-links";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue } from "@/lib/rich-content";
@@ -369,7 +369,7 @@ function ValidatePOPageContent({ params }: { params: { id: string } }) {
           userId: po.user_id,
           actorId: user.id,
           type: "po_rejected",
-          title: "PO Kamu Ditolak oleh GA",
+          title: "PO Anda Ditolak oleh GA",
           message: `Purchase Order ${po.kode_po} ditolak dengan alasan: ${rejectionReason}`,
           link: `/purchase-order/${po.id}`,
           resourceId: String(po.id),

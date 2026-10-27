@@ -33,7 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Newspaper, Search, Edit } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type

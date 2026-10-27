@@ -66,7 +66,7 @@ import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
 import { pickCurrentDoc } from "@/lib/pcChain";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { adminUpdatePcApprovals } from "@/services/adminApprovalOverrideService";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 

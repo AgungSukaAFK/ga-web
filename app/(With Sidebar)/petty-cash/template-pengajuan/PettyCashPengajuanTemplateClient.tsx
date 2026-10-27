@@ -35,7 +35,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PettyCashPengajuanItem, PettyCashPengajuanTemplate } from "@/type";
 import {
   fetchMyPengajuanTemplates,
@@ -159,7 +159,7 @@ export default function PettyCashPengajuanTemplateClient() {
     <>
       <Content
         title="Template Pengajuan"
-        description="Simpan daftar barang yang sering diajukan berulang (kebutuhan rutin/konstan) supaya tidak perlu input ulang tiap kali - cuma milik Anda sendiri."
+        description="Simpan daftar barang yang sering diajukan berulang (kebutuhan rutin/konstan) supaya tidak perlu input ulang tiap kali - hanya milik Anda sendiri."
         cardAction={
           <div className="flex items-center gap-2">
             <Button
@@ -274,7 +274,7 @@ export default function PettyCashPengajuanTemplateClient() {
             </DialogTitle>
             <DialogDescription>
               Daftar barang di sini akan otomatis dimuat ke Input Pengajuan
-              saat Anda pilih &quot;Gunakan&quot; - company, COA & tanggal
+              saat Anda memilih &quot;Gunakan&quot; - company, COA & tanggal
               dibutuhkan tetap diisi baru tiap kali submit.
             </DialogDescription>
           </DialogHeader>

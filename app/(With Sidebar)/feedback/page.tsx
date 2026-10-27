@@ -15,7 +15,7 @@ import {
   SearchableSelectContent,
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Loader2,
   Send,

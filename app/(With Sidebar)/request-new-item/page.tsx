@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useState, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, Send, RefreshCcw, Eye, FileText, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDateFriendly } from "@/lib/utils";

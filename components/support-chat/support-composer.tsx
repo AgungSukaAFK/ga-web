@@ -6,7 +6,7 @@
 // dipilih, supaya lampiran yang batal dipakai tidak nyampah di storage.
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { FileText, Loader2, Paperclip, SendHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";

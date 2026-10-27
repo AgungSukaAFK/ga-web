@@ -33,7 +33,7 @@ import { Combobox, ComboboxData } from "@/components/combobox";
 import { dataDepartment as sharedDepartmentData } from "@/type/comboboxData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label"; // Impor Label
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { AvatarViewerDialog } from "@/components/avatar-viewer-dialog";
 import { setCachedAvatar } from "@/lib/avatar-cache";

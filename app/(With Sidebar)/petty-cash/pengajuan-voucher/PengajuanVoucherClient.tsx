@@ -59,7 +59,7 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import {
   PettyCashPengajuan,
@@ -778,7 +778,7 @@ export default function PengajuanVoucherClient() {
           <DialogHeader>
             <DialogTitle>Tarik Dana {drawTarget?.kode_voucher}</DialogTitle>
             <DialogDescription>
-              Pilih barang yang mau ditarik dananya sekarang - qty boleh
+              Pilih barang yang ingin ditarik dananya sekarang - qty boleh
               sebagian, sisanya bisa ditarik lagi lain kali. Sisa Voucher{" "}
               {formatCurrency(remainingVoucher)}
               {remainingBudget != null &&

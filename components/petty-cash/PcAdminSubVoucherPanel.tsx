@@ -39,7 +39,7 @@ import {
 } from "@/components/petty-cash/PcAdminForceEditSubVoucherDialog";
 import { PcAdminDeleteDialog } from "@/components/petty-cash/PcAdminDeleteDialog";
 import { getDeleteImpactWarning } from "@/services/pettyCashAdminService";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, PencilLine, ShieldAlert, Tag, Trash2 } from "lucide-react";
 
 interface PcAdminSubVoucherPanelProps {

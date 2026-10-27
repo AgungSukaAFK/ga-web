@@ -21,7 +21,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { formatCurrency } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Attachment } from "@/type";
 import { Loader2, Undo2, UploadCloud, X } from "lucide-react";
 

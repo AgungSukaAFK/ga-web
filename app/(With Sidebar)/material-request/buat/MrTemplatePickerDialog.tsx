@@ -21,7 +21,7 @@ import { extractPlainText } from "@/lib/rich-content";
 import { cn, formatCurrency } from "@/lib/utils";
 import { fetchMrTemplates } from "@/services/mrTemplateService";
 import { MrTemplate, Order } from "@/type";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   ChevronDown,
   FileStack,

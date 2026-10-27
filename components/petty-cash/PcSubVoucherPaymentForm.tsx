@@ -30,7 +30,7 @@ import {
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { formatCurrency } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Attachment, PettyCashSubVoucher } from "@/type";
 import { PcCoaBadge } from "./PcCoaBadge";
 import { Landmark, Loader2, UploadCloud, X } from "lucide-react";

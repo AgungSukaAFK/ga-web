@@ -64,7 +64,7 @@ import {
 } from "@/services/approvalService";
 import { MR_ITEM_STATUSES } from "@/type/enum";
 import { Profile } from "@/type";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatDateFriendly, formatRelativeTime } from "@/lib/utils";
 import { UpdateWebDashboardBanner } from "@/components/update-web/UpdateWebDashboardBanner";

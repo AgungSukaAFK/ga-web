@@ -45,7 +45,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   PcItemsEditor,
   hasUnresolvedCoa,
@@ -427,7 +427,7 @@ export function PcAdminForceEditDialog({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Jelaskan kenapa dokumen ini perlu diedit paksa - tercatat permanen di jejak audit admin."
+              placeholder="Jelaskan alasan dokumen ini perlu diedit paksa - tercatat permanen di jejak audit admin."
               rows={2}
             />
           </div>

@@ -22,7 +22,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { fetchMyPengajuanTemplates } from "@/services/pettyCashPengajuanTemplateService";
 import { PettyCashPengajuanTemplate } from "@/type";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { FileStack, Loader2, PlayCircle, Settings2 } from "lucide-react";
 
 interface PcPengajuanTemplatePickerProps {

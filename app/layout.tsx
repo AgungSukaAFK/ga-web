@@ -69,7 +69,17 @@ export default function RootLayout({
         >
           <NotificationProvider>{children}</NotificationProvider>
         </CustomThemeProvider>
-        <Toaster richColors position="bottom-right" />
+        {/* content flex-1: tombol Salin (lib/toast.tsx) & action rapat ke
+            kanan, tidak mengambang di tengah */}
+        <Toaster
+          richColors
+          closeButton
+          position="bottom-right"
+          toastOptions={{
+            closeButtonAriaLabel: "Tutup",
+            classNames: { content: "flex-1" },
+          }}
+        />
         <PwaSupport />
       </body>
     </html>

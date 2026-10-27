@@ -9,7 +9,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   CheckCircle2,
   Hand,

@@ -6,7 +6,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpdatePostForm } from "@/components/update-web/UpdatePostForm";
 import { useUpdateWebAdmin } from "@/hooks/use-update-web-admin";

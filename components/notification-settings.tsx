@@ -25,7 +25,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useNotifSettings } from "@/lib/notifications/settings";
 import {
@@ -389,7 +389,7 @@ export function NotificationSettings() {
           description={
             pushStatus === "unsupported"
               ? 'Tidak didukung di browser ini. Di iPhone: buka lewat Safari, "Add to Home Screen" dulu, baru aktifkan dari ikonnya.'
-              : "Tetap masuk walau browser/tab sudah ditutup - beda dari notifikasi browser biasa di atas."
+              : "Tetap masuk walau browser/tab sudah ditutup - berbeda dari notifikasi browser biasa di atas."
           }
         >
           {pushBusy || pushStatus === "loading" ? (

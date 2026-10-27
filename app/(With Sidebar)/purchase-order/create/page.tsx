@@ -36,7 +36,7 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   createPurchaseOrder,
   fetchMaterialRequestById,
@@ -2187,9 +2187,9 @@ function CreatePOPageContent() {
                     </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground italic">
-                    Harga item sudah termasuk PPN - tarif ini cuma dipakai
-                    buat nampilin info PPN-nya (subtotal x tarif), harga &
-                    total gak berubah.
+                    Harga item sudah termasuk PPN - tarif ini hanya digunakan
+                    untuk menampilkan informasi PPN (subtotal x tarif), harga &
+                    total tidak berubah.
                   </p>
                 </div>
               )}

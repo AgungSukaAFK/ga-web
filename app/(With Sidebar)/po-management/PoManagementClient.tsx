@@ -32,7 +32,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Loader2, Newspaper, Search, Edit, CreditCard } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { PurchaseOrderListItem, Profile, Approval } from "@/type";

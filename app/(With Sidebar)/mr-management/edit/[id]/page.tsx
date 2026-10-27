@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import {
@@ -1834,8 +1834,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
               )}
               {isDuplicateItem && (
                 <p className="text-xs text-destructive mt-1">
-                  Barang ini sudah ada di daftar item. Edit item yang sudah
-                  ada kalau mau ubah quantity-nya, jangan ditambah lagi.
+                  Barang ini sudah ada di daftar item. Untuk mengubah
+                  quantity, edit item yang sudah ada, jangan ditambah lagi.
                 </p>
               )}
             </div>

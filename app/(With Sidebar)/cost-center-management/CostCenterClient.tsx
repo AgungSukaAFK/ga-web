@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CostCenter, CostCenterHistory, Profile } from "@/type";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";

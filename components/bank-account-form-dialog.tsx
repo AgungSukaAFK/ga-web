@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { BankAccount } from "@/type";
 import { createBankAccount, updateBankAccount } from "@/services/bankAccountService";
 

@@ -22,7 +22,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   AlertTriangle,
   ArrowRight,
@@ -741,12 +741,12 @@ export default function PcDashboardClient() {
 
           <Content
             size="lg"
-            title="Dokumen Nyangkut Lama"
+            title="Dokumen Tertahan Lama"
             description={`Sudah ${NYANGKUT_THRESHOLD_DAYS}+ hari diam di status "In Approval" / "Menunggu Pembayaran" sejak diajukan.`}
           >
             {nyangkutRows.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Tidak ada dokumen yang nyangkut lama. Semua lancar.
+                Tidak ada dokumen yang tertahan lama. Semua berjalan lancar.
               </p>
             ) : (
               <ul className="flex flex-col divide-y">

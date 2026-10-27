@@ -38,7 +38,7 @@ import { isGADepartment } from "@/lib/constants/departments";
 import { Loader2, Search, Edit, Plus, Trash2, Box } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PettyCashBarang, Profile } from "@/type";
 import {
   fetchPettyCashBarang,
@@ -285,11 +285,11 @@ function BarangDialog({
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              COA sekaligus jadi kategori barang di company tsb (mis. GMI
+              COA sekaligus menjadi kategori barang di company tsb (mis. GMI
               &quot;Kebutuhan Dapur&quot;, GIS &quot;Pantry&quot;). Kosongkan
-              kalau barang tidak dipakai di company itu - barang cuma muncul
-              di Input Pengajuan company yang COA-nya terisi. Minimal satu
-              wajib diisi.
+              jika barang tidak digunakan di company tersebut - barang hanya
+              muncul di Input Pengajuan company yang COA-nya terisi. Minimal
+              satu wajib diisi.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4">

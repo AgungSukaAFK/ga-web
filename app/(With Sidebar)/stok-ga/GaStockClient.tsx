@@ -41,7 +41,7 @@ import { isGADepartment } from "@/lib/constants/departments";
 import { Loader2, Search, Plus, Edit, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Barang, GaStock, Profile } from "@/type";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";

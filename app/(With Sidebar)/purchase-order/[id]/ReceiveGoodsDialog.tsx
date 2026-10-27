@@ -97,9 +97,9 @@ export function ReceiveGoodsDialog({
         <DialogHeader>
           <DialogTitle>Checklist Penerimaan Barang</DialogTitle>
           <DialogDescription>
-            Cocokkan qty barang yang aktual diterima dengan qty di PO. Kalau
+            Cocokkan qty barang yang aktual diterima dengan qty di PO. Jika
             ada barang yang kurang atau sama sekali tidak datang, isi qty
-            diterima sesuai kenyataan (0 kalau tidak ada) - PO akan jadi
+            diterima sesuai kenyataan (0 jika tidak ada) - PO akan menjadi
             &quot;Partial Receive&quot; dan checklist ini bisa diedit lagi
             nanti sampai sesuai.
           </DialogDescription>
@@ -152,12 +152,12 @@ export function ReceiveGoodsDialog({
         {isFullMatch ? (
           <p className="text-xs text-green-600 flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5" /> Semua item sesuai qty PO - PO
-            akan jadi &quot;Full Received&quot;.
+            akan menjadi &quot;Full Received&quot;.
           </p>
         ) : (
           <p className="text-xs text-amber-600 flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5" /> Ada item yang qty-nya
-            tidak sesuai PO - PO akan jadi &quot;Partial Receive&quot;.
+            tidak sesuai PO - PO akan menjadi &quot;Partial Receive&quot;.
           </p>
         )}
 

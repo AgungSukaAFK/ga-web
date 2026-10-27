@@ -11,7 +11,7 @@
 //   - thumbnail Update Web (16:9, 1280x720, dialog lebar di desktop)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Camera,
   ClipboardPaste,

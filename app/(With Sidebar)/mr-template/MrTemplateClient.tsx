@@ -48,7 +48,7 @@ import { createClient } from "@/lib/supabase/client";
 import { canManageMrTemplate } from "@/lib/constants/departments";
 import { MR_KATEGORI_OPTIONS } from "@/lib/constants/mr";
 import { formatCurrency } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Barang, MrTemplate, Order } from "@/type";
 import {
   fetchMrTemplates,
@@ -304,7 +304,7 @@ export default function MrTemplateClient() {
       <Content
         title="Template MR"
         size="lg"
-        description="Sediakan daftar barang untuk MR rutin. Requester tinggal pilih template saat Buat MR, barang-barangnya otomatis dimuat dan sisanya tetap bisa diedit."
+        description="Sediakan daftar barang untuk MR rutin. Requester cukup memilih template saat Buat MR, barang-barangnya otomatis dimuat dan sisanya tetap bisa diedit."
         cardAction={
           <div className="flex items-center gap-2">
             <Button
@@ -509,7 +509,7 @@ export default function MrTemplateClient() {
                 key={editing?.id ?? "new"}
                 ref={remarksEditorRef}
                 initialContent={parseRichValue(editing?.remarks)}
-                placeholder="Remarks yang otomatis terisi di form Buat MR (requester tetap bisa ubah)..."
+                placeholder="Remarks yang otomatis terisi di form Buat MR (requester tetap bisa mengubahnya)..."
                 disabled={saving}
               />
             </div>

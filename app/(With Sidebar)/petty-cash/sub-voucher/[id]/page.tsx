@@ -60,7 +60,7 @@ import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePet
 import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 

@@ -41,7 +41,7 @@ export const PC_TERMS: Record<PcTermKey, { label: string; definition: string }> 
   tarikan: {
     label: "Tarikan Dana (Sub-Voucher)",
     definition:
-      "Pencairan sebagian dana Voucher sesuai barang yang mau dibeli. Dananya ditransfer/dibayar oleh Finance.",
+      "Pencairan sebagian dana Voucher sesuai barang yang akan dibeli. Dananya ditransfer/dibayar oleh Finance.",
   },
   deklarasi: {
     label: "Deklarasi",

@@ -24,7 +24,7 @@ import {
 import { Combobox } from "@/components/combobox";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { AccentThemeSwitcher } from "@/components/accent-theme-switcher";

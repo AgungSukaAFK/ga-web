@@ -62,7 +62,7 @@ const MASALAH = [
   {
     icon: Eye,
     title: "Kurang Transparan",
-    desc: 'Requester sulit melacak status permintaan. Pertanyaan "MR saya sudah sampai mana?" jadi sangat umum dan memakan waktu.',
+    desc: 'Requester sulit melacak status permintaan. Pertanyaan "MR saya sudah sampai mana?" menjadi sangat umum dan memakan waktu.',
   },
   {
     icon: Clock,

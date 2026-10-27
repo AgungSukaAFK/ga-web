@@ -49,7 +49,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { formatCurrency } from "@/lib/utils";
 import { PettyCashSubVoucherItem } from "@/type";
 import { PcCoaBadge } from "./PcCoaBadge";
@@ -253,7 +253,7 @@ export function PcAdminForceEditSubVoucherDialog({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Jelaskan kenapa Sub-Voucher ini perlu diedit paksa - tercatat permanen di jejak audit admin."
+              placeholder="Jelaskan alasan Sub-Voucher ini perlu diedit paksa - tercatat permanen di jejak audit admin."
               rows={2}
             />
           </div>

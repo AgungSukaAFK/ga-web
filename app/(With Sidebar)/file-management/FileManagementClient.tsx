@@ -69,7 +69,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 import {
   ActiveFilter,
@@ -436,7 +436,7 @@ export function FileManagementClientContent() {
         />
         <StatCard
           icon={<Sparkles className="h-5 w-5" />}
-          label="Orphan (aman dihapus duluan)"
+          label="Orphan (aman dihapus terlebih dahulu)"
           value={stats ? formatFileSize(stats.orphanTotalBytes) : "-"}
           sub={stats ? `${stats.orphanTotalCount} file tidak terpakai` : undefined}
           highlight

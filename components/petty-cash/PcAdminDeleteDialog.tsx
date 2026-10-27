@@ -31,7 +31,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 
 interface PcAdminDeleteDialogProps {
@@ -122,7 +122,7 @@ export function PcAdminDeleteDialog({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Jelaskan kenapa dokumen ini perlu dihapus - tercatat permanen di jejak audit admin."
+              placeholder="Jelaskan alasan dokumen ini perlu dihapus - tercatat permanen di jejak audit admin."
               rows={3}
             />
           </div>

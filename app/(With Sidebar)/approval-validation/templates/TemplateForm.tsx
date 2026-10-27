@@ -9,7 +9,7 @@ import { AutoRule, searchUsers } from "@/services/approvalTemplateService";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   ArrowDown,
   ArrowUp,
@@ -250,7 +250,7 @@ export function TemplateForm({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Kalau diisi, template ini otomatis jadi default saat GA membuka
+          Jika diisi, template ini otomatis menjadi default saat GA membuka
           validasi awal MR/PO dari kombinasi dokumen+departemen berikut - GA
           tetap bisa mengganti/edit manual saat itu juga. Satu template boleh
           punya lebih dari satu kombinasi.

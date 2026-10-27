@@ -435,7 +435,7 @@ function PoReceive() {
       </div>
       <Delay delay={1.2} className="grid grid-cols-2 gap-2">
         <div className="rounded-md border p-2 text-center">
-          <p className="mb-1 text-[10px] text-muted-foreground">Semua qty pas</p>
+          <p className="mb-1 text-[10px] text-muted-foreground">Semua qty sesuai</p>
           <StatusPill status="Full Received" />
         </div>
         <div className="rounded-md border border-amber-300 p-2 text-center ring-2 ring-amber-200 dark:ring-amber-900">
@@ -584,7 +584,7 @@ function PcVoucher() {
       </div>
       <Delay delay={1.2} className="text-[10px] text-muted-foreground">
         Isi Voucher = salinan persis Pengajuan (tidak bisa diedit). 1 Pengajuan
-        hanya bisa jadi 1 Voucher.
+        hanya bisa menjadi 1 Voucher.
       </Delay>
     </MockWindow>
   );

@@ -16,7 +16,7 @@ import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Megaphone } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useUpdateWebBadge } from "@/hooks/use-update-web-badge";
 import { fireEmojiConfetti } from "@/lib/emoji-confetti";

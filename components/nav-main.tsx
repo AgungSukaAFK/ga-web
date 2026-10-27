@@ -96,8 +96,8 @@ export function NavMain({
                   Atur menu {label}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Pilih menu yang mau ditampilkan. Cuma tersimpan di
-                  perangkat ini.
+                  Pilih menu yang ingin ditampilkan. Pengaturan ini hanya
+                  tersimpan di perangkat ini.
                 </p>
               </div>
               <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
