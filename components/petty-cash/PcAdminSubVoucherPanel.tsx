@@ -40,7 +40,7 @@ import {
 import { PcAdminDeleteDialog } from "@/components/petty-cash/PcAdminDeleteDialog";
 import { getDeleteImpactWarning } from "@/services/pettyCashAdminService";
 import { toast } from "@/lib/toast";
-import { Loader2, PencilLine, ShieldAlert, Tag, Trash2 } from "lucide-react";
+import { Loader2, PencilLine, Tag, Trash2 } from "lucide-react";
 
 interface PcAdminSubVoucherPanelProps {
   docId: number;
@@ -94,11 +94,9 @@ export function PcAdminSubVoucherPanel({
   };
 
   return (
-    <div className="space-y-6 rounded-md border border-amber-300 dark:border-amber-800 p-4 bg-amber-50/50 dark:bg-amber-950/20 print:hidden">
-      <p className="text-sm font-medium flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
-        <ShieldAlert className="h-4 w-4" /> Kontrol Admin
-      </p>
-
+    // Bingkai & judul "Kontrol Admin" ada di PcAdminControlSheet (drawer
+    // yang membungkus panel ini di halaman detail).
+    <div className="space-y-6 print:hidden">
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           <Tag className="h-3.5 w-3.5" /> Ubah Kode Dokumen

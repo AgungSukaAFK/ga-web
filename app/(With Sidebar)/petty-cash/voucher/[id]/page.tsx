@@ -60,6 +60,7 @@ import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
+import { PcAdminControlSheet } from "@/components/petty-cash/PcAdminControlSheet";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import {
@@ -295,10 +296,41 @@ function VoucherDetailContent({ id }: { id: string }) {
           doc.petty_cash_pengajuan?.kode_pengajuan || "-"
         }.`}
         cardAction={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
+            {viewer?.isAdmin && (
+              <PcAdminControlSheet kode={doc.kode_voucher}>
+                <PcAdminOverridePanel
+                  key={doc.id}
+                  docType="voucher"
+                  docId={doc.id}
+                  kode={doc.kode_voucher}
+                  status={doc.status}
+                  approvals={doc.approvals}
+                  statusOptions={PC_VOUCHER_STATUS_OPTIONS}
+                  onSaveStatus={handleAdminSave}
+                  docLabel="Voucher"
+                  showNeededDate
+                  showBudget
+                  editInitial={{
+                    needed_date: doc.needed_date,
+                    week_of_month: doc.week_of_month,
+                    site: doc.site,
+                    company_code: doc.company_code,
+                    department: doc.department,
+                    budget_id: doc.budget_id,
+                    notes: doc.notes,
+                    items: doc.items,
+                    attachments: doc.attachments,
+                  }}
+                  onForceEdit={handleForceEdit}
+                  onRenameKode={handleRenameKode}
+                  onDelete={handleDeleteDoc}
+                />
+              </PcAdminControlSheet>
+            )}
             <PcPrintMenu onPrint={handlePrint} />
           </div>
         }
@@ -442,36 +474,6 @@ function VoucherDetailContent({ id }: { id: string }) {
                 onEditAndApprove={handleEditAndApprove}
               />
             </div>
-          )}
-
-          {viewer?.isAdmin && (
-            <PcAdminOverridePanel
-              key={doc.id}
-              docType="voucher"
-              docId={doc.id}
-              kode={doc.kode_voucher}
-              status={doc.status}
-              approvals={doc.approvals}
-              statusOptions={PC_VOUCHER_STATUS_OPTIONS}
-              onSaveStatus={handleAdminSave}
-              docLabel="Voucher"
-              showNeededDate
-              showBudget
-              editInitial={{
-                needed_date: doc.needed_date,
-                week_of_month: doc.week_of_month,
-                site: doc.site,
-                company_code: doc.company_code,
-                department: doc.department,
-                budget_id: doc.budget_id,
-                notes: doc.notes,
-                items: doc.items,
-                attachments: doc.attachments,
-              }}
-              onForceEdit={handleForceEdit}
-              onRenameKode={handleRenameKode}
-              onDelete={handleDeleteDoc}
-            />
           )}
 
           <DiscussionPanel

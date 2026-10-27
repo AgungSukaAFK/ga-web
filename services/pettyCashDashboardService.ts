@@ -259,7 +259,7 @@ export const computeChainSteps = (
     state:
       pengajuan.status === "Rejected"
         ? "rejected"
-        : pengajuan.status === "Approved"
+        : pengajuan.status === "Approved" || pengajuan.status === "Selesai"
           ? "done"
           : "current",
   };
@@ -421,6 +421,19 @@ export interface PcActivityEvent {
   action?: { label: string; href: string };
 }
 
+/** Waktu approver terakhir memproses dokumen (null kalau belum ada). */
+const latestProcessedAt = (
+  approvals: { processed_at?: string | Date | null }[] | null | undefined,
+): string | Date | null =>
+  (approvals ?? []).reduce<string | Date | null>(
+    (latest, a) =>
+      a.processed_at &&
+      (!latest || new Date(a.processed_at) > new Date(latest))
+        ? a.processed_at
+        : latest,
+    null,
+  );
+
 /**
  * Rakit feed aktivitas dari data rantai yang sudah ada (tidak query lagi).
  * Sengaja cuma ambil event yang MAKNANYA pasti dari timestamp yang tersedia
@@ -445,20 +458,25 @@ export const buildActivityFeed = (
       timestamp: new Date(pengajuan.created_at),
       href: pengajuanHref,
     });
-    if (
-      (pengajuan.status === "Approved" || pengajuan.status === "Rejected") &&
-      pengajuan.updated_at &&
-      String(pengajuan.updated_at) !== String(pengajuan.created_at)
-    ) {
+    // Pengajuan "Selesai" (ikut Voucher-nya, lihat 0013) updated_at-nya =
+    // waktu rantainya tuntas, bukan waktu disetujui - pakai processed_at
+    // approver terakhir. Tuntasnya sendiri sudah jadi event "Voucher tuntas".
+    const decidedAt =
+      pengajuan.status === "Selesai"
+        ? latestProcessedAt(pengajuan.approvals)
+        : pengajuan.status === "Approved" || pengajuan.status === "Rejected"
+          ? pengajuan.updated_at
+          : null;
+    if (decidedAt && String(decidedAt) !== String(pengajuan.created_at)) {
       events.push({
         id: `pengajuan-final-${pengajuan.id}`,
         type: "pengajuan",
         label:
-          pengajuan.status === "Approved"
-            ? "Pengajuan disetujui"
-            : "Pengajuan ditolak",
+          pengajuan.status === "Rejected"
+            ? "Pengajuan ditolak"
+            : "Pengajuan disetujui",
         kode: pengajuan.kode_pengajuan,
-        timestamp: new Date(pengajuan.updated_at),
+        timestamp: new Date(decidedAt),
         href: pengajuanHref,
         action:
           pengajuan.status === "Rejected"

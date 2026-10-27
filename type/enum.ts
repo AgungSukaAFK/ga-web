@@ -461,11 +461,14 @@ export const UOM_OPTIONS = [
 ] as const;
 
 // Status "Input Pengajuan" Petty Cash (petty_cash_pengajuan, item-based) -
-// text bebas di DB (bukan check constraint), daftar di sini akan bertambah
-// seiring tahap Pengajuan Voucher/Claim Voucher/Deklarasi dibangun.
+// text bebas di DB (bukan check constraint). "Selesai" TIDAK PERNAH diset
+// dari app code - ikut status Voucher aktifnya lewat trigger DB
+// (supabase/migrations/0013_petty_cash_pengajuan_selesai.sql): naik begitu
+// Voucher "Selesai", turun lagi ke "Approved" kalau Voucher-nya turun/dihapus.
 export const PC_PENGAJUAN_STATUS_OPTIONS = [
   "In Approval",
   "Approved",
+  "Selesai",
   "Rejected",
 ] as const;
 
@@ -474,6 +477,8 @@ export const PC_PENGAJUAN_STATUS_COLORS: Record<string, string> = {
     "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
   Approved:
     "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Selesai:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
   Rejected:
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
 };

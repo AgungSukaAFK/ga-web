@@ -65,7 +65,6 @@ import {
   Loader2,
   PencilLine,
   Save,
-  ShieldAlert,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -190,11 +189,9 @@ export function PcAdminOverridePanel({
   };
 
   return (
-    <div className="space-y-6 rounded-md border border-amber-300 dark:border-amber-800 p-4 bg-amber-50/50 dark:bg-amber-950/20 print:hidden">
-      <p className="text-sm font-medium flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
-        <ShieldAlert className="h-4 w-4" /> Kontrol Admin
-      </p>
-
+    // Bingkai & judul "Kontrol Admin" ada di PcAdminControlSheet (drawer
+    // yang membungkus panel ini di halaman detail).
+    <div className="space-y-6 print:hidden">
       {/* 1. Override status & approval */}
       <div className="space-y-4">
         <div className="space-y-2">

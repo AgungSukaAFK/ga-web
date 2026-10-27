@@ -55,6 +55,7 @@ import {
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
 import { PcAdminSubVoucherPanel } from "@/components/petty-cash/PcAdminSubVoucherPanel";
+import { PcAdminControlSheet } from "@/components/petty-cash/PcAdminControlSheet";
 import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import {
@@ -240,10 +241,25 @@ function SubVoucherDetailContent({ id }: { id: string }) {
         title={doc.kode_sub_voucher}
         description="Detail lengkap Sub-Voucher (Tarikan Dana) Petty Cash."
         cardAction={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
+            {viewer?.isAdmin && (
+              <PcAdminControlSheet kode={doc.kode_sub_voucher}>
+                <PcAdminSubVoucherPanel
+                  key={doc.id}
+                  docId={doc.id}
+                  kode={doc.kode_sub_voucher}
+                  status={doc.status}
+                  notes={doc.notes}
+                  items={doc.items}
+                  onForceEdit={handleForceEdit}
+                  onRenameKode={handleRenameKode}
+                  onDelete={handleDeleteDoc}
+                />
+              </PcAdminControlSheet>
+            )}
             <PcPrintMenu onPrint={handlePrint} />
           </div>
         }
@@ -411,20 +427,6 @@ function SubVoucherDetailContent({ id }: { id: string }) {
                 />
               </CardContent>
             </Card>
-          )}
-
-          {viewer?.isAdmin && (
-            <PcAdminSubVoucherPanel
-              key={doc.id}
-              docId={doc.id}
-              kode={doc.kode_sub_voucher}
-              status={doc.status}
-              notes={doc.notes}
-              items={doc.items}
-              onForceEdit={handleForceEdit}
-              onRenameKode={handleRenameKode}
-              onDelete={handleDeleteDoc}
-            />
           )}
 
           <DiscussionPanel
