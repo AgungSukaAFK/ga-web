@@ -140,7 +140,7 @@ export function TopbarProfile({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            className="text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:text-destructive"
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:text-destructive dark:text-red-400 dark:focus:bg-red-950/40 dark:focus:text-red-300 dark:[&_svg]:text-red-400"
             onSelect={() => setLogoutDialog(true)}
           >
             <LogOut />
