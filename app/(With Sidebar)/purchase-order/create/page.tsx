@@ -152,6 +152,7 @@ import {
 import { PrintablePO, getPrintVendorData } from "../PrintablePO";
 import { BarangPickerPopover } from "./BarangPickerPopover";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
+import { printWithFileName } from "@/lib/print";
 
 // --- INTERFACE EXTENSION ---
 // Kita extend POItem lokal di sini agar tidak error TS
@@ -462,7 +463,12 @@ function CreatePOPageContent() {
       if (cancelled) return;
       raf1 = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!cancelled) window.print();
+          if (!cancelled)
+            printWithFileName(
+              poForm.kode_po && poForm.kode_po !== "Generating..."
+                ? `Preview_${poForm.kode_po}`
+                : "Preview_PO",
+            );
         });
       });
     });

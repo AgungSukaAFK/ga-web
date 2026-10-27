@@ -160,6 +160,7 @@ import {
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
+import { printWithFileName } from "@/lib/print";
 import { UserAvatar } from "@/components/user-avatar";
 
 const PPH_LABELS: Record<string, string> = {
@@ -2015,7 +2016,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       if (cancelled) return;
       raf1 = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!cancelled) window.print();
+          if (!cancelled) printWithFileName(po?.kode_po ?? "");
         });
       });
     });
@@ -2032,7 +2033,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     if (!isPrintingReceive) return;
     const raf1 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.print();
+        printWithFileName(`Penerimaan_Barang_${po?.kode_po ?? ""}`);
       });
     });
     const reset = () => setIsPrintingReceive(false);
@@ -2051,7 +2052,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       if (cancelled) return;
       raf1 = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!cancelled) window.print();
+          if (!cancelled) printWithFileName(`BAST_${po?.kode_po ?? ""}`);
         });
       });
     });

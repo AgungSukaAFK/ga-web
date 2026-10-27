@@ -53,6 +53,7 @@ import { DiscussionPanel } from "@/components/discussion-panel";
 import { PrintablePettyCashDocument } from "@/components/petty-cash/PrintablePettyCashDocument";
 import { PcPrintMenu, PcPrintMode } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
+import { printWithFileName } from "@/lib/print";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
@@ -134,7 +135,7 @@ function DeklarasiDetailContent({ id }: { id: string }) {
       if (cancelled) return;
       raf1 = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!cancelled) window.print();
+          if (!cancelled) printWithFileName(doc.kode_deklarasi);
         });
       });
     });

@@ -64,6 +64,7 @@ import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
 import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
+import { printWithFileName } from "@/lib/print";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -739,7 +740,10 @@ export function MaterialRequestContent({
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () =>
+    printWithFileName(
+      `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}_${new Date().toISOString().slice(0, 10)}`,
+    );
 
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);

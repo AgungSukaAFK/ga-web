@@ -64,6 +64,7 @@ import { toast } from "sonner";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
 import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
+import { printWithFileName } from "@/lib/print";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -622,7 +623,10 @@ export default function MrManagementClient() {
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () =>
+    printWithFileName(
+      `Rekap_MR_Admin_${new Date().toISOString().slice(0, 10)}`,
+    );
 
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
