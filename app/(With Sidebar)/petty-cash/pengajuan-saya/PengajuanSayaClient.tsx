@@ -841,7 +841,7 @@ export default function PengajuanSayaClient() {
             </div>
             {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1130px] table-fixed">
+              <Table className="min-w-[1190px] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
@@ -849,7 +849,7 @@ export default function PengajuanSayaClient() {
                     <TableHead className="w-[170px]">Asal Dokumen</TableHead>
                     <TableHead className="w-[120px]">Departemen</TableHead>
                     <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[110px]">Status</TableHead>
+                    <TableHead className="w-[170px]">Status</TableHead>
                     <TableHead className="w-[190px]">Tarikan / Deklarasi</TableHead>
                     <TableHead className="w-[140px] text-right">Aksi</TableHead>
                   </TableRow>
@@ -1010,7 +1010,7 @@ export default function PengajuanSayaClient() {
             </div>
             {renderFilterBar()}
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1040px] table-fixed">
+              <Table className="min-w-[1080px] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
@@ -1018,7 +1018,7 @@ export default function PengajuanSayaClient() {
                     <TableHead className="w-[220px]">Asal Sub-Voucher / Voucher</TableHead>
                     <TableHead className="w-[130px]">Departemen</TableHead>
                     <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[130px]">Status</TableHead>
+                    <TableHead className="w-[170px]">Status</TableHead>
                     <TableHead className="w-[140px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
