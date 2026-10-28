@@ -42,7 +42,8 @@ const supabase = createClient();
 
 const SUB_VOUCHER_WITH_VOUCHER = `
   *, petty_cash_voucher(kode_voucher, total_amount, items, company_code,
-    department, week_of_month, site, petty_cash_pengajuan(kode_pengajuan),
+    department, week_of_month, site, approvals,
+    petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department),
     petty_cash_budget(name, current_budget)),
   users_with_profiles:profiles!user_id(nama, email),
   paid_by_profile:profiles!paid_by(nama),

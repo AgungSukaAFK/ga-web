@@ -74,3 +74,79 @@ export const computeSisaPengembalian = (sv: {
     .reduce((sum, p) => sum + Number(p.amount), 0);
   return Number(sv.amount) - Number(approved.total_amount ?? 0) - returned;
 };
+
+export interface PcPenarikanSummary {
+  // Basis saldo: Voucher aktif (nilainya bisa beda dari Pengajuan kalau
+  // diedit approver Voucher), atau Pengajuan sendiri kalau belum di-voucher.
+  basisLabel: "Voucher" | "Pengajuan";
+  basisKode: string | null;
+  nilai: number;
+  totalDitarik: number;
+  sisaSaldo: number;
+  // Urut dari tarikan PERTAMA - yang terakhir = tarikan paling baru.
+  penarikan: {
+    id: number;
+    kode: string;
+    amount: number;
+    status: string;
+    created_at?: string | Date;
+  }[];
+  budgetName: string | null;
+  budgetRemaining: number | null;
+}
+
+/**
+ * Ringkasan saldo & riwayat penarikan (Sub-Voucher/Tarik Dana) sebuah
+ * Pengajuan - dipakai cetak Input Pengajuan (PrintablePettyCashDocument).
+ * Butuh embed petty_cash_voucher -> petty_cash_sub_voucher dari
+ * fetchPengajuanById. Budget diambil dari Voucher (budget_id disalin dari
+ * Pengajuan, tapi bisa diganti approver Voucher), fallback ke Pengajuan.
+ */
+export const buildPcPenarikanSummary = (pengajuan: {
+  kode_pengajuan: string;
+  total_amount: number;
+  petty_cash_budget?: { name: string; current_budget: number } | null;
+  petty_cash_voucher?:
+    | {
+        id: number;
+        kode_voucher?: string;
+        status?: string;
+        created_at?: string | Date;
+        total_amount?: number;
+        petty_cash_budget?: { name: string; current_budget: number } | null;
+        petty_cash_sub_voucher?:
+          | {
+              id: number;
+              kode_sub_voucher: string;
+              amount: number;
+              status: string;
+              created_at?: string | Date;
+            }[]
+          | null;
+      }[]
+    | null;
+}): PcPenarikanSummary => {
+  const voucher = getActiveDoc(pengajuan.petty_cash_voucher);
+  const penarikan = [...toEmbedArray(voucher?.petty_cash_sub_voucher)]
+    .sort((a, b) => createdTime(a) - createdTime(b))
+    .map((sv) => ({
+      id: sv.id,
+      kode: sv.kode_sub_voucher,
+      amount: Number(sv.amount) || 0,
+      status: sv.status,
+      created_at: sv.created_at,
+    }));
+  const nilai = Number(voucher?.total_amount ?? pengajuan.total_amount) || 0;
+  const totalDitarik = penarikan.reduce((sum, p) => sum + p.amount, 0);
+  const budget = voucher?.petty_cash_budget ?? pengajuan.petty_cash_budget;
+  return {
+    basisLabel: voucher ? "Voucher" : "Pengajuan",
+    basisKode: voucher?.kode_voucher ?? pengajuan.kode_pengajuan,
+    nilai,
+    totalDitarik,
+    sisaSaldo: nilai - totalDitarik,
+    penarikan,
+    budgetName: budget?.name ?? null,
+    budgetRemaining: budget ? Number(budget.current_budget) : null,
+  };
+};

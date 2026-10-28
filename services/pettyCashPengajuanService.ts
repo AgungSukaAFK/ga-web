@@ -131,6 +131,10 @@ export interface CreatePengajuanPayload {
   // dengan company/department yang juga dikirim dari form, bukan di-join
   // ulang belakangan.
   site: string | null;
+  // Pengguna Budget (lihat komentar pengguna_budget_* di PettyCashPengajuan,
+  // type/index.ts) - requester sendiri pun tetap dikirim (dari profilnya)
+  // supaya kolom ini selalu terisi utk dokumen baru.
+  pengguna_budget: { id: string; nama: string; department: string | null };
   notes: string;
   items: PettyCashPengajuanItem[];
   attachments: { url: string; name: string }[];
@@ -270,6 +274,9 @@ export const createPettyCashPengajuan = async (
       company_code: payload.company_code,
       department: payload.department,
       budget_id: budget.id,
+      pengguna_budget_id: payload.pengguna_budget.id,
+      pengguna_budget_nama: payload.pengguna_budget.nama,
+      pengguna_budget_department: payload.pengguna_budget.department,
       needed_date: payload.needed_date,
       week_of_month: payload.week_of_month,
       site: payload.site,
@@ -430,13 +437,21 @@ export const adminForceUpdatePengajuan = async (
   return data as unknown as PettyCashPengajuan;
 };
 
+/**
+ * Ikut join Voucher -> Sub-Voucher (tarikan dana) supaya cetak Input
+ * Pengajuan bisa menampilkan ringkasan saldo & riwayat penarikan (lihat
+ * buildPcPenarikanSummary, lib/pcChain.ts).
+ */
 export const fetchPengajuanById = async (
   id: number,
 ): Promise<PettyCashPengajuan> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget)",
+      `*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget),
+       petty_cash_voucher(id, kode_voucher, status, created_at, total_amount,
+         petty_cash_budget(name, current_budget),
+         petty_cash_sub_voucher(id, kode_sub_voucher, amount, status, created_at))`,
     )
     .eq("id", id)
     .single();

@@ -48,6 +48,7 @@ import {
   PC_PENGAJUAN_STATUS_OPTIONS,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
+import { buildPcPenarikanSummary } from "@/lib/pcChain";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
@@ -339,6 +340,7 @@ function PengajuanDetailContent({ id }: { id: string }) {
             site={doc.site}
             budgetName={doc.petty_cash_budget?.name}
             budgetRemaining={doc.petty_cash_budget?.current_budget}
+            penggunaBudgetName={doc.pengguna_budget_nama}
             neededDate={doc.needed_date}
             weekOfMonth={doc.week_of_month}
             notes={doc.notes}
@@ -393,7 +395,12 @@ function PengajuanDetailContent({ id }: { id: string }) {
           neededDate={doc.needed_date}
           weekOfMonth={doc.week_of_month}
           budgetName={doc.petty_cash_budget?.name}
+          penggunaBudget={{
+            name: doc.pengguna_budget_nama,
+            subtitle: doc.pengguna_budget_department,
+          }}
           approvals={doc.approvals}
+          penarikanSummary={buildPcPenarikanSummary(doc)}
           notes={doc.notes}
           items={doc.items}
           totalAmount={doc.total_amount}

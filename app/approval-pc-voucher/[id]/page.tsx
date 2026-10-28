@@ -25,6 +25,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock, X } from "lucide-react";
+import { PcApprovalLevelBadge } from "@/components/petty-cash/PcApprovalLevelBadge";
+import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import {
   usePcVerifyAccess,
   useHighlightedStep,
@@ -259,6 +261,7 @@ export default function ApprovalPcVoucherPage() {
                 <TableRow>
                   <TableHead>Nama Approver</TableHead>
                   <TableHead>Departemen</TableHead>
+                  <TableHead>Level</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tanggal Diproses</TableHead>
                 </TableRow>
@@ -266,13 +269,13 @@ export default function ApprovalPcVoucherPage() {
               <TableBody>
                 {!doc.approvals || doc.approvals.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">
+                    <TableCell colSpan={5} className="text-center">
                       Belum ada riwayat persetujuan.
                     </TableCell>
                   </TableRow>
                 ) : (
                   (doc.approvals as PettyCashPengajuanApprover[]).map(
-                    (app, index) => (
+                    (app, index, arr) => (
                       <TableRow
                         key={index}
                         className={
@@ -285,6 +288,11 @@ export default function ApprovalPcVoucherPage() {
                           {app.nama}
                         </TableCell>
                         <TableCell>{app.department}</TableCell>
+                        <TableCell>
+                          <PcApprovalLevelBadge
+                            level={getPcApprovalLevel(arr, index)}
+                          />
+                        </TableCell>
                         <TableCell>
                           {getApprovalStatusBadge(app.status)}
                         </TableCell>

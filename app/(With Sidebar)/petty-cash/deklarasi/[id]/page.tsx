@@ -337,6 +337,9 @@ function DeklarasiDetailContent({ id }: { id: string }) {
             budgetRemaining={
               doc.petty_cash_voucher?.petty_cash_budget?.current_budget
             }
+            penggunaBudgetName={
+              doc.petty_cash_voucher?.petty_cash_pengajuan?.pengguna_budget_nama
+            }
             weekOfMonth={doc.week_of_month}
             showNeededDate={false}
             notes={doc.notes}
@@ -394,6 +397,13 @@ function DeklarasiDetailContent({ id }: { id: string }) {
               value: doc.petty_cash_voucher?.kode_voucher,
             },
           ]}
+          penggunaBudget={{
+            name: doc.petty_cash_voucher?.petty_cash_pengajuan
+              ?.pengguna_budget_nama,
+            subtitle:
+              doc.petty_cash_voucher?.petty_cash_pengajuan
+                ?.pengguna_budget_department,
+          }}
           cashReceived={doc.petty_cash_sub_voucher?.amount ?? null}
           cashReceivedLabel={
             doc.petty_cash_sub_voucher

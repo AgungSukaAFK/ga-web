@@ -26,6 +26,8 @@ import {
   PettyCashPengajuanItem,
 } from "@/type";
 import { formatCurrency } from "@/lib/utils";
+import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
+import { PcApprovalLevelBadge } from "./PcApprovalLevelBadge";
 import {
   Building2,
   CalendarDays,
@@ -33,6 +35,7 @@ import {
   Clock,
   MapPin,
   User,
+  UserCheck,
   Wallet,
   XCircle,
 } from "lucide-react";
@@ -70,6 +73,9 @@ interface PcDocumentInfoPanelProps {
   site?: string | null;
   budgetName?: string | null;
   budgetRemaining?: number | null;
+  // Pengguna Budget (lihat PettyCashPengajuan.pengguna_budget_*) - kosong
+  // (dokumen lama/tidak di-join) = field disembunyikan.
+  penggunaBudgetName?: string | null;
   neededDate?: string | Date | null;
   weekOfMonth?: number | null;
   showNeededDate?: boolean;
@@ -95,6 +101,7 @@ export function PcDocumentInfoPanel({
   site,
   budgetName,
   budgetRemaining,
+  penggunaBudgetName,
   neededDate,
   weekOfMonth,
   showNeededDate = true,
@@ -121,6 +128,13 @@ export function PcDocumentInfoPanel({
             )
           }
         />
+        {penggunaBudgetName && (
+          <InfoField
+            icon={UserCheck}
+            label="Pengguna Budget"
+            value={penggunaBudgetName}
+          />
+        )}
         <InfoField icon={Building2} label="Departemen" value={department} />
         <InfoField icon={Wallet} label="Company" value={companyCode} />
         <InfoField icon={MapPin} label="Site" value={site} />
@@ -187,12 +201,13 @@ export function PcDocumentInfoPanel({
                   className="h-6 w-6"
                   fallbackClassName="text-[10px]"
                 />
-                <span>
+                <span className="min-w-0">
                   {i + 1}. {app.nama}{" "}
                   <span className="text-xs text-muted-foreground">
                     ({app.department})
                   </span>
                 </span>
+                <PcApprovalLevelBadge level={getPcApprovalLevel(approvals, i)} />
               </span>
               <div className="flex items-center gap-2">
                 {app.processed_at && (

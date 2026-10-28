@@ -556,6 +556,11 @@ export default function PettyCashManagementClient() {
                 site={(selected as any).site}
                 budgetName={getBudget(stage, selected)?.name}
                 budgetRemaining={getBudget(stage, selected)?.current_budget}
+                penggunaBudgetName={
+                  stage === "pengajuan"
+                    ? (selected as PettyCashPengajuan).pengguna_budget_nama
+                    : undefined
+                }
                 neededDate={getNeededDate(stage, selected)}
                 weekOfMonth={(selected as any).week_of_month}
                 showNeededDate={showsNeededDate(stage)}

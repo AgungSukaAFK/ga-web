@@ -68,6 +68,8 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import { PcApprovalTemplateForm } from "./PcApprovalTemplateForm";
+import { PcApprovalLevelBadge } from "@/components/petty-cash/PcApprovalLevelBadge";
+import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import { Loader2, Plus, Trash2, Edit, Search, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -515,14 +517,18 @@ export default function PcApprovalTemplateClient() {
                   <TableHead className="w-[50px]">Urutan</TableHead>
                   <TableHead>Nama</TableHead>
                   <TableHead>Departemen</TableHead>
+                  <TableHead>Level</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {detailTemplate?.approval_path.map((app, i) => (
+                {detailTemplate?.approval_path.map((app, i, arr) => (
                   <TableRow key={app.userid || i}>
                     <TableCell>{i + 1}</TableCell>
                     <TableCell className="font-medium">{app.nama}</TableCell>
                     <TableCell>{app.department || "-"}</TableCell>
+                    <TableCell>
+                      <PcApprovalLevelBadge level={getPcApprovalLevel(arr, i)} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

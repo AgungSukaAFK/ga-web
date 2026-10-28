@@ -883,6 +883,7 @@ export default function ApprovalPettyCashClient() {
               budgetRemaining={
                 selectedPengajuan.petty_cash_budget?.current_budget
               }
+              penggunaBudgetName={selectedPengajuan.pengguna_budget_nama}
               neededDate={selectedPengajuan.needed_date}
               weekOfMonth={selectedPengajuan.week_of_month}
               notes={selectedPengajuan.notes}

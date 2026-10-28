@@ -133,6 +133,10 @@ function SubVoucherDetailContent({ id }: { id: string }) {
       setQrUrl(`${window.location.origin}/approval-pc-sub-voucher/${id}`);
     }
   }, [id]);
+  const voucherQrUrl =
+    qrUrl && doc
+      ? `${window.location.origin}/approval-pc-voucher/${doc.voucher_id}`
+      : "";
 
   const handlePrint = (mode: PcPrintMode) => {
     setPrintMode(mode);
@@ -293,6 +297,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             site={voucher?.site}
             budgetName={voucher?.petty_cash_budget?.name}
             budgetRemaining={voucher?.petty_cash_budget?.current_budget}
+            penggunaBudgetName={voucher?.petty_cash_pengajuan?.pengguna_budget_nama}
             weekOfMonth={voucher?.week_of_month}
             showNeededDate={false}
             notes={doc.notes}
@@ -455,13 +460,24 @@ function SubVoucherDetailContent({ id }: { id: string }) {
               value: voucher?.petty_cash_pengajuan?.kode_pengajuan,
             },
           ]}
+          penggunaBudget={{
+            name: voucher?.petty_cash_pengajuan?.pengguna_budget_nama,
+            subtitle: voucher?.petty_cash_pengajuan?.pengguna_budget_department,
+          }}
+          // Sub-Voucher tidak punya approval sendiri - yang dicantumkan
+          // approver Voucher induknya (QR ke halaman verifikasi Voucher),
+          // ditutup Finance pembayar sbg "Dijalankan Oleh" (QR ke halaman
+          // verifikasi Sub-Voucher ini, step 1).
+          approvals={voucher?.approvals}
+          approvalsQrUrl={voucherQrUrl}
           extraSignatures={[
             {
-              label: "Dibayar Oleh",
+              label: "Dijalankan Oleh",
               name: doc.paid_by_profile?.nama || "Finance",
               subtitle: "Finance",
               state: doc.paid_at ? "done" : "pending",
               date: doc.paid_at,
+              step: 1,
             },
           ]}
           notes={doc.notes}

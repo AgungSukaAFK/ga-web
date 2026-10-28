@@ -25,6 +25,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock, X } from "lucide-react";
+import { PcApprovalLevelBadge } from "@/components/petty-cash/PcApprovalLevelBadge";
+import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import {
   usePcVerifyAccess,
   useHighlightedStep,
@@ -46,6 +48,7 @@ type PengajuanApprovalDetail = Pick<
   | "user_id"
   | "items"
   | "created_at"
+  | "pengguna_budget_nama"
 > & {
   users_with_profiles: { nama: string } | null;
 };
@@ -96,7 +99,7 @@ export default function ApprovalPcPengajuanPage() {
         .select(
           `
             user_id, kode_pengajuan, department, site, needed_date, week_of_month,
-            total_amount, status, approvals, items, created_at,
+            total_amount, status, approvals, items, created_at, pengguna_budget_nama,
             users_with_profiles:profiles!user_id (nama)
           `,
         )
@@ -183,6 +186,12 @@ export default function ApprovalPcPengajuanPage() {
             </p>
           </div>
           <div>
+            <p className="text-sm font-medium">Pengguna Budget</p>
+            <p className="text-lg font-semibold">
+              {doc.pengguna_budget_nama || doc.users_with_profiles?.nama || "N/A"}
+            </p>
+          </div>
+          <div>
             <p className="text-sm font-medium">Departemen</p>
             <p className="text-lg font-semibold">{doc.department}</p>
           </div>
@@ -257,6 +266,7 @@ export default function ApprovalPcPengajuanPage() {
                 <TableRow>
                   <TableHead>Nama Approver</TableHead>
                   <TableHead>Departemen</TableHead>
+                  <TableHead>Level</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tanggal Diproses</TableHead>
                 </TableRow>
@@ -264,13 +274,13 @@ export default function ApprovalPcPengajuanPage() {
               <TableBody>
                 {!doc.approvals || doc.approvals.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">
+                    <TableCell colSpan={5} className="text-center">
                       Belum ada riwayat persetujuan.
                     </TableCell>
                   </TableRow>
                 ) : (
                   (doc.approvals as PettyCashPengajuanApprover[]).map(
-                    (app, index) => (
+                    (app, index, arr) => (
                       <TableRow
                         key={index}
                         className={
@@ -283,6 +293,11 @@ export default function ApprovalPcPengajuanPage() {
                           {app.nama}
                         </TableCell>
                         <TableCell>{app.department}</TableCell>
+                        <TableCell>
+                          <PcApprovalLevelBadge
+                            level={getPcApprovalLevel(arr, index)}
+                          />
+                        </TableCell>
                         <TableCell>
                           {getApprovalStatusBadge(app.status)}
                         </TableCell>

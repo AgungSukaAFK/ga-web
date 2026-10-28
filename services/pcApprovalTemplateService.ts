@@ -15,7 +15,7 @@
 // validasi di atas).
 
 import { createClient } from "@/lib/supabase/client";
-import { PcApprovalType } from "@/type";
+import { PcApprovalLevel, PcApprovalType } from "@/type";
 import { PC_APPROVAL_TYPE_PENGAJUAN } from "@/type/enum";
 
 const supabase = createClient();
@@ -23,12 +23,15 @@ const supabase = createClient();
 // Baris approver di jalur persetujuan - SENGAJA tidak punya field `type`
 // (beda dari Approval milik MR/PO) karena alur approval Petty Cash cuma
 // sekuensial approve/reject biasa, tidak ada percabangan logic per jenis
-// approval (lihat handleApprove di petty-cash/[id]/page.tsx).
+// approval (lihat handleApprove di petty-cash/[id]/page.tsx). `level` juga
+// bukan percabangan logic - murni label peran (Dicek/Disetujui/Dijalankan
+// Oleh) utk tampilan & kolom tanda tangan cetak.
 export interface PcApprover {
   userid: string;
   nama: string;
   department: string;
   role: string;
+  level?: PcApprovalLevel | null;
   status: "pending" | "approved" | "rejected";
   processed_at?: string | null;
 }

@@ -246,7 +246,7 @@ export const fetchVoucherById = async (
     .from("petty_cash_voucher")
     .select(
       `*, users_with_profiles:profiles!user_id(nama, email),
-       petty_cash_pengajuan(kode_pengajuan),
+       petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department),
        petty_cash_budget(name, current_budget),
        petty_cash_sub_voucher(id, kode_sub_voucher, amount, notes, status, created_at,
          petty_cash_deklarasi(id, kode_deklarasi, status, created_at))`,

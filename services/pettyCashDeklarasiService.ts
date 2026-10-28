@@ -86,7 +86,7 @@ const deptAbbreviations: { [key: string]: string } = {
 // GANTI cost center MR/PO (dead field, tidak pernah dipakai di alur baru
 // petty cash - lihat PcDocumentInfoPanel.tsx).
 const VOUCHER_WITH_PENGAJUAN =
-  "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan), petty_cash_budget(name, current_budget)), petty_cash_sub_voucher(kode_sub_voucher, amount)";
+  "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department), petty_cash_budget(name, current_budget)), petty_cash_sub_voucher(kode_sub_voucher, amount)";
 
 /**
  * Generate Kode Deklarasi Petty Cash yang unik per company.

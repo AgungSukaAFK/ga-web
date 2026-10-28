@@ -81,6 +81,10 @@ import {
 } from "@/components/petty-cash/PcItemsEditor";
 import { PcCoaBreakdown } from "@/components/petty-cash/PcCoaBreakdown";
 import { PcPengajuanTemplatePicker } from "@/components/petty-cash/PcPengajuanTemplatePicker";
+import {
+  PcPenggunaBudget,
+  PcPenggunaBudgetField,
+} from "@/components/petty-cash/PcPenggunaBudgetField";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   getSelectableWeeksOfCurrentMonth,
@@ -121,6 +125,7 @@ export default function InputPengajuanClient() {
   const supabase = createClient();
 
   const [profile, setProfile] = useState<{
+    id: string;
     company: string;
     department: string;
     nama: string;
@@ -160,6 +165,11 @@ export default function InputPengajuanClient() {
     setWeekOfMonth(getDefaultWeekForDate(neededDate));
   }, [neededDate, weekManuallySet]);
   const [notes, setNotes] = useState("");
+  // Pengguna Budget - default requester sendiri, lihat PcPenggunaBudgetField.
+  const [penggunaIsSelf, setPenggunaIsSelf] = useState(true);
+  const [penggunaBudget, setPenggunaBudget] = useState<PcPenggunaBudget | null>(
+    null,
+  );
   const [items, setItems] = useState<PettyCashPengajuanItem[]>([]);
   const [attachments, setAttachments] = useState<
     { url: string; name: string }[]
@@ -190,7 +200,7 @@ export default function InputPengajuanClient() {
           .eq("id", user.id)
           .single();
         if (error) throw error;
-        setProfile(userProfile);
+        setProfile({ id: user.id, ...userProfile });
 
         const eligibilityResult = await checkPengajuanEligibility(
           user.id,
@@ -309,6 +319,14 @@ export default function InputPengajuanClient() {
         setTemplateItems(src.items || []);
         setNotes(src.notes || "");
         setAttachments(src.attachments || []);
+        if (src.pengguna_budget_id && src.pengguna_budget_id !== user?.id) {
+          setPenggunaIsSelf(false);
+          setPenggunaBudget({
+            id: src.pengguna_budget_id,
+            nama: src.pengguna_budget_nama || "",
+            department: src.pengguna_budget_department,
+          });
+        }
         setUlangSource(src);
         toast.success(
           `Data dari ${src.kode_pengajuan} dimuat - perbaiki lalu kirim sebagai Pengajuan baru.`,
@@ -395,6 +413,11 @@ export default function InputPengajuanClient() {
     if (!weekOfMonth) {
       return toast.error("Pilih minggu ke berapa dana ini dibutuhkan.");
     }
+    if (!penggunaIsSelf && !penggunaBudget) {
+      return toast.error(
+        "Pilih user Pengguna Budget, atau centang \"Saya sendiri\".",
+      );
+    }
     if (!profile?.company || !profile?.department) {
       return toast.error("Data profil (Company/Departemen) tidak lengkap.");
     }
@@ -413,6 +436,14 @@ export default function InputPengajuanClient() {
           needed_date: neededDate,
           week_of_month: weekOfMonth,
           site: profile.lokasi ?? null,
+          pengguna_budget:
+            !penggunaIsSelf && penggunaBudget
+              ? penggunaBudget
+              : {
+                  id: user.id,
+                  nama: profile.nama,
+                  department: profile.department,
+                },
           notes,
           items,
           attachments,
@@ -468,6 +499,16 @@ export default function InputPengajuanClient() {
       status: weekOfMonth ? "done" : "todo",
       value: weekOfMonth ? `Minggu ke-${weekOfMonth}` : undefined,
       targetId: "pc-field-minggu",
+    },
+    {
+      id: "pengguna",
+      label: "Pengguna budget",
+      status: penggunaIsSelf || penggunaBudget ? "done" : "todo",
+      value: penggunaIsSelf
+        ? "Saya sendiri"
+        : (penggunaBudget?.nama ?? undefined),
+      hint: penggunaIsSelf || penggunaBudget ? undefined : "Pilih user",
+      targetId: "pc-field-pengguna",
     },
     {
       id: "items",
@@ -683,6 +724,19 @@ export default function InputPengajuanClient() {
                   : "Belum ada budget aktif untuk departemen ini"
               }
             />
+          </div>
+          {/* Baris sendiri, lebarnya disamakan dgn kolom kiri (md:w-1/2 +
+              setengah gap) supaya sejajar dengan "Nama Pemohon". */}
+          <div id="pc-field-pengguna" className="col-span-12 rounded-md">
+            <div className="md:w-1/2 md:pr-2">
+              <PcPenggunaBudgetField
+                isSelf={penggunaIsSelf}
+                onIsSelfChange={setPenggunaIsSelf}
+                selected={penggunaBudget}
+                onSelect={setPenggunaBudget}
+                selfId={profile?.id}
+              />
+            </div>
           </div>
           <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
             <Label>Perusahaan</Label>

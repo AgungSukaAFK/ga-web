@@ -1,6 +1,6 @@
 // type/enum.ts
 
-import { Approval, PcApprovalType } from "@/type";
+import { Approval, PcApprovalLevel, PcApprovalType } from "@/type";
 
 export const LIMIT_OPTIONS = [10, 25, 50, 100, 1000, 10000];
 
@@ -650,3 +650,20 @@ export const PC_APPROVAL_TYPE_COLORS: Record<string, string> = {
 };
 export const PC_APPROVAL_TYPE_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Level approver Petty Cash - lihat komentar PcApprovalLevel di
+// type/index.ts. Urutan array ini = urutan wajib di jalur approval.
+export const PC_APPROVAL_LEVEL_OPTIONS: PcApprovalLevel[] = [
+  "Dicek Oleh",
+  "Disetujui Oleh",
+  "Dijalankan Oleh",
+];
+
+export const PC_APPROVAL_LEVEL_COLORS: Record<PcApprovalLevel, string> = {
+  "Dicek Oleh":
+    "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800",
+  "Disetujui Oleh":
+    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800",
+  "Dijalankan Oleh":
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
+};

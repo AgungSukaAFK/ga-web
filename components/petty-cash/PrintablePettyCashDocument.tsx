@@ -12,19 +12,27 @@
 // - variant "deklarasi" - mirip "Form Deklarasi": Tanggal/Keterangan/FP No,
 //   tabel Uang Masuk / Uang Keluar / Saldo berjalan, Total & Sisa Pemakaian.
 //
-// Kolom tanda tangan (signatureMode "qr", default) berisi kode QR per slot (pembuat + tiap
-// approver): QR mengarah ke halaman verifikasi /approval-pc-*/[id]?step=N,
-// yang mengarahkan pemindai sesuai perannya (approver yang belum approve ->
-// langsung ke halaman approval, dst - lihat usePcVerifyAccess). Mode "wet"
-// mengganti QR dengan ruang kosong utk tanda tangan basah.
+// Kolom tanda tangan = tabel berbingkai, satu kolom per orang, header-nya
+// dikelompokkan per level: Pengaju Budget (pembuat) | Pengguna Budget |
+// Dicek Oleh | Disetujui Oleh | Dijalankan Oleh (level tiap approver, lihat
+// PcApprovalLevel di type/index.ts & getPcApprovalLevel). Mode "qr"
+// (default) berisi kode QR per slot: QR mengarah ke halaman verifikasi
+// /approval-pc-*/[id]?step=N, yang mengarahkan pemindai sesuai perannya
+// (approver yang belum approve -> langsung ke halaman approval, dst - lihat
+// usePcVerifyAccess). Mode "wet" mengganti QR dengan ruang kosong utk tanda
+// tangan basah. Pengguna Budget tidak ikut approval - slotnya tanpa QR,
+// cuma nama.
 
 "use client";
 
+import { Fragment } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaginatedPrintDocument } from "@/app/(With Sidebar)/purchase-order/[id]/PaginatedPrintDocument";
 import { getCompanyDetails } from "@/lib/companyDetails";
 import { extractPlainText } from "@/lib/rich-content";
+import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
+import { PcPenarikanSummary } from "@/lib/pcChain";
 import { PettyCashPengajuanApprover, PettyCashPengajuanItem } from "@/type";
 
 export interface PcPrintSignature {
@@ -36,6 +44,23 @@ export interface PcPrintSignature {
   // Index slot di halaman verifikasi (?step=N) - 0 = pembuat.
   step: number;
 }
+
+// Satu kolom di tabel tanda tangan. `qrValue` null = slot tanpa QR
+// (Pengguna Budget, yang tidak ikut approval).
+interface SignatureSlot {
+  key: string;
+  label: string;
+  name: string;
+  subtitle?: string | null;
+  state?: PcPrintSignature["state"];
+  date?: string | Date | null;
+  qrValue: string | null;
+}
+
+// Maks kolom per baris tabel tanda tangan supaya QR & nama tetap terbaca di
+// A4 portrait (lebar isi 180mm -> ~30mm per kolom). Lebih dari itu
+// dilanjutkan ke baris tabel berikutnya.
+const SIG_MAX_COLS = 6;
 
 interface PrintablePettyCashDocumentProps {
   variant?: "pengajuan" | "deklarasi";
@@ -56,9 +81,21 @@ interface PrintablePettyCashDocumentProps {
   items: PettyCashPengajuanItem[];
   totalAmount: number;
   approvals?: PettyCashPengajuanApprover[] | null;
-  // Slot tanda tangan tambahan setelah approver (mis. "Dibayar Oleh"
-  // Finance di Sub-Voucher yang tidak punya jalur approval sendiri).
-  extraSignatures?: Omit<PcPrintSignature, "step">[];
+  // Basis URL QR utk slot approver - default `qrUrl`. Dipakai Sub-Voucher
+  // yang mencantumkan approver Voucher induknya (QR-nya ke halaman
+  // verifikasi Voucher, bukan Sub-Voucher).
+  approvalsQrUrl?: string;
+  // Pengguna Budget (lihat PettyCashPengajuan.pengguna_budget_*) - kosong
+  // (dokumen lama) = requester sendiri.
+  penggunaBudget?: { name?: string | null; subtitle?: string | null } | null;
+  // Slot tanda tangan tambahan setelah approver (mis. Finance pembayar di
+  // Sub-Voucher yang tidak punya jalur approval sendiri). `step` default
+  // melanjutkan urutan approver.
+  extraSignatures?: (Omit<PcPrintSignature, "step"> & { step?: number })[];
+  // Khusus variant "pengajuan": ringkasan saldo & riwayat penarikan
+  // (buildPcPenarikanSummary, lib/pcChain.ts) - ditampilkan ringkas di atas
+  // kolom tanda tangan.
+  penarikanSummary?: PcPenarikanSummary | null;
   // Khusus variant "deklarasi": dana yang diterima (nominal Sub-Voucher)
   // & nomor Form Pengajuan asalnya.
   cashReceived?: number | null;
@@ -87,7 +124,7 @@ type DeklarasiRow =
 // tanda tangan & garis hilang). Di-scope ke #printable-po-a4 (id halaman
 // cetak PaginatedPrintDocument) supaya juga menang atas utilitas Tailwind
 // bawaan (mis. text-xs di <table>).
-const PRINT_CSS = `#printable-po-a4 .pcx-font-size-5-5pt{font-size:5.5pt}#printable-po-a4 .pcx-font-size-6-5pt{font-size:6.5pt}#printable-po-a4 .pcx-font-size-6pt{font-size:6pt}#printable-po-a4 .pcx-font-size-7-5pt{font-size:7.5pt}#printable-po-a4 .pcx-font-size-8pt{font-size:8pt}#printable-po-a4 .pcx-height-16mm{height:16mm}#printable-po-a4 .pcx-height-48px{height:48px}#printable-po-a4 .pcx-height-50px{height:50px}#printable-po-a4 .pcx-overflow-wrap-anywhere{overflow-wrap:anywhere}#printable-po-a4 .pcx-width-12{width:12%}#printable-po-a4 .pcx-width-14{width:14%}#printable-po-a4 .pcx-width-15{width:15%}#printable-po-a4 .pcx-width-21{width:21%}#printable-po-a4 .pcx-width-22{width:22%}#printable-po-a4 .pcx-width-34{width:34%}#printable-po-a4 .pcx-width-42{width:42%}#printable-po-a4 .pcx-width-48px{width:48px}#printable-po-a4 .pcx-width-5{width:5%}#printable-po-a4 .pcx-width-6{width:6%}#printable-po-a4 .pcx-width-60{width:60%}#printable-po-a4 .pcx-width-7{width:7%}#printable-po-a4 .pcx-width-71{width:71%}#printable-po-a4 .pcx-width-85{width:85%}#printable-po-a4 .pcx-width-90px{width:90px}#printable-po-a4 .pcx-total-row{background:#fef08a}#printable-po-a4 .pcx-row-gap-3{row-gap:0.75rem}#printable-po-a4 .pcx-pt-1px{padding-top:1px}`;
+const PRINT_CSS = `#printable-po-a4 .pcx-font-size-5-5pt{font-size:5.5pt}#printable-po-a4 .pcx-font-size-6-5pt{font-size:6.5pt}#printable-po-a4 .pcx-font-size-6pt{font-size:6pt}#printable-po-a4 .pcx-font-size-7-5pt{font-size:7.5pt}#printable-po-a4 .pcx-font-size-8pt{font-size:8pt}#printable-po-a4 .pcx-height-20mm{height:20mm}#printable-po-a4 .pcx-height-44px{height:44px}#printable-po-a4 .pcx-height-50px{height:50px}#printable-po-a4 .pcx-overflow-wrap-anywhere{overflow-wrap:anywhere}#printable-po-a4 .pcx-width-12{width:12%}#printable-po-a4 .pcx-width-14{width:14%}#printable-po-a4 .pcx-width-15{width:15%}#printable-po-a4 .pcx-width-21{width:21%}#printable-po-a4 .pcx-width-22{width:22%}#printable-po-a4 .pcx-width-34{width:34%}#printable-po-a4 .pcx-width-42{width:42%}#printable-po-a4 .pcx-width-44px{width:44px}#printable-po-a4 .pcx-width-5{width:5%}#printable-po-a4 .pcx-width-6{width:6%}#printable-po-a4 .pcx-width-60{width:60%}#printable-po-a4 .pcx-width-7{width:7%}#printable-po-a4 .pcx-width-71{width:71%}#printable-po-a4 .pcx-width-90px{width:90px}#printable-po-a4 .pcx-total-row{background:#fef08a}#printable-po-a4 .pcx-pt-1px{padding-top:1px}`;
 
 const formatNumber = (value: number | null | undefined) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(
@@ -120,14 +157,6 @@ const formatShortDate = (date?: string | Date | null) => {
   });
 };
 
-// Label slot approver mengikuti form kertas: approver pertama memeriksa,
-// tengah mengetahui, terakhir menyetujui.
-const approverLabel = (index: number, count: number, deklarasi: boolean) => {
-  if (index === count - 1) return deklarasi ? "Approve" : "Disetujui Oleh";
-  if (index === 0) return "Diperiksa Oleh";
-  return "Diketahui Oleh";
-};
-
 const buildStepUrl = (qrUrl: string, step: number) => {
   if (!qrUrl) return "";
   return `${qrUrl}${qrUrl.includes("?") ? "&" : "?"}step=${step}`;
@@ -151,7 +180,10 @@ export function PrintablePettyCashDocument({
   items,
   totalAmount,
   approvals,
+  approvalsQrUrl,
+  penggunaBudget,
   extraSignatures = [],
+  penarikanSummary,
   cashReceived,
   cashReceivedLabel = "Terima Uang",
   fpNo,
@@ -176,17 +208,26 @@ export function PrintablePettyCashDocument({
   }
 
   const approverList = approvals ?? [];
-  const signatures: PcPrintSignature[] = [
+  const signatures: SignatureSlot[] = [
     {
-      label: isDeklarasi ? "Dibuat Oleh" : "Diajukan Oleh",
+      key: "pengaju",
+      label: "Pengaju Budget",
       name: requesterName || "-",
       subtitle: department,
       state: "done",
       date: createdAt,
-      step: 0,
+      qrValue: buildStepUrl(qrUrl, 0),
+    },
+    {
+      key: "pengguna",
+      label: "Pengguna Budget",
+      name: penggunaBudget?.name || requesterName || "-",
+      subtitle: penggunaBudget?.name ? penggunaBudget.subtitle : department,
+      qrValue: null,
     },
     ...approverList.map((a, i) => ({
-      label: approverLabel(i, approverList.length, isDeklarasi),
+      key: `approver-${i}`,
+      label: getPcApprovalLevel(approverList, i),
       name: a.nama,
       subtitle: a.department,
       state:
@@ -196,15 +237,14 @@ export function PrintablePettyCashDocument({
             ? ("rejected" as const)
             : ("pending" as const),
       date: a.processed_at,
-      step: i + 1,
+      qrValue: buildStepUrl(approvalsQrUrl ?? qrUrl, i + 1),
     })),
-    ...extraSignatures.map((s, i) => ({
+    ...extraSignatures.map(({ step, ...s }, i) => ({
       ...s,
-      step: approverList.length + 1 + i,
+      key: `extra-${i}`,
+      qrValue: buildStepUrl(qrUrl, step ?? approverList.length + 1 + i),
     })),
   ];
-  // Maks 5 slot per baris supaya QR & nama tetap terbaca di A4 portrait.
-  const sigCols = Math.min(Math.max(signatures.length, 3), 5);
 
   // ---------- Baris tabel ----------
   const received = Number(cashReceived) || 0;
@@ -435,82 +475,200 @@ export function PrintablePettyCashDocument({
     );
   };
 
-  // ---------- Tanda tangan (QR) ----------
-  const renderSignatures = () => (
-    <div
-      className="grid gap-x-3 pcx-row-gap-3 mt-4 break-inside-avoid"
-      style={{ gridTemplateColumns: `repeat(${sigCols}, minmax(0, 1fr))` }}
-    >
-      {signatures.map((s) =>
-        isWet ? (
-          // Format form kertas: label, ruang tanda tangan, garis, nama,
-          // departemen.
-          <div
-            key={s.step}
-            className="flex flex-col items-center text-center min-w-0"
-          >
-            <p className="pcx-font-size-6pt font-semibold leading-tight">
-              {s.label}
-            </p>
-            <div className="pcx-height-16mm w-full" />
-            <div className="pcx-width-85 border-b border-black" />
-            <p className="mt-0.5 pcx-font-size-6pt font-semibold leading-tight pcx-overflow-wrap-anywhere">
-              {clamp(s.name, PRINT_LIMIT.sigName)}
-            </p>
-            {s.subtitle && (
-              <p className="pcx-font-size-5-5pt text-gray-700 leading-tight pcx-overflow-wrap-anywhere">
-                {clamp(s.subtitle, PRINT_LIMIT.sigName)}
-              </p>
-            )}
-          </div>
+  // ---------- Tanda tangan ----------
+  // Tabel berbingkai: baris 1 = label level (kolom berurutan dgn level sama
+  // digabung jadi satu header), baris 2 = ruang tanda tangan / QR, baris 3 =
+  // nama & departemen. Slot dibagi rata ke beberapa baris tabel kalau lebih
+  // dari SIG_MAX_COLS.
+  const sigRowCount = Math.ceil(signatures.length / SIG_MAX_COLS) || 1;
+  const sigPerRow = Math.ceil(signatures.length / sigRowCount);
+  const signatureRows: SignatureSlot[][] = [];
+  for (let i = 0; i < signatures.length; i += sigPerRow) {
+    signatureRows.push(signatures.slice(i, i + sigPerRow));
+  }
+
+  const groupByLabel = (row: SignatureSlot[]) =>
+    row.reduce<{ label: string; span: number }[]>((groups, slot) => {
+      const last = groups[groups.length - 1];
+      if (last && last.label === slot.label) last.span += 1;
+      else groups.push({ label: slot.label, span: 1 });
+      return groups;
+    }, []);
+
+  const sigCell = "border border-black px-1 text-center align-middle";
+
+  const renderSignSpace = (s: SignatureSlot) => {
+    if (isWet) return null;
+    if (s.qrValue === null) {
+      return (
+        <p className="pcx-font-size-5-5pt italic text-gray-400 leading-tight">
+          Tanpa approval
+        </p>
+      );
+    }
+    return (
+      <div className="flex flex-col items-center gap-0.5">
+        {s.qrValue ? (
+          <QRCodeSVG value={s.qrValue} size={44} level="M" />
         ) : (
-          <div
-            key={s.step}
-            className="flex flex-col items-center text-center min-w-0"
-          >
-            <p className="pcx-font-size-6pt font-semibold leading-tight">
-              {s.label}
-            </p>
-            <div className="my-1 p-0.5 border border-gray-400">
-              {qrUrl ? (
-                <QRCodeSVG
-                  value={buildStepUrl(qrUrl, s.step)}
-                  size={48}
-                  level="M"
-                />
-              ) : (
-                <Skeleton className="pcx-height-48px pcx-width-48px" />
-              )}
-            </div>
-            <p
-              className={`pcx-font-size-5-5pt leading-tight font-semibold ${
-                s.state === "done"
-                  ? "text-green-700"
-                  : s.state === "rejected"
-                    ? "text-red-700"
-                    : "text-gray-500"
-              }`}
+          <Skeleton className="pcx-height-44px pcx-width-44px" />
+        )}
+        <p
+          className={`pcx-font-size-5-5pt leading-tight font-semibold ${
+            s.state === "done"
+              ? "text-green-700"
+              : s.state === "rejected"
+                ? "text-red-700"
+                : "text-gray-500"
+          }`}
+        >
+          {s.state === "done"
+            ? `✓ ${formatShortDate(s.date)}`
+            : s.state === "rejected"
+              ? "✕ Ditolak"
+              : "Menunggu"}
+        </p>
+      </div>
+    );
+  };
+
+  const renderSignatures = () => (
+    <div className="mt-4 space-y-2 break-inside-avoid">
+      {signatureRows.map((row, rowIndex) => (
+        <table
+          key={rowIndex}
+          className="w-full table-fixed border-collapse pcx-font-size-6pt"
+        >
+          <colgroup>
+            {row.map((s) => (
+              <col key={s.key} style={{ width: `${100 / row.length}%` }} />
+            ))}
+          </colgroup>
+          <tbody>
+            <tr
+              className="bg-gray-100"
+              style={{ printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}
             >
-              {s.state === "done"
-                ? `✓ ${formatShortDate(s.date)}`
-                : s.state === "rejected"
-                  ? "✕ Ditolak"
-                  : "Menunggu"}
-            </p>
-            <div className="mt-0.5 pcx-width-85 border-b border-black" />
-            <p className="mt-0.5 pcx-font-size-6pt font-semibold leading-tight pcx-overflow-wrap-anywhere">
-              {clamp(s.name, PRINT_LIMIT.sigName)}
-            </p>
-            {s.subtitle && (
-              <p className="pcx-font-size-5-5pt text-gray-700 leading-tight pcx-overflow-wrap-anywhere">
-                {clamp(s.subtitle, PRINT_LIMIT.sigName)}
-              </p>
-            )}
-          </div>
-        ),
-      )}
+              {groupByLabel(row).map((g, i) => (
+                <th
+                  key={i}
+                  colSpan={g.span}
+                  className={`${sigCell} py-0.5 font-bold uppercase pcx-font-size-5-5pt tracking-wide leading-tight`}
+                >
+                  {g.label}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {row.map((s) => (
+                <td key={s.key} className={`${sigCell} pcx-height-20mm py-1`}>
+                  {renderSignSpace(s)}
+                </td>
+              ))}
+            </tr>
+            <tr>
+              {row.map((s) => (
+                <td key={s.key} className={`${sigCell} py-0.5 align-top`}>
+                  <p className="font-semibold leading-tight pcx-overflow-wrap-anywhere">
+                    {clamp(s.name, PRINT_LIMIT.sigName)}
+                  </p>
+                  {s.subtitle && (
+                    <p className="pcx-font-size-5-5pt text-gray-600 leading-tight pcx-overflow-wrap-anywhere">
+                      {clamp(s.subtitle, PRINT_LIMIT.sigName)}
+                    </p>
+                  )}
+                  {isWet && s.qrValue !== null && (
+                    <p className="pcx-font-size-5-5pt text-gray-500 leading-tight text-left mt-0.5">
+                      Tgl:
+                    </p>
+                  )}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ))}
     </div>
   );
+
+  // ---------- Ringkasan saldo & riwayat penarikan (variant pengajuan) ----------
+  // Sengaja ringkas: satu baris angka + satu baris daftar tarikan (inline,
+  // bukan tabel per baris) supaya tidak memakan tempat walau tarikannya
+  // banyak.
+  const shortSvKode = (kode: string) => kode.match(/-(SV\d+)$/)?.[1] ?? kode;
+
+  const renderPenarikanSummary = (summary: PcPenarikanSummary) => {
+    const stat = (label: string, value: React.ReactNode, emphasize = false) => (
+      <td
+        className={`${cell} align-middle ${emphasize ? "pcx-total-row" : ""}`}
+        style={
+          emphasize
+            ? { printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }
+            : undefined
+        }
+      >
+        <span className="block text-gray-600 uppercase pcx-font-size-5-5pt leading-tight">
+          {label}
+        </span>
+        <span className="block font-bold whitespace-nowrap leading-tight">
+          {value}
+        </span>
+      </td>
+    );
+    return (
+      <table className="mt-2 w-full table-fixed border-collapse pcx-font-size-6pt">
+        <tbody>
+          <tr>
+            {stat(`Nilai ${summary.basisLabel}`, formatRp(summary.nilai))}
+            {stat(
+              `Total Ditarik (${summary.penarikan.length}x)`,
+              formatRp(summary.totalDitarik),
+            )}
+            {stat("Sisa Saldo", formatRp(summary.sisaSaldo), true)}
+            {/* Nama budget tidak diulang - sudah ada di "Alokasi Budget". */}
+            {stat(
+              "Sisa Saldo Budget",
+              summary.budgetRemaining != null
+                ? formatRp(summary.budgetRemaining)
+                : "-",
+            )}
+          </tr>
+          <tr>
+            <td colSpan={4} className={`${cell} pcx-font-size-5-5pt leading-snug`}>
+              <span className="font-bold uppercase">Riwayat Penarikan</span>
+              {summary.basisLabel === "Voucher" && summary.basisKode && (
+                <span className="text-gray-600"> ({summary.basisKode})</span>
+              )}
+              <span className="font-bold">: </span>
+              {summary.penarikan.length === 0 ? (
+                <span className="italic text-gray-600">
+                  Belum ada penarikan dana.
+                </span>
+              ) : (
+                summary.penarikan.map((p, i) => (
+                  <Fragment key={p.id}>
+                    {/* Pemisah DI LUAR span nowrap - jadi titik patah baris
+                        antar-tarikan. */}
+                    {i > 0 && <span className="text-gray-400"> | </span>}
+                    <span className="whitespace-nowrap">
+                      <span className="font-semibold">
+                        {i + 1}. {shortSvKode(p.kode)}
+                      </span>{" "}
+                      {formatShortDate(p.created_at)} - {formatRp(p.amount)}
+                      <span className="text-gray-600">
+                        {" "}
+                        ({p.status === "Selesai" ? "Dibayar" : "Menunggu Bayar"})
+                      </span>
+                    </span>
+                  </Fragment>
+                ))
+              )}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  };
 
   // ---------- Penutup ----------
   const totalPemakaian = items.reduce((sum, it) => sum + it.subtotal, 0);
@@ -583,6 +741,7 @@ export function PrintablePettyCashDocument({
             {plainNotes || "Tidak ada catatan khusus."}
           </span>
         </div>
+        {penarikanSummary && renderPenarikanSummary(penarikanSummary)}
         {renderSignatures()}
       </section>
     );

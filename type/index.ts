@@ -773,6 +773,15 @@ export type PcApprovalType =
   | "Approval Voucher"
   | "Approval Deklarasi";
 
+// Level/peran tiap approver di jalur approval Petty Cash - dipilih per baris
+// di Template Approval (PcApprovalTemplateForm.tsx), ikut ter-copy ke
+// `approvals` dokumen, dan jadi label kolom tanda tangan di hasil cetak.
+// Urutan level di jalur WAJIB tidak mundur (Dicek -> Disetujui ->
+// Dijalankan). "Pengaju Budget" (requester) & "Pengguna Budget" (lihat
+// PettyCashPengajuan.pengguna_budget_*) BUKAN level approver - keduanya
+// tidak approve, cuma ikut tercantum di kolom tanda tangan.
+export type PcApprovalLevel = "Dicek Oleh" | "Disetujui Oleh" | "Dijalankan Oleh";
+
 export interface PettyCashPengajuanItem {
   // null = barang manual (tidak ada di katalog petty_cash_barang), lihat
   // PettyCashItemSearchCombobox.tsx.
@@ -850,6 +859,9 @@ export interface PettyCashPengajuanApprover {
   nama: string;
   department: string;
   role: string;
+  // Kosong utk dokumen/template lama dari sebelum fitur level ada - pakai
+  // getPcApprovalLevel (lib/pcApprovalFlow.ts), jangan baca langsung.
+  level?: PcApprovalLevel | null;
   status: "pending" | "approved" | "rejected";
   processed_at?: string | null;
 }
@@ -880,6 +892,14 @@ export interface PettyCashPengajuan {
   // memblokir pas pembuatan sub-voucher, lihat komentar
   // PettyCashSubVoucher di bawah).
   budget_id: number | null;
+  // "Pengguna Budget" - orang yang memakai dana ini, defaultnya requester
+  // sendiri tapi bisa diganti requester saat Input Pengajuan. TIDAK ikut
+  // approval, cuma tercantum namanya (di detail & kolom tanda tangan cetak).
+  // Nama/departemen di-snapshot saat submit (sama seperti approvals).
+  // Null utk baris lama dari sebelum field ini ada = anggap requester.
+  pengguna_budget_id: string | null;
+  pengguna_budget_nama: string | null;
+  pengguna_budget_department: string | null;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
@@ -904,15 +924,35 @@ export interface PettyCashPengajuan {
   // SATU Voucher aktif; yang ditolak boleh diajukan ulang dan tetap ikut di
   // sini sbg riwayat (supabase/migrations/0010_petty_cash_voucher_ulang.sql) -
   // pilih lewat getActiveDoc/pickCurrentDoc, lib/pcChain.ts.
+  // total_amount/petty_cash_budget/petty_cash_sub_voucher cuma ke-isi dari
+  // fetchPengajuanById - dipakai ringkasan saldo & riwayat penarikan di
+  // cetak Input Pengajuan.
   petty_cash_voucher?:
     | {
         id: number;
         kode_voucher?: string;
         status?: string;
         created_at?: string | Date;
+        total_amount?: number;
+        petty_cash_budget?: { name: string; current_budget: number } | null;
+        petty_cash_sub_voucher?:
+          | Pick<
+              PettyCashSubVoucher,
+              "id" | "kode_sub_voucher" | "amount" | "status" | "created_at"
+            >[]
+          | null;
       }[]
     | null;
 }
+
+// Info Pengguna Budget milik Pengajuan asal - di-join oleh Voucher/Sub-
+// Voucher/Deklarasi (lewat petty_cash_pengajuan) utk kolom tanda tangan
+// cetak. Lihat komentar pengguna_budget_* di PettyCashPengajuan.
+export type PcPengajuanRef = {
+  kode_pengajuan: string;
+  pengguna_budget_nama?: string | null;
+  pengguna_budget_department?: string | null;
+};
 
 // ==========================================
 // PENGAJUAN VOUCHER PETTY CASH - tabel `petty_cash_voucher`. Satu Voucher =
@@ -957,7 +997,7 @@ export interface PettyCashVoucher {
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
   petty_cash_budget?: { name: string; current_budget: number } | null;
-  petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+  petty_cash_pengajuan?: PcPengajuanRef | null;
   // Sub-voucher (tarikan dana parsial) yang sudah dibuat dari Voucher ini -
   // lihat komentar PettyCashSubVoucher di bawah. Dipakai menghitung sisa
   // yang belum ditarik (total_amount - SUM(amount)) & menampilkan progress
@@ -1039,7 +1079,10 @@ export interface PettyCashSubVoucher {
     department?: string;
     week_of_month?: number | null;
     site?: string | null;
-    petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+    // Jalur approval Voucher induk - ikut dicantumkan di kolom tanda
+    // tangan cetak Sub-Voucher (Sub-Voucher tidak punya approval sendiri).
+    approvals?: PettyCashPengajuanApprover[] | null;
+    petty_cash_pengajuan?: PcPengajuanRef | null;
     petty_cash_budget?: { name: string; current_budget: number } | null;
   } | null;
   users_with_profiles?: { nama: string; email?: string } | null;
@@ -1232,7 +1275,7 @@ export interface PettyCashDeklarasi {
   petty_cash_voucher?: {
     kode_voucher: string;
     total_amount: number;
-    petty_cash_pengajuan?: { kode_pengajuan: string } | null;
+    petty_cash_pengajuan?: PcPengajuanRef | null;
     petty_cash_budget?: { name: string; current_budget: number } | null;
   } | null;
   petty_cash_sub_voucher?: { kode_sub_voucher: string; amount: number } | null;

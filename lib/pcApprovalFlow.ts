@@ -16,11 +16,46 @@
 // approver mulai pending) - jadi urutan tetap wajib dicek di app lewat fungsi
 // di sini sebelum mengizinkan approve/reject.
 
+import { PcApprovalLevel } from "@/type";
+import { PC_APPROVAL_LEVEL_OPTIONS } from "@/type/enum";
+
 export interface PcApprovalStep {
   userid: string;
   status: "pending" | "approved" | "rejected";
   processed_at?: string | null;
 }
+
+/**
+ * Level approver ke-`index` (lihat PcApprovalLevel, type/index.ts). Jalur
+ * lama dari sebelum fitur level ada tidak punya `level` - fallback-nya
+ * approver terakhir "Disetujui Oleh", sisanya "Dicek Oleh".
+ */
+export const getPcApprovalLevel = (
+  approvals: { level?: PcApprovalLevel | null }[],
+  index: number,
+): PcApprovalLevel =>
+  approvals[index]?.level ??
+  (index === approvals.length - 1 ? "Disetujui Oleh" : "Dicek Oleh");
+
+/**
+ * Index baris pertama yang levelnya MUNDUR dari baris sebelumnya (mis.
+ * "Dicek Oleh" setelah "Disetujui Oleh"), -1 kalau urutannya sudah benar.
+ * Approval tetap sekuensial per baris - level cuma label, jadi urutannya
+ * harus sejalan supaya kolom tanda tangan cetak tidak loncat-loncat.
+ */
+export const findPcLevelOrderError = (
+  approvals: { level?: PcApprovalLevel | null }[],
+): number => {
+  let prev = 0;
+  for (let i = 0; i < approvals.length; i++) {
+    const rank = PC_APPROVAL_LEVEL_OPTIONS.indexOf(
+      getPcApprovalLevel(approvals, i),
+    );
+    if (rank < prev) return i;
+    prev = rank;
+  }
+  return -1;
+};
 
 /** Index step approval milik `userId` yang statusnya masih pending, -1 kalau tidak ada. */
 export const getMyPendingApprovalIndex = <T extends PcApprovalStep>(

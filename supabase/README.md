@@ -43,3 +43,4 @@ tetap bisa dicari.
 | `0011_mr_budget_refund.sql` | Budget Cost Center MR: potongan saat Waiting PO tidak dobel kalau MR di-approve ulang, dan dikembalikan saat MR dimundurkan ke tahap sebelum PO (belum dijalankan di production) |
 | `0012_petty_cash_barang_coa_per_company.sql` | Barang Petty Cash: `category` + `coa` (centang GMI/GIS) diganti `coa_gmi` & `coa_gis` - COA per company sekaligus kategori, kosong = nonaktif di company itu (belum dijalankan di production) |
 | `0013_petty_cash_pengajuan_selesai.sql` | Petty Cash: Pengajuan ikut berstatus "Selesai" begitu Voucher-nya "Selesai" (trigger di `petty_cash_voucher`, turun lagi ke "Approved" kalau Voucher turun/dihapus) + isi data lama (belum dijalankan di production) |
+| `0014_petty_cash_pengguna_budget.sql` | Petty Cash: kolom Pengguna Budget (`pengguna_budget_id/_nama/_department`) di `petty_cash_pengajuan` - dipilih requester saat Input Pengajuan, tidak ikut approval (belum dijalankan di production) |

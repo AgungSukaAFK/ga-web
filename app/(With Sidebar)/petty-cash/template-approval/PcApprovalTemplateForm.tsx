@@ -11,6 +11,10 @@
 // "Tipe Approval" di sini beda dari "jenis approval per baris" di atas - ini
 // klasifikasi TEMPLATE-nya sendiri (satu dari 3 tahap alur Petty Cash, lihat
 // PcApprovalType di type/index.ts), bukan per approver.
+//
+// "Level" per baris (Dicek/Disetujui/Dijalankan Oleh, lihat PcApprovalLevel)
+// juga bukan percabangan logic - cuma label peran utk tampilan & kolom tanda
+// tangan cetak. Urutannya wajib tidak mundur (findPcLevelOrderError).
 
 "use client";
 
@@ -23,8 +27,15 @@ import {
   PcApprovalTemplate,
   PcTemplateFormInput,
 } from "@/services/pcApprovalTemplateService";
-import { PcApprovalType } from "@/type";
-import { PC_APPROVAL_TYPE_OPTIONS } from "@/type/enum";
+import { PcApprovalLevel, PcApprovalType } from "@/type";
+import {
+  PC_APPROVAL_LEVEL_OPTIONS,
+  PC_APPROVAL_TYPE_OPTIONS,
+} from "@/type/enum";
+import {
+  findPcLevelOrderError,
+  getPcApprovalLevel,
+} from "@/lib/pcApprovalFlow";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -56,6 +67,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -76,6 +94,15 @@ const makeRowKey = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random()}`;
 
+// Template lama (sebelum ada level) diisi level fallback-nya
+// (getPcApprovalLevel) supaya GA tinggal cek & simpan, bukan isi dari nol.
+const toApprovalRows = (path: PcApprover[] | undefined): ApprovalRow[] =>
+  (path || []).map((a, i, arr) => ({
+    ...a,
+    level: getPcApprovalLevel(arr, i),
+    _rowKey: makeRowKey(),
+  }));
+
 export function PcApprovalTemplateForm({
   initialData,
   onSave,
@@ -91,10 +118,7 @@ export function PcApprovalTemplateForm({
     initialData?.approval_type || PC_APPROVAL_TYPE_OPTIONS[0],
   );
   const [approvalPath, setApprovalPath] = useState<ApprovalRow[]>(
-    (initialData?.approval_path || []).map((a) => ({
-      ...a,
-      _rowKey: makeRowKey(),
-    })),
+    toApprovalRows(initialData?.approval_path),
   );
   // Diinisialisasi langsung dari initialData (bukan lewat useEffect) karena
   // tiap baris dipakai sebagai defaultValue Combobox - Combobox cuma baca
@@ -116,12 +140,7 @@ export function PcApprovalTemplateForm({
       setTemplateName(initialData.template_name);
       setDescription(initialData.description || "");
       setApprovalType(initialData.approval_type);
-      setApprovalPath(
-        (initialData.approval_path || []).map((a) => ({
-          ...a,
-          _rowKey: makeRowKey(),
-        })),
-      );
+      setApprovalPath(toApprovalRows(initialData.approval_path));
     }
   }, [initialData]);
 
@@ -156,6 +175,7 @@ export function PcApprovalTemplateForm({
         nama: user.nama || "",
         department: user.department || "",
         role: user.role || "",
+        level: prev[prev.length - 1]?.level ?? PC_APPROVAL_LEVEL_OPTIONS[0],
         status: "pending",
         _rowKey: makeRowKey(),
       },
@@ -166,6 +186,13 @@ export function PcApprovalTemplateForm({
 
   const removeApprover = (rowKey: string) =>
     setApprovalPath((prev) => prev.filter((a) => a._rowKey !== rowKey));
+
+  const updateApproverLevel = (rowKey: string, level: PcApprovalLevel) =>
+    setApprovalPath((prev) =>
+      prev.map((a) => (a._rowKey === rowKey ? { ...a, level } : a)),
+    );
+
+  const levelOrderErrorIndex = findPcLevelOrderError(approvalPath);
 
   const moveApprover = (index: number, direction: "up" | "down") => {
     const newArr = [...approvalPath];
@@ -197,6 +224,12 @@ export function PcApprovalTemplateForm({
     }
     if (approvalPath.length === 0) {
       toast.error("Jalur approval harus memiliki minimal satu orang.");
+      return;
+    }
+    if (levelOrderErrorIndex !== -1) {
+      toast.error(
+        `Urutan level tidak boleh mundur (baris ${levelOrderErrorIndex + 1}). Susun dari Dicek Oleh, lalu Disetujui Oleh, lalu Dijalankan Oleh.`,
+      );
       return;
     }
     if (autoRules.some((r) => !r.department || !r.site || !r.company_code)) {
@@ -398,18 +431,19 @@ export function PcApprovalTemplateForm({
       </div>
 
       <div className="overflow-x-auto rounded-md border">
-        <Table className="min-w-[500px]">
+        <Table className="min-w-[640px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">Urutan</TableHead>
               <TableHead>User</TableHead>
+              <TableHead className="w-[170px]">Level</TableHead>
               <TableHead className="w-[140px]">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {approvalPath.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-center h-24">
+                <TableCell colSpan={4} className="text-center h-24">
                   Belum ada approver ditambahkan.
                 </TableCell>
               </TableRow>
@@ -443,6 +477,35 @@ export function PcApprovalTemplateForm({
                         </Badge>
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={app.level ?? undefined}
+                      onValueChange={(value) =>
+                        updateApproverLevel(
+                          app._rowKey,
+                          value as PcApprovalLevel,
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        className={cn(
+                          "h-8 w-full",
+                          i === levelOrderErrorIndex &&
+                            "border-destructive text-destructive",
+                        )}
+                        aria-invalid={i === levelOrderErrorIndex}
+                      >
+                        <SelectValue placeholder="Pilih level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PC_APPROVAL_LEVEL_OPTIONS.map((level) => (
+                          <SelectItem key={level} value={level}>
+                            {level}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
@@ -480,6 +543,18 @@ export function PcApprovalTemplateForm({
           </TableBody>
         </Table>
       </div>
+      <p
+        className={cn(
+          "text-xs",
+          levelOrderErrorIndex !== -1
+            ? "text-destructive"
+            : "text-muted-foreground",
+        )}
+      >
+        {levelOrderErrorIndex !== -1
+          ? `Level baris ${levelOrderErrorIndex + 1} mundur dari baris sebelumnya - urutkan dari Dicek Oleh, lalu Disetujui Oleh, lalu Dijalankan Oleh.`
+          : "Level menentukan label kolom tanda tangan di hasil cetak. Pengaju Budget (pembuat) dan Pengguna Budget otomatis tercantum di depan, tidak perlu ditambahkan di sini."}
+      </p>
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Batal

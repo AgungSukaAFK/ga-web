@@ -347,6 +347,7 @@ function VoucherDetailContent({ id }: { id: string }) {
             site={doc.site}
             budgetName={doc.petty_cash_budget?.name}
             budgetRemaining={doc.petty_cash_budget?.current_budget}
+            penggunaBudgetName={doc.petty_cash_pengajuan?.pengguna_budget_nama}
             neededDate={doc.needed_date}
             weekOfMonth={doc.week_of_month}
             notes={doc.notes}
@@ -502,6 +503,10 @@ function VoucherDetailContent({ id }: { id: string }) {
               value: doc.petty_cash_pengajuan?.kode_pengajuan,
             },
           ]}
+          penggunaBudget={{
+            name: doc.petty_cash_pengajuan?.pengguna_budget_nama,
+            subtitle: doc.petty_cash_pengajuan?.pengguna_budget_department,
+          }}
           approvals={doc.approvals}
           notes={doc.notes}
           items={doc.items}
