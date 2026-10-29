@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { writeClipboard } from "@/lib/clipboard";
 
 // Tombol "Salin" di tiap toast - disisipkan otomatis oleh lib/toast.tsx lewat
 // slot `cancel` sonner. Teks diambil dari DOM toast-nya sendiri (judul +
@@ -46,23 +47,4 @@ export function ToastCopyButton() {
       <Icon className="pointer-events-none size-3.5" />
     </button>
   );
-}
-
-// navigator.clipboard cuma ada di secure context (https/localhost) - kalau
-// app dibuka lewat IP LAN (http), jatuh ke execCommand("copy").
-async function writeClipboard(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  const ok = document.execCommand("copy");
-  textarea.remove();
-  if (!ok) throw new Error("copy failed");
 }

@@ -63,6 +63,7 @@ import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import {
   MaterialRequest,
@@ -1675,18 +1676,21 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 {/* <wbr> setelah tiap "/" - kalau kode MR harus turun baris
                     (mis. HP sempit + logo di sebelahnya), patahnya di garis
                     miring, bukan di tengah nomor. Teks yang di-copy tetap utuh. */}
-                <h1 className="text-3xl font-bold [overflow-wrap:anywhere]">
-                  {mr.kode_mr.split("/").map((part, i) => (
-                    <Fragment key={i}>
-                      {i > 0 && (
-                        <>
-                          /<wbr />
-                        </>
-                      )}
-                      {part}
-                    </Fragment>
-                  ))}
-                </h1>
+                <div className="flex items-center gap-1">
+                  <h1 className="min-w-0 text-3xl font-bold [overflow-wrap:anywhere]">
+                    {mr.kode_mr.split("/").map((part, i) => (
+                      <Fragment key={i}>
+                        {i > 0 && (
+                          <>
+                            /<wbr />
+                          </>
+                        )}
+                        {part}
+                      </Fragment>
+                    ))}
+                  </h1>
+                  <CopyTextButton text={mr.kode_mr} label="Salin kode MR" />
+                </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <span className="text-muted-foreground text-sm">
                     Dibuat pada {formatDateFriendly(mr.created_at)}

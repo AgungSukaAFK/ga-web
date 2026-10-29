@@ -26,6 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { CustomPagination } from "@/components/custom-pagination";
 import {
   formatCurrency,
@@ -1385,6 +1386,13 @@ function PurchaseOrderPageContent() {
             <DialogTitle className="text-xl flex items-center gap-2 flex-wrap pr-6">
               <Newspaper className="h-5 w-5 shrink-0" />
               <span>Ringkasan PO: {selectedPo?.kode_po}</span>
+              {selectedPo && (
+                <CopyTextButton
+                  text={selectedPo.kode_po}
+                  label="Salin kode PO"
+                  className="size-7 -ml-1"
+                />
+              )}
               {selectedPo?.is_asset && (
                 <Badge className="bg-purple-600 hover:bg-purple-600 text-white shrink-0">
                   PO Asset

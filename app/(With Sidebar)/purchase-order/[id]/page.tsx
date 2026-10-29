@@ -56,6 +56,7 @@ import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import {
   PurchaseOrderDetail,
@@ -2128,6 +2129,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-3xl font-bold">{po.kode_po}</h1>
+                  <CopyTextButton
+                    text={po.kode_po}
+                    label="Salin kode PO"
+                    className="-ml-1"
+                  />
                   {po.is_asset && (
                     <Badge className="bg-purple-600 hover:bg-purple-600 text-white">
                       PO Asset

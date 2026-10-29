@@ -60,6 +60,7 @@ import {
   useTransition,
 } from "react";
 import { toast } from "@/lib/toast";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
@@ -1460,9 +1461,16 @@ export function MaterialRequestContent({
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>
         <DialogContent className="max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Ringkasan MR: {selectedMr?.kode_mr}
+            <DialogTitle className="text-xl flex items-center gap-2 pr-6">
+              <FileText className="h-5 w-5 shrink-0" />
+              <span>Ringkasan MR: {selectedMr?.kode_mr}</span>
+              {selectedMr && (
+                <CopyTextButton
+                  text={selectedMr.kode_mr}
+                  label="Salin kode MR"
+                  className="size-7 -ml-1"
+                />
+              )}
             </DialogTitle>
             <DialogDescription>
               Informasi singkat dan daftar barang.
