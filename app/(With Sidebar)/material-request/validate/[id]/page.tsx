@@ -2,7 +2,7 @@
 
 "use client";
 
-import { use, useEffect, useState, Suspense } from "react";
+import { Fragment, use, useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useGoBack } from "@/hooks/use-go-back";
 import { createClient } from "@/lib/supabase/client";
@@ -12,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
+import { CompanyLogoBadge } from "@/components/company-logo-badge";
+import { COMPANY_DETAILS } from "@/lib/companyDetails";
 import { NoteWithLinks } from "@/components/note-with-links";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue } from "@/lib/rich-content";
@@ -41,6 +44,7 @@ import {
   XCircle,
   PauseCircle,
   Building2,
+  Landmark,
   Truck,
   CircleUser,
   ArrowLeft,
@@ -605,23 +609,44 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
   return (
     <>
       <div className="col-span-12">
-        <div className="flex flex-wrap justify-between items-start gap-4">
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goBack}
-              className="mb-4"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
-            </Button>
+        <Button variant="outline" size="sm" onClick={goBack} className="mb-4">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
+        </Button>
+        {/* `@container`: logo GMI/GIS pilih versi kotak/landscape dari
+            lebar area konten (ikut buka-tutup sidebar), bukan lebar layar.
+            Status sengaja di bawah judul (sama seperti halaman detail MR),
+            bukan di kanan - di HP kanannya sudah dipakai logo. */}
+        <div className="@container flex items-center gap-3 md:gap-4">
+          <div className="min-w-0 flex-1 md:flex-initial">
             <h1 className="text-3xl font-bold">Validasi Material Request</h1>
-            <p className="text-muted-foreground">
-              MR:{" "}
-              <span className="font-semibold text-primary">{mr.kode_mr}</span>
-            </p>
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                MR:{" "}
+                <span className="font-semibold text-primary">
+                  {/* <wbr> setelah tiap "/" - kalau harus turun baris,
+                      patahnya di garis miring, bukan di tengah nomor. */}
+                  {mr.kode_mr.split("/").map((part, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && (
+                        <>
+                          /<wbr />
+                        </>
+                      )}
+                      {part}
+                    </Fragment>
+                  ))}
+                </span>
+              </span>
+              <CopyTextButton text={mr.kode_mr} label="Salin kode MR" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground text-sm">
+                Dibuat pada {formatDateFriendly(mr.created_at)}
+              </span>
+              <Badge variant="secondary">{mr.status}</Badge>
+            </div>
           </div>
-          <Badge variant="secondary">{mr.status}</Badge>
+          <CompanyLogoBadge companyCode={mr.company_code} />
         </div>
       </div>
 
@@ -632,6 +657,18 @@ function ValidateMRPageContent({ params }: { params: { id: string } }) {
               icon={CircleUser}
               label="Requester"
               value={mr.users_with_profiles?.nama || "N/A"}
+            />
+            {/* Pilihan Cost Center di kanan difilter per perusahaan ini. */}
+            <InfoItem
+              icon={Landmark}
+              label="Perusahaan"
+              value={
+                COMPANY_DETAILS[
+                  mr.company_code as keyof typeof COMPANY_DETAILS
+                ]?.name ||
+                mr.company_code ||
+                "N/A"
+              }
             />
             <InfoItem
               icon={Building2}
