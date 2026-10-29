@@ -23,7 +23,7 @@ import {
   PcEditAndApproveDialog,
   PcEditAndApproveEdits,
 } from "@/components/petty-cash/PcEditAndApproveDialog";
-import { Attachment, PettyCashPengajuanItem } from "@/type";
+import { Attachment, PcPaymentInfo, PettyCashPengajuanItem } from "@/type";
 import { CheckCircle2, Loader2, PencilLine, XCircle } from "lucide-react";
 
 interface PcApprovalActionsProps {
@@ -34,6 +34,9 @@ interface PcApprovalActionsProps {
   // true HANYA utk docLabel "Pengajuan" - lihat komentar showBudget di
   // PcEditAndApproveDialog.tsx.
   showBudget?: boolean;
+  // Diisi HANYA utk docLabel "Voucher" - lihat paymentVoucherId di
+  // PcEditAndApproveDialog.tsx.
+  paymentVoucherId?: number;
   editInitial: {
     needed_date?: string | Date;
     week_of_month?: number | null;
@@ -41,6 +44,7 @@ interface PcApprovalActionsProps {
     items: PettyCashPengajuanItem[];
     attachments: Attachment[];
     budget_id?: number | null;
+    payment?: PcPaymentInfo;
   };
   processing: boolean;
   onApprove: () => Promise<void> | void;
@@ -54,6 +58,7 @@ export function PcApprovalActions({
   companyCode,
   showNeededDate = true,
   showBudget = false,
+  paymentVoucherId,
   editInitial,
   processing,
   onApprove,
@@ -139,6 +144,7 @@ export function PcApprovalActions({
         companyCode={companyCode}
         showNeededDate={showNeededDate}
         showBudget={showBudget}
+        paymentVoucherId={paymentVoucherId}
         initial={editInitial}
         onSubmit={onEditAndApprove}
       />

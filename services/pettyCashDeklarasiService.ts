@@ -31,6 +31,7 @@ import {
   buildEditAndApproveUpdate,
   isMyApprovalTurn,
   rejectApproval,
+  hasFinanceApprover,
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
 import {
@@ -86,7 +87,7 @@ const deptAbbreviations: { [key: string]: string } = {
 // GANTI cost center MR/PO (dead field, tidak pernah dipakai di alur baru
 // petty cash - lihat PcDocumentInfoPanel.tsx).
 const VOUCHER_WITH_PENGAJUAN =
-  "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department), petty_cash_budget(name, current_budget)), petty_cash_sub_voucher(kode_sub_voucher, amount)";
+  "petty_cash_voucher(kode_voucher, total_amount, petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department, is_eskalasi), petty_cash_budget(name, current_budget)), petty_cash_sub_voucher(kode_sub_voucher, amount)";
 
 /**
  * Generate Kode Deklarasi Petty Cash yang unik per company.
@@ -270,6 +271,14 @@ export const createDeklarasiFromSubVoucher = async (
   if (!template) {
     throw new Error(
       `Belum ada Template Approval "Approval Deklarasi" untuk departemen "${payload.department}", site "${payload.site ?? "-"}", perusahaan "${payload.company_code}". Hubungi GA/Admin untuk mengatur Template Approval terlebih dahulu.`,
+    );
+  }
+  // Approval Deklarasi wajib dicek minimal 1 orang Finance (lihat
+  // hasFinanceApprover, lib/pcApprovalFlow.ts) - template lama yang belum
+  // memenuhi ditolak di sini dgn pesan jelas, bukan error trigger DB.
+  if (!hasFinanceApprover(template.approval_path)) {
+    throw new Error(
+      `Template Approval Deklarasi "${template.template_name}" belum memiliki approver dari departemen Finance (wajib minimal 1). Hubungi GA/Admin untuk melengkapinya.`,
     );
   }
 

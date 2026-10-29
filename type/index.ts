@@ -695,6 +695,9 @@ export type NotificationType =
   | "pc_return_submitted"
   | "pc_return_confirmed"
   | "pc_return_rejected"
+  | "pc_cancel_requested"
+  | "pc_cancel_approved"
+  | "pc_cancel_rejected"
   | "mr_followup_requested"
   | "po_followup_requested"
   | "support_message";
@@ -782,6 +785,22 @@ export type PcApprovalType =
 // tidak approve, cuma ikut tercantum di kolom tanda tangan.
 export type PcApprovalLevel = "Dicek Oleh" | "Disetujui Oleh" | "Dijalankan Oleh";
 
+// Metode pencairan dana Petty Cash (supabase/migrations/0015_petty_cash_revisi.sql)
+// - dipilih requester saat Buat Voucher, bisa diganti approver Voucher/GA/
+// Finance, dan dicatat final oleh Finance saat membayar tarikan. Transfer =
+// ke rekening requester (wajib bank/nomor/atas nama, snapshot dari
+// user_bank_accounts); Overbook = pemindahbukuan antar rekening internal.
+// Bukti pembayaran wajib utk Transfer & Overbook, opsional utk Cash.
+export type PcPaymentMethod = "Transfer" | "Cash" | "Overbook";
+
+export interface PcPaymentInfo {
+  // null = dokumen lama dari sebelum fitur ini (Finance memilih saat bayar).
+  payment_method: PcPaymentMethod | null;
+  bank_name: string | null;
+  bank_account_number: string | null;
+  bank_account_holder_name: string | null;
+}
+
 export interface PettyCashPengajuanItem {
   // null = barang manual (tidak ada di katalog petty_cash_barang), lihat
   // PettyCashItemSearchCombobox.tsx.
@@ -846,6 +865,8 @@ export interface PcDocumentRevision {
     notes: string | null;
     items: PettyCashPengajuanItem[];
     attachments: Attachment[];
+    // Cuma ada di revisi Voucher dari sesudah fitur metode pencairan.
+    payment?: PcPaymentInfo;
   };
 }
 
@@ -900,10 +921,16 @@ export interface PettyCashPengajuan {
   pengguna_budget_id: string | null;
   pengguna_budget_nama: string | null;
   pengguna_budget_department: string | null;
+  // Eskalasi - Pengajuan GA/admin yang dibuat walau masih ada tarikan belum
+  // dideklarasikan, atau ditandai manual (lihat checkPengajuanEligibility,
+  // services/pettyCashPengajuanService.ts). Penanda di layar & Excel saja,
+  // TIDAK ikut dicetak.
+  is_eskalasi: boolean;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   total_amount: number;
   attachments: Attachment[];
+  // Lihat PC_PENGAJUAN_STATUS_OPTIONS, type/enum.ts.
   status: string;
   approvals: PettyCashPengajuanApprover[];
   discussions: any[];
@@ -918,6 +945,10 @@ export interface PettyCashPengajuan {
   // Field relasi (saat di-join dengan tabel lain)
   users_with_profiles?: { nama: string; email?: string } | null;
   petty_cash_budget?: { name: string; current_budget: number } | null;
+  // Riwayat permintaan pembatalan (lihat PettyCashPembatalan di bawah) -
+  // paling banyak 1 yang "Menunggu Persetujuan", pilih lewat
+  // getPendingPembatalan (lib/pcChain.ts).
+  petty_cash_pembatalan?: PettyCashPembatalan[] | null;
   // Voucher yang sudah dibuat dari Pengajuan ini (kalau ada) - dipakai utk
   // filter "belum punya Voucher aktif" (lihat fetchApprovedPengajuanForVoucher,
   // services/pettyCashVoucherService.ts). Satu Pengajuan paling banyak punya
@@ -952,6 +983,10 @@ export type PcPengajuanRef = {
   kode_pengajuan: string;
   pengguna_budget_nama?: string | null;
   pengguna_budget_department?: string | null;
+  is_eskalasi?: boolean | null;
+  // Cuma ke-join di beberapa query (fetchMyVouchers, fetchVoucherById) utk
+  // menahan Tarik Dana selama pembatalan masih menunggu Finance.
+  petty_cash_pembatalan?: { id: number; status: string }[] | null;
 };
 
 // ==========================================
@@ -964,7 +999,11 @@ export type PcPengajuanRef = {
 // dengan approval_type "Approval Voucher").
 // ==========================================
 
-export interface PettyCashVoucher {
+// Metode pencairan (PcPaymentInfo) = RENCANA dari requester saat Buat
+// Voucher, boleh diganti approver/GA/Finance selama Voucher masih In
+// Approval/Approved. Yang benar-benar dipakai tiap tarikan dicatat di
+// PettyCashSubVoucher saat Finance membayar.
+export interface PettyCashVoucher extends PcPaymentInfo {
   id: number;
   kode_voucher: string;
   pengajuan_id: number;
@@ -1036,7 +1075,10 @@ export interface PettyCashSubVoucherItem extends PettyCashPengajuanItem {
   item_index: number;
 }
 
-export interface PettyCashSubVoucher {
+// PcPaymentInfo di sini = metode FINAL yang dipakai Finance saat membayar -
+// null selama "Menunggu Pembayaran" (yang berlaku = rencana di Voucher
+// induk, lihat resolveSubVoucherPayment, lib/pcPayment.ts).
+export interface PettyCashSubVoucher extends PcPaymentInfo {
   id: number;
   kode_sub_voucher: string;
   voucher_id: number;
@@ -1049,14 +1091,15 @@ export interface PettyCashSubVoucher {
   items: PettyCashSubVoucherItem[];
   notes: string | null;
   // 'Menunggu Pembayaran' (baru ditarik, dana belum di-transfer Finance) ->
-  // 'Selesai' (sudah dibayar, wajib disertai payment_proof) - lihat
+  // 'Selesai' (sudah dibayar) - atau 'Dibatalkan' kalau Pengajuan-nya
+  // dibatalkan sebelum dibayar (budget di-refund). Lihat
   // PC_SUB_VOUCHER_STATUS_OPTIONS, type/enum.ts. Deklarasi cuma boleh dibuat
   // dari Sub-Voucher berstatus 'Selesai' (fetchSubVouchersForDeklarasi,
   // services/pettyCashSubVoucherService.ts).
   status: string;
-  // Bukti transfer/pembayaran - WAJIB diisi Finance saat menyelesaikan
-  // pembayaran (mark_petty_cash_sub_voucher_paid, RPC), kosong selama masih
-  // 'Menunggu Pembayaran'.
+  // Bukti transfer/pembayaran dari Finance (mark_petty_cash_sub_voucher_paid,
+  // RPC) - wajib utk Transfer/Overbook, opsional utk Cash. Kosong selama
+  // masih 'Menunggu Pembayaran'.
   payment_proof: Attachment[];
   paid_at: string | Date | null;
   paid_by: string | null;
@@ -1071,9 +1114,10 @@ export interface PettyCashSubVoucher {
   // fetchSubVouchersForDeklarasi (services/pettyCashSubVoucherService.ts),
   // dipakai bikin Deklarasi (yang butuh company_code/department/dkk milik
   // Voucher induk, bukan milik sub-voucher-nya sendiri).
-  petty_cash_voucher?: {
+  petty_cash_voucher?: ({
     kode_voucher: string;
     total_amount: number;
+    pengajuan_id?: number;
     items?: PettyCashPengajuanItem[];
     company_code?: string;
     department?: string;
@@ -1084,7 +1128,7 @@ export interface PettyCashSubVoucher {
     approvals?: PettyCashPengajuanApprover[] | null;
     petty_cash_pengajuan?: PcPengajuanRef | null;
     petty_cash_budget?: { name: string; current_budget: number } | null;
-  } | null;
+  } & Partial<PcPaymentInfo>) | null;
   users_with_profiles?: { nama: string; email?: string } | null;
   paid_by_profile?: { nama: string } | null;
   // Dipakai filter "belum dideklarasikan" (lihat
@@ -1144,6 +1188,71 @@ export interface PettyCashPengembalian {
     company_code?: string;
     department?: string;
   } | null;
+  users_with_profiles?: { nama: string; email?: string } | null;
+  processed_by_profile?: { nama: string } | null;
+}
+
+// ==========================================
+// PEMBATALAN PENGAJUAN - tabel `petty_cash_pembatalan`
+// (supabase/migrations/0015_petty_cash_revisi.sql). Requester mengajukan
+// pembatalan (request_petty_cash_pembatalan), Finance approver menyetujui
+// (approve_petty_cash_pembatalan - Pengajuan, Voucher aktif & tarikan yang
+// belum dibayar jadi "Dibatalkan", budget tarikan di-refund) atau menolak.
+// Cuma boleh selama BELUM ADA tarikan yang dibayar Finance.
+// ==========================================
+export interface PettyCashPembatalan {
+  id: number;
+  pengajuan_id: number;
+  user_id: string;
+  company_code: string;
+  reason: string;
+  // Lihat PC_PEMBATALAN_STATUS_OPTIONS, type/enum.ts.
+  status: string;
+  // Alasan penolakan / catatan persetujuan dari Finance.
+  finance_note: string | null;
+  // Diisi saat disetujui - apa saja yang ikut dibatalkan & total refund.
+  detail: {
+    pengajuan_status_lama?: string;
+    vouchers?: { id: number; kode: string; status_lama: string }[];
+    sub_vouchers?: { id: number; kode: string; amount: number }[];
+    total_refunded?: number;
+  } | null;
+  processed_at: string | Date | null;
+  processed_by: string | null;
+  created_at: string | Date;
+  created_by: string | null;
+  updated_at: string | Date;
+  updated_by: string | null;
+
+  // Field relasi (saat di-join dengan tabel lain).
+  petty_cash_pengajuan?:
+    | (Pick<
+        PettyCashPengajuan,
+        | "id"
+        | "kode_pengajuan"
+        | "department"
+        | "site"
+        | "total_amount"
+        | "status"
+        | "is_eskalasi"
+      > & {
+        // Preview dampak pembatalan di antrian Finance (Voucher & tarikan
+        // yang ikut dibatalkan/di-refund).
+        petty_cash_voucher?:
+          | {
+              id: number;
+              kode_voucher: string;
+              status: string;
+              petty_cash_sub_voucher?:
+                | Pick<
+                    PettyCashSubVoucher,
+                    "id" | "kode_sub_voucher" | "amount" | "status"
+                  >[]
+                | null;
+            }[]
+          | null;
+      })
+    | null;
   users_with_profiles?: { nama: string; email?: string } | null;
   processed_by_profile?: { nama: string } | null;
 }

@@ -11,6 +11,11 @@
 // muncul HANYA utk role admin), dan panel diskusi (DiscussionPanel, semua
 // user login boleh kirim pesan).
 //
+// Pemohon bisa "Ajukan Pembatalan" (PcAjukanPembatalanButton) selama belum
+// ada tarikan yang dibayar Finance - status permintaannya tampil di atas
+// panel info (PcPembatalanStatus). Penanda Eskalasi cuma di layar, tidak
+// ikut cetak.
+//
 // SELURUH <Content> di atas (bukan cuma cardAction) dibungkus `no-print` -
 // kalau tidak, tampilan WEB-nya (badge, PcItemsEditor read-only, dst) ikut
 // nampil di hasil cetak BARENGAN blok .print-only yang murni dokumen (lihat
@@ -48,7 +53,12 @@ import {
   PC_PENGAJUAN_STATUS_OPTIONS,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
-import { buildPcPenarikanSummary } from "@/lib/pcChain";
+import { buildPcPenarikanSummary, canRequestPembatalan } from "@/lib/pcChain";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import {
+  PcAjukanPembatalanButton,
+  PcPembatalanStatus,
+} from "@/components/petty-cash/PcPembatalan";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcAdminOverridePanel } from "@/components/petty-cash/PcAdminOverridePanel";
@@ -269,7 +279,11 @@ function PengajuanDetailContent({ id }: { id: string }) {
 
   const statusColor =
     PC_PENGAJUAN_STATUS_COLORS[doc.status] || PC_PENGAJUAN_STATUS_COLOR_DEFAULT;
-  const isMyTurn = viewer ? isMyApprovalTurn(doc.approvals, viewer.id) : false;
+  const isMyTurn =
+    doc.status === "In Approval" && viewer
+      ? isMyApprovalTurn(doc.approvals, viewer.id)
+      : false;
+  const isOwner = viewer?.id === doc.user_id;
   // Pengajuan yang ditolak bisa diajukan ulang pemiliknya sbg Pengajuan baru
   // (form Input Pengajuan terisi dari dokumen ini, lihat ?ulang= di
   // InputPengajuanClient.tsx).
@@ -292,6 +306,9 @@ function PengajuanDetailContent({ id }: { id: string }) {
                   <RotateCcw className="h-4 w-4 mr-1" /> Ajukan Ulang
                 </Link>
               </Button>
+            )}
+            {isOwner && canRequestPembatalan(doc) && (
+              <PcAjukanPembatalanButton pengajuan={doc} onRequested={load} />
             )}
             {viewer?.isAdmin && (
               <PcAdminControlSheet kode={doc.kode_pengajuan}>
@@ -329,9 +346,11 @@ function PengajuanDetailContent({ id }: { id: string }) {
         }
       >
         <div className="space-y-6">
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge className={statusColor}>{doc.status}</Badge>
+            <PcEskalasiBadge show={doc.is_eskalasi} />
           </div>
+          <PcPembatalanStatus pembatalan={doc.petty_cash_pembatalan} />
           <PcDocumentInfoPanel
             requesterName={doc.users_with_profiles?.nama}
             requesterEmail={doc.users_with_profiles?.email}

@@ -11,6 +11,10 @@
 // SELURUH <Content> di atas dibungkus `no-print` - lihat komentar sama
 // persis di petty-cash/pengajuan/[id]/page.tsx untuk alasannya (kalau
 // tidak, web UI-nya ikut nampil di hasil cetak barengan blok .print-only).
+//
+// Metode Pencairan tampil di panel info + tombol "Ubah Metode" utk GA/
+// Finance/admin/approver Voucher (canManageVoucherPayment, lib/pcPayment.ts)
+// selama Voucher masih In Approval/Approved.
 
 "use client";
 
@@ -50,6 +54,12 @@ import {
 } from "@/services/pcDiscussionService";
 import { PettyCashVoucher } from "@/type";
 import {
+  canManageVoucherPayment,
+  formatPcPayment,
+  pickPcPayment,
+  resolveSubVoucherPayment,
+} from "@/lib/pcPayment";
+import {
   PC_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_COLOR_DEFAULT,
   PC_VOUCHER_STATUS_OPTIONS,
@@ -70,10 +80,13 @@ import {
 } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
-import { pickCurrentDoc } from "@/lib/pcChain";
+import { getPendingPembatalan, pickCurrentDoc } from "@/lib/pcChain";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import { PcPaymentInfoView } from "@/components/petty-cash/PcPaymentInfoView";
+import { PcPaymentMethodDialog } from "@/components/petty-cash/PcPaymentMethodDialog";
 import { toast } from "@/lib/toast";
 import { adminUpdatePcApprovals } from "@/services/adminApprovalOverrideService";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, Wallet } from "lucide-react";
 
 const DetailSkeleton = () => (
   <Content className="col-span-12">
@@ -95,8 +108,11 @@ function VoucherDetailContent({ id }: { id: string }) {
     id: string;
     nama: string;
     isAdmin: boolean;
+    role: string | null;
+    department: string | null;
   } | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -122,13 +138,15 @@ function VoucherDetailContent({ id }: { id: string }) {
       if (!user) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("nama, role")
+        .select("nama, role, department")
         .eq("id", user.id)
         .single();
       setViewer({
         id: user.id,
         nama: profile?.nama || user.email || "Unknown User",
         isAdmin: profile?.role === "admin",
+        role: profile?.role ?? null,
+        department: profile?.department ?? null,
       });
     };
     loadViewer();
@@ -285,7 +303,16 @@ function VoucherDetailContent({ id }: { id: string }) {
 
   const statusColor =
     PC_VOUCHER_STATUS_COLORS[doc.status] || PC_VOUCHER_STATUS_COLOR_DEFAULT;
-  const isMyTurn = viewer ? isMyApprovalTurn(doc.approvals, viewer.id) : false;
+  const isMyTurn =
+    doc.status === "In Approval" && viewer
+      ? isMyApprovalTurn(doc.approvals, viewer.id)
+      : false;
+  const canChangePayment =
+    (doc.status === "In Approval" || doc.status === "Approved") &&
+    canManageVoucherPayment(viewer, doc.approvals);
+  const pembatalanPending = !!getPendingPembatalan(
+    doc.petty_cash_pengajuan?.petty_cash_pembatalan,
+  );
 
   return (
     <>
@@ -300,6 +327,15 @@ function VoucherDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
+            {canChangePayment && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPaymentOpen(true)}
+              >
+                <Wallet className="h-4 w-4 mr-1" /> Ubah Metode Pencairan
+              </Button>
+            )}
             {viewer?.isAdmin && (
               <PcAdminControlSheet kode={doc.kode_voucher}>
                 <PcAdminOverridePanel
@@ -336,9 +372,17 @@ function VoucherDetailContent({ id }: { id: string }) {
         }
       >
         <div className="space-y-6">
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge className={statusColor}>{doc.status}</Badge>
+            <PcEskalasiBadge show={doc.petty_cash_pengajuan?.is_eskalasi} />
           </div>
+          {pembatalanPending && (
+            <p className="flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-200">
+              <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+              Pengajuan Voucher ini sedang diajukan pembatalan - Tarik Dana &
+              pembayaran tarikan ditahan sampai Finance memprosesnya.
+            </p>
+          )}
           <PcDocumentInfoPanel
             requesterName={doc.users_with_profiles?.nama}
             requesterEmail={doc.users_with_profiles?.email}
@@ -350,6 +394,7 @@ function VoucherDetailContent({ id }: { id: string }) {
             penggunaBudgetName={doc.petty_cash_pengajuan?.pengguna_budget_nama}
             neededDate={doc.needed_date}
             weekOfMonth={doc.week_of_month}
+            payment={pickPcPayment(doc)}
             notes={doc.notes}
             items={doc.items}
             totalAmount={doc.total_amount}
@@ -369,10 +414,9 @@ function VoucherDetailContent({ id }: { id: string }) {
               <CardContent>
                 {(() => {
                   const subVouchers = doc.petty_cash_sub_voucher ?? [];
-                  const drawn = subVouchers.reduce(
-                    (sum, sv) => sum + sv.amount,
-                    0,
-                  );
+                  const drawn = subVouchers
+                    .filter((sv) => sv.status !== "Dibatalkan")
+                    .reduce((sum, sv) => sum + sv.amount, 0);
                   return (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">
@@ -395,6 +439,7 @@ function VoucherDetailContent({ id }: { id: string }) {
                                 <TableHead className="text-right">
                                   Nominal
                                 </TableHead>
+                                <TableHead>Metode</TableHead>
                                 <TableHead>Status Pembayaran</TableHead>
                                 <TableHead>Status Deklarasi</TableHead>
                               </TableRow>
@@ -416,6 +461,21 @@ function VoucherDetailContent({ id }: { id: string }) {
                                     </TableCell>
                                     <TableCell className="text-right text-sm">
                                       {formatCurrency(sv.amount)}
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      {(() => {
+                                        const p = resolveSubVoucherPayment({
+                                          ...sv,
+                                          petty_cash_voucher: doc,
+                                        });
+                                        return (
+                                          <PcPaymentInfoView
+                                            payment={p}
+                                            planned={!p.final}
+                                            compact
+                                          />
+                                        );
+                                      })()}
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       <Badge
@@ -462,12 +522,14 @@ function VoucherDetailContent({ id }: { id: string }) {
                 docLabel="Voucher"
                 kode={doc.kode_voucher}
                 companyCode={doc.company_code}
+                paymentVoucherId={doc.id}
                 editInitial={{
                   needed_date: doc.needed_date,
                   week_of_month: doc.week_of_month,
                   notes: doc.notes,
                   items: doc.items,
                   attachments: doc.attachments,
+                  payment: pickPcPayment(doc),
                 }}
                 processing={processing}
                 onApprove={handleApprove}
@@ -485,6 +547,15 @@ function VoucherDetailContent({ id }: { id: string }) {
         </div>
       </Content>
 
+      {canChangePayment && (
+        <PcPaymentMethodDialog
+          voucher={doc}
+          open={isPaymentOpen}
+          onOpenChange={setIsPaymentOpen}
+          onSaved={load}
+        />
+      )}
+
       <div className="print-only">
         <PrintablePettyCashDocument
           docTitle="Pengajuan Voucher"
@@ -501,6 +572,10 @@ function VoucherDetailContent({ id }: { id: string }) {
             {
               label: "Ref. Pengajuan",
               value: doc.petty_cash_pengajuan?.kode_pengajuan,
+            },
+            {
+              label: "Metode Pencairan",
+              value: formatPcPayment(doc, "-"),
             },
           ]}
           penggunaBudget={{

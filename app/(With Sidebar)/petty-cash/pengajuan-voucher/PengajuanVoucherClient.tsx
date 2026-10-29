@@ -59,7 +59,13 @@ import {
   fetchApprovedPengajuanForVoucher,
   fetchMyVouchers,
 } from "@/services/pettyCashVoucherService";
-import { getActiveDoc, pickCurrentDoc } from "@/lib/pcChain";
+import {
+  getActiveDoc,
+  getPendingPembatalan,
+  pickCurrentDoc,
+} from "@/lib/pcChain";
+import { pickPcPayment } from "@/lib/pcPayment";
+import { PcPaymentInfoView } from "@/components/petty-cash/PcPaymentInfoView";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import { PcCreateVoucherDialog } from "@/components/petty-cash/PcCreateVoucherDialog";
 import {
@@ -380,6 +386,21 @@ export default function PengajuanVoucherClient() {
                                 Pengajuan
                               </span>
                               {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
+                              <span className="mt-1 block text-[11px]">
+                                Metode
+                              </span>
+                              <PcPaymentInfoView
+                                payment={pickPcPayment(v)}
+                                compact
+                                className="text-foreground"
+                              />
+                              {getPendingPembatalan(
+                                v.petty_cash_pengajuan?.petty_cash_pembatalan,
+                              ) && (
+                                <span className="mt-1 block text-[11px] text-yellow-700 dark:text-yellow-300">
+                                  Pembatalan diajukan - Tarik Dana ditahan
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell>
                               <DrawProgressBar

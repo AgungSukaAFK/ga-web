@@ -16,8 +16,19 @@
 // approver mulai pending) - jadi urutan tetap wajib dicek di app lewat fungsi
 // di sini sebelum mengizinkan approve/reject.
 
-import { PcApprovalLevel } from "@/type";
+import { PcApprovalLevel, PcPaymentInfo } from "@/type";
 import { PC_APPROVAL_LEVEL_OPTIONS } from "@/type/enum";
+import { FINANCE_DEPARTMENT } from "@/lib/constants/departments";
+
+/**
+ * Jalur approval memuat minimal 1 approver departemen Finance - WAJIB utk
+ * Template "Approval Deklarasi" (lihat check_pc_approval_template_finance,
+ * supabase/migrations/0015_petty_cash_revisi.sql).
+ */
+export const hasFinanceApprover = (
+  approvals: { department?: string | null }[] | null | undefined,
+): boolean =>
+  (approvals ?? []).some((a) => a.department === FINANCE_DEPARTMENT);
 
 export interface PcApprovalStep {
   userid: string;
@@ -152,6 +163,8 @@ export interface PcEditableFields<TItem = unknown, TAttachment = unknown> {
   notes: string | null;
   items: TItem[];
   attachments: TAttachment[];
+  // Metode pencairan - cuma Voucher yang punya & bisa diedit approver.
+  payment?: PcPaymentInfo;
 }
 
 export interface PcRevisionEntry<TItem = unknown, TAttachment = unknown> {
@@ -207,6 +220,7 @@ export const buildEditAndApproveUpdate = <
       notes: current.notes,
       items: current.items,
       attachments: current.attachments,
+      ...(current.payment ? { payment: current.payment } : {}),
     },
   };
 

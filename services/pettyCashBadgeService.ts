@@ -4,8 +4,9 @@
 // hooks/use-pc-badge.ts):
 //  - approvals: dokumen yang SEDANG giliran user login approve (Pengajuan/
 //    Voucher/Deklarasi, isMyApprovalTurn) + antrian Finance (tarikan menunggu
-//    dibayar & pengembalian menunggu konfirmasi) kalau dia Finance approver
-//    atau admin - sama dgn isi halaman Approval Petty Cash.
+//    dibayar, pengembalian menunggu konfirmasi, & permintaan pembatalan)
+//    kalau dia Finance approver atau admin - sama dgn isi halaman Approval
+//    Petty Cash.
 //  - myActions: rantai Pengajuan milik user yang statusnya "giliran Anda"
 //    (buildActionItems, services/pettyCashDashboardService.ts) - sama dgn
 //    panel "Perlu Tindakan Anda" di Dashboard.
@@ -15,6 +16,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { isMyApprovalTurn, PcApprovalStep } from "@/lib/pcApprovalFlow";
 import { buildActionItems } from "@/services/pettyCashDashboardService";
+import { isPcFinanceApprover } from "@/lib/constants/departments";
 import { PettyCashPengajuanWithChain } from "@/type";
 
 const supabase = createClient();
@@ -73,17 +75,34 @@ const countFinanceQueue = async (
   return count ?? 0;
 };
 
+const countPembatalanQueue = async (
+  financeCompany: string | null,
+): Promise<number> => {
+  let query = supabase
+    .from("petty_cash_pembatalan")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "Menunggu Persetujuan");
+
+  if (financeCompany && financeCompany !== "LOURDES") {
+    query = query.eq("company_code", financeCompany);
+  }
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+};
+
 const countMyActions = async (userId: string): Promise<number> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
     .select(
-      `id, status,
+      `id, status, petty_cash_pembatalan(id, status),
        petty_cash_voucher(id, status, total_amount, created_at,
          petty_cash_sub_voucher(id, status, amount,
            petty_cash_deklarasi(id, status, created_at)))`,
     )
     .eq("user_id", userId)
-    .neq("status", "Rejected");
+    .not("status", "in", "(Rejected,Dibatalkan)");
 
   if (error) throw error;
   return buildActionItems(
@@ -95,12 +114,17 @@ export const fetchPcBadgeCounts = async (
   userId: string,
   profile: PcBadgeProfile,
 ): Promise<PcBadgeCounts> => {
-  const isFinanceApprover =
-    profile.role === "admin" ||
-    (profile.department === "Finance" && profile.role === "approver");
+  const isFinanceApprover = isPcFinanceApprover(profile);
 
-  const [pengajuan, voucher, deklarasi, payment, pengembalian, myActions] =
-    await Promise.all([
+  const [
+    pengajuan,
+    voucher,
+    deklarasi,
+    payment,
+    pengembalian,
+    pembatalan,
+    myActions,
+  ] = await Promise.all([
       countMyApprovalTurns("petty_cash_pengajuan", userId),
       countMyApprovalTurns("petty_cash_voucher", userId),
       countMyApprovalTurns("petty_cash_deklarasi", userId),
@@ -118,11 +142,15 @@ export const fetchPcBadgeCounts = async (
             profile.company,
           )
         : Promise.resolve(0),
+      isFinanceApprover
+        ? countPembatalanQueue(profile.company)
+        : Promise.resolve(0),
       countMyActions(userId),
     ]);
 
   return {
-    approvals: pengajuan + voucher + deklarasi + payment + pengembalian,
+    approvals:
+      pengajuan + voucher + deklarasi + payment + pengembalian + pembatalan,
     myActions,
   };
 };

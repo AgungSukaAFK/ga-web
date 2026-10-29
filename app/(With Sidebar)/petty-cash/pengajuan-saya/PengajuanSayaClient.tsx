@@ -26,10 +26,14 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import {
+  canRequestPembatalan,
   getActiveDoc,
+  getPendingPembatalan,
   pickCurrentDoc,
   sortDocsNewestFirst,
 } from "@/lib/pcChain";
+import { pickPcPayment } from "@/lib/pcPayment";
+import { canEscalatePettyCash } from "@/lib/constants/departments";
 import {
   checkPengajuanEligibility,
   fetchMyPengajuanWithChain,
@@ -106,9 +110,15 @@ import {
 } from "@/components/ui/accordion";
 import { DatePicker } from "@/components/date-picker";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import {
+  PcAjukanPembatalanButton,
+  PcPembatalanStatus,
+} from "@/components/petty-cash/PcPembatalan";
 import {
   AlertTriangle,
   ArrowRight,
+  Ban,
   CalendarDays,
   Clock,
   CornerDownRight,
@@ -163,7 +173,9 @@ const buildHaystack = (
 
 /** Pengajuan "Approved" yang belum punya Voucher aktif (belum dibuat / ditolak). */
 const canCreateVoucher = (pj: PettyCashPengajuanWithChain) =>
-  pj.status === "Approved" && !getActiveDoc(pj.petty_cash_voucher);
+  pj.status === "Approved" &&
+  !getActiveDoc(pj.petty_cash_voucher) &&
+  !getPendingPembatalan(pj.petty_cash_pembatalan);
 
 /** Tarikan yang sudah dibayar Finance tapi belum punya Deklarasi aktif. */
 const isAwaitingDeklarasi = (sv: PettyCashSubVoucherWithChain) =>
@@ -253,7 +265,7 @@ export default function PengajuanSayaClient() {
 
       const profileRes = await supabase
         .from("profiles")
-        .select("nama, department, lokasi, company")
+        .select("nama, department, lokasi, company, role")
         .eq("id", user.id)
         .single();
 
@@ -265,6 +277,7 @@ export default function PengajuanSayaClient() {
               profileRes.data.department,
               profileRes.data.lokasi ?? null,
               profileRes.data.company,
+              canEscalatePettyCash(profileRes.data),
             )
           : Promise.resolve(null),
       ]);
@@ -490,7 +503,10 @@ export default function PengajuanSayaClient() {
       ),
     });
   }
-  if (selectedVoucher && canDrawVoucher(selectedVoucher)) {
+  if (
+    selectedVoucher &&
+    canDrawVoucher(selectedVoucher, selectedPengajuan?.petty_cash_pembatalan)
+  ) {
     nextSteps.push({
       hint: `Voucher disetujui - sisa ${formatCurrency(
         selectedVoucher.total_amount - drawnOf(selectedVoucher),
@@ -499,6 +515,24 @@ export default function PengajuanSayaClient() {
         <Button key="tarik" onClick={() => setDrawTarget(selectedVoucher)}>
           <Wallet /> Tarik Dana
         </Button>
+      ),
+    });
+  }
+  if (selectedPengajuan && getPendingPembatalan(selectedPengajuan.petty_cash_pembatalan)) {
+    nextSteps.push({
+      hint: "Pembatalan sedang menunggu persetujuan Finance - Tarik Dana ditahan.",
+      action: null,
+    });
+  } else if (selectedPengajuan && canRequestPembatalan(selectedPengajuan)) {
+    nextSteps.push({
+      hint: "",
+      action: (
+        <PcAjukanPembatalanButton
+          key="batal"
+          size="default"
+          pengajuan={selectedPengajuan}
+          onRequested={loadData}
+        />
       ),
     });
   }
@@ -703,6 +737,18 @@ export default function PengajuanSayaClient() {
                 </AlertDescription>
               </Alert>
             )}
+            {eligibility?.eligible && eligibility.requiresEskalasi && (
+              <Alert className="mb-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Pengajuan baru akan ditandai Eskalasi</AlertTitle>
+                <AlertDescription>
+                  Anda masih punya tarikan yang belum dideklarasikan (
+                  {eligibility.pendingSubVoucherKodes.join(", ")}). Sebagai
+                  GA/Admin Anda tetap bisa mengajukan, tapi sebaiknya
+                  deklarasikan tarikan tersebut secepatnya.
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="flex justify-end mb-2">
               <Button
                 size="sm"
@@ -759,8 +805,11 @@ export default function PengajuanSayaClient() {
                           onClick={() => openChainModal(pj, "pengajuan")}
                         >
                           <TableCell className="text-sm whitespace-nowrap">{formatDate(pj.created_at)}</TableCell>
-                          <TableCell className="font-semibold text-sm text-primary truncate" title={pj.kode_pengajuan}>
-                            {pj.kode_pengajuan}
+                          <TableCell className="font-semibold text-sm text-primary" title={pj.kode_pengajuan}>
+                            <div className="flex flex-col items-start gap-1 min-w-0">
+                              <span className="truncate max-w-full">{pj.kode_pengajuan}</span>
+                              <PcEskalasiBadge show={pj.is_eskalasi} />
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm truncate" title={pj.department}>{pj.department}</TableCell>
                           <TableCell className="text-center text-sm">{pj.items?.length ?? 0}</TableCell>
@@ -768,6 +817,11 @@ export default function PengajuanSayaClient() {
                           <TableCell>
                             <div className="flex flex-col items-start gap-1.5">
                               <StatusBadge status={pj.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
+                              {getPendingPembatalan(pj.petty_cash_pembatalan) && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-yellow-700 dark:text-yellow-300">
+                                  <Ban className="h-3 w-3" /> Pembatalan diajukan
+                                </span>
+                              )}
                               {pj.status === "Rejected" && (
                                 <Button asChild variant="outline" size="sm" className={cellButtonClass} onClick={stop}>
                                   <Link href={`/petty-cash/input-pengajuan?ulang=${pj.id}`}>
@@ -799,7 +853,7 @@ export default function PengajuanSayaClient() {
                                 </Button>
                               ) : (
                                 voucher &&
-                                canDrawVoucher(voucher) && (
+                                canDrawVoucher(voucher, pj.petty_cash_pembatalan) && (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -873,7 +927,7 @@ export default function PengajuanSayaClient() {
                   ) : (
                     filteredVoucherRows.map(({ pengajuan, voucher }) => {
                       const subVouchers = voucher.petty_cash_sub_voucher ?? [];
-                      const drawn = subVouchers.reduce((sum, sv) => sum + sv.amount, 0);
+                      const drawn = drawnOf(voucher);
                       const declaredCount = subVouchers.filter(
                         (sv) => !!getActiveDoc(sv.petty_cash_deklarasi),
                       ).length;
@@ -902,7 +956,7 @@ export default function PengajuanSayaClient() {
                               <div className="text-muted-foreground">
                                 {declaredCount}/{subVouchers.length} SV dideklarasikan
                               </div>
-                              {canDrawVoucher(voucher) && (
+                              {canDrawVoucher(voucher, pengajuan.petty_cash_pembatalan) && (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1162,10 +1216,14 @@ export default function PengajuanSayaClient() {
                       <ReceiptText className="h-4 w-4 text-primary" />
                       Pengajuan
                       <StatusBadge status={selectedPengajuan.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
+                      <PcEskalasiBadge show={selectedPengajuan.is_eskalasi} />
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
                     <DocSectionActions href={`/petty-cash/pengajuan/${selectedPengajuan.id}`} />
+                    <div className="mb-3 empty:hidden">
+                      <PcPembatalanStatus pembatalan={selectedPengajuan.petty_cash_pembatalan} />
+                    </div>
                     <PcDocumentInfoPanel
                       requesterName={profile?.nama}
                       requesterEmail={profile?.email}
@@ -1226,6 +1284,7 @@ export default function PengajuanSayaClient() {
                         budgetRemaining={selectedVoucher.petty_cash_budget?.current_budget}
                         neededDate={selectedVoucher.needed_date}
                         weekOfMonth={selectedVoucher.week_of_month}
+                        payment={pickPcPayment(selectedVoucher)}
                         notes={selectedVoucher.notes}
                         items={selectedVoucher.items}
                         totalAmount={selectedVoucher.total_amount}
@@ -1349,8 +1408,11 @@ export default function PengajuanSayaClient() {
 
           <div className="flex flex-col gap-3 border-t bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <p className="min-w-0 text-xs text-muted-foreground">
-              {nextSteps.length > 0
-                ? nextSteps.map((step) => step.hint).join(" ")
+              {nextSteps.some((step) => step.hint)
+                ? nextSteps
+                    .map((step) => step.hint)
+                    .filter(Boolean)
+                    .join(" ")
                 : "Tidak ada langkah yang perlu Anda kerjakan untuk dokumen ini."}
             </p>
             <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">

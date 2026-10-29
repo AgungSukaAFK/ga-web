@@ -49,6 +49,40 @@ export const pickCurrentDoc = <T extends ChainDocLike>(
   );
 };
 
+/**
+ * Permintaan pembatalan Pengajuan yang masih menunggu Finance (paling
+ * banyak 1, dijaga unique index parsial - lihat
+ * supabase/migrations/0015_petty_cash_revisi.sql), null kalau tidak ada.
+ */
+export const getPendingPembatalan = <T extends { status: string }>(
+  list: T | T[] | null | undefined,
+): T | null =>
+  toEmbedArray(list).find((p) => p.status === "Menunggu Persetujuan") ?? null;
+
+/**
+ * Pengajuan boleh diajukan pembatalan oleh pemiliknya: masih In Approval/
+ * Approved, belum ada permintaan yang menunggu, dan belum ada tarikan yang
+ * dibayar Finance. Aturan yang sama dicek ulang di RPC
+ * request_petty_cash_pembatalan - ini cuma utk menampilkan tombol.
+ */
+export const canRequestPembatalan = (pengajuan: {
+  status: string;
+  petty_cash_pembatalan?: { status: string }[] | null;
+  petty_cash_voucher?:
+    | {
+        status?: string;
+        petty_cash_sub_voucher?: { status: string }[] | null;
+      }[]
+    | null;
+}): boolean => {
+  if (pengajuan.status !== "In Approval" && pengajuan.status !== "Approved")
+    return false;
+  if (getPendingPembatalan(pengajuan.petty_cash_pembatalan)) return false;
+  return !toEmbedArray(pengajuan.petty_cash_voucher).some((v) =>
+    toEmbedArray(v.petty_cash_sub_voucher).some((sv) => sv.status === "Selesai"),
+  );
+};
+
 /** Semua dokumen, terbaru di atas (aktif + riwayat yang ditolak). */
 export const sortDocsNewestFirst = <T extends ChainDocLike>(
   list: T | T[] | null | undefined,
@@ -127,7 +161,9 @@ export const buildPcPenarikanSummary = (pengajuan: {
     | null;
 }): PcPenarikanSummary => {
   const voucher = getActiveDoc(pengajuan.petty_cash_voucher);
+  // Tarikan yang dibatalkan sudah di-refund - tidak dihitung sbg penarikan.
   const penarikan = [...toEmbedArray(voucher?.petty_cash_sub_voucher)]
+    .filter((sv) => sv.status !== "Dibatalkan")
     .sort((a, b) => createdTime(a) - createdTime(b))
     .map((sv) => ({
       id: sv.id,

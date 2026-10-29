@@ -7,6 +7,10 @@
 // editAndApprove*Step di services/pettyCash*Service.ts, yang membangun
 // patch-nya lewat buildEditAndApproveUpdate, lib/pcApprovalFlow.ts) - dialog
 // ini sendiri cuma mengumpulkan nilai baru & memanggil `onSubmit`.
+//
+// Khusus Voucher (`paymentVoucherId` diisi): approver juga bisa mengganti
+// Metode Pencairan (mis. Transfer -> Overbook), rekening pilihan = rekening
+// tersimpan pemohon (fetchVoucherOwnerBankAccounts) atau isi manual.
 
 "use client";
 
@@ -45,9 +49,18 @@ import {
   getAttachmentSizeError,
   getUploadErrorMessage,
 } from "@/lib/attachments";
-import { Attachment, PettyCashBudget, PettyCashPengajuanItem } from "@/type";
+import {
+  Attachment,
+  BankAccount,
+  PcPaymentInfo,
+  PettyCashBudget,
+  PettyCashPengajuanItem,
+} from "@/type";
 import { getLocalDateString } from "@/lib/utils";
 import { fetchActiveBudgets } from "@/services/pettyCashBudgetService";
+import { fetchVoucherOwnerBankAccounts } from "@/services/pettyCashVoucherService";
+import { EMPTY_PC_PAYMENT, validatePcPayment } from "@/lib/pcPayment";
+import { PcPaymentMethodField } from "@/components/petty-cash/PcPaymentMethodField";
 import { Loader2, UploadCloud, X, PencilLine } from "lucide-react";
 
 const WEEK_OPTIONS = [1, 2, 3, 4, 5];
@@ -61,6 +74,8 @@ export interface PcEditAndApproveEdits {
   // Cuma terisi kalau showBudget=true (docLabel "Pengajuan") - lihat
   // komentar budget_id di EditPengajuanEdits, services/pettyCashPengajuanService.ts.
   budget_id?: number | null;
+  // Cuma terisi utk Voucher (paymentVoucherId diisi).
+  payment?: PcPaymentInfo;
 }
 
 interface PcEditAndApproveDialogProps {
@@ -75,6 +90,9 @@ interface PcEditAndApproveDialogProps {
   // type/index.ts). Voucher/Deklarasi tidak punya kontrol ini (budget_id
   // Voucher cuma disalin dari Pengajuan asalnya, tidak diedit lagi di sini).
   showBudget?: boolean;
+  // Id Voucher - diisi HANYA utk docLabel "Voucher", menampilkan field
+  // Metode Pencairan (rekening dimuat dari pemilik Voucher ini).
+  paymentVoucherId?: number;
   initial: {
     needed_date?: string | Date;
     week_of_month?: number | null;
@@ -82,6 +100,7 @@ interface PcEditAndApproveDialogProps {
     items: PettyCashPengajuanItem[];
     attachments: Attachment[];
     budget_id?: number | null;
+    payment?: PcPaymentInfo;
   };
   onSubmit: (edits: PcEditAndApproveEdits) => Promise<void> | void;
 }
@@ -94,9 +113,11 @@ export function PcEditAndApproveDialog({
   companyCode,
   showNeededDate = true,
   showBudget = false,
+  paymentVoucherId,
   initial,
   onSubmit,
 }: PcEditAndApproveDialogProps) {
+  const showPayment = paymentVoucherId != null;
   const isLourdes = companyCode === "LOURDES";
   const [neededDate, setNeededDate] = useState(
     initial.needed_date
@@ -118,6 +139,20 @@ export function PcEditAndApproveDialog({
     initial.budget_id ?? null,
   );
   const [budgetOptions, setBudgetOptions] = useState<PettyCashBudget[]>([]);
+  const [payment, setPayment] = useState<PcPaymentInfo>(
+    initial.payment ?? EMPTY_PC_PAYMENT,
+  );
+  const [ownerAccounts, setOwnerAccounts] = useState<BankAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+
+  useEffect(() => {
+    if (!open || paymentVoucherId == null) return;
+    setLoadingAccounts(true);
+    fetchVoucherOwnerBankAccounts(paymentVoucherId)
+      .then(setOwnerAccounts)
+      .catch(() => setOwnerAccounts([]))
+      .finally(() => setLoadingAccounts(false));
+  }, [open, paymentVoucherId]);
 
   useEffect(() => {
     if (!showBudget || !open) return;
@@ -167,6 +202,10 @@ export function PcEditAndApproveDialog({
       return toast.error("Qty setiap barang wajib diisi dan lebih dari 0.");
     if (hasUnresolvedCoa(items))
       return toast.error("Setiap barang wajib punya company (GMI/GIS).");
+    if (showPayment) {
+      const paymentError = validatePcPayment(payment);
+      if (paymentError) return toast.error(paymentError);
+    }
 
     setSubmitting(true);
     try {
@@ -177,6 +216,7 @@ export function PcEditAndApproveDialog({
         items,
         attachments,
         budget_id: showBudget ? budgetId : undefined,
+        payment: showPayment ? payment : undefined,
       });
       onOpenChange(false);
     } catch (error: any) {
@@ -276,6 +316,18 @@ export function PcEditAndApproveDialog({
                 departemen requester, boleh diganti di sini kalau perlu.
               </p>
             </div>
+          )}
+
+          {showPayment && (
+            <PcPaymentMethodField
+              value={payment}
+              onChange={setPayment}
+              accounts={ownerAccounts}
+              loadingAccounts={loadingAccounts}
+              allowManualAccount
+              disabled={submitting}
+              hint="Pilihan pemohon saat Buat Voucher - ganti kalau pencairannya harus lewat cara lain."
+            />
           )}
 
           <div className="space-y-2">

@@ -22,9 +22,11 @@ import { PcRevisionHistory } from "./PcRevisionHistory";
 import {
   Attachment,
   PcDocumentRevision,
+  PcPaymentInfo,
   PettyCashPengajuanApprover,
   PettyCashPengajuanItem,
 } from "@/type";
+import { PcPaymentInfoView } from "./PcPaymentInfoView";
 import { formatCurrency } from "@/lib/utils";
 import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import { PcApprovalLevelBadge } from "./PcApprovalLevelBadge";
@@ -33,6 +35,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  HandCoins,
   MapPin,
   User,
   UserCheck,
@@ -79,6 +82,11 @@ interface PcDocumentInfoPanelProps {
   neededDate?: string | Date | null;
   weekOfMonth?: number | null;
   showNeededDate?: boolean;
+  // Metode pencairan (Voucher/Sub-Voucher) - undefined = field
+  // disembunyikan (Pengajuan/Deklarasi tidak punya). `paymentPlanned` =
+  // masih rencana di Voucher (tarikan belum dibayar).
+  payment?: Partial<PcPaymentInfo> | null;
+  paymentPlanned?: boolean;
   notes: string | null;
   items: PettyCashPengajuanItem[];
   totalAmount: number;
@@ -105,6 +113,8 @@ export function PcDocumentInfoPanel({
   neededDate,
   weekOfMonth,
   showNeededDate = true,
+  payment,
+  paymentPlanned = false,
   notes,
   items,
   totalAmount,
@@ -161,6 +171,15 @@ export function PcDocumentInfoPanel({
             icon={CalendarDays}
             label="Minggu ke-"
             value={`Minggu ke-${weekOfMonth}`}
+          />
+        )}
+        {payment !== undefined && (
+          <InfoField
+            icon={HandCoins}
+            label="Metode Pencairan"
+            value={
+              <PcPaymentInfoView payment={payment} planned={paymentPlanned} />
+            }
           />
         )}
       </div>
@@ -293,6 +312,7 @@ export function PcDocumentInfoPanel({
           notes,
           items,
           attachments,
+          payment: payment ?? undefined,
         }}
       />
     </div>

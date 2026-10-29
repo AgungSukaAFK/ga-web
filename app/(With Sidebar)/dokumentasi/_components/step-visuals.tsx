@@ -582,9 +582,24 @@ function PcVoucher() {
           <StatusPill status="In Approval" domain="pc" className="mt-1" />
         </Delay>
       </div>
-      <Delay delay={1.2} className="text-[10px] text-muted-foreground">
-        Isi Voucher = salinan persis Pengajuan (tidak bisa diedit). 1 Pengajuan
-        hanya bisa menjadi 1 Voucher.
+      <MockField
+        label="Metode Pencairan"
+        delay={1.2}
+        highlight
+        value={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded border border-primary bg-primary/10 px-1.5 font-medium text-primary">
+              Transfer
+            </span>
+            <span className="rounded border px-1.5 text-muted-foreground">Cash</span>
+            <span className="rounded border px-1.5 text-muted-foreground">Overbook</span>
+            <span className="text-muted-foreground">· BCA 1234567890</span>
+          </span>
+        }
+      />
+      <Delay delay={1.6} className="text-[10px] text-muted-foreground">
+        Barang disalin persis dari Pengajuan. Metode pencairan masih bisa
+        diganti approver/GA/Finance.
       </Delay>
     </MockWindow>
   );
@@ -651,8 +666,13 @@ function PcBayar() {
         }
       />
       <MockField
-        label="Bukti transfer (wajib)"
-        delay={0.35}
+        label="Metode (dari Voucher, bisa dikoreksi)"
+        delay={0.25}
+        value={<span>Transfer · BCA 1234567890 a.n. Budi</span>}
+      />
+      <MockField
+        label="Bukti transfer (wajib utk Transfer/Overbook, opsional utk Cash)"
+        delay={0.45}
         highlight
         value={
           <span className="flex items-center gap-1">
@@ -682,7 +702,8 @@ function PcDeklarasi() {
         <div className="flex-1">
           <p className="font-medium">Laporkan pemakaian riil</p>
           <p className="text-[10px] text-muted-foreground">
-            Qty/harga disesuaikan dengan struk asli + upload foto struk
+            Qty/harga disesuaikan dengan struk asli + upload foto struk.
+            Approval wajib ada Finance.
           </p>
         </div>
       </Delay>

@@ -17,6 +17,7 @@ import {
   HeroSection,
   JourneySection,
   PaymentSection,
+  PcRulesSection,
   PrioritySection,
   Section,
   StatusSection,
@@ -115,6 +116,7 @@ export default function DokumentasiPage() {
               activeRole={role}
             />
           </Section>
+          <PcRulesSection role={role} />
 
           <PrioritySection />
           <StatusSection />

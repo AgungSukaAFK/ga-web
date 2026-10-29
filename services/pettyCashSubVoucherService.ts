@@ -21,12 +21,17 @@
 // Sub-Voucher yang baru dibuat BELUM berarti dana diterima requester -
 // statusnya "Menunggu Pembayaran" sampai Finance approver (department
 // "Finance" + role "approver", atau admin) menyelesaikan pembayaran lewat
-// RPC mark_petty_cash_sub_voucher_paid (wajib sertakan bukti transfer) - baru
-// setelah itu "Selesai" & boleh dideklarasikan.
+// RPC mark_petty_cash_sub_voucher_paid - baru setelah itu "Selesai" & boleh
+// dideklarasikan. Finance mencatat metode pencairan final (Transfer/Cash/
+// Overbook, default = rencana di Voucher) + rekening; bukti wajib utk
+// Transfer & Overbook, opsional utk Cash (lihat lib/pcPayment.ts).
+// "Dibatalkan" = Pengajuan-nya dibatalkan sebelum tarikan ini dibayar
+// (services/pettyCashPembatalanService.ts) - budget-nya sudah di-refund.
 
 import { createClient } from "@/lib/supabase/client";
 import {
   Attachment,
+  PcPaymentInfo,
   PettyCashSubVoucher,
   PettyCashSubVoucherItem,
   PettyCashVoucher,
@@ -42,8 +47,9 @@ const supabase = createClient();
 
 const SUB_VOUCHER_WITH_VOUCHER = `
   *, petty_cash_voucher(kode_voucher, total_amount, items, company_code,
-    department, week_of_month, site, approvals,
-    petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department),
+    department, week_of_month, site, approvals, pengajuan_id,
+    payment_method, bank_name, bank_account_number, bank_account_holder_name,
+    petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department, is_eskalasi),
     petty_cash_budget(name, current_budget)),
   users_with_profiles:profiles!user_id(nama, email),
   paid_by_profile:profiles!paid_by(nama),
@@ -85,6 +91,7 @@ export const fetchPendingSubVouchers = async (
     .from("petty_cash_sub_voucher")
     .select("id, kode_sub_voucher, status, petty_cash_deklarasi(id, status)")
     .eq("user_id", userId)
+    .neq("status", "Dibatalkan")
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -208,7 +215,9 @@ export const fetchSubVoucherPaymentQueue = async (
     .from("petty_cash_sub_voucher")
     .select(
       `*, petty_cash_voucher!inner(kode_voucher, total_amount, items, company_code,
-        department, week_of_month, site, petty_cash_pengajuan(kode_pengajuan)),
+        department, week_of_month, site, pengajuan_id,
+        payment_method, bank_name, bank_account_number, bank_account_holder_name,
+        petty_cash_pengajuan(kode_pengajuan, is_eskalasi)),
        users_with_profiles:profiles!user_id(nama, email)`,
     )
     .eq("status", "Menunggu Pembayaran");
@@ -311,18 +320,25 @@ export const createSubVoucher = async (
 /**
  * Selesaikan pembayaran Sub-Voucher (Finance/admin only, dijamin di RPC -
  * lihat mark_petty_cash_sub_voucher_paid,
- * supabase/migrations/0004_petty_cash.sql (asal: petty_cash_sub_voucher_payment_setup.sql)) - wajib sertakan bukti
- * transfer, tidak bisa dipanggil dgn attachment kosong.
+ * supabase/migrations/0015_petty_cash_revisi.sql). `payment` = metode final
+ * yang dipakai Finance; bukti wajib utk Transfer & Overbook, opsional utk
+ * Cash (dicek ulang di RPC). Ditolak selama Pengajuan-nya sedang diajukan
+ * pembatalan.
  */
 export const markSubVoucherPaid = async (
   id: number,
   paymentProof: Attachment[],
+  payment: PcPaymentInfo,
 ): Promise<void> => {
   const { data, error } = await supabase.rpc(
     "mark_petty_cash_sub_voucher_paid",
     {
       p_id: id,
       p_payment_proof: paymentProof,
+      p_payment_method: payment.payment_method,
+      p_bank_name: payment.bank_name,
+      p_bank_account_number: payment.bank_account_number,
+      p_bank_account_holder_name: payment.bank_account_holder_name,
     },
   );
   if (error) throw error;

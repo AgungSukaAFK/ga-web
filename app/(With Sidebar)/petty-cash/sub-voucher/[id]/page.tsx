@@ -9,7 +9,9 @@
 // gantinya, kalau viewer Finance approver (department "Finance" + role
 // "approver", atau admin) dan status masih "Menunggu Pembayaran", muncul
 // form "Selesaikan Pembayaran" (PcSubVoucherPaymentForm, dipakai bareng oleh
-// dialog antrian di /petty-cash/approval).
+// dialog antrian di /petty-cash/approval). Metode pencairan yang tampil =
+// yang dicatat Finance saat bayar, atau (selama belum dibayar) rencana di
+// Voucher induk - lihat resolveSubVoucherPayment, lib/pcPayment.ts.
 //
 // SELURUH <Content> di atas dibungkus `no-print` - lihat komentar sama
 // persis di petty-cash/pengajuan/[id]/page.tsx untuk alasannya.
@@ -39,7 +41,7 @@ import {
   addSubVoucherDiscussion,
   PcDiscussionPayload,
 } from "@/services/pcDiscussionService";
-import { Attachment, PettyCashSubVoucher } from "@/type";
+import { Attachment, PcPaymentInfo, PettyCashSubVoucher } from "@/type";
 import {
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
@@ -52,7 +54,14 @@ import {
   computeSisaPengembalian,
   sortDocsNewestFirst,
 } from "@/lib/pcChain";
+import {
+  formatPcPayment,
+  resolveSubVoucherPayment,
+} from "@/lib/pcPayment";
+import { isPcFinanceApprover } from "@/lib/constants/departments";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import { PcPaymentInfoView } from "@/components/petty-cash/PcPaymentInfoView";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
 import { PcAdminSubVoucherPanel } from "@/components/petty-cash/PcAdminSubVoucherPanel";
 import { PcAdminControlSheet } from "@/components/petty-cash/PcAdminControlSheet";
@@ -119,9 +128,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
         .eq("id", user.id)
         .single();
       setViewer({
-        isFinanceApprover:
-          profile?.role === "admin" ||
-          (profile?.department === "Finance" && profile?.role === "approver"),
+        isFinanceApprover: isPcFinanceApprover(profile),
         isAdmin: profile?.role === "admin",
       });
     };
@@ -169,11 +176,14 @@ function SubVoucherDetailContent({ id }: { id: string }) {
     };
   }, [isPrinting, doc]);
 
-  const handleMarkPaid = async (paymentProof: Attachment[]) => {
+  const handleMarkPaid = async (
+    paymentProof: Attachment[],
+    payment: PcPaymentInfo,
+  ) => {
     if (!doc) return;
     setProcessingPayment(true);
     try {
-      await markSubVoucherPaid(doc.id, paymentProof);
+      await markSubVoucherPaid(doc.id, paymentProof, payment);
       toast.success(`${doc.kode_sub_voucher} berhasil ditandai selesai dibayar.`);
       await load();
     } catch (error: any) {
@@ -237,6 +247,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
   const deklarasiHistory = sortDocsNewestFirst(doc.petty_cash_deklarasi);
   const pengembalianList = doc.petty_cash_pengembalian ?? [];
   const sisaDana = computeSisaPengembalian(doc);
+  const payment = resolveSubVoucherPayment(doc);
 
   return (
     <>
@@ -249,7 +260,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             <Button variant="outline" size="sm" onClick={goBack}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Kembali
             </Button>
-            {viewer?.isAdmin && (
+            {viewer?.isAdmin && doc.status !== "Dibatalkan" && (
               <PcAdminControlSheet kode={doc.kode_sub_voucher}>
                 <PcAdminSubVoucherPanel
                   key={doc.id}
@@ -271,6 +282,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
         <div className="space-y-6">
           <div className="mb-4 flex items-center gap-3 flex-wrap">
             <Badge className={statusColor}>{doc.status}</Badge>
+            <PcEskalasiBadge show={voucher?.petty_cash_pengajuan?.is_eskalasi} />
             <span className="text-xs text-muted-foreground">
               Dari Voucher{" "}
               <span className="font-medium text-foreground">
@@ -300,6 +312,8 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             penggunaBudgetName={voucher?.petty_cash_pengajuan?.pengguna_budget_nama}
             weekOfMonth={voucher?.week_of_month}
             showNeededDate={false}
+            payment={payment}
+            paymentPlanned={!payment.final}
             notes={doc.notes}
             items={doc.items}
             totalAmount={doc.amount}
@@ -309,13 +323,24 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             discussions={doc.discussions}
           />
 
+          {doc.status === "Dibatalkan" && (
+            <p className="rounded-md border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200">
+              Tarikan ini dibatalkan karena Pengajuan-nya dibatalkan sebelum
+              dibayar - nominalnya sudah dikembalikan ke budget.
+            </p>
+          )}
+
           {doc.status === "Selesai" && (
             <Card className="print:hidden">
               <CardHeader>
                 <CardTitle className="text-base">Informasi Pembayaran</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Metode Pencairan</p>
+                    <PcPaymentInfoView payment={payment} />
+                  </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Dibayar Oleh</p>
                     <p className="font-medium">
@@ -458,6 +483,10 @@ function SubVoucherDetailContent({ id }: { id: string }) {
             {
               label: "Ref. Pengajuan",
               value: voucher?.petty_cash_pengajuan?.kode_pengajuan,
+            },
+            {
+              label: "Metode Pencairan",
+              value: formatPcPayment(payment, "-"),
             },
           ]}
           penggunaBudget={{

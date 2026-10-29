@@ -283,7 +283,9 @@ export default function PcDashboardClient() {
     () =>
       chain.filter((p) => {
         const s = computePcOverallStatus(p);
-        return s.tone !== "rejected" && s.key !== "tuntas";
+        return (
+          s.tone !== "rejected" && s.key !== "tuntas" && s.key !== "dibatalkan"
+        );
       }),
     [chain],
   );

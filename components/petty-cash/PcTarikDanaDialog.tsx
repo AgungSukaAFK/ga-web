@@ -42,15 +42,31 @@ import {
   createSubVoucher,
   SubVoucherDraw,
 } from "@/services/pettyCashSubVoucherService";
+import { getPendingPembatalan } from "@/lib/pcChain";
+import { formatPcPayment } from "@/lib/pcPayment";
 import { PcCoaBadge } from "./PcCoaBadge";
 import { AlertTriangle, Clock, Loader2, Minus, Plus, Wallet } from "lucide-react";
 
+// Tarikan yang dibatalkan sudah di-refund, tidak dihitung sbg sudah ditarik.
 export const drawnOf = (v: PettyCashVoucher) =>
-  (v.petty_cash_sub_voucher ?? []).reduce((sum, sv) => sum + sv.amount, 0);
+  (v.petty_cash_sub_voucher ?? [])
+    .filter((sv) => sv.status !== "Dibatalkan")
+    .reduce((sum, sv) => sum + sv.amount, 0);
 
-/** Voucher yang masih bisa ditarik: sudah full-approved & masih ada sisa. */
-export const canDrawVoucher = (v: PettyCashVoucher) =>
-  v.status === "Approved" && v.total_amount - drawnOf(v) > 0;
+/**
+ * Voucher yang masih bisa ditarik: sudah full-approved, masih ada sisa, &
+ * Pengajuan-nya tidak sedang diajukan pembatalan (ditahan juga di RPC
+ * create_petty_cash_sub_voucher). `pembatalan` = riwayat pembatalan
+ * Pengajuan-nya kalau pemanggil memegangnya dari rantai Pengajuan (default:
+ * dari join v.petty_cash_pengajuan, kalau ada).
+ */
+export const canDrawVoucher = (
+  v: PettyCashVoucher,
+  pembatalan?: { status: string }[] | null,
+) =>
+  v.status === "Approved" &&
+  v.total_amount - drawnOf(v) > 0 &&
+  !getPendingPembatalan(pembatalan ?? v.petty_cash_pengajuan?.petty_cash_pembatalan);
 
 // Satu baris per item Voucher yang MASIH punya sisa qty (belum sepenuhnya
 // ditarik di sub-voucher lain). `qty` default full sisa begitu dicentang,
@@ -71,6 +87,7 @@ type DrawRow = {
 const buildDrawRows = (voucher: PettyCashVoucher): DrawRow[] => {
   const drawnByIndex = new Map<number, number>();
   (voucher.petty_cash_sub_voucher ?? []).forEach((sv) => {
+    if (sv.status === "Dibatalkan") return;
     (sv.items ?? []).forEach((it) => {
       drawnByIndex.set(
         it.item_index,
@@ -246,6 +263,11 @@ export function PcTarikDanaDialog({
             <DialogDescription className="mt-1.5 [overflow-wrap:anywhere]">
               {voucher?.kode_voucher} - pilih barang yang dananya ditarik
               sekarang. Qty boleh sebagian, sisanya bisa ditarik lain kali.
+              Dicairkan via{" "}
+              <span className="font-medium text-foreground">
+                {formatPcPayment(voucher, "metode pilihan Finance")}
+              </span>
+              .
             </DialogDescription>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

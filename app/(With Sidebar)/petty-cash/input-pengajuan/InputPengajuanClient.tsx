@@ -18,6 +18,12 @@
 // lampiran Pengajuan lama dimuat ke form, requester tinggal memperbaiki lalu
 // mengirimnya sbg Pengajuan BARU (kode & jalur approval baru - Pengajuan lama
 // tetap "Rejected" sbg riwayat). Tanggal & minggu dibutuhkan diisi ulang.
+//
+// ESKALASI (departemen GA & role admin saja, lihat canEscalatePettyCash):
+// checkbox "Tandai sebagai Eskalasi". Kalau requester GA/admin masih punya
+// tarikan yang belum dideklarasikan, form TETAP bisa diisi (pengecualian
+// aturan no. 3 checkPengajuanEligibility) tapi checkbox-nya otomatis
+// tercentang & terkunci. Eskalasi tidak ikut dicetak.
 
 "use client";
 
@@ -86,6 +92,8 @@ import {
   PcPenggunaBudgetField,
 } from "@/components/petty-cash/PcPenggunaBudgetField";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { canEscalatePettyCash } from "@/lib/constants/departments";
 import {
   getSelectableWeeksOfCurrentMonth,
   getWeekOfMonth,
@@ -100,6 +108,7 @@ import {
   Building2,
   FileStack,
   Paperclip,
+  Siren,
   Trash2,
 } from "lucide-react";
 
@@ -130,7 +139,10 @@ export default function InputPengajuanClient() {
     department: string;
     nama: string;
     lokasi: string | null;
+    role: string | null;
   } | null>(null);
+  const canEscalate = canEscalatePettyCash(profile);
+  const [isEskalasi, setIsEskalasi] = useState(false);
 
   const [neededDate, setNeededDate] = useState(getLocalDateString());
   // Batas bawah "Tanggal Dibutuhkan" - HARI INI menurut jam lokal device
@@ -196,7 +208,7 @@ export default function InputPengajuanClient() {
 
         const { data: userProfile, error } = await supabase
           .from("profiles")
-          .select("company, department, nama, lokasi")
+          .select("company, department, nama, lokasi, role")
           .eq("id", user.id)
           .single();
         if (error) throw error;
@@ -207,8 +219,10 @@ export default function InputPengajuanClient() {
           userProfile.department,
           userProfile.lokasi ?? null,
           userProfile.company,
+          canEscalatePettyCash(userProfile),
         );
         setEligibility(eligibilityResult);
+        if (eligibilityResult.requiresEskalasi) setIsEskalasi(true);
       } catch (error: any) {
         toast.error("Gagal memuat data awal", { description: error.message });
       } finally {
@@ -444,6 +458,8 @@ export default function InputPengajuanClient() {
                   nama: profile.nama,
                   department: profile.department,
                 },
+          is_eskalasi:
+            canEscalate && (isEskalasi || !!eligibility?.requiresEskalasi),
           notes,
           items,
           attachments,
@@ -510,6 +526,17 @@ export default function InputPengajuanClient() {
       hint: penggunaIsSelf || penggunaBudget ? undefined : "Pilih user",
       targetId: "pc-field-pengguna",
     },
+    ...(canEscalate && (isEskalasi || eligibility?.requiresEskalasi)
+      ? [
+          {
+            id: "eskalasi",
+            label: "Eskalasi",
+            status: "done",
+            value: "Ditandai eskalasi",
+            targetId: "pc-field-eskalasi",
+          } satisfies FormSummaryCheck,
+        ]
+      : []),
     {
       id: "items",
       label: "Daftar barang",
@@ -738,6 +765,37 @@ export default function InputPengajuanClient() {
               />
             </div>
           </div>
+          {canEscalate && (
+            <div
+              id="pc-field-eskalasi"
+              className={cn(
+                "col-span-12 rounded-md border p-3",
+                isEskalasi || eligibility?.requiresEskalasi
+                  ? "border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/30"
+                  : "border-dashed",
+              )}
+            >
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={isEskalasi || !!eligibility?.requiresEskalasi}
+                  disabled={!!eligibility?.requiresEskalasi}
+                  onCheckedChange={(checked) => setIsEskalasi(checked === true)}
+                />
+                <span className="min-w-0 space-y-0.5">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Siren className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                    Tandai sebagai Eskalasi
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {eligibility?.requiresEskalasi
+                      ? `Anda masih punya tarikan yang belum dideklarasikan (${eligibility.pendingSubVoucherKodes.join(", ")}). Sebagai GA/Admin Anda tetap bisa mengajukan, dan Pengajuan ini otomatis ditandai Eskalasi.`
+                      : "Khusus GA/Admin - untuk kebutuhan mendesak. Penanda ini terlihat oleh approver & di laporan, tapi tidak ikut dicetak."}
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
           <div className="flex flex-col gap-2 col-span-12 md:col-span-4">
             <Label>Perusahaan</Label>
             <Input readOnly disabled value={profile?.company || "Memuat..."} />

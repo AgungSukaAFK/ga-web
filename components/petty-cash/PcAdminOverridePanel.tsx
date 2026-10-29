@@ -153,6 +153,14 @@ export function PcAdminOverridePanel({
     );
   };
 
+  // "Dibatalkan" SENGAJA tidak bisa dipilih manual - pembatalan resmi lewat
+  // permintaan pemohon -> persetujuan Finance (approve_petty_cash_pembatalan)
+  // yang sekaligus me-refund budget tarikan. Override ke sini akan
+  // melewatkan refund itu. Tetap ditampilkan kalau memang status saat ini.
+  const selectableStatuses = statusOptions.filter(
+    (s) => s !== "Dibatalkan" || s === status,
+  );
+
   const expectedStatus = derivePcStatus(deriveApprovalOutcome(editApprovals));
   const statusMismatch =
     expectedStatus !== null &&
@@ -203,7 +211,7 @@ export function PcAdminOverridePanel({
               <SearchableSelectValue />
             </SearchableSelectTrigger>
             <SearchableSelectContent>
-              {statusOptions.map((s) => (
+              {selectableStatuses.map((s) => (
                 <SearchableSelectItem key={s} value={s}>
                   {s}
                 </SearchableSelectItem>

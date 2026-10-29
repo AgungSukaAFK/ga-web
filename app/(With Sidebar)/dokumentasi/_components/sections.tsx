@@ -33,6 +33,7 @@ import {
   type FlowId,
   JOURNEY,
   PAYMENT_VARIANTS,
+  PC_RULES,
   PICKABLE_ROLES,
   PRIORITIES,
   ROLE_INFO,
@@ -565,6 +566,62 @@ export function VendorSection() {
             <p className="text-sm text-muted-foreground">{r.desc}</p>
           </div>
         ))}
+      </div>
+    </Section>
+  );
+}
+
+// ===========================================================================
+// ATURAN KHUSUS PETTY CASH
+// ===========================================================================
+
+export function PcRulesSection({ role }: { role: RoleId | null }) {
+  return (
+    <Section id="aturan-pc">
+      <SectionTitle
+        icon={Wallet}
+        title="Aturan Khusus Petty Cash"
+        subtitle="Jalur samping di luar alur utama: eskalasi, metode pencairan, pembatalan, approval Finance di Deklarasi, dan rekap Excel."
+      />
+      <div className="grid gap-4 md:grid-cols-2">
+        {PC_RULES.map((rule) => {
+          const Icon = rule.icon;
+          const mine = !!role && rule.roles.includes(role);
+          return (
+            <div
+              key={rule.id}
+              className={cn(
+                "rounded-xl border p-4 transition-colors",
+                mine && "border-primary/50 bg-primary/5",
+              )}
+            >
+              <div className="mb-2 flex items-start gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{rule.title}</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {rule.roles.map((r) => (
+                      <RoleChip key={r} role={r} className="text-[10px]" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mb-2 text-sm text-muted-foreground">
+                {rule.summary}
+              </p>
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                {rule.points.map((point, i) => (
+                  <li key={i} className="flex gap-2">
+                    <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );

@@ -22,7 +22,13 @@ import {
 import { PcItemsEditor } from "./PcItemsEditor";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue } from "@/lib/rich-content";
-import { Attachment, PcDocumentRevision, PettyCashPengajuanItem } from "@/type";
+import {
+  Attachment,
+  PcDocumentRevision,
+  PcPaymentInfo,
+  PettyCashPengajuanItem,
+} from "@/type";
+import { formatPcPayment } from "@/lib/pcPayment";
 import { History } from "lucide-react";
 
 const formatDateTime = (d: string | Date) =>
@@ -40,6 +46,8 @@ interface VersionSnapshot {
   notes: string | null;
   items: PettyCashPengajuanItem[];
   attachments: Attachment[];
+  // Metode pencairan - cuma Voucher (lihat PcDocumentRevision.snapshot.payment).
+  payment?: Partial<PcPaymentInfo> | null;
 }
 
 interface PcRevisionHistoryProps {
@@ -141,6 +149,16 @@ export function PcRevisionHistory({
                       </p>
                     </div>
                   )}
+                {viewing.snapshot.payment && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">
+                      Metode Pencairan
+                    </p>
+                    <p className="font-medium">
+                      {formatPcPayment(viewing.snapshot.payment)}
+                    </p>
+                  </div>
+                )}
               </div>
               {viewing.snapshot.notes && (
                 <div className="text-sm bg-muted/50 rounded-md p-3 border">

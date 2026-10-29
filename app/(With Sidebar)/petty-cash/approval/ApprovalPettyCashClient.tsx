@@ -21,6 +21,11 @@
 // requester mengembalikan sisa dana tarikan (lihat
 // services/pettyCashPengembalianService.ts), Finance mengkonfirmasi uangnya
 // sudah diterima (budget bertambah) atau menolak dengan alasan.
+//
+// Sesi ke-6 ("Permintaan Pembatalan") - requester mengajukan pembatalan
+// Pengajuan (services/pettyCashPembatalanService.ts), Finance menyetujui
+// (rantai dibatalkan + refund budget tarikan yang belum dibayar) atau
+// menolak.
 
 "use client";
 
@@ -49,7 +54,9 @@ import { formatCurrency } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import {
   Attachment,
+  PcPaymentInfo,
   PettyCashDeklarasi,
+  PettyCashPembatalan,
   PettyCashPengajuan,
   PettyCashPengembalian,
   PettyCashSubVoucher,
@@ -82,7 +89,17 @@ import {
   confirmPengembalian,
   rejectPengembalian,
 } from "@/services/pettyCashPengembalianService";
+import {
+  fetchPembatalanQueue,
+  approvePembatalan,
+  rejectPembatalan,
+} from "@/services/pettyCashPembatalanService";
+import { isPcFinanceApprover } from "@/lib/constants/departments";
+import { pickPcPayment, resolveSubVoucherPayment } from "@/lib/pcPayment";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import { PcPaymentInfoView } from "@/components/petty-cash/PcPaymentInfoView";
+import { PcPembatalanConfirmPanel } from "@/components/petty-cash/PcPembatalanConfirmPanel";
 import { PcApprovalActions } from "@/components/petty-cash/PcApprovalActions";
 import { PcRequesterHistoryDialog } from "@/components/petty-cash/PcRequesterHistoryDialog";
 import { PcSubVoucherPaymentForm } from "@/components/petty-cash/PcSubVoucherPaymentForm";
@@ -127,6 +144,9 @@ export default function ApprovalPettyCashClient() {
   const [pengembalianQueue, setPengembalianQueue] = useState<
     PettyCashPengembalian[]
   >([]);
+  const [pembatalanQueue, setPembatalanQueue] = useState<
+    PettyCashPembatalan[]
+  >([]);
 
   const [selectedPengajuan, setSelectedPengajuan] =
     useState<PettyCashPengajuan | null>(null);
@@ -138,15 +158,17 @@ export default function ApprovalPettyCashClient() {
     useState<PettyCashSubVoucher | null>(null);
   const [selectedPengembalian, setSelectedPengembalian] =
     useState<PettyCashPengembalian | null>(null);
+  const [selectedPembatalan, setSelectedPembatalan] =
+    useState<PettyCashPembatalan | null>(null);
 
   const [processingPengajuan, setProcessingPengajuan] = useState(false);
   const [processingVoucher, setProcessingVoucher] = useState(false);
   const [processingDeklarasi, setProcessingDeklarasi] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [processingPengembalian, setProcessingPengembalian] = useState(false);
+  const [processingPembatalan, setProcessingPembatalan] = useState(false);
 
-  const isFinanceApprover = (p: Profile | null) =>
-    !!p && (p.role === "admin" || (p.department === "Finance" && p.role === "approver"));
+  const isFinanceApprover = (p: Profile | null) => !!p && isPcFinanceApprover(p);
 
   const loadData = async () => {
     setLoading(true);
@@ -172,7 +194,7 @@ export default function ApprovalPettyCashClient() {
       setProfile(currentProfile);
 
       const finance = isFinanceApprover(currentProfile);
-      const [pengajuan, voucher, deklarasi, payment, pengembalian] =
+      const [pengajuan, voucher, deklarasi, payment, pengembalian, pembatalan] =
         await Promise.all([
           fetchPengajuanApprovalQueue(user.id),
           fetchVoucherApprovalQueue(user.id),
@@ -183,12 +205,16 @@ export default function ApprovalPettyCashClient() {
           finance
             ? fetchPengembalianQueue(currentProfile.company)
             : Promise.resolve([]),
+          finance
+            ? fetchPembatalanQueue(currentProfile.company)
+            : Promise.resolve([]),
         ]);
       setPengajuanQueue(pengajuan);
       setVoucherQueue(voucher);
       setDeklarasiQueue(deklarasi);
       setPaymentQueue(payment);
       setPengembalianQueue(pengembalian);
+      setPembatalanQueue(pembatalan);
     } catch (error: any) {
       toast.error("Gagal memuat antrian approval", {
         description: error.message,
@@ -221,6 +247,10 @@ export default function ApprovalPettyCashClient() {
   const refetchPengembalian = async () => {
     if (!profile || !isFinanceApprover(profile)) return;
     setPengembalianQueue(await fetchPengembalianQueue(profile.company));
+  };
+  const refetchPembatalan = async () => {
+    if (!profile || !isFinanceApprover(profile)) return;
+    setPembatalanQueue(await fetchPembatalanQueue(profile.company));
   };
 
   // --- Pengajuan ---
@@ -406,11 +436,14 @@ export default function ApprovalPettyCashClient() {
   // --- Pembayaran Sub-Voucher (Finance) ---
   const openPaymentDialog = (sv: PettyCashSubVoucher) => setSelectedPayment(sv);
 
-  const handleSubmitPayment = async (paymentProof: Attachment[]) => {
+  const handleSubmitPayment = async (
+    paymentProof: Attachment[],
+    payment: PcPaymentInfo,
+  ) => {
     if (!selectedPayment) return;
     setProcessingPayment(true);
     try {
-      await markSubVoucherPaid(selectedPayment.id, paymentProof);
+      await markSubVoucherPaid(selectedPayment.id, paymentProof, payment);
       toast.success(
         `${selectedPayment.kode_sub_voucher} berhasil ditandai selesai dibayar.`,
       );
@@ -459,6 +492,47 @@ export default function ApprovalPettyCashClient() {
       });
     } finally {
       setProcessingPengembalian(false);
+    }
+  };
+
+  // --- Permintaan Pembatalan (Finance) ---
+  const handleApprovePembatalan = async (note: string) => {
+    if (!selectedPembatalan) return;
+    const kode = selectedPembatalan.petty_cash_pengajuan?.kode_pengajuan ?? "";
+    setProcessingPembatalan(true);
+    try {
+      await approvePembatalan(
+        { ...selectedPembatalan, kode_pengajuan: kode },
+        note,
+      );
+      toast.success(`Pengajuan ${kode} resmi dibatalkan.`);
+      setSelectedPembatalan(null);
+      await Promise.all([refetchPembatalan(), refetchPayment()]);
+    } catch (error: any) {
+      toast.error("Gagal menyetujui pembatalan", {
+        description: error.message,
+      });
+    } finally {
+      setProcessingPembatalan(false);
+    }
+  };
+
+  const handleRejectPembatalan = async (reason: string) => {
+    if (!selectedPembatalan) return;
+    const kode = selectedPembatalan.petty_cash_pengajuan?.kode_pengajuan ?? "";
+    setProcessingPembatalan(true);
+    try {
+      await rejectPembatalan(
+        { ...selectedPembatalan, kode_pengajuan: kode },
+        reason,
+      );
+      toast.success(`Pembatalan ${kode} ditolak.`);
+      setSelectedPembatalan(null);
+      await refetchPembatalan();
+    } catch (error: any) {
+      toast.error("Gagal menolak pembatalan", { description: error.message });
+    } finally {
+      setProcessingPembatalan(false);
     }
   };
 
@@ -517,7 +591,10 @@ export default function ApprovalPettyCashClient() {
                 pengajuanQueue.map((pj) => (
                   <TableRow key={pj.id}>
                     <TableCell className="font-semibold text-sm">
-                      {pj.kode_pengajuan}
+                      <div className="flex flex-col items-start gap-1">
+                        {pj.kode_pengajuan}
+                        <PcEskalasiBadge show={pj.is_eskalasi} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm">
                       {pj.users_with_profiles?.nama || "-"}
@@ -587,7 +664,12 @@ export default function ApprovalPettyCashClient() {
                 voucherQueue.map((v) => (
                   <TableRow key={v.id}>
                     <TableCell className="font-semibold text-sm">
-                      {v.kode_voucher}
+                      <div className="flex flex-col items-start gap-1">
+                        {v.kode_voucher}
+                        <PcEskalasiBadge
+                          show={v.petty_cash_pengajuan?.is_eskalasi}
+                        />
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
@@ -695,13 +777,14 @@ export default function ApprovalPettyCashClient() {
           description="Daftar tarikan dana Petty Cash yang menunggu ditransfer/dibayar Finance."
         >
           <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[850px]">
+            <Table className="min-w-[1050px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[180px]">Kode Sub-Voucher</TableHead>
                   <TableHead className="w-[180px]">Dari Voucher</TableHead>
                   <TableHead>Pemohon</TableHead>
                   <TableHead className="w-[140px]">Departemen</TableHead>
+                  <TableHead className="w-[220px]">Metode Pencairan</TableHead>
                   <TableHead className="w-[150px] text-right">
                     Nominal Tarikan
                   </TableHead>
@@ -711,14 +794,14 @@ export default function ApprovalPettyCashClient() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-32">
+                    <TableCell colSpan={7} className="text-center h-32">
                       <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
                     </TableCell>
                   </TableRow>
                 ) : paymentQueue.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center h-32 text-muted-foreground"
                     >
                       <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
@@ -739,6 +822,12 @@ export default function ApprovalPettyCashClient() {
                       </TableCell>
                       <TableCell className="text-sm">
                         {sv.petty_cash_voucher?.department || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <PcPaymentInfoView
+                          payment={resolveSubVoucherPayment(sv)}
+                          compact
+                        />
                       </TableCell>
                       <TableCell className="text-right font-medium text-sm">
                         {formatCurrency(sv.amount)}
@@ -834,6 +923,84 @@ export default function ApprovalPettyCashClient() {
         </Content>
       )}
 
+      {/* --- SESI 6: PERMINTAAN PEMBATALAN (Finance/admin only) --- */}
+      {isFinanceApprover(profile) && (
+        <Content
+          title="Permintaan Pembatalan"
+          description="Pengajuan yang diminta dibatalkan pemohon. Selama menunggu, Tarik Dana & pembayaran tarikannya ditahan."
+        >
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[850px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Kode Pengajuan</TableHead>
+                  <TableHead>Pemohon</TableHead>
+                  <TableHead className="w-[140px]">Departemen</TableHead>
+                  <TableHead>Alasan</TableHead>
+                  <TableHead className="w-[150px] text-right">
+                    Total Pengajuan
+                  </TableHead>
+                  <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center h-32">
+                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                    </TableCell>
+                  </TableRow>
+                ) : pembatalanQueue.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center h-32 text-muted-foreground"
+                    >
+                      <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                      Tidak ada permintaan pembatalan yang menunggu.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pembatalanQueue.map((pb) => (
+                    <TableRow key={pb.id}>
+                      <TableCell className="font-semibold text-sm">
+                        <div className="flex flex-col items-start gap-1">
+                          {pb.petty_cash_pengajuan?.kode_pengajuan || "-"}
+                          <PcEskalasiBadge
+                            show={pb.petty_cash_pengajuan?.is_eskalasi}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {pb.users_with_profiles?.nama || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {pb.petty_cash_pengajuan?.department || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[260px] truncate">
+                        {pb.reason}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm">
+                        {formatCurrency(pb.petty_cash_pengajuan?.total_amount ?? 0)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setSelectedPembatalan(pb)}
+                        >
+                          Proses
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
+      )}
+
       {/* DIALOG DETAIL + AKSI - PENGAJUAN */}
       <Dialog
         open={!!selectedPengajuan}
@@ -842,7 +1009,10 @@ export default function ApprovalPettyCashClient() {
         <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between gap-2">
-              <span>{selectedPengajuan?.kode_pengajuan}</span>
+              <span className="flex flex-wrap items-center gap-2">
+                {selectedPengajuan?.kode_pengajuan}
+                <PcEskalasiBadge show={selectedPengajuan?.is_eskalasi} />
+              </span>
               {selectedPengajuan && (
                 <Link
                   href={`/petty-cash/pengajuan/${selectedPengajuan.id}`}
@@ -929,7 +1099,12 @@ export default function ApprovalPettyCashClient() {
         <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between gap-2">
-              <span>{selectedVoucher?.kode_voucher}</span>
+              <span className="flex flex-wrap items-center gap-2">
+                {selectedVoucher?.kode_voucher}
+                <PcEskalasiBadge
+                  show={selectedVoucher?.petty_cash_pengajuan?.is_eskalasi}
+                />
+              </span>
               {selectedVoucher && (
                 <Link
                   href={`/petty-cash/voucher/${selectedVoucher.id}`}
@@ -975,6 +1150,7 @@ export default function ApprovalPettyCashClient() {
               }
               neededDate={selectedVoucher.needed_date}
               weekOfMonth={selectedVoucher.week_of_month}
+              payment={pickPcPayment(selectedVoucher)}
               notes={selectedVoucher.notes}
               items={selectedVoucher.items}
               totalAmount={selectedVoucher.total_amount}
@@ -991,12 +1167,14 @@ export default function ApprovalPettyCashClient() {
                 docLabel="Voucher"
                 kode={selectedVoucher.kode_voucher}
                 companyCode={selectedVoucher.company_code}
+                paymentVoucherId={selectedVoucher.id}
                 editInitial={{
                   needed_date: selectedVoucher.needed_date,
                   week_of_month: selectedVoucher.week_of_month,
                   notes: selectedVoucher.notes,
                   items: selectedVoucher.items,
                   attachments: selectedVoucher.attachments,
+                  payment: pickPcPayment(selectedVoucher),
                 }}
                 processing={processingVoucher}
                 onApprove={handleApproveVoucher}
@@ -1101,7 +1279,7 @@ export default function ApprovalPettyCashClient() {
         open={!!selectedPayment}
         onOpenChange={(open) => !open && setSelectedPayment(null)}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between gap-2">
               <span>Selesaikan Pembayaran {selectedPayment?.kode_sub_voucher}</span>
@@ -1117,8 +1295,8 @@ export default function ApprovalPettyCashClient() {
             </DialogTitle>
             <DialogDescription>
               Dari Voucher {selectedPayment?.petty_cash_voucher?.kode_voucher || "-"}
-              . Unggah bukti transfer/pembayaran sebelum menandai tarikan ini
-              selesai dibayar.
+              . Pastikan metode & rekening sesuai, lalu unggah bukti (wajib
+              utk Transfer/Overbook, opsional utk Cash).
             </DialogDescription>
           </DialogHeader>
 
@@ -1165,6 +1343,47 @@ export default function ApprovalPettyCashClient() {
               processing={processingPengembalian}
               onConfirm={handleConfirmPengembalian}
               onReject={handleRejectPengembalian}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG PERMINTAAN PEMBATALAN */}
+      <Dialog
+        open={!!selectedPembatalan}
+        onOpenChange={(open) => !open && setSelectedPembatalan(null)}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>
+                Pembatalan{" "}
+                {selectedPembatalan?.petty_cash_pengajuan?.kode_pengajuan}
+              </span>
+              {selectedPembatalan && (
+                <Link
+                  href={`/petty-cash/pengajuan/${selectedPembatalan.pengajuan_id}`}
+                  target="_blank"
+                  className="text-xs font-normal text-primary hover:underline flex items-center gap-1"
+                >
+                  Detail Pengajuan <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Diajukan {selectedPembatalan && formatDate(selectedPembatalan.created_at)}
+              . Cek dampaknya sebelum memutuskan - pembatalan yang disetujui
+              tidak bisa dikembalikan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPembatalan && (
+            <PcPembatalanConfirmPanel
+              key={selectedPembatalan.id}
+              pembatalan={selectedPembatalan}
+              processing={processingPembatalan}
+              onApprove={handleApprovePembatalan}
+              onReject={handleRejectPembatalan}
             />
           )}
         </DialogContent>

@@ -21,9 +21,12 @@ import { CircleHelp } from "lucide-react";
 export type PcTermKey =
   | "pengajuan"
   | "voucher"
+  | "metode"
   | "tarikan"
   | "deklarasi"
-  | "pengembalian";
+  | "pengembalian"
+  | "pembatalan"
+  | "eskalasi";
 
 // Urutan = urutan alur, supaya daftar di popover sekaligus menjelaskan
 // urutan langkahnya.
@@ -37,6 +40,11 @@ export const PC_TERMS: Record<PcTermKey, { label: string; definition: string }> 
     label: "Voucher",
     definition:
       "Surat pencairan dana dari Pengajuan yang sudah disetujui. Setelah Voucher disetujui, dananya bisa ditarik bertahap.",
+  },
+  metode: {
+    label: "Metode Pencairan",
+    definition:
+      "Cara dana dicairkan, dipilih saat Buat Voucher: Transfer (ke rekening Anda), Cash (tunai), atau Overbook (pemindahbukuan). Approver/GA/Finance bisa menggantinya.",
   },
   tarikan: {
     label: "Tarikan Dana (Sub-Voucher)",
@@ -52,6 +60,16 @@ export const PC_TERMS: Record<PcTermKey, { label: string; definition: string }> 
     label: "Pengembalian Dana",
     definition:
       "Setoran sisa dana ke Finance kalau Deklarasi yang disetujui lebih kecil dari nominal tarikan.",
+  },
+  pembatalan: {
+    label: "Pembatalan",
+    definition:
+      "Permintaan membatalkan Pengajuan (wajib alasan), disetujui Finance. Hanya bisa selama belum ada tarikan yang dibayar; tarikan yang belum dibayar ikut dibatalkan & budget-nya dikembalikan.",
+  },
+  eskalasi: {
+    label: "Eskalasi",
+    definition:
+      "Penanda Pengajuan mendesak dari GA/Admin - boleh diajukan walau tarikan sebelumnya belum dideklarasikan. Tidak ikut dicetak.",
   },
 };
 
@@ -76,6 +94,9 @@ export const termForStatusKey = (key: PcOverallStatusKey): PcTermKey | null => {
     case "deklarasi_menunggu_approval":
     case "deklarasi_ditolak":
       return "deklarasi";
+    case "pembatalan_menunggu":
+    case "dibatalkan":
+      return "pembatalan";
     default:
       return null;
   }

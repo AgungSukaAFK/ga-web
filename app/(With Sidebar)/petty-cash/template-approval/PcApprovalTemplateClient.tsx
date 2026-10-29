@@ -58,6 +58,7 @@ import { PcApprovalType } from "@/type";
 import {
   PC_APPROVAL_TYPE_OPTIONS,
   PC_APPROVAL_TYPE_COLORS,
+  PC_APPROVAL_TYPE_DEKLARASI,
   PC_APPROVAL_TYPE_COLOR_DEFAULT,
 } from "@/type/enum";
 import {
@@ -69,7 +70,10 @@ import {
 } from "@/components/ui/searchable-select";
 import { PcApprovalTemplateForm } from "./PcApprovalTemplateForm";
 import { PcApprovalLevelBadge } from "@/components/petty-cash/PcApprovalLevelBadge";
-import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
+import {
+  getPcApprovalLevel,
+  hasFinanceApprover,
+} from "@/lib/pcApprovalFlow";
 import { Loader2, Plus, Trash2, Edit, Search, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -395,9 +399,21 @@ export default function PcApprovalTemplateClient() {
                       {template.description || "-"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="font-normal">
-                        {template.approval_path.length} orang
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge variant="outline" className="font-normal">
+                          {template.approval_path.length} orang
+                        </Badge>
+                        {template.approval_type === PC_APPROVAL_TYPE_DEKLARASI &&
+                          !hasFinanceApprover(template.approval_path) && (
+                            <Badge
+                              variant="outline"
+                              className="font-normal border-destructive/40 text-destructive"
+                              title="Approval Deklarasi wajib memiliki minimal 1 approver Finance - Deklarasi baru akan ditolak sampai template ini dilengkapi."
+                            >
+                              Belum ada Finance
+                            </Badge>
+                          )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <div>{template.updated_by_profile?.nama || "-"}</div>

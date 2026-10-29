@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import {
   canManageMrTemplate,
+  canMonitorPettyCash,
   isGADepartment,
   isITAdmin,
 } from "@/lib/constants/departments";
@@ -190,9 +191,11 @@ function buildMainItems(profile: NavProfile): NavItem[] {
 
 // MENU PETTY CASH (revisi "Rombak Petty Cash") - disederhanakan jadi 8
 // item saja, tiap item disaring sesuai hak akses: Manajemen Petty Cash =
-// admin only; Manajemen Budget, Barang Petty Cash, & Template Approval =
-// admin/GA; Approval Petty Cash = admin/approver; sisanya (Dashboard,
-// Pengajuan Saya, Deklarasi) self-service terbuka utk semua.
+// admin/GA/Finance (monitoring + Download Excel; aksi ubah data tetap admin
+// only, lihat canMonitorPettyCash); Manajemen Budget, Barang Petty Cash, &
+// Template Approval = admin/GA; Approval Petty Cash = admin/approver;
+// sisanya (Dashboard, Pengajuan Saya, Deklarasi) self-service terbuka utk
+// semua.
 function buildPettyCashItems(profile: NavProfile): NavItem[] {
   const isAdmin = profile?.role === "admin";
   const isGA = isGADepartment(profile?.department);
@@ -211,7 +214,7 @@ function buildPettyCashItems(profile: NavProfile): NavItem[] {
       title: "Manajemen Petty Cash",
       url: "/petty-cash/management",
       icon: ShieldAlert,
-      visible: isAdmin,
+      visible: canMonitorPettyCash(profile),
     },
     {
       title: "Manajemen Budget",

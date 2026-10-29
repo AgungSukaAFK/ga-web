@@ -1,8 +1,8 @@
 // lib/excel-export.ts
 // Util bersama untuk export data ke Excel (.xlsx) dengan styling rapi
 // (header tebal + warna, border, lebar kolom otomatis, freeze header).
-// Dipakai oleh semua halaman "Download Excel" (MR, PO, Barang, User Management)
-// supaya tampilannya konsisten.
+// Dipakai oleh semua halaman "Download Excel" (MR, PO, Barang, User Management,
+// Petty Cash) supaya tampilannya konsisten.
 
 import ExcelJS from "exceljs";
 
@@ -25,24 +25,27 @@ const MIN_COL_WIDTH = 10;
 // mis. riwayat budget) - diekspor ulang supaya import lama tetap jalan.
 export { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 
-/**
- * Export array of flat objects (hasil map/flatMap seperti yang sudah ada
- * di semua halaman "Download Excel") menjadi file .xlsx yang sudah distyling,
- * lalu langsung memicu download-nya di browser.
- */
-export async function exportStyledExcel(
-  data: Record<string, unknown>[],
-  fileName: string,
-  sheetName = "Sheet1",
-) {
-  if (!data || data.length === 0) return;
+export interface StyledSheet {
+  /** Nama tab - maks 31 karakter, tanpa : \ / ? * [ ] (batas Excel). */
+  name: string;
+  data: Record<string, unknown>[];
+  /** Kolom angka nominal Rupiah - diberi format ribuan "#,##0". */
+  currencyColumns?: string[];
+}
 
-  const headers = Object.keys(data[0]);
-
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet(sheetName, {
+/** Tambah satu sheet ber-styling standar (header navy, border, zebra, freeze, autofilter). */
+function addStyledSheet(workbook: ExcelJS.Workbook, sheet: StyledSheet) {
+  const { data, currencyColumns = [] } = sheet;
+  const name = sheet.name.replace(/[:\\/?*[\]]/g, "-").slice(0, 31);
+  const worksheet = workbook.addWorksheet(name, {
     views: [{ state: "frozen", ySplit: 1 }],
   });
+  if (data.length === 0) {
+    worksheet.addRow(["Tidak ada data"]);
+    return;
+  }
+
+  const headers = Object.keys(data[0]);
 
   worksheet.columns = headers.map((header) => {
     const longest = Math.max(
@@ -91,6 +94,14 @@ export async function exportStyledExcel(
     });
   });
 
+  currencyColumns.forEach((header) => {
+    const index = headers.indexOf(header);
+    if (index === -1) return;
+    worksheet.getColumn(index + 1).numFmt = "#,##0";
+  });
+}
+
+async function downloadWorkbook(workbook: ExcelJS.Workbook, fileName: string) {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -105,4 +116,37 @@ export async function exportStyledExcel(
   // Jangan revoke langsung: Safari iOS (termasuk PWA) bisa membatalkan
   // unduhan kalau blob URL dicabut sebelum sempat dibaca.
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Export array of flat objects (hasil map/flatMap seperti yang sudah ada
+ * di semua halaman "Download Excel") menjadi file .xlsx yang sudah distyling,
+ * lalu langsung memicu download-nya di browser.
+ */
+export async function exportStyledExcel(
+  data: Record<string, unknown>[],
+  fileName: string,
+  sheetName = "Sheet1",
+) {
+  if (!data || data.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  addStyledSheet(workbook, { name: sheetName, data });
+  await downloadWorkbook(workbook, fileName);
+}
+
+/**
+ * Sama seperti exportStyledExcel tapi beberapa sheet sekaligus dalam satu
+ * file (mis. rekap Petty Cash per jenis dokumen). Sheet tanpa data tetap
+ * dibuat dgn keterangan "Tidak ada data" supaya struktur file konsisten.
+ */
+export async function exportStyledExcelWorkbook(
+  sheets: StyledSheet[],
+  fileName: string,
+) {
+  if (sheets.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  sheets.forEach((sheet) => addStyledSheet(workbook, sheet));
+  await downloadWorkbook(workbook, fileName);
 }

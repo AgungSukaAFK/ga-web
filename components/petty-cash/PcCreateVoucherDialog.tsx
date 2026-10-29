@@ -4,7 +4,9 @@
 // menampilkan PREVIEW snapshot (item/nominal/catatan disalin apa adanya,
 // tidak bisa diubah, lihat createVoucherFromPengajuan di
 // services/pettyCashVoucherService.ts) sebelum dikirim ke jalur approval
-// Voucher. Dipakai di halaman Pengajuan Voucher DAN sebagai shortcut di
+// Voucher. Satu-satunya isian requester: Metode Pencairan (Transfer +
+// rekening dari Profile / Cash / Overbook, lihat PcPaymentMethodField) -
+// approver Voucher masih bisa menggantinya. Dipakai di halaman Pengajuan Voucher DAN sebagai shortcut di
 // Dokumen Petty Cash Saya (list + modal rantai dokumen).
 //
 // Layout sama dengan PcTarikDanaDialog: header & footer tetap, daftar
@@ -12,7 +14,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,9 +29,17 @@ import { parseRichValue } from "@/lib/rich-content";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { pickCurrentDoc } from "@/lib/pcChain";
-import { PettyCashPengajuan, PettyCashVoucher } from "@/type";
+import {
+  BankAccount,
+  PcPaymentInfo,
+  PettyCashPengajuan,
+  PettyCashVoucher,
+} from "@/type";
 import { createVoucherFromPengajuan } from "@/services/pettyCashVoucherService";
+import { fetchMyBankAccounts } from "@/services/bankAccountService";
+import { EMPTY_PC_PAYMENT, validatePcPayment } from "@/lib/pcPayment";
 import { PcCoaBadge } from "./PcCoaBadge";
+import { PcPaymentMethodField } from "./PcPaymentMethodField";
 import {
   AlertTriangle,
   Building2,
@@ -61,6 +71,22 @@ export function PcCreateVoucherDialog({
   onCreated?: (voucher: PettyCashVoucher) => void | Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [payment, setPayment] = useState<PcPaymentInfo>(EMPTY_PC_PAYMENT);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+
+  // Reset pilihan & muat rekening requester tiap dialog dibuka utk Pengajuan
+  // lain.
+  const pengajuanId = pengajuan?.id;
+  useEffect(() => {
+    if (!pengajuanId || !userId) return;
+    setPayment(EMPTY_PC_PAYMENT);
+    setLoadingAccounts(true);
+    fetchMyBankAccounts(userId)
+      .then(setAccounts)
+      .catch(() => setAccounts([]))
+      .finally(() => setLoadingAccounts(false));
+  }, [pengajuanId, userId]);
 
   // Pengajuan yang boleh di-voucher-kan tidak punya Voucher aktif - kalau
   // masih ada Voucher di sini, berarti itu yang ditolak.
@@ -68,9 +94,15 @@ export function PcCreateVoucherDialog({
 
   const handleSubmit = async () => {
     if (!pengajuan || !userId) return;
+    const paymentError = validatePcPayment(payment);
+    if (paymentError) return toast.error(paymentError);
     setSubmitting(true);
     try {
-      const voucher = await createVoucherFromPengajuan(pengajuan, userId);
+      const voucher = await createVoucherFromPengajuan(
+        pengajuan,
+        userId,
+        payment,
+      );
       toast.success(
         `Voucher ${voucher.kode_voucher} berhasil dibuat dan masuk jalur approval.`,
       );
@@ -99,9 +131,9 @@ export function PcCreateVoucherDialog({
               Isi Voucher disalin persis dari Pengajuan{" "}
               <span className="font-medium text-foreground [overflow-wrap:anywhere]">
                 {pengajuan?.kode_pengajuan}
-              </span>{" "}
-              dan tidak bisa diubah. Setelah dikirim, Voucher langsung masuk
-              jalur approval.
+              </span>
+              . Pilih metode pencairan dana, lalu kirim - Voucher langsung
+              masuk jalur approval.
             </DialogDescription>
           </div>
           {pengajuan && (
@@ -197,6 +229,19 @@ export function PcCreateVoucherDialog({
                 {pengajuan.attachments.length} lampiran ikut disalin ke Voucher.
               </p>
             )}
+
+            <PcPaymentMethodField
+              value={payment}
+              onChange={setPayment}
+              accounts={accounts}
+              loadingAccounts={loadingAccounts}
+              quickAddUserId={userId}
+              onAccountAdded={(account) =>
+                setAccounts((prev) => [...prev, account])
+              }
+              disabled={submitting}
+              hint="Berlaku utk semua tarikan dana dari Voucher ini. Approver/GA/Finance masih bisa menggantinya (mis. jadi Overbook)."
+            />
           </div>
         )}
 
@@ -215,7 +260,10 @@ export function PcCreateVoucherDialog({
             >
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting || !userId}>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || !userId || !payment.payment_method}
+            >
               {submitting ? <Loader2 className="animate-spin" /> : <Send />}
               Kirim Voucher
             </Button>

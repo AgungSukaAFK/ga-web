@@ -13,12 +13,19 @@
 // diambil dari Template Approval ber-approval_type "Approval Voucher" (lihat
 // resolvePcAutoTemplate, services/pcApprovalTemplateService.ts).
 //
+// Satu-satunya isian requester di sini: METODE PENCAIRAN (Transfer/Cash/
+// Overbook + rekening utk Transfer, lihat lib/pcPayment.ts) - approver
+// Voucher boleh menggantinya lewat "Edit & Setujui", GA/Finance/admin lewat
+// updateVoucherPaymentMethod.
+//
 // created_by/updated_by/created_at/updated_at di-set otomatis oleh trigger DB
 // dari auth.uid() (lihat supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_setup.sql)).
 
 import { createClient } from "@/lib/supabase/client";
 import {
   Attachment,
+  BankAccount,
+  PcPaymentInfo,
   PettyCashPengajuan,
   PettyCashPengajuanItem,
   PettyCashVoucher,
@@ -34,6 +41,11 @@ import {
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
 import { getActiveDoc } from "@/lib/pcChain";
+import {
+  normalizePcPayment,
+  pickPcPayment,
+  validatePcPayment,
+} from "@/lib/pcPayment";
 import {
   notifyOnPcApproval,
   notifyOnPcSubmitted,
@@ -165,7 +177,7 @@ export const fetchMyVouchers = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      `*, petty_cash_pengajuan(kode_pengajuan),
+      `*, petty_cash_pengajuan(kode_pengajuan, is_eskalasi, petty_cash_pembatalan(id, status)),
        petty_cash_sub_voucher(id, kode_sub_voucher, amount, items, status, paid_at, created_at,
          petty_cash_deklarasi(id, kode_deklarasi, status, created_at)),
        petty_cash_budget(name, current_budget)`,
@@ -190,7 +202,7 @@ export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan), petty_cash_budget(name, current_budget)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan, is_eskalasi), petty_cash_budget(name, current_budget)",
     )
     .order("created_at", { ascending: false });
 
@@ -246,9 +258,11 @@ export const fetchVoucherById = async (
     .from("petty_cash_voucher")
     .select(
       `*, users_with_profiles:profiles!user_id(nama, email),
-       petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department),
+       petty_cash_pengajuan(kode_pengajuan, pengguna_budget_nama, pengguna_budget_department, is_eskalasi,
+         petty_cash_pembatalan(id, status)),
        petty_cash_budget(name, current_budget),
        petty_cash_sub_voucher(id, kode_sub_voucher, amount, notes, status, created_at,
+         payment_method, bank_name, bank_account_number, bank_account_holder_name,
          petty_cash_deklarasi(id, kode_deklarasi, status, created_at))`,
     )
     .eq("id", id)
@@ -263,7 +277,8 @@ export const fetchVoucherById = async (
  * nominal, catatan, dan lampiran di-snapshot APA ADANYA dari Pengajuan
  * asalnya (tidak bisa diedit di sini, lihat komentar di atas file ini).
  * Jalur approval-nya diambil dari Template Approval ber-approval_type
- * "Approval Voucher" untuk departemen yang sama.
+ * "Approval Voucher" untuk departemen yang sama. `payment` = metode
+ * pencairan pilihan requester (wajib, rekening wajib kalau Transfer).
  */
 export const createVoucherFromPengajuan = async (
   pengajuan: Pick<
@@ -281,7 +296,11 @@ export const createVoucherFromPengajuan = async (
     | "attachments"
   >,
   userId: string,
+  payment: PcPaymentInfo,
 ): Promise<PettyCashVoucher> => {
+  const paymentError = validatePcPayment(payment);
+  if (paymentError) throw new Error(paymentError);
+
   const template = await resolvePcAutoTemplate(
     pengajuan.department,
     pengajuan.site,
@@ -318,6 +337,7 @@ export const createVoucherFromPengajuan = async (
       items: pengajuan.items,
       total_amount: pengajuan.total_amount,
       attachments: pengajuan.attachments,
+      ...normalizePcPayment(payment),
       status: "In Approval",
       approvals: template.approval_path,
       discussions: [],
@@ -389,7 +409,7 @@ export const fetchVoucherApprovalQueue = async (
   const { data, error } = await supabase
     .from("petty_cash_voucher")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan), petty_cash_budget(name, current_budget)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan, is_eskalasi), petty_cash_budget(name, current_budget)",
     )
     .eq("status", "In Approval")
     .contains(
@@ -481,6 +501,8 @@ export interface EditVoucherEdits {
   notes: string | null;
   items: PettyCashPengajuanItem[];
   attachments: Attachment[];
+  // undefined = metode pencairan tidak diubah.
+  payment?: PcPaymentInfo;
 }
 
 /**
@@ -502,13 +524,26 @@ export const editAndApproveVoucherStep = async (
     | "attachments"
     | "kode_voucher"
     | "user_id"
+    | "payment_method"
+    | "bank_name"
+    | "bank_account_number"
+    | "bank_account_holder_name"
   >,
   userId: string,
   userName: string,
   edits: EditVoucherEdits,
 ): Promise<void> => {
-  const result = buildEditAndApproveUpdate(voucher, userId, userName);
+  const result = buildEditAndApproveUpdate(
+    { ...voucher, payment: pickPcPayment(voucher) },
+    userId,
+    userName,
+  );
   if (!result) throw new Error("Bukan giliran Anda untuk approve dokumen ini.");
+
+  if (edits.payment) {
+    const paymentError = validatePcPayment(edits.payment);
+    if (paymentError) throw new Error(paymentError);
+  }
 
   const totalAmount = edits.items.reduce((sum, i) => sum + i.subtotal, 0);
 
@@ -524,6 +559,7 @@ export const editAndApproveVoucherStep = async (
       items: edits.items,
       attachments: edits.attachments,
       total_amount: totalAmount,
+      ...(edits.payment ? normalizePcPayment(edits.payment) : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", voucher.id);
@@ -538,4 +574,49 @@ export const editAndApproveVoucherStep = async (
     nextApproverId: result.nextApprover?.userid,
     decision: "approved",
   });
+};
+
+/**
+ * Ganti metode pencairan Voucher di luar "Edit & Setujui" - GA/Finance/
+ * admin/approver Voucher, selama Voucher masih In Approval/Approved. Hak
+ * akses dicek di RPC update_petty_cash_voucher_payment_method
+ * (supabase/migrations/0015_petty_cash_revisi.sql), perubahannya dicatat
+ * sbg entri diskusi Voucher.
+ */
+export const updateVoucherPaymentMethod = async (
+  voucherId: number,
+  payment: PcPaymentInfo,
+): Promise<PettyCashVoucher> => {
+  const paymentError = validatePcPayment(payment);
+  if (paymentError) throw new Error(paymentError);
+  const normalized = normalizePcPayment(payment);
+
+  const { data, error } = await supabase.rpc(
+    "update_petty_cash_voucher_payment_method",
+    {
+      p_id: voucherId,
+      p_payment_method: normalized.payment_method,
+      p_bank_name: normalized.bank_name,
+      p_bank_account_number: normalized.bank_account_number,
+      p_bank_account_holder_name: normalized.bank_account_holder_name,
+    },
+  );
+  if (error) throw error;
+  return data as unknown as PettyCashVoucher;
+};
+
+/**
+ * Rekening tersimpan milik PEMILIK Voucher - user_bank_accounts privat per
+ * user, jadi approver/GA/Finance membacanya lewat RPC
+ * get_petty_cash_voucher_bank_accounts (dicek hak aksesnya di sana).
+ */
+export const fetchVoucherOwnerBankAccounts = async (
+  voucherId: number,
+): Promise<BankAccount[]> => {
+  const { data, error } = await supabase.rpc(
+    "get_petty_cash_voucher_bank_accounts",
+    { p_voucher_id: voucherId },
+  );
+  if (error) throw error;
+  return (data ?? []) as BankAccount[];
 };

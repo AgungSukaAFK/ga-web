@@ -1,6 +1,6 @@
 // src/app/(With Sidebar)/petty-cash/management/PettyCashManagementClient.tsx
 //
-// Management Petty Cash (ADMIN ONLY) - satu halaman untuk memantau SEMUA
+// Management Petty Cash - satu halaman untuk memantau SEMUA
 // dokumen di alur baru Petty Cash (petty_cash_pengajuan / petty_cash_voucher
 // / petty_cash_sub_voucher / petty_cash_deklarasi), lintas user &
 // departemen, 4 tab (Pengajuan/Voucher/Sub-Voucher/Deklarasi - tab
@@ -14,11 +14,20 @@
 // supaya admin tidak perlu buka detail dulu kalau cuma mau membersihkan
 // dokumen sampah.
 //
+// AKSES: admin, departemen GA, & departemen Finance (canMonitorPettyCash,
+// lib/constants/departments.ts) - GA/Finance cuma MONITOR + Download Excel
+// (dibatasi company sendiri, LOURDES lihat semua - sama dgn antrian
+// Finance); tombol hapus & semua aksi ubah data tetap admin only.
+//
+// "Download Excel" = semua dokumen dalam satu file multi-sheet
+// (PcExcelExportDialog, services/pettyCashExportService.ts) dgn filter
+// sendiri, styling seragam dgn export MR/PO.
+//
 // Proteksi di level RLS/RPC ada di
 // supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_management_setup.sql) (override status) &
 // supabase/migrations/0004_petty_cash.sql (asal: petty_cash_admin_full_management_setup.sql) (ganti kode/edit
 // paksa/hapus berantai) - guard di komponen ini cuma proteksi UI, bukan
-// pengganti itu. `isAdmin` di-cek sendiri di sini (bukan prop dari page.tsx)
+// pengganti itu. Hak akses di-cek sendiri di sini (bukan prop dari page.tsx)
 // - sama pola dgn ApprovalPettyCashClient.tsx & halaman detail lainnya.
 
 "use client";
@@ -66,6 +75,10 @@ import {
 } from "@/type";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcAdminDeleteDialog } from "@/components/petty-cash/PcAdminDeleteDialog";
+import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
+import { PcExcelExportDialog } from "@/components/petty-cash/PcExcelExportDialog";
+import { canMonitorPettyCash } from "@/lib/constants/departments";
+import { pickPcPayment, resolveSubVoucherPayment } from "@/lib/pcPayment";
 import {
   PC_PENGAJUAN_STATUS_OPTIONS,
   PC_PENGAJUAN_STATUS_COLORS,
@@ -92,6 +105,7 @@ import {
   Loader2,
   RefreshCcw,
   Eye,
+  FileSpreadsheet,
   ShieldAlert,
   Search,
   Trash2,
@@ -142,6 +156,27 @@ const getCompanyCode = (stage: StageKey, row: AnyDoc): string =>
     ? (row as PettyCashSubVoucher).petty_cash_voucher?.company_code || "-"
     : (row as PettyCashPengajuan | PettyCashVoucher | PettyCashDeklarasi)
         .company_code;
+
+// Penanda Eskalasi ada di Pengajuan - dokumen turunan membacanya lewat join.
+const isEskalasiDoc = (stage: StageKey, row: AnyDoc): boolean => {
+  if (stage === "pengajuan") return !!(row as PettyCashPengajuan).is_eskalasi;
+  if (stage === "voucher")
+    return !!(row as PettyCashVoucher).petty_cash_pengajuan?.is_eskalasi;
+  if (stage === "sub_voucher")
+    return !!(row as PettyCashSubVoucher).petty_cash_voucher
+      ?.petty_cash_pengajuan?.is_eskalasi;
+  return !!(row as PettyCashDeklarasi).petty_cash_voucher?.petty_cash_pengajuan
+    ?.is_eskalasi;
+};
+
+// Metode pencairan cuma ada di Voucher (rencana) & Sub-Voucher (final atau
+// rencana Voucher induk) - undefined = panel info tidak menampilkannya.
+const getPayment = (stage: StageKey, row: AnyDoc) => {
+  if (stage === "voucher") return pickPcPayment(row as PettyCashVoucher);
+  if (stage === "sub_voucher")
+    return resolveSubVoucherPayment(row as PettyCashSubVoucher);
+  return undefined;
+};
 
 // Deklarasi & Sub-Voucher tidak punya needed_date (lihat komentar di
 // type/index.ts) - dipakai membedakan apa PcDocumentInfoPanel perlu
@@ -239,7 +274,15 @@ const DETAIL_PATH: Record<StageKey, string> = {
 
 export default function PettyCashManagementClient() {
   const supabase = createClient();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  // null = masih memuat profil.
+  const [access, setAccess] = useState<{
+    canView: boolean;
+    isAdmin: boolean;
+    // null = tanpa batas company (admin / company LOURDES).
+    allowedCompanies: string[] | null;
+  } | null>(null);
+  const isAdmin = access?.isAdmin ?? false;
+  const [isExportOpen, setIsExportOpen] = useState(false);
 
   const [stage, setStage] = useState<StageKey>("pengajuan");
   const [docs, setDocs] = useState<AnyDoc[]>([]);
@@ -247,6 +290,7 @@ export default function PettyCashManagementClient() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
 
   const [selected, setSelected] = useState<AnyDoc | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -262,13 +306,22 @@ export default function PettyCashManagementClient() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return setIsAdmin(false);
+      if (!user)
+        return setAccess({ canView: false, isAdmin: false, allowedCompanies: [] });
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, department, company")
         .eq("id", user.id)
         .single();
-      setIsAdmin(profile?.role === "admin");
+      const admin = profile?.role === "admin";
+      setAccess({
+        canView: canMonitorPettyCash(profile),
+        isAdmin: admin,
+        allowedCompanies:
+          admin || profile?.company === "LOURDES"
+            ? null
+            : [profile?.company ?? ""],
+      });
     };
     loadAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -286,17 +339,22 @@ export default function PettyCashManagementClient() {
     }
   };
 
+  const canView = access?.canView ?? false;
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canView) return;
     setStatusFilter("all");
     setSearch("");
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, isAdmin]);
+  }, [stage, canView]);
 
+  const allowedCompanies = access?.allowedCompanies ?? null;
   const filteredDocs = useMemo(() => {
     const q = search.trim().toLowerCase();
     return docs.filter((row) => {
+      const company = getCompanyCode(stage, row);
+      if (allowedCompanies && !allowedCompanies.includes(company)) return false;
+      if (companyFilter !== "all" && company !== companyFilter) return false;
       if (statusFilter !== "all" && row.status !== statusFilter) return false;
       if (!q) return true;
       const kode = getKode(stage, row).toLowerCase();
@@ -304,7 +362,7 @@ export default function PettyCashManagementClient() {
       const pemohon = row.users_with_profiles?.nama?.toLowerCase() || "";
       return kode.includes(q) || dept.includes(q) || pemohon.includes(q);
     });
-  }, [docs, search, statusFilter, stage]);
+  }, [docs, search, statusFilter, companyFilter, stage, allowedCompanies]);
 
   const getStatusBadge = (status: string) => {
     const colorClass = config.statusColors[status] || config.statusColorDefault;
@@ -327,7 +385,7 @@ export default function PettyCashManagementClient() {
     await loadData();
   };
 
-  if (isAdmin === null) {
+  if (access === null) {
     return (
       <Content title="Management Petty Cash" className="col-span-12">
         <div className="flex items-center justify-center h-64">
@@ -337,11 +395,11 @@ export default function PettyCashManagementClient() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canView) {
     return (
       <Content
         title="Management Petty Cash"
-        description="Khusus untuk role Admin."
+        description="Khusus untuk Admin, GA, dan Finance."
       >
         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-2">
           <ShieldAlert className="h-10 w-10" />
@@ -367,29 +425,48 @@ export default function PettyCashManagementClient() {
       value: statusFilter,
       onRemove: () => setStatusFilter("all"),
     });
+  if (companyFilter !== "all")
+    activeFilters.push({
+      key: "company",
+      label: "Company",
+      value: companyFilter,
+      onRemove: () => setCompanyFilter("all"),
+    });
 
   const clearFilters = () => {
     setSearch("");
     setStatusFilter("all");
+    setCompanyFilter("all");
   };
+  const companyOptions = allowedCompanies ?? ["GMI", "GIS", "LOURDES"];
 
   return (
     <>
       <Content
         title="Management Petty Cash"
-        description="Pantau, ganti kode, edit paksa, & hapus (dgn cascade + refund budget otomatis) semua dokumen Petty Cash lintas departemen (admin only)."
+        description={
+          isAdmin
+            ? "Pantau, ganti kode, edit paksa, & hapus (dgn cascade + refund budget otomatis) semua dokumen Petty Cash lintas departemen, plus Download Excel."
+            : "Pantau semua dokumen Petty Cash lintas departemen & Download Excel (read-only)."
+        }
         cardAction={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadData}
-            disabled={loading}
-          >
-            <RefreshCcw
-              className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => setIsExportOpen(true)}>
+              <FileSpreadsheet className="h-4 w-4 mr-1" />
+              Download Excel
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              disabled={loading}
+            >
+              <RefreshCcw
+                className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
         }
       >
         <div className="space-y-4">
@@ -435,6 +512,29 @@ export default function PettyCashManagementClient() {
                   </SearchableSelectContent>
                 </SearchableSelect>
               </div>
+              {companyOptions.length > 1 && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Company</label>
+                  <SearchableSelect
+                    value={companyFilter}
+                    onValueChange={setCompanyFilter}
+                  >
+                    <SearchableSelectTrigger>
+                      <SearchableSelectValue placeholder="Semua Company" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua Company
+                      </SearchableSelectItem>
+                      {companyOptions.map((c) => (
+                        <SearchableSelectItem key={c} value={c}>
+                          {c}
+                        </SearchableSelectItem>
+                      ))}
+                    </SearchableSelectContent>
+                  </SearchableSelect>
+                </div>
+              )}
             </div>
           </FilterPanel>
 
@@ -477,8 +577,13 @@ export default function PettyCashManagementClient() {
                       <TableCell className="whitespace-nowrap text-sm">
                         {formatDate(row.created_at)}
                       </TableCell>
-                      <TableCell className="font-semibold text-sm truncate">
-                        {getKode(stage, row)}
+                      <TableCell className="font-semibold text-sm">
+                        <div className="flex flex-col items-start gap-1 min-w-0">
+                          <span className="truncate max-w-full">
+                            {getKode(stage, row)}
+                          </span>
+                          <PcEskalasiBadge show={isEskalasiDoc(stage, row)} />
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm truncate">
                         {row.users_with_profiles?.nama || "-"}
@@ -503,20 +608,22 @@ export default function PettyCashManagementClient() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() =>
-                              setDeleteTarget({
-                                docType: stage,
-                                id: row.id,
-                                kode: getKode(stage, row),
-                              })
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  docType: stage,
+                                  id: row.id,
+                                  kode: getKode(stage, row),
+                                })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -564,6 +671,11 @@ export default function PettyCashManagementClient() {
                 neededDate={getNeededDate(stage, selected)}
                 weekOfMonth={(selected as any).week_of_month}
                 showNeededDate={showsNeededDate(stage)}
+                payment={getPayment(stage, selected)}
+                paymentPlanned={
+                  stage === "sub_voucher" &&
+                  !(selected as PettyCashSubVoucher).payment_method
+                }
                 notes={selected.notes}
                 items={selected.items}
                 totalAmount={getTotalAmount(stage, selected)}
@@ -597,6 +709,12 @@ export default function PettyCashManagementClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PcExcelExportDialog
+        open={isExportOpen}
+        onOpenChange={setIsExportOpen}
+        allowedCompanies={allowedCompanies}
+      />
 
       {deleteTarget && (
         <PcAdminDeleteDialog

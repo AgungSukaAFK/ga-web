@@ -5,10 +5,11 @@
 // "Pembayaran Sub-Voucher") dan halaman detail Sub-Voucher
 // (petty-cash/sub-voucher/[id]/page.tsx), sama pola dengan PcApprovalActions
 // yang dipakai bareng oleh 3 halaman detail + halaman approval. Rincian item
-// yang ditarik ditampilkan read-only, upload bukti transfer WAJIB (tombol
-// submit disabled kalau belum ada file) - validasi sebenarnya tetap di RPC
-// mark_petty_cash_sub_voucher_paid (SECURITY DEFINER, cek department/role
-// Finance & keberadaan bukti transfer), ini cuma proteksi UI.
+// yang ditarik ditampilkan read-only. Metode pencairan terisi dari rencana
+// Voucher (pilihan pemohon/approver) & boleh dikoreksi Finance; bukti
+// pembayaran WAJIB utk Transfer & Overbook, opsional utk Cash - validasi
+// sebenarnya tetap di RPC mark_petty_cash_sub_voucher_paid (SECURITY
+// DEFINER), ini cuma proteksi UI.
 //
 // `key={subVoucher.id}` WAJIB dipasang oleh pemanggil supaya state lokal
 // (file yang sudah diunggah) ke-reset tiap Sub-Voucher yang dilihat beda -
@@ -16,7 +17,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,14 +32,30 @@ import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import { getAttachmentSizeError, getUploadErrorMessage } from "@/lib/attachments";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { Attachment, PettyCashSubVoucher } from "@/type";
+import {
+  Attachment,
+  BankAccount,
+  PcPaymentInfo,
+  PettyCashSubVoucher,
+} from "@/type";
+import {
+  isPcPaymentProofRequired,
+  pickPcPayment,
+  resolveSubVoucherPayment,
+  validatePcPayment,
+} from "@/lib/pcPayment";
+import { fetchVoucherOwnerBankAccounts } from "@/services/pettyCashVoucherService";
 import { PcCoaBadge } from "./PcCoaBadge";
+import { PcPaymentMethodField } from "./PcPaymentMethodField";
 import { Landmark, Loader2, UploadCloud, X } from "lucide-react";
 
 interface PcSubVoucherPaymentFormProps {
   subVoucher: PettyCashSubVoucher;
   processing: boolean;
-  onSubmit: (paymentProof: Attachment[]) => Promise<void> | void;
+  onSubmit: (
+    paymentProof: Attachment[],
+    payment: PcPaymentInfo,
+  ) => Promise<void> | void;
 }
 
 export function PcSubVoucherPaymentForm({
@@ -48,6 +65,24 @@ export function PcSubVoucherPaymentForm({
 }: PcSubVoucherPaymentFormProps) {
   const [files, setFiles] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  // Default = rencana di Voucher (lihat resolveSubVoucherPayment).
+  const [payment, setPayment] = useState<PcPaymentInfo>(() =>
+    pickPcPayment(resolveSubVoucherPayment(subVoucher)),
+  );
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+
+  useEffect(() => {
+    fetchVoucherOwnerBankAccounts(subVoucher.voucher_id)
+      .then(setAccounts)
+      .catch(() => setAccounts([]))
+      .finally(() => setLoadingAccounts(false));
+  }, [subVoucher.voucher_id]);
+
+  const proofRequired = isPcPaymentProofRequired(payment.payment_method);
+  const paymentError = validatePcPayment(payment);
+  const canSubmit =
+    !paymentError && (!proofRequired || files.length > 0);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -130,14 +165,35 @@ export function PcSubVoucherPaymentForm({
         </div>
       </div>
 
+      <PcPaymentMethodField
+        value={payment}
+        onChange={setPayment}
+        accounts={accounts}
+        loadingAccounts={loadingAccounts}
+        allowManualAccount
+        disabled={processing}
+        hint="Terisi dari pilihan pemohon/approver di Voucher - koreksi kalau pembayarannya lewat cara lain."
+      />
+
       <div className="space-y-2">
         <p className="text-sm font-medium">
-          Bukti Transfer/Pembayaran <span className="text-destructive">*</span>
+          Bukti {payment.payment_method === "Cash" ? "Pembayaran" : "Transfer/Pembayaran"}{" "}
+          {proofRequired ? (
+            <span className="text-destructive">*</span>
+          ) : (
+            <span className="text-xs font-normal text-muted-foreground">
+              (opsional utk Cash)
+            </span>
+          )}
         </p>
         <div className="p-4 border-2 border-dashed rounded-lg bg-muted/10 transition-colors hover:bg-muted/30">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-muted-foreground text-center sm:text-left">
-              <p className="font-medium text-foreground">Upload Bukti Transfer</p>
+              <p className="font-medium text-foreground">
+                {payment.payment_method === "Cash"
+                  ? "Upload Bukti Serah Terima (opsional)"
+                  : "Upload Bukti Transfer"}
+              </p>
               <p className="text-xs">Format: JPG, PNG, PDF. Maks: 5MB.</p>
             </div>
             <Input
@@ -196,8 +252,8 @@ export function PcSubVoucherPaymentForm({
 
       <div className="flex justify-end">
         <Button
-          onClick={() => onSubmit(files)}
-          disabled={processing || uploading || files.length === 0}
+          onClick={() => onSubmit(files, payment)}
+          disabled={processing || uploading || !canSubmit}
         >
           {processing ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

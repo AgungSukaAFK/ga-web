@@ -30,11 +30,13 @@ import {
 import { PcApprovalLevel, PcApprovalType } from "@/type";
 import {
   PC_APPROVAL_LEVEL_OPTIONS,
+  PC_APPROVAL_TYPE_DEKLARASI,
   PC_APPROVAL_TYPE_OPTIONS,
 } from "@/type/enum";
 import {
   findPcLevelOrderError,
   getPcApprovalLevel,
+  hasFinanceApprover,
 } from "@/lib/pcApprovalFlow";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -193,6 +195,11 @@ export function PcApprovalTemplateForm({
     );
 
   const levelOrderErrorIndex = findPcLevelOrderError(approvalPath);
+  // Approval Deklarasi wajib dicek minimal 1 orang Finance (lihat
+  // hasFinanceApprover, lib/pcApprovalFlow.ts - dicek ulang trigger DB).
+  const missingFinance =
+    approvalType === PC_APPROVAL_TYPE_DEKLARASI &&
+    !hasFinanceApprover(approvalPath);
 
   const moveApprover = (index: number, direction: "up" | "down") => {
     const newArr = [...approvalPath];
@@ -229,6 +236,12 @@ export function PcApprovalTemplateForm({
     if (levelOrderErrorIndex !== -1) {
       toast.error(
         `Urutan level tidak boleh mundur (baris ${levelOrderErrorIndex + 1}). Susun dari Dicek Oleh, lalu Disetujui Oleh, lalu Dijalankan Oleh.`,
+      );
+      return;
+    }
+    if (missingFinance) {
+      toast.error(
+        "Template Approval Deklarasi wajib memiliki minimal 1 approver dari departemen Finance.",
       );
       return;
     }
@@ -299,6 +312,8 @@ export function PcApprovalTemplateForm({
         <p className="text-xs text-muted-foreground">
           Menandakan template ini dipakai untuk tahap apa: Approval Pengajuan,
           Approval Voucher, atau Approval Deklarasi.
+          {approvalType === PC_APPROVAL_TYPE_DEKLARASI &&
+            " Approval Deklarasi wajib memiliki minimal 1 approver dari departemen Finance."}
         </p>
       </div>
 
@@ -555,6 +570,12 @@ export function PcApprovalTemplateForm({
           ? `Level baris ${levelOrderErrorIndex + 1} mundur dari baris sebelumnya - urutkan dari Dicek Oleh, lalu Disetujui Oleh, lalu Dijalankan Oleh.`
           : "Level menentukan label kolom tanda tangan di hasil cetak. Pengaju Budget (pembuat) dan Pengguna Budget otomatis tercantum di depan, tidak perlu ditambahkan di sini."}
       </p>
+      {missingFinance && approvalPath.length > 0 && (
+        <p className="text-xs text-destructive">
+          Belum ada approver dari departemen Finance - tambahkan minimal 1
+          user Finance ke jalur Approval Deklarasi ini.
+        </p>
+      )}
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Batal

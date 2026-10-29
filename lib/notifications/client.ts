@@ -42,6 +42,9 @@ export type NotificationEventType =
   | "pc_return_submitted"
   | "pc_return_confirmed"
   | "pc_return_rejected"
+  | "pc_cancel_requested"
+  | "pc_cancel_approved"
+  | "pc_cancel_rejected"
   | "mr_followup_requested"
   | "po_followup_requested"
   | "support_message"
@@ -899,6 +902,68 @@ export async function notifyOnPcReturnProcessed({
       : `Pengembalian ${kode} ditolak Finance${reason ? ` - alasan: ${reason}` : ""}. Silakan ajukan ulang.`,
     link: "/petty-cash/deklarasi",
     resourceId: String(pengembalianId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Requester mengajukan pembatalan Pengajuan -> Finance approver. */
+export async function notifyFinanceOnPcCancelRequested({
+  actorId,
+  companyCode,
+  pengajuanId,
+  kode,
+}: {
+  actorId?: string;
+  companyCode: string;
+  pengajuanId: string | number;
+  kode: string;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  const recipients = (await getPcFinanceApproverIds(companyCode)).filter(
+    (id) => id !== actor,
+  );
+  await sendNotifications(recipients, {
+    actorId: actor,
+    type: "pc_cancel_requested",
+    title: "Pembatalan Petty Cash Menunggu Persetujuan",
+    message: `Pemohon mengajukan pembatalan Pengajuan ${kode}. Tarik Dana & pembayaran tarikannya ditahan sampai diproses.`,
+    link: "/petty-cash/approval",
+    resourceId: String(pengajuanId),
+    resourceType: "petty_cash",
+  });
+}
+
+/** Finance menyetujui / menolak pembatalan -> requester. */
+export async function notifyOnPcCancelProcessed({
+  actorId,
+  requesterId,
+  pengajuanId,
+  kode,
+  decision,
+  note,
+}: {
+  actorId?: string;
+  requesterId: string;
+  pengajuanId: string | number;
+  kode: string;
+  decision: "approved" | "rejected";
+  note?: string;
+}): Promise<void> {
+  const actor = await resolveActorId(actorId);
+  if (!requesterId || requesterId === actor) return;
+  const approved = decision === "approved";
+  await sendNotification({
+    userId: requesterId,
+    actorId: actor,
+    type: approved ? "pc_cancel_approved" : "pc_cancel_rejected",
+    title: approved
+      ? "Pembatalan Petty Cash Disetujui"
+      : "Pembatalan Petty Cash Ditolak",
+    message: approved
+      ? `Pengajuan ${kode} resmi dibatalkan oleh Finance.`
+      : `Pembatalan Pengajuan ${kode} ditolak Finance${note ? ` - alasan: ${note}` : ""}. Pengajuan tetap berjalan.`,
+    link: pcDocLink("pengajuan", pengajuanId),
+    resourceId: String(pengajuanId),
     resourceType: "petty_cash",
   });
 }

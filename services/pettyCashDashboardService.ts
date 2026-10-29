@@ -17,6 +17,7 @@
 import { formatCurrency } from "@/lib/utils";
 import {
   getActiveDoc,
+  getPendingPembatalan,
   pickCurrentDoc,
   sortDocsNewestFirst,
   toEmbedArray,
@@ -43,7 +44,9 @@ export type PcOverallStatusKey =
   | "deklarasi_menunggu_approval"
   | "deklarasi_ditolak"
   | "sebagian_tuntas"
-  | "tuntas";
+  | "tuntas"
+  | "pembatalan_menunggu"
+  | "dibatalkan";
 
 // "action"   = giliran REQUESTER sendiri (oranye)
 // "waiting"  = giliran orang lain - approver atau Finance/GA (kuning)
@@ -93,6 +96,18 @@ export const computePcOverallStatus = (
     return statusOf("pengajuan_ditolak", {
       label: "Pengajuan Ditolak",
       tone: "rejected",
+    });
+  }
+  if (pengajuan.status === "Dibatalkan") {
+    return statusOf("dibatalkan", { label: "Dibatalkan", tone: "done" });
+  }
+  // Selama pembatalan menunggu Finance, Tarik Dana & pembayaran ditahan -
+  // ini yang paling menentukan langkah berikutnya, jadi didahulukan.
+  if (getPendingPembatalan(pengajuan.petty_cash_pembatalan)) {
+    return statusOf("pembatalan_menunggu", {
+      label: "Menunggu Persetujuan Pembatalan",
+      tone: "waiting",
+      turn: "Finance",
     });
   }
   if (pengajuan.status === "In Approval") {
@@ -257,7 +272,7 @@ export const computeChainSteps = (
     key: "pengajuan",
     label: "Pengajuan",
     state:
-      pengajuan.status === "Rejected"
+      pengajuan.status === "Rejected" || pengajuan.status === "Dibatalkan"
         ? "rejected"
         : pengajuan.status === "Approved" || pengajuan.status === "Selesai"
           ? "done"
@@ -271,7 +286,7 @@ export const computeChainSteps = (
       label: "Voucher",
       state: pengajuan.status === "Approved" ? "current" : "pending",
     };
-  } else if (voucher.status === "Rejected") {
+  } else if (voucher.status === "Rejected" || voucher.status === "Dibatalkan") {
     voucherStep = { key: "voucher", label: "Voucher", state: "rejected" };
   } else if (voucher.status === "In Approval") {
     voucherStep = { key: "voucher", label: "Voucher", state: "current" };
@@ -401,6 +416,7 @@ export const summarizeOverallStatus = (
       summary.tuntas += 1;
       continue;
     }
+    if (status.key === "dibatalkan") continue;
     summary.aktif += 1;
     if (status.tone === "action") summary.perluTindakanSaya += 1;
     if (status.tone === "waiting") summary.menungguOrangLain += 1;
@@ -486,6 +502,30 @@ export const buildActivityFeed = (
               }
             : undefined,
       });
+    }
+
+    for (const pb of toEmbedArray(pengajuan.petty_cash_pembatalan)) {
+      events.push({
+        id: `pembatalan-created-${pb.id}`,
+        type: "pengajuan",
+        label: "Pembatalan diajukan",
+        kode: pengajuan.kode_pengajuan,
+        timestamp: new Date(pb.created_at),
+        href: pengajuanHref,
+      });
+      if (pb.processed_at) {
+        events.push({
+          id: `pembatalan-final-${pb.id}`,
+          type: "pengajuan",
+          label:
+            pb.status === "Disetujui"
+              ? "Pembatalan disetujui Finance"
+              : "Pembatalan ditolak Finance",
+          kode: pengajuan.kode_pengajuan,
+          timestamp: new Date(pb.processed_at),
+          href: pengajuanHref,
+        });
+      }
     }
 
     // Semua Voucher (yang ditolak + pengajuan ulangnya) - aksi "Ajukan

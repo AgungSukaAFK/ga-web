@@ -16,7 +16,11 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { PcApprovalLevel, PcApprovalType } from "@/type";
-import { PC_APPROVAL_TYPE_PENGAJUAN } from "@/type/enum";
+import {
+  PC_APPROVAL_TYPE_DEKLARASI,
+  PC_APPROVAL_TYPE_PENGAJUAN,
+} from "@/type/enum";
+import { hasFinanceApprover } from "@/lib/pcApprovalFlow";
 
 const supabase = createClient();
 
@@ -203,7 +207,23 @@ export const fetchPcTemplateById = async (id: number) => {
   return data;
 };
 
+/**
+ * Validasi aturan bisnis template sebelum simpan - dicek ulang trigger DB
+ * check_pc_approval_template_finance (supabase/migrations/0015_petty_cash_revisi.sql).
+ */
+const assertPcTemplateRules = (payload: PcTemplateFormInput) => {
+  if (
+    payload.approval_type === PC_APPROVAL_TYPE_DEKLARASI &&
+    !hasFinanceApprover(payload.approval_path)
+  ) {
+    throw new Error(
+      'Template "Approval Deklarasi" wajib memiliki minimal 1 approver dari departemen Finance.',
+    );
+  }
+};
+
 export const createPcTemplate = async (payload: PcTemplateFormInput) => {
+  assertPcTemplateRules(payload);
   const { auto_rules, ...templateFields } = payload;
   const { data, error } = await supabase
     .from("pc_approval_templates")
@@ -227,6 +247,7 @@ export const updatePcTemplate = async (
   id: number,
   payload: PcTemplateFormInput,
 ) => {
+  assertPcTemplateRules(payload);
   const { auto_rules, ...templateFields } = payload;
   const { data, error } = await supabase
     .from("pc_approval_templates")

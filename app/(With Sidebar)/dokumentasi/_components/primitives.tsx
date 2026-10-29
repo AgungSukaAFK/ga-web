@@ -6,6 +6,8 @@
 import { cn } from "@/lib/utils";
 import {
   MR_ITEM_STATUS_COLORS,
+  PC_PEMBATALAN_STATUS_COLORS,
+  PC_PENGEMBALIAN_STATUS_COLORS,
   PC_SUB_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_COLORS,
 } from "@/type/enum";
@@ -43,6 +45,8 @@ const DOC_STATUS_COLORS: Record<string, string> = {
 };
 
 const PC_STATUS_COLORS: Record<string, string> = {
+  ...PC_PENGEMBALIAN_STATUS_COLORS,
+  ...PC_PEMBATALAN_STATUS_COLORS,
   ...PC_VOUCHER_STATUS_COLORS,
   ...PC_SUB_VOUCHER_STATUS_COLORS,
 };

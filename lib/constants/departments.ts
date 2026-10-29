@@ -27,6 +27,45 @@ export const isITAdmin = (
   profile?: { role?: string | null; department?: string | null } | null,
 ): boolean => profile?.role === "admin" && profile?.department === "IT";
 
+/** Departemen Finance - nama persis di `profiles.department`. */
+export const FINANCE_DEPARTMENT = "Finance";
+
+export const isFinanceDepartment = (department?: string | null): boolean =>
+  department === FINANCE_DEPARTMENT;
+
+/**
+ * Finance approver Petty Cash: memproses pembayaran tarikan, konfirmasi
+ * pengembalian, & persetujuan pembatalan. Harus sama dengan cek di RPC
+ * mark_petty_cash_sub_voucher_paid / approve_petty_cash_pembatalan dkk.
+ */
+export const isPcFinanceApprover = (
+  profile?: { role?: string | null; department?: string | null } | null,
+): boolean =>
+  profile?.role === "admin" ||
+  (profile?.role === "approver" && isFinanceDepartment(profile?.department));
+
+/**
+ * Boleh membuat Pengajuan Petty Cash Eskalasi (tanpa menunggu tarikan
+ * sebelumnya dideklarasikan): departemen setara GA atau role admin. Harus
+ * sama dengan trigger check_petty_cash_pengajuan_eskalasi
+ * (supabase/migrations/0015_petty_cash_revisi.sql).
+ */
+export const canEscalatePettyCash = (
+  profile?: { role?: string | null; department?: string | null } | null,
+): boolean => profile?.role === "admin" || isGADepartment(profile?.department);
+
+/**
+ * Boleh membuka Management Petty Cash (monitoring lintas departemen +
+ * Download Excel): admin, departemen setara GA, atau Finance. Aksi yang
+ * mengubah data (hapus/edit paksa/override) tetap admin only.
+ */
+export const canMonitorPettyCash = (
+  profile?: { role?: string | null; department?: string | null } | null,
+): boolean =>
+  profile?.role === "admin" ||
+  isGADepartment(profile?.department) ||
+  isFinanceDepartment(profile?.department);
+
 /**
  * True jika user boleh mengelola Template MR: admin, atau departemen setara
  * GA dengan role approver. Harus sama dengan RLS `mr_templates`.

@@ -1,6 +1,11 @@
 // type/enum.ts
 
-import { Approval, PcApprovalLevel, PcApprovalType } from "@/type";
+import {
+  Approval,
+  PcApprovalLevel,
+  PcApprovalType,
+  PcPaymentMethod,
+} from "@/type";
 
 export const LIMIT_OPTIONS = [10, 25, 50, 100, 1000, 10000];
 
@@ -465,11 +470,14 @@ export const UOM_OPTIONS = [
 // dari app code - ikut status Voucher aktifnya lewat trigger DB
 // (supabase/migrations/0013_petty_cash_pengajuan_selesai.sql): naik begitu
 // Voucher "Selesai", turun lagi ke "Approved" kalau Voucher-nya turun/dihapus.
+// "Dibatalkan" cuma lewat RPC approve_petty_cash_pembatalan (Finance
+// menyetujui pembatalan, lihat 0015_petty_cash_revisi.sql) - final.
 export const PC_PENGAJUAN_STATUS_OPTIONS = [
   "In Approval",
   "Approved",
   "Selesai",
   "Rejected",
+  "Dibatalkan",
 ] as const;
 
 export const PC_PENGAJUAN_STATUS_COLORS: Record<string, string> = {
@@ -481,6 +489,8 @@ export const PC_PENGAJUAN_STATUS_COLORS: Record<string, string> = {
     "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
   Rejected:
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  Dibatalkan:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
 };
 export const PC_PENGAJUAN_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
@@ -499,6 +509,7 @@ export const PC_VOUCHER_STATUS_OPTIONS = [
   "Approved",
   "Selesai",
   "Rejected",
+  "Dibatalkan",
 ] as const;
 
 export const PC_VOUCHER_STATUS_COLORS: Record<string, string> = {
@@ -510,6 +521,8 @@ export const PC_VOUCHER_STATUS_COLORS: Record<string, string> = {
     "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
   Rejected:
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  Dibatalkan:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
 };
 export const PC_VOUCHER_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
@@ -520,10 +533,12 @@ export const PC_VOUCHER_STATUS_COLOR_DEFAULT =
 // approver, atau admin) menyelesaikan pembayaran + upload bukti transfer
 // (mark_petty_cash_sub_voucher_paid, RPC). Deklarasi cuma boleh dibuat dari
 // Sub-Voucher 'Selesai' - lihat fetchSubVouchersForDeklarasi,
-// services/pettyCashSubVoucherService.ts.
+// services/pettyCashSubVoucherService.ts. 'Dibatalkan' = Pengajuan-nya
+// dibatalkan sebelum tarikan ini dibayar (budget sudah di-refund).
 export const PC_SUB_VOUCHER_STATUS_OPTIONS = [
   "Menunggu Pembayaran",
   "Selesai",
+  "Dibatalkan",
 ] as const;
 
 export const PC_SUB_VOUCHER_STATUS_COLORS: Record<string, string> = {
@@ -531,6 +546,8 @@ export const PC_SUB_VOUCHER_STATUS_COLORS: Record<string, string> = {
     "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
   Selesai:
     "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
+  Dibatalkan:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
 };
 export const PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
@@ -556,6 +573,58 @@ export const PC_PENGEMBALIAN_STATUS_COLORS: Record<string, string> = {
 };
 export const PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Status permintaan Pembatalan Pengajuan (petty_cash_pembatalan) - lihat
+// supabase/migrations/0015_petty_cash_revisi.sql.
+export const PC_PEMBATALAN_STATUS_OPTIONS = [
+  "Menunggu Persetujuan",
+  "Disetujui",
+  "Ditolak",
+] as const;
+
+export const PC_PEMBATALAN_STATUS_COLORS: Record<string, string> = {
+  "Menunggu Persetujuan":
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  Disetujui:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
+  Ditolak:
+    "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+};
+export const PC_PEMBATALAN_STATUS_COLOR_DEFAULT =
+  "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
+
+// Metode pencairan - lihat PcPaymentMethod, type/index.ts. Urutan = urutan
+// pilihan di form. `proofRequired` = bukti pembayaran Finance wajib.
+export const PC_PAYMENT_METHOD_OPTIONS: {
+  value: PcPaymentMethod;
+  label: string;
+  description: string;
+  proofRequired: boolean;
+}[] = [
+  {
+    value: "Transfer",
+    label: "Transfer",
+    description: "Ditransfer ke rekening pemohon.",
+    proofRequired: true,
+  },
+  {
+    value: "Cash",
+    label: "Cash",
+    description: "Diambil tunai di Finance.",
+    proofRequired: false,
+  },
+  {
+    value: "Overbook",
+    label: "Overbook",
+    description: "Pemindahbukuan antar rekening internal.",
+    proofRequired: true,
+  },
+];
+
+// Penanda Eskalasi (PettyCashPengajuan.is_eskalasi) - merah-oranye supaya
+// menonjol di antrian approval, beda dari warna status mana pun.
+export const PC_ESKALASI_BADGE_CLASS =
+  "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800";
 
 // Status Deklarasi Petty Cash (petty_cash_deklarasi) - sama bentuknya dengan
 // PC_PENGAJUAN_STATUS_OPTIONS (tidak ada tahap "Permintaan Klaim" seperti
@@ -616,6 +685,10 @@ export const PC_OVERALL_STATUS_COLORS: Record<string, string> = {
     "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
   tuntas:
     "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
+  pembatalan_menunggu:
+    "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-800",
+  dibatalkan:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
 };
 export const PC_OVERALL_STATUS_COLOR_DEFAULT =
   "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";

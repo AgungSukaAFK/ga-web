@@ -206,3 +206,85 @@ Daftar barang siap pakai **milik pribadi tiap user** (beda dari katalog Barang P
 - **Approval bersifat strict-sequential** dan dicek 2x (query DB pakai `contains` jsonb yang longgar, lalu difilter ulang di app pakai `isMyApprovalTurn`) - jadi approver ke-2/ke-3 tidak akan melihat dokumen di antriannya sampai approver sebelumnya benar-benar approve, meski secara query DB dokumen itu "match".
 - **Override Admin** mengubah status & approvals langsung tanpa validasi konsistensi (mis. admin bisa saja set status "Approved" padahal masih ada approver berstatus "pending") - fitur ini memang didesain sebagai jalan pintas darurat, bukan alur normal.
 - Beberapa route sudah dihapus dari struktur baru (`/petty-cash/buat`, `/petty-cash/[id]`, `/petty-cash/approval-pengajuan|voucher|deklarasi`) tapi komentar-komentar di kode masih menyebut nama-nama itu sebagai referensi sejarah - tidak masalah, tapi bisa membingungkan kalau dibaca sekilas.
+
+---
+
+## Update 2026-10-28 - Revisi Petty Cash (migrasi `0015_petty_cash_revisi.sql`)
+
+Ringkasan teknis lima masukan user. Panduan untuk user ada di halaman
+Dokumentasi (`/dokumentasi`, bagian "Petty Cash" & "Aturan Petty Cash").
+
+### 1. Eskalasi
+- Kolom baru `petty_cash_pengajuan.is_eskalasi` (boolean). Trigger
+  `check_petty_cash_pengajuan_eskalasi` menolak nilai `true` kalau pelakunya
+  bukan role admin / departemen GA.
+- `checkPengajuanEligibility(..., canEscalate)` - GA/admin (`canEscalatePettyCash`,
+  `lib/constants/departments.ts`) tidak diblokir oleh syarat no. 3 (tarikan
+  belum dideklarasikan); hasilnya `requiresEskalasi = true` dan form Input
+  Pengajuan mengunci checkbox "Tandai sebagai Eskalasi" dalam keadaan tercentang.
+- Badge `PcEskalasiBadge` di layar saja. `PrintablePettyCashDocument` sengaja
+  tidak menampilkannya.
+
+### 2. Metode Pencairan (Transfer / Cash / Overbook)
+- Kolom `payment_method`, `bank_name`, `bank_account_number`,
+  `bank_account_holder_name` di `petty_cash_voucher` (rencana) dan
+  `petty_cash_sub_voucher` (final saat dibayar). Check constraint: Transfer
+  wajib rekening lengkap.
+- Dipilih requester di `PcCreateVoucherDialog` (rekening dari
+  `user_bank_accounts`, bisa quick-add). Diganti lewat "Edit & Setujui"
+  Voucher (`paymentVoucherId` di `PcApprovalActions`) atau RPC
+  `update_petty_cash_voucher_payment_method` (admin/GA/Finance/approver Voucher,
+  dicatat ke `discussions`).
+- Rekening pemohon dibaca approver/GA/Finance lewat RPC
+  `get_petty_cash_voucher_bank_accounts` (tabel rekening tetap privat per user).
+- `mark_petty_cash_sub_voucher_paid(p_id, p_payment_proof, p_payment_method,
+  p_bank_*)` - bukti wajib utk Transfer/Overbook, opsional utk Cash. Pemanggil
+  lama (2 argumen) tetap jalan: metode diambil dari Voucher, fallback Transfer.
+- Helper bersama: `lib/pcPayment.ts` (`resolveSubVoucherPayment` = metode
+  final tarikan atau rencana Voucher selama belum dibayar).
+
+### 3. Pembatalan Pengajuan
+- Tabel `petty_cash_pembatalan` (status `Menunggu Persetujuan` → `Disetujui` /
+  `Ditolak`, maks. 1 yang menunggu per Pengajuan). RPC
+  `request_petty_cash_pembatalan` (pemilik), `approve_petty_cash_pembatalan` &
+  `reject_petty_cash_pembatalan` (Finance approver/admin).
+- Boleh selama Pengajuan In Approval/Approved dan belum ada tarikan
+  `Selesai` (sudah dibayar). Disetujui = Pengajuan, Voucher aktif, & tarikan
+  `Menunggu Pembayaran` → `Dibatalkan`, nominal tarikan di-refund ke budget
+  (`petty_cash_budget_history.ref_type = 'refund'`).
+- Selama menunggu: Tarik Dana (`create_petty_cash_sub_voucher`), pembayaran
+  (`mark_petty_cash_sub_voucher_paid`), dan insert Voucher baru (trigger
+  `check_petty_cash_voucher_pembatalan`) ditolak.
+- `Dibatalkan` final utk non-admin (trigger `check_petty_cash_dibatalkan_final`
+  di Pengajuan & Voucher; tarikan `Dibatalkan` tidak bisa diaktifkan lagi
+  bahkan oleh admin). Hapus admin atas tarikan `Dibatalkan` tidak me-refund
+  dua kali (`_pc_admin_refund_sub_voucher` diperbarui). Override status admin
+  tidak menawarkan pilihan `Dibatalkan`.
+- UI: `PcAjukanPembatalanButton` + `PcPembatalanStatus`
+  (`components/petty-cash/PcPembatalan.tsx`), sesi ke-6 "Permintaan
+  Pembatalan" di Approval Petty Cash (`PcPembatalanConfirmPanel`), badge
+  sidebar & notifikasi `pc_cancel_*`.
+
+### 4. Approval Deklarasi wajib ada Finance
+- Trigger `check_pc_approval_template_finance` (template `Approval Deklarasi`
+  tanpa approver ber-`department = 'Finance'` ditolak) dan
+  `check_petty_cash_deklarasi_finance` (Deklarasi baru dari template lama yang
+  belum dilengkapi ditolak). Di app: `hasFinanceApprover`
+  (`lib/pcApprovalFlow.ts`), validasi form template + tanda "Belum ada
+  Finance" di daftar template.
+
+### 5. Excel All Document
+- `services/pettyCashExportService.ts` + `PcExcelExportDialog` di Management
+  Petty Cash. Multi-sheet lewat `exportStyledExcelWorkbook`
+  (`lib/excel-export.ts`, styling sama dgn export MR/PO). Filter di level
+  Pengajuan; seluruh turunan ikut.
+- Management Petty Cash sekarang terbuka utk admin, GA, & Finance
+  (`canMonitorPettyCash`) - GA/Finance read-only & dibatasi company sendiri
+  (LOURDES semua); hapus/override tetap admin.
+
+### Status tambahan
+
+| Dokumen | Status baru |
+| --- | --- |
+| Pengajuan, Voucher, Sub-Voucher | `Dibatalkan` |
+| Pembatalan | `Menunggu Persetujuan`, `Disetujui`, `Ditolak` |

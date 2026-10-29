@@ -22,6 +22,7 @@ import {
   rejectApproval,
 } from "@/lib/pcApprovalFlow";
 import { generateRandomId } from "@/lib/utils";
+import { canEscalatePettyCash } from "@/lib/constants/departments";
 import {
   notifyOnPcApproval,
   notifyOnPcSubmitted,
@@ -135,6 +136,10 @@ export interface CreatePengajuanPayload {
   // type/index.ts) - requester sendiri pun tetap dikirim (dari profilnya)
   // supaya kolom ini selalu terisi utk dokumen baru.
   pengguna_budget: { id: string; nama: string; department: string | null };
+  // Eskalasi (lihat PettyCashPengajuan.is_eskalasi) - cuma boleh true utk
+  // GA/admin (dijaga trigger DB). Wajib true kalau requester GA/admin masih
+  // punya tarikan yang belum dideklarasikan (requiresEskalasi di bawah).
+  is_eskalasi: boolean;
   notes: string;
   items: PettyCashPengajuanItem[];
   attachments: { url: string; name: string }[];
@@ -143,6 +148,11 @@ export interface CreatePengajuanPayload {
 export interface PengajuanEligibility {
   eligible: boolean;
   reasons: string[];
+  // Kode tarikan yang belum dideklarasikan (syarat no. 3 di bawah).
+  pendingSubVoucherKodes: string[];
+  // GA/admin yang masih punya tarikan belum dideklarasikan tetap eligible,
+  // tapi Pengajuan-nya WAJIB ditandai Eskalasi.
+  requiresEskalasi: boolean;
 }
 
 /**
@@ -169,12 +179,16 @@ export interface PengajuanEligibility {
  *    tarikan yang masih "Menunggu Pembayaran" Finance (belum tentu sudah
  *    "Selesai") - lihat fetchPendingSubVouchers,
  *    services/pettyCashSubVoucherService.ts.
+ *    PENGECUALIAN (`canEscalate`, lihat canEscalatePettyCash): departemen
+ *    GA & role admin tetap boleh, Pengajuan-nya otomatis jadi Eskalasi
+ *    (requiresEskalasi) - utk kebutuhan mendesak yang tidak bisa menunggu.
  */
 export const checkPengajuanEligibility = async (
   userId: string,
   department: string,
   site: string | null,
   companyCode: string,
+  canEscalate = false,
 ): Promise<PengajuanEligibility> => {
   const reasons: string[] = [];
 
@@ -194,15 +208,22 @@ export const checkPengajuanEligibility = async (
       `Departemen "${department}"${site ? ` (site ${site})` : ""} belum memiliki Budget Petty Cash yang aktif. Hubungi GA/Admin untuk mengaturnya terlebih dahulu.`,
     );
   }
-  if (pendingDeklarasi.length > 0) {
+  const pendingSubVoucherKodes = pendingDeklarasi.map(
+    (sv) => sv.kode_sub_voucher,
+  );
+  const requiresEskalasi = canEscalate && pendingSubVoucherKodes.length > 0;
+  if (pendingSubVoucherKodes.length > 0 && !canEscalate) {
     reasons.push(
-      `Anda masih memiliki ${pendingDeklarasi.length} Sub-Voucher yang belum dideklarasikan (${pendingDeklarasi
-        .map((sv) => sv.kode_sub_voucher)
-        .join(", ")}). Selesaikan Deklarasi-nya dulu sebelum membuat Pengajuan baru.`,
+      `Anda masih memiliki ${pendingSubVoucherKodes.length} Sub-Voucher yang belum dideklarasikan (${pendingSubVoucherKodes.join(", ")}). Selesaikan Deklarasi-nya dulu sebelum membuat Pengajuan baru.`,
     );
   }
 
-  return { eligible: reasons.length === 0, reasons };
+  return {
+    eligible: reasons.length === 0,
+    reasons,
+    pendingSubVoucherKodes,
+    requiresEskalasi,
+  };
 };
 
 /**
@@ -220,14 +241,33 @@ export const createPettyCashPengajuan = async (
     throw new Error("Minimal harus ada 1 barang di pengajuan.");
   }
 
+  const { data: requester, error: requesterError } = await supabase
+    .from("profiles")
+    .select("role, department")
+    .eq("id", userId)
+    .single();
+  if (requesterError) throw requesterError;
+  const canEscalate = canEscalatePettyCash(requester);
+
   const eligibility = await checkPengajuanEligibility(
     userId,
     payload.department,
     payload.site,
     payload.company_code,
+    canEscalate,
   );
   if (!eligibility.eligible) {
     throw new Error(eligibility.reasons.join(" "));
+  }
+  if (payload.is_eskalasi && !canEscalate) {
+    throw new Error(
+      "Hanya user departemen GA atau role Admin yang boleh menandai Pengajuan sebagai Eskalasi.",
+    );
+  }
+  if (eligibility.requiresEskalasi && !payload.is_eskalasi) {
+    throw new Error(
+      `Anda masih memiliki tarikan yang belum dideklarasikan (${eligibility.pendingSubVoucherKodes.join(", ")}) - Pengajuan ini wajib ditandai Eskalasi.`,
+    );
   }
 
   const template = await resolvePcAutoTemplate(
@@ -277,6 +317,7 @@ export const createPettyCashPengajuan = async (
       pengguna_budget_id: payload.pengguna_budget.id,
       pengguna_budget_nama: payload.pengguna_budget.nama,
       pengguna_budget_department: payload.pengguna_budget.department,
+      is_eskalasi: payload.is_eskalasi,
       needed_date: payload.needed_date,
       week_of_month: payload.week_of_month,
       site: payload.site,
@@ -364,6 +405,7 @@ export const fetchMyPengajuanWithChain = async (
     .from("petty_cash_pengajuan")
     .select(
       `*, petty_cash_budget(name, current_budget),
+       petty_cash_pembatalan(*, processed_by_profile:profiles!processed_by(nama)),
        petty_cash_voucher(*, petty_cash_budget(name, current_budget),
          petty_cash_sub_voucher(*, petty_cash_deklarasi(*)))`,
     )
@@ -384,7 +426,7 @@ export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
     .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget)",
+      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget), petty_cash_pembatalan(id, status, reason, created_at)",
     )
     .order("created_at", { ascending: false });
 
@@ -449,6 +491,7 @@ export const fetchPengajuanById = async (
     .from("petty_cash_pengajuan")
     .select(
       `*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget),
+       petty_cash_pembatalan(*, processed_by_profile:profiles!processed_by(nama)),
        petty_cash_voucher(id, kode_voucher, status, created_at, total_amount,
          petty_cash_budget(name, current_budget),
          petty_cash_sub_voucher(id, kode_sub_voucher, amount, status, created_at))`,
