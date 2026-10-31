@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { COMPANY_LOGOS } from "@/components/company-logo-badge";
 import {
   MaterialRequest,
   Order,
@@ -1096,21 +1098,40 @@ export default function BuatMRPage() {
                   Buat MR untuk Perusahaan <span className="text-red-500">*</span>
                 </Label>
                 <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-                  {(["GMI", "GIS"] as const).map((company) => (
-                    <button
-                      key={company}
-                      type="button"
-                      onClick={() => handleTargetCompanyChange(company)}
-                      className={cn(
-                        "py-4 rounded-lg border-2 font-bold text-lg transition-all",
-                        formCreateMR.company_code === company
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border hover:border-primary/40 text-muted-foreground",
-                      )}
-                    >
-                      {company}
-                    </button>
-                  ))}
+                  {(["GMI", "GIS"] as const).map((company) => {
+                    // Versi landscape sama dengan header detail MR; GMI pakai
+                    // file ber-stroke supaya tetap terbaca di dark mode.
+                    const logo = COMPANY_LOGOS[company].landscape;
+                    return (
+                      <button
+                        key={company}
+                        type="button"
+                        onClick={() => handleTargetCompanyChange(company)}
+                        className={cn(
+                          "flex flex-col items-center gap-2 px-3 py-3 rounded-lg border-2 font-bold text-lg transition-all",
+                          formCreateMR.company_code === company
+                            ? "border-primary bg-primary/10 text-primary shadow-sm"
+                            : "border-border hover:border-primary/40 text-muted-foreground",
+                        )}
+                      >
+                        {/* Tinggi tetap supaya label kedua tombol sejajar
+                            walau rasio logo GMI & GIS beda jauh. */}
+                        <span className="flex h-12 w-full items-center justify-center">
+                          <Image
+                            src={logo.src}
+                            alt={`Logo ${company}`}
+                            width={logo.width}
+                            height={logo.height}
+                            className={cn(
+                              "h-auto w-auto max-w-full",
+                              logo.className,
+                            )}
+                          />
+                        </span>
+                        {company}
+                      </button>
+                    );
+                  })}
                 </div>
                 {formCreateMR.company_code && (
                   <p className="text-xs text-muted-foreground">

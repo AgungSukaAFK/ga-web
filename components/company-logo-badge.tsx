@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // pandang. Ukuran width/height = ukuran asli file, supaya aspek rasio terjaga.
 // Versi landscape sudah punya stroke putih bawaan (gis-landscape,
 // gmi-landscape-stroke), jadi tetap terbaca di dark mode tanpa latar putih.
-const COMPANY_LOGOS = {
+export const COMPANY_LOGOS = {
   GMI: {
     square: { src: "/gmi-logo.webp", width: 150, height: 150 },
     landscape: {
