@@ -97,6 +97,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         .select("*")
         .eq("id", user.id)
         .single();
+      // Akun announcer (PC speaker follow-up) cuma punya satu halaman.
+      if (profileRes.data?.role === "announcer") {
+        router.replace("/announcer");
+        return;
+      }
       if (!profileRes.data.nama) {
         toast.warning("Anda belum melengkapi informasi akun.", {
           action: {

@@ -53,7 +53,13 @@ interface UserForTable extends Profile {
   email: string; // Pastikan email ada
 }
 
-const dataRole: string[] = ["admin", "approver", "requester", "user"];
+const dataRole: string[] = [
+  "admin",
+  "approver",
+  "requester",
+  "user",
+  "announcer",
+];
 const dataLokasi: string[] = [
   "Head Office",
   "Tanjung Enim",

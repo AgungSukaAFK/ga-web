@@ -36,6 +36,7 @@ import {
   PackageSearch,
   PiggyBank,
   ShieldAlert,
+  Speaker,
   Warehouse,
   Workflow,
 } from "lucide-react";
@@ -70,6 +71,7 @@ const NAV_ADMIN: NavItem[] = [
     url: "/goods-receipt-settings",
     icon: KeyRound,
   },
+  { title: "Announcer Follow-up", url: "/announcer", icon: Speaker },
 ];
 
 const NAV_MAIN: NavItem[] = [

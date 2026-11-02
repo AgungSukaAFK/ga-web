@@ -155,6 +155,26 @@ export interface FollowupRequest {
   requested_at: string;
 }
 
+// Antrian Announcer Follow-up (tabel `followup_announcements`, diisi trigger
+// tiap ada FollowupRequest baru - lihat
+// supabase/migrations/0016_followup_announcer.sql). Data approver di-snapshot
+// saat follow-up ditekan.
+export interface FollowupAnnouncement {
+  id: number;
+  resource_type: "material_request" | "purchase_order";
+  resource_id: number;
+  kode: string;
+  approver_id: string;
+  approver_nama: string | null;
+  approver_sapaan: string | null;
+  approver_lokasi: string | null;
+  requested_by: string | null;
+  requested_by_nama: string | null;
+  created_at: string;
+}
+
+export type Sapaan = "Bapak" | "Ibu" | "Mas" | "Mba" | "Kak";
+
 export type DiscussionAttachment =
   | { type: "image"; url: string; name?: string }
   | { type: "sticker"; emoji: string };
@@ -211,6 +231,7 @@ export interface Profile {
   email?: string | null;
   is_active?: boolean | null;
   avatar_url?: string | null;
+  sapaan?: Sapaan | null;
 }
 
 export type User = Profile;

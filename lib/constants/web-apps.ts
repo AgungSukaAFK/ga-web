@@ -60,4 +60,5 @@ export const WEB_ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
   approver: "Approver",
   requester: "Requester",
+  announcer: "Announcer",
 };

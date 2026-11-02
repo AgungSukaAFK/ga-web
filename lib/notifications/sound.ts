@@ -42,6 +42,24 @@ export function unlockAudio() {
   if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
 }
 
+/**
+ * Coba buka kunci audio TANPA gesture. Berhasil (true) cuma kalau browser
+ * mengizinkan autoplay, mis. Edge/Chrome dibuka dengan flag
+ * --autoplay-policy=no-user-gesture-required (PC Announcer, lihat
+ * app/announcer). resume() yang diblokir tidak pernah selesai, makanya
+ * dibatasi waktu.
+ */
+export async function tryUnlockAudio(timeoutMs = 500): Promise<boolean> {
+  const ctx = getCtx();
+  if (!ctx) return false;
+  if (ctx.state === "running") return true;
+  await Promise.race([
+    ctx.resume().catch(() => {}),
+    new Promise((r) => setTimeout(r, timeoutMs)),
+  ]);
+  return (ctx.state as AudioContextState) === "running";
+}
+
 export type SoundPresetId =
   | "tritone"
   | "crystal"
@@ -62,6 +80,7 @@ export type SoundPresetId =
   | "piano"
   | "alert"
   | "urgent"
+  | "pengumuman"
   | "custom";
 
 export type SoundPresetGroup = "Lembut" | "Ceria" | "Tegas";
@@ -96,6 +115,7 @@ export const SOUND_PRESETS: {
   { id: "piano", label: "Piano Chord", group: "Tegas" },
   { id: "alert", label: "Alert", group: "Tegas" },
   { id: "urgent", label: "Urgent", group: "Tegas" },
+  { id: "pengumuman", label: "Pengumuman", group: "Tegas" },
 ];
 
 /** Satu nada dengan envelope attack-decay yang halus. */
@@ -460,6 +480,23 @@ export function playSound(preset: SoundPresetId, volume = 0.6) {
             peak: 0.25 * v,
           }),
         );
+        break;
+      }
+
+      // Pengumuman — tiga bell menaik ala pengeras suara stasiun, pembuka
+      // kalimat di Announcer Follow-up (app/announcer).
+      case "pengumuman": {
+        [523.25, 659.25, 783.99].forEach((f, i) => {
+          const start = now + i * 0.42;
+          tone(ctx, { freq: f, start, dur: 1.1, type: "sine", peak: 0.5 * v });
+          tone(ctx, {
+            freq: f * 2,
+            start,
+            dur: 0.5,
+            type: "sine",
+            peak: 0.12 * v,
+          });
+        });
         break;
       }
 

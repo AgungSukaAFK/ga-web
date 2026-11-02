@@ -48,6 +48,7 @@ type Profile = {
   department: string | null;
   company: string | null;
   nrp: string | null;
+  sapaan: string | null;
 };
 
 // REVISI: Tipe UserWithProfile diperbarui
@@ -60,6 +61,7 @@ type UserWithProfile = {
   department: string | null;
   company: string | null;
   nrp: string | null;
+  sapaan: string | null;
   is_active: boolean;
   avatar_url: string | null;
 };
@@ -87,6 +89,20 @@ const dataRole: ComboboxData = [
   { label: "Approver", value: "approver" },
   { label: "Requester", value: "requester" },
   { label: "User", value: "user" },
+  { label: "Announcer (PC speaker follow-up)", value: "announcer" },
+];
+
+// Dipakai Announcer Follow-up ("Menunggu approval MR, Bapak ..."). Item
+// Select tidak boleh bernilai "", jadi "tanpa sapaan" pakai penanda ini dan
+// disimpan sebagai NULL.
+const SAPAAN_NONE = "none";
+const dataSapaan: ComboboxData = [
+  { label: "Tanpa sapaan", value: SAPAAN_NONE },
+  { label: "Bapak", value: "Bapak" },
+  { label: "Ibu", value: "Ibu" },
+  { label: "Mas", value: "Mas" },
+  { label: "Mba", value: "Mba" },
+  { label: "Kak", value: "Kak" },
 ];
 
 const dataDepartment: ComboboxData = [
@@ -116,6 +132,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
     department: null,
     company: null,
     nrp: null,
+    sapaan: null,
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -152,7 +169,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
               .single(),
             supabase
               .from("profiles")
-              .select("is_active, avatar_url")
+              .select("is_active, avatar_url, sapaan")
               .eq("id", userid)
               .single(),
             supabase
@@ -175,6 +192,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
           ...data,
           is_active: statusData?.is_active ?? true,
           avatar_url: statusData?.avatar_url ?? null,
+          sapaan: statusData?.sapaan ?? null,
         });
         setFormData({
           // Set semua data ke form
@@ -184,6 +202,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
           department: data.department,
           company: data.company,
           nrp: data.nrp,
+          sapaan: statusData?.sapaan ?? null,
         });
       } catch (err) {
         console.error("Unexpected error:", err);
@@ -224,6 +243,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
           department: formData.department,
           company: formData.company,
           nrp: formData.nrp,
+          sapaan: formData.sapaan,
         })
         .eq("id", user.id);
 
@@ -254,6 +274,7 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
         department: user.department,
         company: user.company,
         nrp: user.nrp,
+        sapaan: user.sapaan,
       });
     }
     setUpdateError(null);
@@ -437,6 +458,30 @@ function EditUserPageContent({ params }: { params: { userid: string } }) {
                 placeholder="Nama Lengkap"
               />
             )}
+          </div>
+
+          <div>
+            <Label className="mb-2 block font-medium">Sapaan</Label>
+            {!editMode ? (
+              <p className="p-2 border rounded-md bg-muted/50 min-h-10">
+                {user.sapaan || "Tanpa sapaan"}
+              </p>
+            ) : (
+              <Combobox
+                data={dataSapaan}
+                onChange={(value) =>
+                  handleComboboxChange(
+                    "sapaan",
+                    value === SAPAAN_NONE ? "" : value,
+                  )
+                }
+                defaultValue={formData.sapaan || SAPAAN_NONE}
+              />
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Dipakai pengumuman speaker follow-up, mis. &quot;Menunggu
+              approval MR, Bapak {user.nama || "..."}&quot;.
+            </p>
           </div>
 
           <div>
