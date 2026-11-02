@@ -55,6 +55,7 @@ import {
   fetchGoogleVoices,
   getGoogleTtsState,
   googleVoiceLabel,
+  unlockGooglePlayback,
   useGoogleTtsState,
 } from "@/lib/announcer/google-tts";
 import {
@@ -232,6 +233,7 @@ function useAudioHealth(active: boolean, isPlaying: () => boolean) {
     };
     const onGesture = () => {
       unlockAudio();
+      unlockGooglePlayback();
       setTimeout(refresh, 300);
     };
     const devices = navigator.mediaDevices;
@@ -377,6 +379,7 @@ export default function AnnouncerClient() {
 
   const handleStart = () => {
     unlockAudio();
+    unlockGooglePlayback();
     // Utterance kosong di dalam gesture klik "membuka" speechSynthesis di
     // browser yang mewajibkan aktivasi user.
     const synth = getSynth();
@@ -393,6 +396,7 @@ export default function AnnouncerClient() {
     cadangan = false,
   ) => {
     unlockAudio();
+    unlockGooglePlayback();
     const ok = await engine.test(
       SAMPLE_ANNOUNCEMENT[jenis],
       cadangan ? { ...settings, engine: "browser" } : undefined,

@@ -36,7 +36,10 @@ import {
   pickVoice,
   speak,
 } from "@/lib/announcer/speech";
-import { playBuffer, synthesizeGoogle } from "@/lib/announcer/google-tts";
+import {
+  playGoogleAudio,
+  synthesizeGoogle,
+} from "@/lib/announcer/google-tts";
 import {
   fetchAnnouncementsAfter,
   fetchRecentAnnouncements,
@@ -105,16 +108,16 @@ async function announce(
     ejaanFromSettings(settings),
   );
 
-  // Nada & suara Google lewat Web Audio. Kalau AudioContext macet (mis.
+  // Nada pembuka/penutup lewat Web Audio. Kalau AudioContext macet (mis.
   // Safari "interrupted" setelah Mac sleep) & tidak bisa dibangunkan tanpa
-  // klik, keduanya dilewati - kalimat tetap diucapkan lewat suara browser
-  // (speechSynthesis tidak bergantung pada AudioContext).
+  // klik, nadanya dilewati. Kalimat tidak terpengaruh: suara Google lewat
+  // elemen <audio>, suara browser lewat speechSynthesis.
   const webAudioReady = await ensureAudioRunning();
 
   // Audio Google disiapkan SEBELUM nada pembuka supaya tidak ada jeda
   // canggung antara nada & kalimat.
-  let googleAudio: AudioBuffer | null = null;
-  if (settings.engine === "google" && webAudioReady) {
+  let googleAudio: string | null = null;
+  if (settings.engine === "google") {
     try {
       googleAudio = await synthesizeGoogle(text, {
         voice: settings.googleVoice,
@@ -142,7 +145,7 @@ async function announce(
     };
     let via = "google";
     let result: SpeakResult = googleAudio
-      ? await playBuffer(googleAudio, settings.volume)
+      ? await playGoogleAudio(googleAudio, settings.volume)
       : "error";
     if (result !== "ok" && voice) {
       via = voice.name;
