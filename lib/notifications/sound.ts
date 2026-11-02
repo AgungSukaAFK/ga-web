@@ -41,7 +41,7 @@ export function getCtx(): AudioContext | null {
 // Selain "suspended", Safari punya state non-standar "interrupted" (tab
 // disembunyikan, Mac sleep/bangun, layar terkunci, output audio pindah) -
 // dua-duanya perlu resume(), makanya cek "bukan running", bukan "suspended".
-const isRunning = (ctx: AudioContext) =>
+const isRunning = (ctx: BaseAudioContext) =>
   (ctx.state as string) === "running";
 
 /** Buka kunci audio — panggil dari gesture user pertama (klik/keydown). */
@@ -163,7 +163,7 @@ export const SOUND_PRESETS: {
 
 /** Satu nada dengan envelope attack-decay yang halus. */
 function tone(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   opts: {
     freq: number;
     start: number;
@@ -195,12 +195,20 @@ function tone(
  * Mainkan sound notifikasi.
  * @param preset id sound
  * @param volume 0..1 (master volume dari pengaturan user)
+ * @param target opsional: jadwalkan di context lain alih-alih diputar
+ *   langsung - mis. OfflineAudioContext untuk dirender jadi file (nada
+ *   Announcer, lib/announcer/chimes.ts)
  */
-export function playSound(preset: SoundPresetId, volume = 0.6) {
+export function playSound(
+  preset: SoundPresetId,
+  volume = 0.6,
+  target?: BaseAudioContext,
+) {
   try {
-    const ctx = getCtx();
+    const live = target ? null : getCtx();
+    const ctx = target ?? live;
     if (!ctx) return;
-    if (!isRunning(ctx)) ctx.resume().catch(() => {});
+    if (live && !isRunning(live)) live.resume().catch(() => {});
 
     const v = Math.max(0, Math.min(1, volume));
     const now = ctx.currentTime;

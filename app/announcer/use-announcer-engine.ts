@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { playChime } from "@/lib/announcer/chimes";
-import { ensureAudioRunning, getAudioState } from "@/lib/notifications/sound";
+import { getAudioState } from "@/lib/notifications/sound";
 import {
   AnnouncerSettings,
   LOKASI_KOSONG,
@@ -36,10 +36,8 @@ import {
   pickVoice,
   speak,
 } from "@/lib/announcer/speech";
-import {
-  playGoogleAudio,
-  synthesizeGoogle,
-} from "@/lib/announcer/google-tts";
+import { synthesizeGoogle } from "@/lib/announcer/google-tts";
+import { playMedia } from "@/lib/announcer/media-player";
 import {
   fetchAnnouncementsAfter,
   fetchRecentAnnouncements,
@@ -108,12 +106,6 @@ async function announce(
     ejaanFromSettings(settings),
   );
 
-  // Nada pembuka/penutup lewat Web Audio. Kalau AudioContext macet (mis.
-  // Safari "interrupted" setelah Mac sleep) & tidak bisa dibangunkan tanpa
-  // klik, nadanya dilewati. Kalimat tidak terpengaruh: suara Google lewat
-  // elemen <audio>, suara browser lewat speechSynthesis.
-  const webAudioReady = await ensureAudioRunning();
-
   // Audio Google disiapkan SEBELUM nada pembuka supaya tidak ada jeda
   // canggung antara nada & kalimat.
   let googleAudio: string | null = null;
@@ -129,10 +121,7 @@ async function announce(
     }
   }
 
-  const openingMs = webAudioReady
-    ? playChime(settings.chime, settings.volume)
-    : 0;
-  if (openingMs) await sleep(openingMs);
+  await playChime(settings.chime, settings.volume);
 
   let voice = pickVoice(voices, settings.voiceURI);
   let spoken = false;
@@ -145,7 +134,7 @@ async function announce(
     };
     let via = "google";
     let result: SpeakResult = googleAudio
-      ? await playGoogleAudio(googleAudio, settings.volume)
+      ? await playMedia(googleAudio, settings.volume)
       : "error";
     if (result !== "ok" && voice) {
       via = voice.name;
@@ -174,10 +163,9 @@ async function announce(
 
   // Penutup cuma kalau kalimatnya benar-benar terucap - kalau gagal,
   // pengumuman diulang dari nada pembuka.
-  if (spoken && webAudioReady) {
+  if (spoken) {
     await sleep(GAP_BEFORE_CLOSING_CHIME_MS);
-    const closingMs = playChime(settings.chimeClose, settings.volume);
-    if (closingMs) await sleep(closingMs);
+    await playChime(settings.chimeClose, settings.volume);
   }
   return spoken;
 }

@@ -32,6 +32,7 @@ import {
   ChimeDirection,
   playChime,
 } from "@/lib/announcer/chimes";
+import { unlockMediaPlayer } from "@/lib/announcer/media-player";
 import {
   AnnouncerSettings,
   DEFAULT_TEMPLATE,
@@ -217,7 +218,8 @@ function ChimeSelect({
           disabled={value === "none"}
           onClick={() => {
             unlockAudio();
-            playChime(value, volume);
+            unlockMediaPlayer();
+            void playChime(value, volume);
           }}
         >
           <Play className="h-4 w-4" />

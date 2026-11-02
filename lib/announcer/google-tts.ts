@@ -5,8 +5,7 @@
  *
  * Suara Google Cloud Text-to-Speech untuk Announcer Follow-up, lewat
  * app/api/announcer/tts/route.ts (API key cuma di server). Audio (MP3)
- * diputar lewat elemen <audio> - lihat bagian "Pemutaran" di bawah untuk
- * kenapa bukan Web Audio.
+ * diputar lewat lib/announcer/media-player.ts.
  *
  * Gagal = pemanggil memakai suara cadangan (browser). Supaya pengumuman
  * berikutnya tidak ikut menunggu timeout, Google lalu DIJEDA: sampai kuota
@@ -16,7 +15,6 @@
  */
 
 import { useSyncExternalStore } from "react";
-import type { SpeakResult } from "./speech";
 
 export type GoogleVoice = { name: string; gender: string };
 
@@ -156,41 +154,6 @@ export function googleVoiceLabel(name: string): string {
 export const googleVoiceSupportsPitch = (name: string) =>
   !name.includes("Chirp");
 
-// ─────────────────────────────────────────────
-// Pemutaran
-// ─────────────────────────────────────────────
-//
-// Lewat SATU elemen <audio> yang dipakai ulang, bukan Web Audio: di Safari,
-// AudioBufferSourceNode bisa "selesai" normal tanpa ada suara yang keluar
-// (AudioContext running tapi diam), sedangkan media element memutar MP3
-// dengan andal di semua browser. Elemen yang sama dipakai terus karena
-// browser yang mewajibkan gesture cukup di-unlock sekali
-// (unlockGooglePlayback, dipanggil dari klik "Mulai Standby" / klik halaman).
-
-// WAV hening 10 ms, cuma untuk membuka kunci elemen di dalam gesture.
-const SILENT_WAV =
-  "data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
-
-let player: HTMLAudioElement | null = null;
-let playing = false;
-
-function getPlayer(): HTMLAudioElement | null {
-  if (typeof window === "undefined") return null;
-  if (!player) {
-    player = new Audio();
-    player.preload = "auto";
-  }
-  return player;
-}
-
-/** Panggil dari gesture user (klik/keydown). */
-export function unlockGooglePlayback() {
-  const el = getPlayer();
-  if (!el || playing) return;
-  el.src = SILENT_WAV;
-  el.play().catch(() => {});
-}
-
 // Kalimat yang diulang ("Diucapkan 2x") & tes berulang tidak memanggil API
 // lagi. Nilainya object URL Blob MP3, di-revoke saat keluar dari cache.
 const CACHE_MAX = 20;
@@ -262,53 +225,4 @@ export async function synthesizeGoogle(
     ...(usageHeader ? { usage: JSON.parse(usageHeader) } : {}),
   });
   return url;
-}
-
-// Batas tunggu sampai audio mulai (metadata termuat); setelah itu batasnya
-// durasi audio + kelonggaran.
-const LOAD_TIMEOUT_MS = 10_000;
-
-/** Putar audio hasil synthesizeGoogle. "error" = diblokir/gagal diputar. */
-export function playGoogleAudio(
-  url: string,
-  volume: number,
-): Promise<SpeakResult> {
-  const el = getPlayer();
-  if (!el) return Promise.resolve("error");
-
-  return new Promise((resolve) => {
-    let finished = false;
-    let watchdog = setTimeout(() => stop("timeout"), LOAD_TIMEOUT_MS);
-
-    function finish(result: SpeakResult) {
-      if (finished) return;
-      finished = true;
-      playing = false;
-      clearTimeout(watchdog);
-      el!.onloadedmetadata = el!.onended = el!.onerror = null;
-      resolve(result);
-    }
-    function stop(result: SpeakResult) {
-      el!.pause();
-      finish(result);
-    }
-
-    el.onloadedmetadata = () => {
-      clearTimeout(watchdog);
-      const seconds = Number.isFinite(el.duration) ? el.duration : 10;
-      watchdog = setTimeout(() => stop("timeout"), (seconds + 3) * 1000);
-    };
-    el.onended = () => finish("ok");
-    el.onerror = () => finish("error");
-
-    playing = true;
-    el.pause();
-    el.src = url;
-    el.volume = Math.max(0, Math.min(1, volume));
-    el.play().catch((err) => {
-      // Mis. NotAllowedError: autoplay diblokir & elemen belum di-unlock.
-      console.warn("[Announcer] Audio Google tidak bisa diputar:", err?.name);
-      finish("error");
-    });
-  });
 }
