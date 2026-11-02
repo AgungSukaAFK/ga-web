@@ -15,7 +15,7 @@ export type CreateUserInput = {
   company: string | null;
 };
 
-const ALLOWED_ROLES = ["admin", "approver", "requester", "user"];
+const ALLOWED_ROLES = ["admin", "approver", "requester", "user", "announcer"];
 
 async function requireAdmin() {
   const supabase = await createClient();
