@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useState } from "react";
-import type { SoundPresetId } from "@/lib/notifications/sound";
 import { DEFAULT_EJAAN } from "@/lib/announcer/speech";
 
 /** Nilai khusus di `lokasi` untuk approver yang lokasi profilnya kosong. */
@@ -31,17 +30,25 @@ export type AnnouncerSettings = {
   voiceURI: string | null;
   rate: number;
   pitch: number;
-  /** 0..1, berlaku untuk suara & nada pembuka. */
+  /** 0..1, berlaku untuk suara & nada pembuka/penutup. */
   volume: number;
-  /** Nada sebelum kalimat. "none" = langsung bicara. */
-  chime: Exclude<SoundPresetId, "custom"> | "none";
+  /**
+   * Nada sebelum & sesudah kalimat: id ANNOUNCER_CHIMES
+   * (lib/announcer/chimes.ts), preset notifikasi, atau "none".
+   */
+  chime: string;
+  chimeClose: string;
   /** Kalimat diucapkan berapa kali per pengumuman. */
   repeat: number;
   template: string;
   /** Cara mengucapkan {jenis} - disetel per suara supaya terdengar jelas. */
   ejaanMR: string;
   ejaanPO: string;
+  /** Versi skema pengaturan, lihat upgradeSettings. */
+  v: number;
 };
+
+const SETTINGS_VERSION = 2;
 
 export const DEFAULT_ANNOUNCER_SETTINGS: AnnouncerSettings = {
   lokasi: [],
@@ -52,12 +59,27 @@ export const DEFAULT_ANNOUNCER_SETTINGS: AnnouncerSettings = {
   rate: 0.9,
   pitch: 1,
   volume: 1,
-  chime: "pengumuman",
+  chime: "halte",
+  chimeClose: "halte_turun",
   repeat: 2,
   template: DEFAULT_TEMPLATE,
   ejaanMR: DEFAULT_EJAAN.mr,
   ejaanPO: DEFAULT_EJAAN.po,
+  v: SETTINGS_VERSION,
 };
+
+// Pengaturan tersimpan yang masih memakai default LAMA diganti default baru
+// (yang sengaja diubah user dibiarkan).
+function upgradeSettings(stored: Partial<AnnouncerSettings>) {
+  if ((stored.v ?? 1) < 2) {
+    // v1: nada pembuka "pengumuman", ejaan PO "pe, o" (e-nya dibaca pepet
+    // oleh suara Windows).
+    if (stored.chime === "pengumuman") delete stored.chime;
+    if (stored.ejaanPO === "pe, o") delete stored.ejaanPO;
+  }
+  delete stored.v;
+  return stored;
+}
 
 export const ejaanFromSettings = (
   s: Pick<AnnouncerSettings, "ejaanMR" | "ejaanPO">,
@@ -72,7 +94,10 @@ export function loadAnnouncerSettings(): AnnouncerSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_ANNOUNCER_SETTINGS;
     // Merge dengan default supaya field baru tetap punya nilai.
-    return { ...DEFAULT_ANNOUNCER_SETTINGS, ...JSON.parse(raw) };
+    return {
+      ...DEFAULT_ANNOUNCER_SETTINGS,
+      ...upgradeSettings(JSON.parse(raw)),
+    };
   } catch {
     return DEFAULT_ANNOUNCER_SETTINGS;
   }

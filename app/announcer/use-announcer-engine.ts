@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { playSound } from "@/lib/notifications/sound";
+import { playChime } from "@/lib/announcer/chimes";
 import {
   AnnouncerSettings,
   LOKASI_KOSONG,
@@ -51,13 +51,7 @@ const GAP_BETWEEN_REPEATS_MS = 800;
 const RESUBSCRIBE_MIN_MS = 5_000;
 const RESUBSCRIBE_MAX_MS = 60_000;
 
-// Lama nada pembuka sebelum kalimat mulai (perkiraan per preset).
-const CHIME_WAIT_MS: Partial<Record<string, number>> = {
-  pengumuman: 2000,
-  doorbell: 1300,
-  piano: 1100,
-};
-const DEFAULT_CHIME_WAIT_MS = 900;
+const GAP_BEFORE_CLOSING_CHIME_MS = 300;
 
 export type AnnouncerItemStatus =
   | "menunggu"
@@ -85,7 +79,7 @@ export const matchesLokasi = (
   lokasi: string[],
 ) => lokasi.includes(row.approver_lokasi || LOKASI_KOSONG);
 
-/** Satu pengumuman: nada pembuka lalu kalimat diulang `repeat` kali. */
+/** Satu pengumuman: nada pembuka, kalimat diulang `repeat` kali, nada penutup. */
 async function announce(
   data: AnnouncementTextData,
   settings: AnnouncerSettings,
@@ -98,10 +92,8 @@ async function announce(
     ejaanFromSettings(settings),
   );
 
-  if (settings.chime !== "none") {
-    playSound(settings.chime, settings.volume);
-    await sleep(CHIME_WAIT_MS[settings.chime] ?? DEFAULT_CHIME_WAIT_MS);
-  }
+  const openingMs = playChime(settings.chime, settings.volume);
+  if (openingMs) await sleep(openingMs);
 
   let voice = pickVoice(voices, settings.voiceURI);
   let spoken = false;
@@ -124,6 +116,14 @@ async function announce(
     }
     if (result === "ok") spoken = true;
     if (i < repeat - 1) await sleep(GAP_BETWEEN_REPEATS_MS);
+  }
+
+  // Penutup cuma kalau kalimatnya benar-benar terucap - kalau gagal,
+  // pengumuman diulang dari nada pembuka.
+  if (spoken) {
+    await sleep(GAP_BEFORE_CLOSING_CHIME_MS);
+    const closingMs = playChime(settings.chimeClose, settings.volume);
+    if (closingMs) await sleep(closingMs);
   }
   return spoken;
 }

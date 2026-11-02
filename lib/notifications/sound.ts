@@ -26,9 +26,11 @@ import { getCustomSoundUrl } from "./custom-sound-db";
 
 // Satu AudioContext bersama. Browser memblokir audio sampai "di-unlock"
 // lewat gesture user (klik/keydown). unlockAudio() dipanggil dari gesture itu.
+// Di-export untuk nada Announcer (lib/announcer/chimes.ts) supaya ikut
+// ter-unlock oleh gesture yang sama.
 let sharedAudioCtx: AudioContext | null = null;
 
-function getCtx(): AudioContext | null {
+export function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const Ctor = window.AudioContext || (window as any).webkitAudioContext;
   if (!Ctor) return null;

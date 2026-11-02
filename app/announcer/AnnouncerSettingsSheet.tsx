@@ -26,7 +26,12 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { dataLokasi } from "@/type/comboboxData";
-import { SOUND_PRESETS } from "@/lib/notifications/sound";
+import { SOUND_PRESETS, unlockAudio } from "@/lib/notifications/sound";
+import {
+  ANNOUNCER_CHIMES,
+  ChimeDirection,
+  playChime,
+} from "@/lib/announcer/chimes";
 import {
   AnnouncerSettings,
   DEFAULT_TEMPLATE,
@@ -132,6 +137,77 @@ function SliderRow({
         step={step}
         onValueChange={([v]) => onChange(v)}
       />
+    </div>
+  );
+}
+
+function ChimeSelect({
+  id,
+  label,
+  direction,
+  value,
+  volume,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  /** Arah yang cocok untuk posisi ini - grupnya ditaruh paling atas. */
+  direction: ChimeDirection;
+  value: string;
+  volume: number;
+  onChange: (value: string) => void;
+}) {
+  const groups = [
+    {
+      label:
+        direction === "naik" ? "Nada naik (pembuka)" : "Nada turun (penutup)",
+      items: ANNOUNCER_CHIMES.filter((c) => c.direction === direction),
+    },
+    {
+      label: direction === "naik" ? "Nada turun" : "Nada naik",
+      items: ANNOUNCER_CHIMES.filter((c) => c.direction !== direction),
+    },
+    { label: "Nada notifikasi", items: SOUND_PRESETS },
+  ];
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex gap-1.5">
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger id={id} className="min-w-0 flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value="none">Tanpa nada</SelectItem>
+            {groups.map((g) => (
+              <SelectGroup key={g.label}>
+                <SelectLabel>{g.label}</SelectLabel>
+                {g.items.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          title="Dengarkan"
+          aria-label={`Dengarkan ${label.toLowerCase()}`}
+          disabled={value === "none"}
+          onClick={() => {
+            unlockAudio();
+            playChime(value, volume);
+          }}
+        >
+          <Play className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -352,8 +428,9 @@ export function AnnouncerSettingsSheet({
                 />
               </div>
               <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
-                Tulis sesuai bunyinya. Koma memberi jeda supaya huruf tidak
-                melebur, mis. &quot;pe, o&quot; tidak terdengar &quot;po&quot;.
+                Huruf kapital tunggal dibaca sebagai nama hurufnya (P =
+                &quot;pé&quot;). Koma memberi jeda supaya huruf tidak melebur
+                jadi satu suku kata.
               </p>
             </div>
 
@@ -385,46 +462,41 @@ export function AnnouncerSettingsSheet({
               onChange={(volume) => update({ volume })}
             />
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Nada pembuka</Label>
-                <Select
-                  value={settings.chime}
-                  onValueChange={(v) =>
-                    update({ chime: v as AnnouncerSettings["chime"] })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-80">
-                    <SelectItem value="none">Tanpa nada</SelectItem>
-                    {SOUND_PRESETS.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Diucapkan</Label>
-                <Select
-                  value={String(settings.repeat)}
-                  onValueChange={(v) => update({ repeat: Number(v) })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3].map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n}x
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ChimeSelect
+                id="chime-open"
+                label="Nada pembuka"
+                direction="naik"
+                value={settings.chime}
+                volume={settings.volume}
+                onChange={(chime) => update({ chime })}
+              />
+              <ChimeSelect
+                id="chime-close"
+                label="Nada penutup"
+                direction="turun"
+                value={settings.chimeClose}
+                volume={settings.volume}
+                onChange={(chimeClose) => update({ chimeClose })}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="announcer-repeat">Kalimat diucapkan</Label>
+              <Select
+                value={String(settings.repeat)}
+                onValueChange={(v) => update({ repeat: Number(v) })}
+              >
+                <SelectTrigger id="announcer-repeat" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}x
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </Section>
 

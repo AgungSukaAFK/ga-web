@@ -11,7 +11,9 @@
  *
  * Kalimat untuk DIUCAPKAN sengaja beda dari yang DITAMPILKAN: "MR" sering
  * dibaca "Mister" oleh TTS Indonesia, jadi diganti ejaan (default "em ar";
- * PO "pe, o" - tanpa koma suara melebur jadi "po"), bisa diubah per device;
+ * PO "P, O" - huruf kapital tunggal dibaca nama hurufnya "pé"; "pe" ditulis
+ * biasa dibaca pepet /pə/ oleh suara Windows, & tanpa koma melebur jadi
+ * "po"), bisa diubah per device;
  * kode dieja per digit ("lima, tujuh, satu"); nama huruf kapital semua
  * dijadikan Title Case supaya tidak dieja per huruf seperti singkatan.
  */
@@ -74,7 +76,7 @@ function fillTemplate(template: string, values: Record<string, string>) {
 /** Cara mengucapkan jenis dokumen. */
 export type EjaanJenis = { mr: string; po: string };
 
-export const DEFAULT_EJAAN: EjaanJenis = { mr: "em ar", po: "pe, o" };
+export const DEFAULT_EJAAN: EjaanJenis = { mr: "em ar", po: "P, O" };
 
 export function buildAnnouncementText(
   template: string,
