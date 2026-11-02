@@ -10,9 +10,10 @@
  * "Google Bahasa Indonesia", macOS punya "Damayanti".
  *
  * Kalimat untuk DIUCAPKAN sengaja beda dari yang DITAMPILKAN: "MR" sering
- * dibaca "Mister" oleh TTS Indonesia, jadi diganti ejaan "em er"; kode dieja
- * per digit ("lima, tujuh, satu"); nama huruf kapital semua dijadikan
- * Title Case supaya tidak dieja per huruf seperti singkatan.
+ * dibaca "Mister" oleh TTS Indonesia, jadi diganti ejaan (default "em ar";
+ * PO "pe, o" - tanpa koma suara melebur jadi "po"), bisa diubah per device;
+ * kode dieja per digit ("lima, tujuh, satu"); nama huruf kapital semua
+ * dijadikan Title Case supaya tidak dieja per huruf seperti singkatan.
  */
 
 export type AnnouncementTextData = {
@@ -70,10 +71,16 @@ function fillTemplate(template: string, values: Record<string, string>) {
     .replace(/^[\s,]+|[\s,]+$/g, "");
 }
 
+/** Cara mengucapkan jenis dokumen. */
+export type EjaanJenis = { mr: string; po: string };
+
+export const DEFAULT_EJAAN: EjaanJenis = { mr: "em ar", po: "pe, o" };
+
 export function buildAnnouncementText(
   template: string,
   data: AnnouncementTextData,
   mode: "speech" | "display",
+  ejaan: EjaanJenis = DEFAULT_EJAAN,
 ): string {
   const isMR = data.resource_type === "material_request";
   const suffix = kodeSuffix(data.kode);
@@ -91,7 +98,7 @@ export function buildAnnouncementText(
   }
 
   return fillTemplate(template, {
-    jenis: isMR ? "em er" : "pe o",
+    jenis: (isMR ? ejaan.mr : ejaan.po).trim() || (isMR ? "MR" : "PO"),
     sapaan: data.approver_sapaan ?? "",
     approver: toTitleCase(approver),
     kode: spellKode(suffix),
@@ -135,17 +142,44 @@ export const isIndonesianVoice = (v: SpeechSynthesisVoice) =>
 const voiceScore = (v: SpeechSynthesisVoice) =>
   /natural|neural/i.test(v.name) ? 3 : /google/i.test(v.name) ? 2 : 1;
 
+/** Suara Bahasa Indonesia saja, urut dari yang terbaik. */
+export const indonesianVoices = (voices: SpeechSynthesisVoice[]) =>
+  voices
+    .filter(isIndonesianVoice)
+    .sort((a, b) => voiceScore(b) - voiceScore(a));
+
+// Suara Indonesia yang umum ada di Edge/Chrome/Windows/macOS.
+const KNOWN_VOICES: { match: RegExp; nama: string; jenis: string }[] = [
+  { match: /ardi/i, nama: "Ardi", jenis: "pria" },
+  { match: /gadis/i, nama: "Gadis", jenis: "wanita" },
+  { match: /andika/i, nama: "Andika", jenis: "pria" },
+  { match: /damayanti/i, nama: "Damayanti", jenis: "wanita" },
+  { match: /google/i, nama: "Google Bahasa Indonesia", jenis: "wanita" },
+];
+
+/** Label rapi untuk pilihan suara, mis. "Ardi (pria, natural, butuh internet)". */
+export function voiceLabel(v: SpeechSynthesisVoice): string {
+  const known = KNOWN_VOICES.find((k) => k.match.test(v.name));
+  const nama =
+    known?.nama ??
+    v.name.replace(/\s*[-(].*(indonesia|indonesian).*$/i, "").trim();
+  const detail = [
+    known?.jenis,
+    /natural|neural/i.test(v.name) ? "natural" : null,
+    v.localService ? "offline" : "butuh internet",
+  ].filter(Boolean);
+  return `${nama || v.name} (${detail.join(", ")})`;
+}
+
 export function pickVoice(
   voices: SpeechSynthesisVoice[],
   voiceURI: string | null,
 ): SpeechSynthesisVoice | null {
+  const indonesian = indonesianVoices(voices);
   if (voiceURI) {
-    const chosen = voices.find((v) => v.voiceURI === voiceURI);
+    const chosen = indonesian.find((v) => v.voiceURI === voiceURI);
     if (chosen) return chosen;
   }
-  const indonesian = voices
-    .filter(isIndonesianVoice)
-    .sort((a, b) => voiceScore(b) - voiceScore(a));
   return indonesian[0] ?? null;
 }
 

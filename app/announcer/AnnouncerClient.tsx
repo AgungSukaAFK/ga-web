@@ -218,9 +218,11 @@ export default function AnnouncerClient() {
     setStarted(true);
   };
 
-  const handleTest = async () => {
+  const handleTest = async (
+    jenis: keyof typeof SAMPLE_ANNOUNCEMENT,
+  ) => {
     unlockAudio();
-    const ok = await engine.test(SAMPLE_ANNOUNCEMENT);
+    const ok = await engine.test(SAMPLE_ANNOUNCEMENT[jenis]);
     if (!ok) {
       toast.error("Tes suara gagal", {
         description:

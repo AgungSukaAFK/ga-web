@@ -31,12 +31,15 @@ import {
   AnnouncerSettings,
   DEFAULT_TEMPLATE,
   LOKASI_KOSONG,
+  ejaanFromSettings,
 } from "@/lib/announcer/settings";
 import {
   AnnouncementTextData,
+  DEFAULT_EJAAN,
   TEMPLATE_PLACEHOLDERS,
   buildAnnouncementText,
-  isIndonesianVoice,
+  indonesianVoices,
+  voiceLabel,
 } from "@/lib/announcer/speech";
 
 // Urutan tampil Senin..Minggu, nilai = Date.getDay().
@@ -55,12 +58,24 @@ const LOKASI_OPTIONS = [
   { value: LOKASI_KOSONG, label: "Approver tanpa lokasi" },
 ];
 
-export const SAMPLE_ANNOUNCEMENT: AnnouncementTextData = {
-  resource_type: "material_request",
-  kode: "GMI/MR/XI/26/HO/571",
-  approver_nama: "Agung",
-  approver_sapaan: "Bapak",
-  requested_by_nama: "Budi",
+export const SAMPLE_ANNOUNCEMENT: Record<
+  AnnouncementTextData["resource_type"],
+  AnnouncementTextData
+> = {
+  material_request: {
+    resource_type: "material_request",
+    kode: "GMI/MR/XI/26/HO/571",
+    approver_nama: "Agung",
+    approver_sapaan: "Bapak",
+    requested_by_nama: "Budi",
+  },
+  purchase_order: {
+    resource_type: "purchase_order",
+    kode: "GMI/PO/XI/26/308",
+    approver_nama: "Siti",
+    approver_sapaan: "Ibu",
+    requested_by_nama: "Budi",
+  },
 };
 
 function Section({
@@ -135,13 +150,15 @@ export function AnnouncerSettingsSheet({
   settings: AnnouncerSettings;
   update: (patch: Partial<AnnouncerSettings>) => void;
   voices: SpeechSynthesisVoice[];
-  onTest: () => Promise<void>;
+  onTest: (jenis: AnnouncementTextData["resource_type"]) => Promise<void>;
   onLogout: () => void;
 }) {
-  const [testing, setTesting] = useState(false);
+  const [testing, setTesting] = useState<
+    AnnouncementTextData["resource_type"] | null
+  >(null);
 
-  const indonesianVoices = voices.filter(isIndonesianVoice);
-  const otherVoices = voices.filter((v) => !isIndonesianVoice(v));
+  const voiceOptions = indonesianVoices(voices);
+  const ejaan = ejaanFromSettings(settings);
 
   const toggleLokasi = (value: string, checked: boolean) =>
     update({
@@ -157,12 +174,12 @@ export function AnnouncerSettingsSheet({
         : [...settings.activeDays, day],
     });
 
-  const handleTest = async () => {
-    setTesting(true);
+  const handleTest = async (jenis: AnnouncementTextData["resource_type"]) => {
+    setTesting(jenis);
     try {
-      await onTest();
+      await onTest(jenis);
     } finally {
-      setTesting(false);
+      setTesting(null);
     }
   };
 
@@ -279,7 +296,11 @@ export function AnnouncerSettingsSheet({
             <div className="space-y-1.5">
               <Label>Suara</Label>
               <Select
-                value={settings.voiceURI ?? "auto"}
+                value={
+                  voiceOptions.some((v) => v.voiceURI === settings.voiceURI)
+                    ? settings.voiceURI!
+                    : "auto"
+                }
                 onValueChange={(v) =>
                   update({ voiceURI: v === "auto" ? null : v })
                 }
@@ -289,37 +310,51 @@ export function AnnouncerSettingsSheet({
                 </SelectTrigger>
                 <SelectContent className="max-h-80">
                   <SelectItem value="auto">
-                    Otomatis (suara Indonesia terbaik)
+                    Otomatis (suara terbaik yang tersedia)
                   </SelectItem>
-                  {indonesianVoices.length > 0 && (
+                  {voiceOptions.length > 0 && (
                     <SelectGroup>
-                      <SelectLabel>Bahasa Indonesia</SelectLabel>
-                      {indonesianVoices.map((v) => (
+                      <SelectLabel>Suara Bahasa Indonesia</SelectLabel>
+                      {voiceOptions.map((v) => (
                         <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                          {v.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  )}
-                  {otherVoices.length > 0 && (
-                    <SelectGroup>
-                      <SelectLabel>Bahasa lain</SelectLabel>
-                      {otherVoices.map((v) => (
-                        <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                          {v.name} ({v.lang})
+                          {voiceLabel(v)}
                         </SelectItem>
                       ))}
                     </SelectGroup>
                   )}
                 </SelectContent>
               </Select>
-              {voices.length > 0 && indonesianVoices.length === 0 && (
+              {voices.length > 0 && voiceOptions.length === 0 && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Browser ini tidak punya suara Bahasa Indonesia, jadi
-                  pengucapannya akan aneh. Pakai Microsoft Edge atau Google
-                  Chrome.
+                  Browser ini tidak punya suara Bahasa Indonesia. Pakai
+                  Microsoft Edge (disarankan) atau Google Chrome.
                 </p>
               )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="ejaan-mr">Ejaan MR</Label>
+                <Input
+                  id="ejaan-mr"
+                  value={settings.ejaanMR}
+                  placeholder={DEFAULT_EJAAN.mr}
+                  onChange={(e) => update({ ejaanMR: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ejaan-po">Ejaan PO</Label>
+                <Input
+                  id="ejaan-po"
+                  value={settings.ejaanPO}
+                  placeholder={DEFAULT_EJAAN.po}
+                  onChange={(e) => update({ ejaanPO: e.target.value })}
+                />
+              </div>
+              <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
+                Tulis sesuai bunyinya. Koma memberi jeda supaya huruf tidak
+                melebur, mis. &quot;pe, o&quot; tidak terdengar &quot;po&quot;.
+              </p>
             </div>
 
             <SliderRow
@@ -434,32 +469,41 @@ export function AnnouncerSettingsSheet({
                 <span className="text-muted-foreground">Tampil: </span>
                 {buildAnnouncementText(
                   settings.template,
-                  SAMPLE_ANNOUNCEMENT,
+                  SAMPLE_ANNOUNCEMENT.material_request,
                   "display",
                 )}
               </p>
-              <p>
-                <span className="text-muted-foreground">Diucapkan: </span>
-                {buildAnnouncementText(
-                  settings.template,
-                  SAMPLE_ANNOUNCEMENT,
-                  "speech",
-                )}
-              </p>
+              {(["material_request", "purchase_order"] as const).map((j) => (
+                <p key={j}>
+                  <span className="text-muted-foreground">
+                    Diucapkan ({j === "material_request" ? "MR" : "PO"}):{" "}
+                  </span>
+                  {buildAnnouncementText(
+                    settings.template,
+                    SAMPLE_ANNOUNCEMENT[j],
+                    "speech",
+                    ejaan,
+                  )}
+                </p>
+              ))}
             </div>
-            <Button
-              type="button"
-              onClick={handleTest}
-              disabled={testing}
-              className="w-full"
-            >
-              {testing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="mr-2 h-4 w-4" />
-              )}
-              Tes Suara
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              {(["material_request", "purchase_order"] as const).map((j) => (
+                <Button
+                  key={j}
+                  type="button"
+                  onClick={() => handleTest(j)}
+                  disabled={testing !== null}
+                >
+                  {testing === j ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  Tes {j === "material_request" ? "MR" : "PO"}
+                </Button>
+              ))}
+            </div>
           </Section>
 
           <Section

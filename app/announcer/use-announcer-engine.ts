@@ -22,6 +22,7 @@ import { playSound } from "@/lib/notifications/sound";
 import {
   AnnouncerSettings,
   LOKASI_KOSONG,
+  ejaanFromSettings,
   isWithinActiveHours,
   loadLastHandledId,
   saveLastHandledId,
@@ -90,7 +91,12 @@ async function announce(
   settings: AnnouncerSettings,
   voices: SpeechSynthesisVoice[],
 ): Promise<boolean> {
-  const text = buildAnnouncementText(settings.template, data, "speech");
+  const text = buildAnnouncementText(
+    settings.template,
+    data,
+    "speech",
+    ejaanFromSettings(settings),
+  );
 
   if (settings.chime !== "none") {
     playSound(settings.chime, settings.volume);

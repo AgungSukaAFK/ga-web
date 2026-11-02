@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import type { SoundPresetId } from "@/lib/notifications/sound";
+import { DEFAULT_EJAAN } from "@/lib/announcer/speech";
 
 /** Nilai khusus di `lokasi` untuk approver yang lokasi profilnya kosong. */
 export const LOKASI_KOSONG = "__kosong__";
@@ -37,6 +38,9 @@ export type AnnouncerSettings = {
   /** Kalimat diucapkan berapa kali per pengumuman. */
   repeat: number;
   template: string;
+  /** Cara mengucapkan {jenis} - disetel per suara supaya terdengar jelas. */
+  ejaanMR: string;
+  ejaanPO: string;
 };
 
 export const DEFAULT_ANNOUNCER_SETTINGS: AnnouncerSettings = {
@@ -51,7 +55,13 @@ export const DEFAULT_ANNOUNCER_SETTINGS: AnnouncerSettings = {
   chime: "pengumuman",
   repeat: 2,
   template: DEFAULT_TEMPLATE,
+  ejaanMR: DEFAULT_EJAAN.mr,
+  ejaanPO: DEFAULT_EJAAN.po,
 };
+
+export const ejaanFromSettings = (
+  s: Pick<AnnouncerSettings, "ejaanMR" | "ejaanPO">,
+) => ({ mr: s.ejaanMR, po: s.ejaanPO });
 
 const STORAGE_KEY = "ga-announcer-settings";
 const CHANGE_EVENT = "ga-announcer-settings-changed";

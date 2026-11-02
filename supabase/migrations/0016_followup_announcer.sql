@@ -2,7 +2,7 @@
 --
 -- Announcer Follow-up: akun ber-role `announcer` login di PC ber-speaker
 -- (halaman /announcer) dan menyuarakan tiap follow-up approval MR/PO, mis.
--- "Menunggu approval em er, Bapak Agung, dengan kode lima, tujuh, satu".
+-- "Menunggu approval em ar, Bapak Agung, dengan kode lima, tujuh, satu".
 --
 --  1. profiles.sapaan (Bapak/Ibu/Mas/Mba/Kak, NULL = tanpa sapaan) - diatur
 --     admin di User Management, dipakai di kalimat pengumuman.
