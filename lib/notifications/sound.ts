@@ -38,10 +38,51 @@ export function getCtx(): AudioContext | null {
   return sharedAudioCtx;
 }
 
+// Selain "suspended", Safari punya state non-standar "interrupted" (tab
+// disembunyikan, Mac sleep/bangun, layar terkunci, output audio pindah) -
+// dua-duanya perlu resume(), makanya cek "bukan running", bukan "suspended".
+const isRunning = (ctx: AudioContext) =>
+  (ctx.state as string) === "running";
+
 /** Buka kunci audio — panggil dari gesture user pertama (klik/keydown). */
 export function unlockAudio() {
   const ctx = getCtx();
-  if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  if (ctx && !isRunning(ctx)) ctx.resume().catch(() => {});
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Ganti AudioContext dengan yang baru. Obat untuk Safari yang setelah Mac
+ * sleep / ganti perangkat output tetap "running" tapi suaranya hilang
+ * (masih dikirim ke perangkat lama). Context baru cuma dipakai kalau berhasil
+ * jalan tanpa gesture - kalau tidak, yang lama dipertahankan.
+ * Jangan dipanggil saat ada suara yang sedang diputar (akan terpotong).
+ */
+export async function resetAudioContext(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+  if (!Ctor) return false;
+
+  const fresh: AudioContext = new Ctor();
+  await Promise.race([fresh.resume().catch(() => {}), wait(500)]);
+  if (!isRunning(fresh)) {
+    fresh.close().catch(() => {});
+    return false;
+  }
+  const old = sharedAudioCtx;
+  sharedAudioCtx = fresh;
+  old?.close().catch(() => {});
+  return true;
+}
+
+/**
+ * Pastikan AudioContext jalan sebelum memutar suara: resume dulu, kalau masih
+ * macet (mis. Safari "interrupted") coba context baru. false = audio browser
+ * sedang terkunci, perlu klik user.
+ */
+export async function ensureAudioRunning(): Promise<boolean> {
+  return (await tryUnlockAudio()) || resetAudioContext();
 }
 
 /**
@@ -54,13 +95,13 @@ export function unlockAudio() {
 export async function tryUnlockAudio(timeoutMs = 500): Promise<boolean> {
   const ctx = getCtx();
   if (!ctx) return false;
-  if (ctx.state === "running") return true;
-  await Promise.race([
-    ctx.resume().catch(() => {}),
-    new Promise((r) => setTimeout(r, timeoutMs)),
-  ]);
-  return (ctx.state as AudioContextState) === "running";
+  if (isRunning(ctx)) return true;
+  await Promise.race([ctx.resume().catch(() => {}), wait(timeoutMs)]);
+  return isRunning(ctx);
 }
+
+/** State AudioContext saat ini (termasuk "interrupted" Safari), untuk UI. */
+export const getAudioState = (): string | null => getCtx()?.state ?? null;
 
 export type SoundPresetId =
   | "tritone"
@@ -159,7 +200,7 @@ export function playSound(preset: SoundPresetId, volume = 0.6) {
   try {
     const ctx = getCtx();
     if (!ctx) return;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    if (!isRunning(ctx)) ctx.resume().catch(() => {});
 
     const v = Math.max(0, Math.min(1, volume));
     const now = ctx.currentTime;

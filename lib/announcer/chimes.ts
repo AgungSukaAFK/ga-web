@@ -175,7 +175,7 @@ export function playChime(id: string, volume: number): number {
   try {
     const ctx = getCtx();
     if (!ctx) return 0;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    if ((ctx.state as string) !== "running") ctx.resume().catch(() => {});
 
     const master = ctx.createGain();
     master.gain.value = 0.42 * Math.max(0, Math.min(1, volume));

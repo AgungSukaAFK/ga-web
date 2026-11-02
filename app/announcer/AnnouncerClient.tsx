@@ -7,12 +7,13 @@
  * lib/announcer/settings.ts.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
+  VolumeX,
   Loader2,
   MapPin,
   Megaphone,
@@ -27,7 +28,13 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { tryUnlockAudio, unlockAudio } from "@/lib/notifications/sound";
+import {
+  ensureAudioRunning,
+  getAudioState,
+  resetAudioContext,
+  tryUnlockAudio,
+  unlockAudio,
+} from "@/lib/notifications/sound";
 import {
   LOKASI_KOSONG,
   ejaanFromSettings,
@@ -183,6 +190,69 @@ function useNow(intervalMs = 1000) {
   return now;
 }
 
+const AUDIO_CHECK_MS = 2_000;
+// Timer yang "telat" jauh melebihi intervalnya = komputer baru bangun dari
+// sleep.
+const WAKE_GAP_MS = 30_000;
+
+/**
+ * Jaga audio tetap hidup selama standby - terutama Safari, yang setelah Mac
+ * sleep / ganti perangkat output bisa diam padahal AudioContext "running",
+ * atau masuk state "interrupted". AudioContext dibuat ulang saat itu terjadi
+ * (kalau sedang tidak ada suara yang diputar), dan klik/tombol apa pun di
+ * halaman membangunkannya. Return state AudioContext untuk ditampilkan.
+ */
+function useAudioHealth(active: boolean, isPlaying: () => boolean) {
+  const [audioState, setAudioState] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const refresh = () => setAudioState(getAudioState());
+    const resetIfIdle = () => {
+      if (!isPlaying()) resetAudioContext().then(refresh);
+    };
+
+    let last = Date.now();
+    const tick = setInterval(() => {
+      const now = Date.now();
+      if (
+        document.visibilityState === "visible" &&
+        now - last > WAKE_GAP_MS
+      ) {
+        resetIfIdle();
+      }
+      last = now;
+      refresh();
+    }, AUDIO_CHECK_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        ensureAudioRunning().then(refresh);
+      }
+    };
+    const onGesture = () => {
+      unlockAudio();
+      setTimeout(refresh, 300);
+    };
+    const devices = navigator.mediaDevices;
+    devices?.addEventListener?.("devicechange", resetIfIdle);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pointerdown", onGesture);
+    window.addEventListener("keydown", onGesture);
+    refresh();
+
+    return () => {
+      clearInterval(tick);
+      devices?.removeEventListener?.("devicechange", resetIfIdle);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+  }, [active, isPlaying]);
+
+  return audioState;
+}
+
 // Layar & tab jangan tidur selama standby. Lock dilepas browser tiap tab
 // tersembunyi, jadi diminta ulang saat terlihat lagi.
 function useWakeLock(active: boolean) {
@@ -299,6 +369,11 @@ export default function AnnouncerClient() {
     settings,
     voices,
   });
+
+  const currentIdRef = useRef(engine.currentId);
+  currentIdRef.current = engine.currentId;
+  const isPlaying = useCallback(() => currentIdRef.current !== null, []);
+  const audioState = useAudioHealth(started, isPlaying);
 
   const handleStart = () => {
     unlockAudio();
@@ -478,6 +553,22 @@ export default function AnnouncerClient() {
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-4 p-4 md:p-6">
+        {started && audioState && audioState !== "running" && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm">
+            <VolumeX className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <div>
+              <p className="font-medium">
+                Audio browser terhenti
+                {audioState === "interrupted" && " (dihentikan Safari)"}
+              </p>
+              <p className="text-muted-foreground">
+                Klik di mana saja di halaman ini untuk mengaktifkan lagi.
+                Sementara itu pengumuman tetap diucapkan suara cadangan, tanpa
+                nada pembuka/penutup.
+              </p>
+            </div>
+          </div>
+        )}
         {settings.lokasi.length === 0 && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />

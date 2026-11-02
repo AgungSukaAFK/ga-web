@@ -234,7 +234,7 @@ export function playBuffer(
 ): Promise<SpeakResult> {
   const ctx = getCtx();
   if (!ctx) return Promise.resolve("error");
-  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  if ((ctx.state as string) !== "running") ctx.resume().catch(() => {});
 
   return new Promise((resolve) => {
     const src = ctx.createBufferSource();

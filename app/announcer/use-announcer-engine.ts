@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { playChime } from "@/lib/announcer/chimes";
+import { ensureAudioRunning, getAudioState } from "@/lib/notifications/sound";
 import {
   AnnouncerSettings,
   LOKASI_KOSONG,
@@ -104,10 +105,16 @@ async function announce(
     ejaanFromSettings(settings),
   );
 
+  // Nada & suara Google lewat Web Audio. Kalau AudioContext macet (mis.
+  // Safari "interrupted" setelah Mac sleep) & tidak bisa dibangunkan tanpa
+  // klik, keduanya dilewati - kalimat tetap diucapkan lewat suara browser
+  // (speechSynthesis tidak bergantung pada AudioContext).
+  const webAudioReady = await ensureAudioRunning();
+
   // Audio Google disiapkan SEBELUM nada pembuka supaya tidak ada jeda
   // canggung antara nada & kalimat.
   let googleAudio: AudioBuffer | null = null;
-  if (settings.engine === "google") {
+  if (settings.engine === "google" && webAudioReady) {
     try {
       googleAudio = await synthesizeGoogle(text, {
         voice: settings.googleVoice,
@@ -119,7 +126,9 @@ async function announce(
     }
   }
 
-  const openingMs = playChime(settings.chime, settings.volume);
+  const openingMs = webAudioReady
+    ? playChime(settings.chime, settings.volume)
+    : 0;
   if (openingMs) await sleep(openingMs);
 
   let voice = pickVoice(voices, settings.voiceURI);
@@ -131,10 +140,12 @@ async function announce(
       pitch: settings.pitch,
       volume: settings.volume,
     };
+    let via = "google";
     let result: SpeakResult = googleAudio
       ? await playBuffer(googleAudio, settings.volume)
       : "error";
     if (result !== "ok" && voice) {
+      via = voice.name;
       result = await speak(text, { voice, ...opts });
     }
     if (result !== "ok") {
@@ -143,16 +154,24 @@ async function announce(
       const fallback = pickFallbackVoice(voices, voice);
       if (fallback) {
         voice = fallback;
+        via = fallback.name;
         result = await speak(text, { voice, ...opts });
       }
     }
+    // Diagnosa (Console DevTools) kalau suara tidak terdengar padahal
+    // tercatat diumumkan.
+    console.info("[Announcer] ucapan", i + 1, {
+      via,
+      result,
+      audioContext: getAudioState(),
+    });
     if (result === "ok") spoken = true;
     if (i < repeat - 1) await sleep(GAP_BETWEEN_REPEATS_MS);
   }
 
   // Penutup cuma kalau kalimatnya benar-benar terucap - kalau gagal,
   // pengumuman diulang dari nada pembuka.
-  if (spoken) {
+  if (spoken && webAudioReady) {
     await sleep(GAP_BEFORE_CLOSING_CHIME_MS);
     const closingMs = playChime(settings.chimeClose, settings.volume);
     if (closingMs) await sleep(closingMs);
