@@ -26,6 +26,13 @@ export type AnnouncerSettings = {
   /** "HH:MM", jam lokal PC. */
   startTime: string;
   endTime: string;
+  /**
+   * "google" = Google Cloud TTS (lib/announcer/google-tts.ts), otomatis
+   * kembali ke suara browser kalau gagal. "browser" = Web Speech API saja.
+   */
+  engine: "google" | "browser";
+  /** Nama suara Google, mis. "id-ID-Chirp3-HD-Kore". */
+  googleVoice: string;
   /** voiceURI SpeechSynthesisVoice. null = pilih otomatis suara Indonesia terbaik. */
   voiceURI: string | null;
   rate: number;
@@ -55,6 +62,8 @@ export const DEFAULT_ANNOUNCER_SETTINGS: AnnouncerSettings = {
   activeDays: [1, 2, 3, 4, 5],
   startTime: "08:00",
   endTime: "17:00",
+  engine: "google",
+  googleVoice: "id-ID-Chirp3-HD-Kore",
   voiceURI: null,
   rate: 0.9,
   pitch: 1,

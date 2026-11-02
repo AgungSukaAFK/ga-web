@@ -44,8 +44,15 @@ import {
   TEMPLATE_PLACEHOLDERS,
   buildAnnouncementText,
   indonesianVoices,
+  voiceGender,
   voiceLabel,
 } from "@/lib/announcer/speech";
+import {
+  GoogleVoice,
+  googleVoiceLabel,
+  googleVoiceSupportsPitch,
+  sortGoogleVoices,
+} from "@/lib/announcer/google-tts";
 
 // Urutan tampil Senin..Minggu, nilai = Date.getDay().
 const DAYS: { value: number; label: string }[] = [
@@ -57,6 +64,11 @@ const DAYS: { value: number; label: string }[] = [
   { value: 6, label: "Sab" },
   { value: 0, label: "Min" },
 ];
+
+const ENGINE_OPTIONS = [
+  { value: "google", label: "Google Cloud", hint: "suara HD, pakai kuota" },
+  { value: "browser", label: "Browser saja", hint: "gratis, tanpa kuota" },
+] as const;
 
 const LOKASI_OPTIONS = [
   ...dataLokasi.map((l) => ({ value: l.value, label: l.label })),
@@ -113,6 +125,7 @@ function SliderRow({
   max,
   step,
   onChange,
+  hint,
 }: {
   label: string;
   value: number;
@@ -121,6 +134,7 @@ function SliderRow({
   max: number;
   step: number;
   onChange: (v: number) => void;
+  hint?: string;
 }) {
   return (
     <div className="space-y-2">
@@ -137,6 +151,7 @@ function SliderRow({
         step={step}
         onValueChange={([v]) => onChange(v)}
       />
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -218,6 +233,8 @@ export function AnnouncerSettingsSheet({
   settings,
   update,
   voices,
+  googleVoices,
+  googleVoicesError,
   onTest,
   onLogout,
 }: {
@@ -226,14 +243,49 @@ export function AnnouncerSettingsSheet({
   settings: AnnouncerSettings;
   update: (patch: Partial<AnnouncerSettings>) => void;
   voices: SpeechSynthesisVoice[];
-  onTest: (jenis: AnnouncementTextData["resource_type"]) => Promise<void>;
+  /** null = masih dimuat. */
+  googleVoices: GoogleVoice[] | null;
+  googleVoicesError: string | null;
+  /** `cadangan` = paksa suara browser, untuk memastikan cadangannya jalan. */
+  onTest: (
+    jenis: AnnouncementTextData["resource_type"],
+    cadangan?: boolean,
+  ) => Promise<void>;
   onLogout: () => void;
 }) {
-  const [testing, setTesting] = useState<
-    AnnouncementTextData["resource_type"] | null
-  >(null);
+  const [testing, setTesting] = useState<string | null>(null);
+
+  const sortedGoogleVoices = sortGoogleVoices(googleVoices ?? []);
+  const googleVoiceGroups = [
+    {
+      label: "Pria",
+      voices: sortedGoogleVoices.filter((v) => v.gender === "MALE"),
+    },
+    {
+      label: "Wanita",
+      voices: sortedGoogleVoices.filter((v) => v.gender === "FEMALE"),
+    },
+    {
+      label: "Lainnya",
+      voices: sortedGoogleVoices.filter(
+        (v) => v.gender !== "MALE" && v.gender !== "FEMALE",
+      ),
+    },
+  ];
 
   const voiceOptions = indonesianVoices(voices);
+  const hasOfflineVoice = voiceOptions.some((v) => v.localService);
+  const voiceGroups = [
+    {
+      label: "Pria",
+      voices: voiceOptions.filter((v) => voiceGender(v) === "pria"),
+    },
+    {
+      label: "Wanita",
+      voices: voiceOptions.filter((v) => voiceGender(v) === "wanita"),
+    },
+    { label: "Lainnya", voices: voiceOptions.filter((v) => !voiceGender(v)) },
+  ];
   const ejaan = ejaanFromSettings(settings);
 
   const toggleLokasi = (value: string, checked: boolean) =>
@@ -250,10 +302,13 @@ export function AnnouncerSettingsSheet({
         : [...settings.activeDays, day],
     });
 
-  const handleTest = async (jenis: AnnouncementTextData["resource_type"]) => {
-    setTesting(jenis);
+  const handleTest = async (
+    jenis: AnnouncementTextData["resource_type"],
+    cadangan = false,
+  ) => {
+    setTesting(cadangan ? "cadangan" : jenis);
     try {
-      await onTest(jenis);
+      await onTest(jenis, cadangan);
     } finally {
       setTesting(null);
     }
@@ -367,10 +422,74 @@ export function AnnouncerSettingsSheet({
 
           <Section
             title="Suara"
-            description="Daftar suara tergantung browser. Di Windows, Microsoft Edge punya suara Indonesia natural (Ardi / Gadis)."
+            description="Cuma suara Bahasa Indonesia. Kalau Google gagal atau kuotanya habis, otomatis pakai suara cadangan dari browser."
           >
             <div className="space-y-1.5">
-              <Label>Suara</Label>
+              <Label>Mesin suara</Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {ENGINE_OPTIONS.map((e) => (
+                  <Button
+                    key={e.value}
+                    type="button"
+                    variant={settings.engine === e.value ? "default" : "outline"}
+                    aria-pressed={settings.engine === e.value}
+                    onClick={() => update({ engine: e.value })}
+                    className="h-auto flex-col gap-0 py-2"
+                  >
+                    <span>{e.label}</span>
+                    <span className="text-[11px] font-normal opacity-80">
+                      {e.hint}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {settings.engine === "google" && (
+              <div className="space-y-1.5">
+                <Label>Suara Google</Label>
+                {googleVoicesError ? (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                    Daftar suara Google tidak bisa dimuat ({googleVoicesError}).
+                    Pengumuman memakai suara cadangan.
+                  </p>
+                ) : (
+                  <Select
+                    value={settings.googleVoice}
+                    onValueChange={(googleVoice) => update({ googleVoice })}
+                    disabled={!googleVoices}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue
+                        placeholder={googleVoices ? "Pilih suara" : "Memuat…"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {googleVoiceGroups.map(
+                        (g) =>
+                          g.voices.length > 0 && (
+                            <SelectGroup key={g.label}>
+                              <SelectLabel>{g.label}</SelectLabel>
+                              {g.voices.map((v) => (
+                                <SelectItem key={v.name} value={v.name}>
+                                  {googleVoiceLabel(v.name)}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label>
+                {settings.engine === "google"
+                  ? "Suara cadangan (browser)"
+                  : "Suara"}
+              </Label>
               <Select
                 value={
                   voiceOptions.some((v) => v.voiceURI === settings.voiceURI)
@@ -388,15 +507,18 @@ export function AnnouncerSettingsSheet({
                   <SelectItem value="auto">
                     Otomatis (suara terbaik yang tersedia)
                   </SelectItem>
-                  {voiceOptions.length > 0 && (
-                    <SelectGroup>
-                      <SelectLabel>Suara Bahasa Indonesia</SelectLabel>
-                      {voiceOptions.map((v) => (
-                        <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                          {voiceLabel(v)}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
+                  {voiceGroups.map(
+                    (g) =>
+                      g.voices.length > 0 && (
+                        <SelectGroup key={g.label}>
+                          <SelectLabel>{g.label}</SelectLabel>
+                          {g.voices.map((v) => (
+                            <SelectItem key={v.voiceURI} value={v.voiceURI}>
+                              {voiceLabel(v)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ),
                   )}
                 </SelectContent>
               </Select>
@@ -404,6 +526,14 @@ export function AnnouncerSettingsSheet({
                 <p className="text-xs text-amber-600 dark:text-amber-400">
                   Browser ini tidak punya suara Bahasa Indonesia. Pakai
                   Microsoft Edge (disarankan) atau Google Chrome.
+                </p>
+              )}
+              {voiceOptions.length > 0 && !hasOfflineVoice && (
+                <p className="text-xs text-muted-foreground">
+                  Belum ada suara Indonesia offline. Supaya tetap bersuara
+                  walau Google & internet bermasalah, pasang paket suara di
+                  Windows: Settings, Time &amp; language, Speech, Add voices,
+                  Bahasa Indonesia.
                 </p>
               )}
             </div>
@@ -451,6 +581,12 @@ export function AnnouncerSettingsSheet({
               max={1.5}
               step={0.05}
               onChange={(pitch) => update({ pitch })}
+              hint={
+                settings.engine === "google" &&
+                !googleVoiceSupportsPitch(settings.googleVoice)
+                  ? "Suara Google HD tidak bisa diubah nadanya; pengaturan ini cuma berlaku untuk suara cadangan."
+                  : undefined
+              }
             />
             <SliderRow
               label="Volume"
@@ -575,6 +711,22 @@ export function AnnouncerSettingsSheet({
                   Tes {j === "material_request" ? "MR" : "PO"}
                 </Button>
               ))}
+              {settings.engine === "google" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="col-span-2"
+                  onClick={() => handleTest("material_request", true)}
+                  disabled={testing !== null}
+                >
+                  {testing === "cadangan" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  Tes suara cadangan (tanpa Google)
+                </Button>
+              )}
             </div>
           </Section>
 

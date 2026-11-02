@@ -150,24 +150,35 @@ export const indonesianVoices = (voices: SpeechSynthesisVoice[]) =>
     .filter(isIndonesianVoice)
     .sort((a, b) => voiceScore(b) - voiceScore(a));
 
+export type VoiceGender = "pria" | "wanita";
+
 // Suara Indonesia yang umum ada di Edge/Chrome/Windows/macOS.
-const KNOWN_VOICES: { match: RegExp; nama: string; jenis: string }[] = [
-  { match: /ardi/i, nama: "Ardi", jenis: "pria" },
-  { match: /gadis/i, nama: "Gadis", jenis: "wanita" },
-  { match: /andika/i, nama: "Andika", jenis: "pria" },
-  { match: /damayanti/i, nama: "Damayanti", jenis: "wanita" },
-  { match: /google/i, nama: "Google Bahasa Indonesia", jenis: "wanita" },
+const KNOWN_VOICES: { match: RegExp; nama: string; gender: VoiceGender }[] = [
+  { match: /ardi/i, nama: "Ardi", gender: "pria" },
+  { match: /gadis/i, nama: "Gadis", gender: "wanita" },
+  { match: /andika/i, nama: "Andika", gender: "pria" },
+  { match: /damayanti/i, nama: "Damayanti", gender: "wanita" },
+  { match: /google/i, nama: "Google Bahasa Indonesia", gender: "wanita" },
 ];
 
-/** Label rapi untuk pilihan suara, mis. "Ardi (pria, natural, butuh internet)". */
+/** null = suara tak dikenal, jenis kelaminnya tidak diketahui. */
+export const voiceGender = (v: SpeechSynthesisVoice): VoiceGender | null =>
+  KNOWN_VOICES.find((k) => k.match.test(v.name))?.gender ?? null;
+
+/**
+ * Label rapi untuk pilihan suara, mis. "Ardi (natural, butuh internet)" -
+ * jenis kelamin tidak ditulis karena pilihan sudah dikelompokkan per
+ * Pria/Wanita.
+ */
 export function voiceLabel(v: SpeechSynthesisVoice): string {
   const known = KNOWN_VOICES.find((k) => k.match.test(v.name));
   const nama =
     known?.nama ??
     v.name.replace(/\s*[-(].*(indonesia|indonesian).*$/i, "").trim();
   const detail = [
-    known?.jenis,
     /natural|neural/i.test(v.name) ? "natural" : null,
+    // Versi macOS yang diunduh terpisah, jauh lebih jernih dari bawaan.
+    /enhanced|premium|ditingkatkan/i.test(v.name) ? "kualitas tinggi" : null,
     v.localService ? "offline" : "butuh internet",
   ].filter(Boolean);
   return `${nama || v.name} (${detail.join(", ")})`;

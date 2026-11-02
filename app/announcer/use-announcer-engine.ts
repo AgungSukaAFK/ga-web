@@ -29,11 +29,13 @@ import {
 } from "@/lib/announcer/settings";
 import {
   AnnouncementTextData,
+  SpeakResult,
   buildAnnouncementText,
   pickFallbackVoice,
   pickVoice,
   speak,
 } from "@/lib/announcer/speech";
+import { playBuffer, synthesizeGoogle } from "@/lib/announcer/google-tts";
 import {
   fetchAnnouncementsAfter,
   fetchRecentAnnouncements,
@@ -79,7 +81,17 @@ export const matchesLokasi = (
   lokasi: string[],
 ) => lokasi.includes(row.approver_lokasi || LOKASI_KOSONG);
 
-/** Satu pengumuman: nada pembuka, kalimat diulang `repeat` kali, nada penutup. */
+/**
+ * Satu pengumuman: nada pembuka, kalimat diulang `repeat` kali, nada penutup.
+ *
+ * Urutan suara (cuma Bahasa Indonesia, tidak pernah suara bahasa lain):
+ *  1. Google Cloud TTS (kalau mesin "google")
+ *  2. Suara cadangan browser pilihan / terbaik (mis. Edge Ardi/Gadis)
+ *  3. Suara Indonesia offline di PC (mis. Windows Andika) - tetap jalan
+ *     tanpa internet & tanpa Google
+ * Kalau ketiganya tidak ada/gagal, nada tetap bunyi & pengumuman tercatat
+ * "Gagal bersuara" di layar.
+ */
 async function announce(
   data: AnnouncementTextData,
   settings: AnnouncerSettings,
@@ -91,6 +103,21 @@ async function announce(
     "speech",
     ejaanFromSettings(settings),
   );
+
+  // Audio Google disiapkan SEBELUM nada pembuka supaya tidak ada jeda
+  // canggung antara nada & kalimat.
+  let googleAudio: AudioBuffer | null = null;
+  if (settings.engine === "google") {
+    try {
+      googleAudio = await synthesizeGoogle(text, {
+        voice: settings.googleVoice,
+        rate: settings.rate,
+        pitch: settings.pitch,
+      });
+    } catch (err: any) {
+      console.warn("[Announcer] Google TTS dilewati:", err?.message);
+    }
+  }
 
   const openingMs = playChime(settings.chime, settings.volume);
   if (openingMs) await sleep(openingMs);
@@ -104,8 +131,13 @@ async function announce(
       pitch: settings.pitch,
       volume: settings.volume,
     };
-    let result = await speak(text, { voice, ...opts });
-    if (result === "error") {
+    let result: SpeakResult = googleAudio
+      ? await playBuffer(googleAudio, settings.volume)
+      : "error";
+    if (result !== "ok" && voice) {
+      result = await speak(text, { voice, ...opts });
+    }
+    if (result !== "ok") {
       // Mis. suara Online (Natural) Edge saat internet putus -> pakai suara
       // Indonesia offline untuk sisa pengumuman ini.
       const fallback = pickFallbackVoice(voices, voice);

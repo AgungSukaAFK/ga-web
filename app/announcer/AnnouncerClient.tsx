@@ -30,15 +30,26 @@ import { toast } from "@/lib/toast";
 import { tryUnlockAudio, unlockAudio } from "@/lib/notifications/sound";
 import {
   LOKASI_KOSONG,
+  ejaanFromSettings,
   isWithinActiveHours,
   useAnnouncerSettings,
 } from "@/lib/announcer/settings";
 import {
   buildAnnouncementText,
   getSynth,
+  indonesianVoices,
   isIndonesianVoice,
   loadVoices,
+  pickVoice,
+  voiceLabel,
 } from "@/lib/announcer/speech";
+import {
+  GoogleVoice,
+  fetchGoogleVoices,
+  getGoogleTtsState,
+  googleVoiceLabel,
+  useGoogleTtsState,
+} from "@/lib/announcer/google-tts";
 import {
   AnnouncerItemStatus,
   matchesLokasi,
@@ -76,6 +87,69 @@ const STATUS_CLASS: Record<AnnouncerItemStatus, string> = {
 };
 
 const DAY_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+
+const GOOGLE_REFRESH_MS = 10 * 60_000;
+
+const formatNumber = (n: number) => n.toLocaleString("id-ID");
+
+function StatusCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5 rounded-lg border bg-card p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function QuotaBar({
+  label,
+  used,
+  limit,
+  charsPerAnnouncement,
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  charsPerAnnouncement: number;
+}) {
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 100;
+  const sisa = Math.max(0, limit - used);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums">
+          sisa {formatNumber(sisa)} / {formatNumber(limit)}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full",
+            pct >= 90
+              ? "bg-red-500"
+              : pct >= 70
+                ? "bg-amber-500"
+                : "bg-emerald-500",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        ± {formatNumber(Math.floor(sisa / Math.max(1, charsPerAnnouncement)))}{" "}
+        pengumuman lagi
+      </p>
+    </div>
+  );
+}
 
 const formatTime = (date: Date, withSeconds = false) =>
   date.toLocaleTimeString("id-ID", {
@@ -154,6 +228,11 @@ export default function AnnouncerClient() {
   const [started, setStarted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showOtherLokasi, setShowOtherLokasi] = useState(false);
+  const [googleVoices, setGoogleVoices] = useState<GoogleVoice[] | null>(null);
+  const [googleVoicesError, setGoogleVoicesError] = useState<string | null>(
+    null,
+  );
+  const googleTts = useGoogleTtsState();
   const now = useNow();
 
   useEffect(() => {
@@ -188,6 +267,22 @@ export default function AnnouncerClient() {
     return () => synth?.removeEventListener("voiceschanged", refresh);
   }, []);
 
+  // Daftar suara Google + pemakaian kuota; diulang berkala supaya sisa kuota
+  // di layar ikut terbarui walau dipakai PC announcer lain.
+  useEffect(() => {
+    if (auth !== "ok") return;
+    const load = () =>
+      fetchGoogleVoices()
+        .then((v) => {
+          setGoogleVoices(v);
+          setGoogleVoicesError(null);
+        })
+        .catch((err) => setGoogleVoicesError(err.message));
+    load();
+    const t = setInterval(load, GOOGLE_REFRESH_MS);
+    return () => clearInterval(t);
+  }, [auth]);
+
   // PC yang dibuka dengan flag autoplay (lihat panduan di Pengaturan)
   // langsung standby tanpa perlu klik.
   useEffect(() => {
@@ -220,14 +315,26 @@ export default function AnnouncerClient() {
 
   const handleTest = async (
     jenis: keyof typeof SAMPLE_ANNOUNCEMENT,
+    cadangan = false,
   ) => {
     unlockAudio();
-    const ok = await engine.test(SAMPLE_ANNOUNCEMENT[jenis]);
+    const ok = await engine.test(
+      SAMPLE_ANNOUNCEMENT[jenis],
+      cadangan ? { ...settings, engine: "browser" } : undefined,
+    );
     if (!ok) {
       toast.error("Tes suara gagal", {
-        description:
-          "Suara tidak keluar. Cek pilihan suara, volume, atau tunggu pengumuman yang sedang diputar selesai.",
+        description: cadangan
+          ? "Suara cadangan tidak keluar. Pastikan browser punya suara Bahasa Indonesia (pakai Microsoft Edge) dan volume tidak nol."
+          : "Suara tidak keluar. Cek pilihan suara, volume, atau tunggu pengumuman yang sedang diputar selesai.",
       });
+    } else if (!cadangan && settings.engine === "google") {
+      const { error } = getGoogleTtsState();
+      if (error) {
+        toast.warning("Google tidak dipakai, suara cadangan berhasil", {
+          description: error,
+        });
+      }
     }
   };
 
@@ -238,6 +345,19 @@ export default function AnnouncerClient() {
 
   const activeNow = now ? isWithinActiveHours(settings, now) : false;
   const hasIndonesianVoice = voices.some(isIndonesianVoice);
+  const fallbackVoice = pickVoice(voices, settings.voiceURI);
+  const offlineVoice = indonesianVoices(voices).find((v) => v.localService);
+  const googleInUse =
+    settings.engine === "google" &&
+    !googleVoicesError &&
+    googleTts.pausedUntil <= (now?.getTime() ?? 0);
+  // Perkiraan karakter per pengumuman (kalimat diulang = 1x panggilan Google).
+  const charsPerAnnouncement = buildAnnouncementText(
+    settings.template,
+    SAMPLE_ANNOUNCEMENT.material_request,
+    "speech",
+    ejaanFromSettings(settings),
+  ).length;
   const current = engine.items.find((it) => it.id === engine.currentId);
 
   const lokasiSummary = useMemo(() => {
@@ -374,11 +494,94 @@ export default function AnnouncerClient() {
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div>
-              Browser ini tidak punya suara Bahasa Indonesia. Pakai Microsoft
-              Edge (disarankan) atau Google Chrome supaya pengucapannya jelas.
+              Browser ini tidak punya suara Bahasa Indonesia, jadi tidak ada
+              suara cadangan kalau Google gagal. Pakai Microsoft Edge
+              (disarankan) atau Google Chrome.
             </div>
           </div>
         )}
+
+        <section
+          className={cn(
+            "grid gap-3",
+            settings.engine === "google" ? "md:grid-cols-3" : "md:grid-cols-2",
+          )}
+        >
+          <StatusCard title="Mesin suara">
+            {settings.engine === "google" ? (
+              googleInUse ? (
+                <>
+                  <p className="truncate font-medium">
+                    Google · {googleVoiceLabel(settings.googleVoice)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Kalau gagal, otomatis pakai suara cadangan
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-amber-700 dark:text-amber-300">
+                    Sementara pakai suara cadangan
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {googleTts.error ?? googleVoicesError}
+                  </p>
+                </>
+              )
+            ) : (
+              <>
+                <p className="font-medium">Browser saja</p>
+                <p className="text-xs text-muted-foreground">
+                  Google Cloud tidak dipakai
+                </p>
+              </>
+            )}
+          </StatusCard>
+
+          {settings.engine === "google" && (
+            <StatusCard title="Kuota gratis Google (karakter)">
+              {googleTts.usage ? (
+                <>
+                  <QuotaBar
+                    label="Hari ini"
+                    used={googleTts.usage.today}
+                    limit={googleTts.usage.dailyLimit}
+                    charsPerAnnouncement={charsPerAnnouncement}
+                  />
+                  <QuotaBar
+                    label="Bulan ini"
+                    used={googleTts.usage.month}
+                    limit={googleTts.usage.monthlyLimit}
+                    charsPerAnnouncement={charsPerAnnouncement}
+                  />
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {googleVoicesError
+                    ? "Tidak tersedia"
+                    : googleVoices
+                      ? "Data pemakaian belum tersedia"
+                      : "Memuat…"}
+                </p>
+              )}
+            </StatusCard>
+          )}
+
+          <StatusCard title="Suara cadangan">
+            {fallbackVoice ? (
+              <p className="truncate font-medium">{voiceLabel(fallbackVoice)}</p>
+            ) : (
+              <p className="font-medium text-red-600 dark:text-red-400">
+                Tidak ada suara Indonesia
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {offlineVoice
+                ? `Tanpa internet: ${voiceLabel(offlineVoice)}`
+                : "Belum ada suara offline (lihat Pengaturan)"}
+            </p>
+          </StatusCard>
+        </section>
 
         <section className="grid gap-4 rounded-xl border bg-card p-5 md:grid-cols-[auto_1fr] md:items-center md:gap-8 md:p-6">
           <div>
@@ -546,6 +749,8 @@ export default function AnnouncerClient() {
         settings={settings}
         update={update}
         voices={voices}
+        googleVoices={googleVoices}
+        googleVoicesError={googleVoicesError}
         onTest={handleTest}
         onLogout={handleLogout}
       />
