@@ -27,6 +27,7 @@ import {
   isPaymentValidatorApproval,
   getApprovedReceiverStep,
   isPoPaid,
+  INACTIVE_DOC_STATUS_FILTER,
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
   PO_STATUS_FULL_RECEIVED,
@@ -200,6 +201,7 @@ const MR_PO_INELIGIBLE_STATUS_REASONS: Record<string, string> = {
   "On Hold": "MR sedang di-hold",
   "Pending Approval": "Approval MR belum selesai",
   Rejected: "MR ditolak",
+  Cancelled: "MR dibatalkan",
   [PO_STATUS_FULL_RECEIVED]: "MR sudah selesai (Full Received)",
 };
 
@@ -284,7 +286,7 @@ export const fetchMrsForPoPicker = async (
         "mr_id",
         eligibleStatusMrs.map((mr) => mr.id),
       )
-      .neq("status", "Rejected");
+      .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
     if (posError) {
       console.error("Error fetching PO breakdown for MR picker:", posError);
       throw posError;
@@ -454,7 +456,7 @@ export const fetchPoQtyBreakdownForMr = async (
       .from("purchase_orders")
       .select("id, kode_po, status, items")
       .eq("mr_id", mrId)
-      .neq("status", "Rejected"),
+      .not("status", "in", INACTIVE_DOC_STATUS_FILTER),
     supabase
       .from("material_requests")
       .select("orders")
@@ -468,7 +470,7 @@ export const fetchPoQtyBreakdownForMr = async (
   return buildPoQtyBreakdown(data, (mrResult.data?.orders as any[]) || []);
 };
 
-type PoForBreakdown = {
+export type PoForBreakdown = {
   id: number;
   kode_po: string;
   status: string;
@@ -478,7 +480,7 @@ type PoForBreakdown = {
 // Inti fetchPoQtyBreakdownForMr tanpa fetch - dipisah supaya bisa dipakai
 // batch untuk banyak MR sekaligus (fetchMrsForPoPicker). `orders` = Order
 // MR mentah (dibaca manual_po_links & conversion_history-nya).
-const buildPoQtyBreakdown = (
+export const buildPoQtyBreakdown = (
   pos: PoForBreakdown[],
   orders: any[],
 ): Record<string, PoQtyBreakdownEntry[]> => {
@@ -585,7 +587,7 @@ export const fetchPosForMr = async (
     .from("purchase_orders")
     .select("id, kode_po, status, is_asset")
     .eq("mr_id", mrId)
-    .neq("status", "Rejected")
+    .not("status", "in", INACTIVE_DOC_STATUS_FILTER)
     .order("id", { ascending: false });
 
   if (error || !data) return [];
@@ -621,7 +623,7 @@ export const fetchPosForMrItemPartNumber = async (
       "id, kode_po, status, items, receive_record, discount, postage, tax, tax_included, ppn_rate, pph_rate, total_price",
     )
     .eq("mr_id", mrId)
-    .neq("status", "Rejected");
+    .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
 
   if (error || !data) return [];
 
@@ -1112,7 +1114,7 @@ export const fetchReceivedQtyByPartNumber = async (
     .from("purchase_orders")
     .select("id, receive_record")
     .eq("mr_id", mrId)
-    .neq("status", "Rejected");
+    .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
   if (excludePoId) query = query.neq("id", excludePoId);
 
   const [{ data, error }, mrResult] = await Promise.all([

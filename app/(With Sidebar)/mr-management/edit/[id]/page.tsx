@@ -111,7 +111,8 @@ import {
 } from "@/components/ui/searchable-select";
 import { fetchActiveCostCenters, convertMrCompany } from "@/services/mrService";
 import { format } from "date-fns";
-import { DATA_LEVEL, STATUS_OPTIONS } from "@/type/enum";
+import { DATA_LEVEL, DOC_STATUS_CANCELLED, STATUS_OPTIONS } from "@/type/enum";
+import { AdminDocumentActionsMenu } from "@/components/admin-document-actions/AdminDocumentActionsMenu";
 import {
   Popover,
   PopoverContent,
@@ -1162,16 +1163,36 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                 <ArrowLeftRight className="mr-2 h-4 w-4" />
                 Konversi Company
               </Button>
+              <AdminDocumentActionsMenu
+                docType="mr"
+                docId={Number(mr.id)}
+                status={mr.status}
+                actor={
+                  currentUser
+                    ? { id: currentUser.id, name: userProfile?.nama || currentUser.email || "Admin" }
+                    : null
+                }
+                disabled={actionLoading || dirty}
+                disabledReason="Simpan atau batalkan perubahan dulu sebelum menjalankan Aksi Admin."
+                onDone={fetchMrData}
+              />
 
               {/* Direct Status Changer */}
               <div className="flex items-center gap-1">
                 <Label className="text-sm font-medium">Status MR:</Label>
-                <SearchableSelect value={mr.status} onValueChange={handleMrStatusChange}>
+                <SearchableSelect
+                  value={mr.status}
+                  onValueChange={handleMrStatusChange}
+                  disabled={mr.status === DOC_STATUS_CANCELLED}
+                >
                   <SearchableSelectTrigger className="w-[180px]">
                     <SearchableSelectValue placeholder="Ubah Status MR..." />
                   </SearchableSelectTrigger>
                   <SearchableSelectContent>
-                    {STATUS_OPTIONS.map((status) => (
+                    {/* Cancelled cuma lewat Aksi Admin (ada efek lanjutan). */}
+                    {STATUS_OPTIONS.filter(
+                      (s) => s !== DOC_STATUS_CANCELLED || mr.status === DOC_STATUS_CANCELLED,
+                    ).map((status) => (
                       <SearchableSelectItem key={status} value={status}>
                         {status}
                       </SearchableSelectItem>

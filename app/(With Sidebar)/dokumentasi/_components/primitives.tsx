@@ -42,6 +42,7 @@ const DOC_STATUS_COLORS: Record<string, string> = {
   "Partial Receive": `${SOLID} bg-amber-600`,
   "Full Received": `${SOLID} bg-green-500`,
   Rejected: "border-transparent bg-destructive text-destructive-foreground dark:bg-destructive/60",
+  Cancelled: `${SOLID} bg-slate-500`,
 };
 
 const PC_STATUS_COLORS: Record<string, string> = {

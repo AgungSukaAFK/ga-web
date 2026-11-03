@@ -155,10 +155,12 @@ import {
   PO_REF_STATUS_COLOR_DEFAULT,
   DELIVERY_TYPE_OPTIONS,
   MR_ITEM_STATUSES,
+  DOC_STATUS_CANCELLED,
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
   VENDOR_TIPE_LABELS,
 } from "@/type/enum";
+import { CancelledDocumentNotice } from "@/components/admin-document-actions/CancelledDocumentNotice";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
@@ -560,11 +562,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     (po?.items || []).map((i) => [i.part_number, i.qty]),
   );
 
-  // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected) - GA/
+  // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected/Cancelled) - GA/
   // Purchasing perlu bisa cetak & tempel BAST ke paket SEBELUM barang
   // dikirim (QR di dalamnya baru berarti setelah discan pas barang sampai),
   // jadi sengaja TIDAK digantung status pengiriman.
-  const canPrintBast = po?.status !== "Rejected";
+  const canPrintBast =
+    po?.status !== "Rejected" && po?.status !== DOC_STATUS_CANCELLED;
 
   const handlePrintBast = async (company: "GMI" | "GIS" | "LOURDES") => {
     if (!po) return;
@@ -963,6 +966,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     userProfile?.role === "admin" ? getReceiverTurnIndex(po?.approvals) : -1;
   const showManualReceiveButton =
     canManuallyReceiveGoods &&
+    po?.status !== DOC_STATUS_CANCELLED &&
     (po?.status === PO_STATUS_PENDING_RECEIVE ||
       po?.status === PO_STATUS_PARTIAL_RECEIVE ||
       po?.status === PO_STATUS_FULL_RECEIVED ||
@@ -981,6 +985,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   );
   const showEditDpBpButton =
     isDpBpPaymentTerm(po?.payment_term) &&
+    po?.status !== DOC_STATUS_CANCELLED &&
     (isPaymentValidatorForThisPO || userProfile?.role === "admin");
 
   const handleOpenEditDpBp = () => {
@@ -1929,6 +1934,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         );
       case "rejected":
         return <Badge variant="destructive">Rejected</Badge>;
+      case "cancelled":
+        return (
+          <Badge
+            variant="outline"
+            className="border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300"
+          >
+            Cancelled
+          </Badge>
+        );
       default:
         return <Badge>{status || "N/A"}</Badge>;
     }
@@ -2240,7 +2254,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 )}
                 {canEditPO &&
                   po.status !== PO_STATUS_FULL_RECEIVED &&
-                  po.status !== "Rejected" && (
+                  po.status !== "Rejected" &&
+                  po.status !== DOC_STATUS_CANCELLED && (
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/purchase-order/edit/${po.id}`}>
                         <EditIcon className="mr-2 h-4 w-4" /> Edit PO
@@ -2251,6 +2266,16 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </div>
             </div>
           </div>
+
+          {po.status === DOC_STATUS_CANCELLED && (
+            <CancelledDocumentNotice
+              className="col-span-12"
+              docLabel="PO"
+              cancelledAt={po.cancelled_at}
+              reason={po.cancel_reason}
+              refundNote={po.refund_note}
+            />
+          )}
 
           <div className="col-span-12 lg:col-span-8 space-y-6">
             <Content title="Informasi Utama">

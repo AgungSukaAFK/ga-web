@@ -33,6 +33,8 @@ import {
 import {
   APPROVAL_TYPE_PAYMENT_APPROVAL,
   APPROVAL_TYPE_RECEIVER,
+  DOC_STATUS_CANCELLED,
+  INACTIVE_DOC_STATUS_FILTER,
   PO_STATUS_FULL_RECEIVED,
   PO_STATUS_PARTIAL_RECEIVE,
   PO_STATUS_PENDING_RECEIVE,
@@ -117,6 +119,19 @@ const prepareOverride = <TStep extends OverrideApprovalStep>(
     (statusChanged && db.status !== input.baselineStatus)
   ) {
     throw staleError(docLabel);
+  }
+
+  // Batal/buka kembali punya efek lanjutan sendiri (item MR dilepas, PO
+  // terkait, budget) - cuma lewat Aksi Admin, bukan form ini.
+  if (db.status === DOC_STATUS_CANCELLED) {
+    throw new Error(
+      `${docLabel} ini sudah dibatalkan - pakai "Aksi Admin > Buka Kembali" untuk mengaktifkannya lagi.`,
+    );
+  }
+  if (input.requestedStatus === DOC_STATUS_CANCELLED && statusChanged) {
+    throw new Error(
+      `Untuk membatalkan ${docLabel}, pakai "Aksi Admin > Batalkan ${docLabel}".`,
+    );
   }
 
   const changes = approvalsChanged
@@ -229,7 +244,7 @@ export const planAdminMrApprovalUpdate = async (
       .from("purchase_orders")
       .select("kode_po")
       .eq("mr_id", mrId)
-      .neq("status", "Rejected");
+      .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
     if (activePos && activePos.length > 0) {
       throw new Error(
         `MR ini sudah punya PO aktif (${activePos.map((p) => p.kode_po).join(", ")}) - tidak bisa dimundurkan ke "${status}".`,
@@ -540,7 +555,7 @@ export const planAdminPoApprovalUpdate = async (
       .select("kode_po, items")
       .eq("mr_id", base.mrId)
       .neq("id", poId)
-      .neq("status", "Rejected");
+      .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
     const partNumbers = new Set(
       base.items.map((i) => i.part_number).filter(Boolean),
     );

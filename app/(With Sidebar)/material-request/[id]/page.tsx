@@ -131,7 +131,9 @@ import {
   MR_ITEM_BAST_ELIGIBLE_STATUSES,
   PO_REF_STATUS_COLORS,
   PO_REF_STATUS_COLOR_DEFAULT,
+  DOC_STATUS_CANCELLED,
 } from "@/type/enum";
+import { CancelledDocumentNotice } from "@/components/admin-document-actions/CancelledDocumentNotice";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { CompanyLogoBadge } from "@/components/company-logo-badge";
@@ -1526,6 +1528,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         return <Badge variant="outline">Approved</Badge>;
       case "rejected":
         return <Badge variant="destructive">Rejected</Badge>;
+      case "cancelled":
+        return (
+          <Badge
+            variant="outline"
+            className="border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300"
+          >
+            Cancelled
+          </Badge>
+        );
       case "pending approval":
         return <Badge variant="secondary">Pending Approval</Badge>;
       case "pending validation":
@@ -1777,6 +1788,15 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <Badge variant="outline">{mr.level || "OPEN 1"}</Badge>
             </div>
           </div>
+
+          {mr.status === DOC_STATUS_CANCELLED && (
+            <CancelledDocumentNotice
+              className="col-span-12"
+              docLabel="MR"
+              cancelledAt={mr.cancelled_at}
+              reason={mr.cancel_reason}
+            />
+          )}
 
           {/* Requester bisa langsung menyelesaikan barang yang masih dalam
               pengiriman dari sini (boleh upload file/galeri) - tanpa harus

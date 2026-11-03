@@ -61,6 +61,11 @@ export interface Order {
   // (fetchPoQtyBreakdownForMr/fetchReceivedQtyByPartNumber) tetap bisa
   // menjumlahkan qty dari identitas lama + baru sebagai 1 item yang sama.
   conversion_history?: MrConversionRecord[];
+  // True kalau item ini ikut "Cancelled" karena MR-nya dibatalkan admin
+  // (lihat cancelMr di services/adminDocumentActionService.ts) - dipakai
+  // "Buka Kembali MR" utk mengaktifkan lagi item ini saja, bukan item yang
+  // memang sudah dibatalkan satu per satu sebelumnya.
+  cancelled_with_mr?: boolean;
 }
 
 export interface MrConversionRecord {
@@ -272,6 +277,11 @@ export interface MaterialRequest {
   // selesai, atau kalau MR ini sudah Full Received dari sebelum fitur ini
   // ada (data lama, tidak sempat tercatat - lihat formatAge di lib/utils.ts).
   full_received_at?: string | null;
+
+  // Jejak "Aksi Admin > Batalkan MR" (0018_admin_document_actions.sql) -
+  // dikosongkan lagi saat MR dibuka kembali.
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
 }
 
 export interface POItem {
@@ -303,6 +313,7 @@ export interface PurchaseOrderPayload {
     | "Partial Receive"
     | "Full Received"
     | "Rejected"
+    | "Cancelled"
     | "Draft"
     | "Ordered";
   dp_bp_shipping_type?: "ship_after_dp" | "ship_after_full_payment" | null;
@@ -567,6 +578,10 @@ export interface PurchaseOrderDetail extends Omit<
     email?: string;
   } | null;
   items: POItem[];
+  // Lihat komentar yang sama di PurchaseOrder.
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  refund_note?: string | null;
   material_requests:
     | (MaterialRequest & {
         users_with_profiles: { nama: string } | null;
@@ -615,6 +630,12 @@ export interface PurchaseOrder {
   dp_paid?: boolean | null;
   bp_paid?: boolean | null;
   receive_record?: ReceiveRecord | null;
+
+  // Jejak "Aksi Admin > Batalkan PO" (0018_admin_document_actions.sql) -
+  // refund_note wajib kalau PO sudah dibayar saat dibatalkan.
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  refund_note?: string | null;
 
   pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
   pph_rate?: number | null; // Persentase (misal: 1.5)
@@ -701,11 +722,15 @@ export type NotificationType =
   | "mr_fully_approved"
   | "mr_rejected"
   | "mr_held"
+  | "mr_cancelled"
+  | "mr_reopened"
   | "po_submitted"
   | "po_validated"
   | "po_approved_step"
   | "po_fully_approved"
   | "po_rejected"
+  | "po_cancelled"
+  | "po_reopened"
   | "pc_submitted"
   | "pc_routed"
   | "pc_approved_step"

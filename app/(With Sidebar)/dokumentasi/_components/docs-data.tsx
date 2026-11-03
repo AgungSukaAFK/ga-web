@@ -1001,6 +1001,7 @@ export const STATUS_GROUPS: {
       { status: "Full Received", domain: "doc", main: true, desc: "Semua barang sudah dikonfirmasi diterima user. Siklus MR selesai." },
       { status: "On Hold", domain: "doc", desc: "Ditahan GA (mis. menunggu info tambahan). Requester bisa memperbaiki lalu submit ulang." },
       { status: "Rejected", domain: "doc", desc: "Ditolak GA saat validasi atau oleh salah satu approver." },
+      { status: "Cancelled", domain: "doc", desc: "Dibatalkan admin lewat Aksi Admin di MR Management. Semua barang & PO aktifnya ikut dibatalkan dan budget Cost Center dikembalikan. Admin bisa membuka kembali MR ini." },
     ],
   },
   {
@@ -1016,7 +1017,7 @@ export const STATUS_GROUPS: {
       { status: "Completed", label: "Barang Diterima User", domain: "item", main: true, desc: "Requester sudah upload bukti/scan QR. Dipakai untuk laporan." },
       { status: "Pending BAST", label: "Pending Terima User", domain: "item", desc: "Status lama (data lama) dengan arti yang sama seperti Dalam Pengiriman: menunggu konfirmasi Requester." },
       { status: "Replaced", label: "Diganti", domain: "item", desc: "Barang disubstitusi dengan barang lain saat proses belanja." },
-      { status: "Cancelled", label: "Dibatalkan", domain: "item", desc: "Dibatalkan, mis. PO-nya di-Reject dan tidak ada PO pengganti." },
+      { status: "Cancelled", label: "Dibatalkan", domain: "item", desc: "Dibatalkan, mis. PO-nya di-Reject dan tidak ada PO pengganti, atau MR-nya dibatalkan admin." },
     ],
   },
   {
@@ -1031,6 +1032,7 @@ export const STATUS_GROUPS: {
       { status: "Partial Receive", domain: "doc", main: true, desc: "Barang sudah di-checklist tapi qty belum sesuai PO. Checklist bisa diedit ulang." },
       { status: "Full Received", domain: "doc", main: true, desc: "Semua barang diterima sesuai qty PO. Ini status akhir PO." },
       { status: "Rejected", domain: "doc", desc: "Ditolak salah satu approver PO." },
+      { status: "Cancelled", domain: "doc", desc: "Dibatalkan admin lewat Aksi Admin di PO Management (PO yang sudah dibayar wajib disertai catatan refund). Barang di MR yang tidak lagi ter-cover PO lain kembali ke Menunggu PO. Admin bisa membuka kembali PO ini." },
     ],
   },
   {

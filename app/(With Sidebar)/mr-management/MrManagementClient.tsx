@@ -820,6 +820,15 @@ export default function MrManagementClient() {
         );
       case "rejected":
         return <Badge variant="destructive">Rejected</Badge>;
+      case "cancelled":
+        return (
+          <Badge
+            variant="outline"
+            className="border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300"
+          >
+            Cancelled
+          </Badge>
+        );
       case "pending approval":
         return <Badge variant="secondary">Pending Approval</Badge>;
       case "pending validation":

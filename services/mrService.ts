@@ -8,6 +8,7 @@ import {
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
   PO_STATUS_FULL_RECEIVED,
+  DOC_STATUS_CANCELLED,
 } from "@/type/enum";
 
 const supabase = createClient();
@@ -897,7 +898,7 @@ export const removeManualPoLink = async (
 
 // Menghitung ulang status MR dari agregat status item-itemnya (best-effort,
 // tidak throw). Mengabaikan status pra-persetujuan (Pending Validation, On
-// Hold, Pending Approval, Rejected) agar tidak "menghidupkan kembali" MR
+// Hold, Pending Approval, Rejected, Cancelled) agar tidak "menghidupkan kembali" MR
 // yang belum/sudah tidak diproses.
 //
 // Status MR seputar penerimaan barang disamakan dengan penamaan status PO
@@ -927,6 +928,7 @@ export const recalculateMrStatus = async (
       "On Hold",
       "Pending Approval",
       "Rejected",
+      DOC_STATUS_CANCELLED,
     ];
     if (PRE_PO_STATUSES.includes(mr.status)) return;
 
@@ -1368,6 +1370,7 @@ const DUPLICATE_CHECK_EXCLUDED_STATUSES = [
   "Completed",
   PO_STATUS_FULL_RECEIVED,
   "Rejected",
+  DOC_STATUS_CANCELLED,
 ];
 
 /**

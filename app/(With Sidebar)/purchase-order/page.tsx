@@ -162,6 +162,7 @@ const STATUS_OPTIONS = [
   "Partial Receive",
   "Full Received",
   "Rejected",
+  "Cancelled",
   "Draft",
   "Ordered",
 ];

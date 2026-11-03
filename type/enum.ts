@@ -28,7 +28,23 @@ export const STATUS_OPTIONS = [
   "Partial Receive",
   "Full Received",
   "Rejected",
+  "Cancelled",
 ];
+
+// Status dokumen MR & PO yang dibatalkan admin lewat "Aksi Admin" (lihat
+// services/adminDocumentActionService.ts) - beda dari "Rejected" (ditolak
+// approver/GA). Cuma bisa di-set/dibuka lagi lewat aksi itu, bukan dropdown
+// status manual.
+export const DOC_STATUS_CANCELLED = "Cancelled";
+
+// MR/PO yang sudah tidak aktif - dikecualikan dari hitungan PO aktif / qty
+// ter-PO. Pakai INACTIVE_DOC_STATUS_FILTER utk query Supabase:
+// `.not("status", "in", INACTIVE_DOC_STATUS_FILTER)`.
+export const INACTIVE_DOC_STATUSES: readonly string[] = [
+  "Rejected",
+  DOC_STATUS_CANCELLED,
+];
+export const INACTIVE_DOC_STATUS_FILTER = `(${INACTIVE_DOC_STATUSES.map((s) => `"${s}"`).join(",")})`;
 
 // Status PO seputar penerimaan barang - "Pending BAST"/"Completed"/"Pending
 // Payment BP" (status PO lama) sudah tidak dipakai lagi, diganti 3 status di
@@ -60,6 +76,8 @@ export const PO_REF_STATUS_COLORS: Record<string, string> = {
     "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
   Rejected:
     "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800",
+  [DOC_STATUS_CANCELLED]:
+    "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600",
 };
 export const PO_REF_STATUS_COLOR_DEFAULT = BLUE_BADGE;
 

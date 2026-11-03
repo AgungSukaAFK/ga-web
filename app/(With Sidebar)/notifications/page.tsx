@@ -103,7 +103,7 @@ const CATEGORIES: Record<
     badge: "bg-green-500",
   },
   ditolak: {
-    label: "Ditolak / Ditahan",
+    label: "Ditolak / Ditahan / Batal",
     types: [
       "mr_rejected",
       "po_rejected",
@@ -111,6 +111,8 @@ const CATEGORIES: Record<
       "pc_return_rejected",
       "pc_cancel_rejected",
       "mr_held",
+      "mr_cancelled",
+      "po_cancelled",
     ],
     icon: AlertOctagon,
     badge: "bg-red-500",
@@ -123,7 +125,7 @@ const CATEGORIES: Record<
   },
   info: {
     label: "Info",
-    types: ["info"],
+    types: ["info", "mr_reopened", "po_reopened"],
     icon: Info,
     badge: "bg-slate-500",
   },

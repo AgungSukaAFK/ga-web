@@ -116,7 +116,12 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { searchVendors } from "@/services/vendorService";
-import { APPROVAL_TYPE_RECEIVER, isMarketplaceVendor } from "@/type/enum";
+import {
+  APPROVAL_TYPE_RECEIVER,
+  DOC_STATUS_CANCELLED,
+  isMarketplaceVendor,
+} from "@/type/enum";
+import { AdminDocumentActionsMenu } from "@/components/admin-document-actions/AdminDocumentActionsMenu";
 import {
   applyAdminPoApprovalEffects,
   computePoStatusAfterApprovalChange,
@@ -439,7 +444,9 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   // PPH State
   const [pphType, setPphType] = useState<string>("none");
 
-  const { dirty } = useUnsavedChanges(poForm, !loading && !!poForm);
+  const { dirty, resetBaseline } = useUnsavedChanges(poForm, !loading && !!poForm);
+  // Dinaikkan setelah Aksi Admin berhasil - memuat ulang PO dari DB.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Helper Cost Center Name
   const getCostCenterName = (mrData: any) => {
@@ -511,6 +518,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
           },
         };
         setPoForm(initialData as any);
+        resetBaseline();
         originalAssetRef.current = {
           is_asset: !!initialData.is_asset,
           kode_po: initialData.kode_po,
@@ -577,7 +585,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [poId]);
+  }, [poId, reloadKey]);
 
   // --- Logika Kalkulasi Pajak/Total ---
   useEffect(() => {
@@ -1396,6 +1404,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                 <SearchableSelect
                   value={poForm.status}
                   onValueChange={handlePoStatusChange}
+                  disabled={poForm.status === DOC_STATUS_CANCELLED}
                 >
                   <SearchableSelectTrigger className="w-[180px]">
                     <SearchableSelectValue placeholder="Ubah Status PO..." />
@@ -1409,6 +1418,24 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                   </SearchableSelectContent>
                 </SearchableSelect>
               </div>
+            )}
+            {isAdmin && (
+              <AdminDocumentActionsMenu
+                docType="po"
+                docId={poForm.id}
+                status={poForm.status}
+                actor={
+                  currentUser
+                    ? {
+                        id: currentUser.id,
+                        name: userProfile?.nama || currentUser.email || "Admin",
+                      }
+                    : null
+                }
+                disabled={isBusy || dirty}
+                disabledReason="Simpan atau batalkan perubahan dulu sebelum menjalankan Aksi Admin."
+                onDone={() => setReloadKey((k) => k + 1)}
+              />
             )}
             {isAdmin && poStatusBehind && (
               <p className="text-xs text-destructive basis-full text-right">

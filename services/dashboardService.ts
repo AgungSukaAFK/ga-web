@@ -15,6 +15,7 @@ import {
   PO_STATUS_PENDING_RECEIVE,
   PO_STATUS_PARTIAL_RECEIVE,
   PO_STATUS_FULL_RECEIVED,
+  INACTIVE_DOC_STATUS_FILTER,
 } from "@/type/enum";
 
 const supabase = createClient();
@@ -316,7 +317,7 @@ export const fetchItemStatusPipeline = async (
   let query = supabase
     .from("material_requests")
     .select("id, kode_mr, orders")
-    .neq("status", "Rejected");
+    .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
   query = applyCompanyScope(query, companyCode);
 
   const { data, error } = await query;
