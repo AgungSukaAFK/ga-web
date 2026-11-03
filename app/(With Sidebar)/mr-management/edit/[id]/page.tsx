@@ -1172,8 +1172,8 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                     ? { id: currentUser.id, name: userProfile?.nama || currentUser.email || "Admin" }
                     : null
                 }
-                disabled={actionLoading || dirty}
-                disabledReason="Simpan atau batalkan perubahan dulu sebelum menjalankan Aksi Admin."
+                disabled={actionLoading}
+                hasUnsavedChanges={dirty}
                 onDone={fetchMrData}
               />
 

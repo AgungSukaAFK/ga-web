@@ -66,6 +66,10 @@ export interface Order {
   // "Buka Kembali MR" utk mengaktifkan lagi item ini saja, bukan item yang
   // memang sudah dibatalkan satu per satu sebelumnya.
   cancelled_with_mr?: boolean;
+  // Qty asli sebelum sisanya ditutup admin ("Aksi Admin > Tutup Sisa", lihat
+  // adminDocumentActionService.ts) - `qty` sekarang = qty yang benar-benar
+  // diterima/dipesan. Diisi sekali (qty paling awal), tidak ditimpa lagi.
+  qty_before_close?: string;
 }
 
 export interface MrConversionRecord {
@@ -413,6 +417,33 @@ export interface ReceiveRecordItem {
   received_qty: number;
 }
 
+// Sisa PO yang ditutup admin ("Aksi Admin > Tutup Sisa PO",
+// 0019_admin_close_remainder.sql) - qty `closed_qty` per barang tidak akan
+// dikirim vendor & tidak dihitung lagi sebagai qty ter-PO (lihat
+// buildPoQtyBreakdown). `receive_record` PO-nya ikut disesuaikan (ordered_qty
+// = received_qty) - qty pesanan aslinya ada di sini.
+export interface PoClosedRemainderItem {
+  part_number: string;
+  name: string;
+  ordered_qty: number;
+  received_qty: number;
+  closed_qty: number;
+  price: number;
+}
+
+export interface PoClosedRemainder {
+  closed_at: string;
+  closed_by: string;
+  closed_by_name: string;
+  reason: string;
+  /** Wajib kalau PO sudah dibayar - refund / penyesuaian tagihan vendor. */
+  refund_note: string | null;
+  items: PoClosedRemainderItem[];
+  closed_value: number;
+  /** Sisa di MR: dipesan ulang (balik ke Menunggu PO) atau ikut ditutup. */
+  mr_mode: "reorder" | "close";
+}
+
 export interface ReceiveRecord {
   items: ReceiveRecordItem[];
   is_full_match: boolean;
@@ -582,6 +613,7 @@ export interface PurchaseOrderDetail extends Omit<
   cancelled_at?: string | null;
   cancel_reason?: string | null;
   refund_note?: string | null;
+  closed_remainder?: PoClosedRemainder | null;
   material_requests:
     | (MaterialRequest & {
         users_with_profiles: { nama: string } | null;
@@ -636,6 +668,7 @@ export interface PurchaseOrder {
   cancelled_at?: string | null;
   cancel_reason?: string | null;
   refund_note?: string | null;
+  closed_remainder?: PoClosedRemainder | null;
 
   pph_type?: string | null; // Jenis PPH (misal: "pph21_npwp")
   pph_rate?: number | null; // Persentase (misal: 1.5)
@@ -724,6 +757,7 @@ export type NotificationType =
   | "mr_held"
   | "mr_cancelled"
   | "mr_reopened"
+  | "mr_remainder_closed"
   | "po_submitted"
   | "po_validated"
   | "po_approved_step"
@@ -731,6 +765,9 @@ export type NotificationType =
   | "po_rejected"
   | "po_cancelled"
   | "po_reopened"
+  | "po_remainder_closed"
+  | "po_payment_reverted"
+  | "po_receipt_reverted"
   | "pc_submitted"
   | "pc_routed"
   | "pc_approved_step"

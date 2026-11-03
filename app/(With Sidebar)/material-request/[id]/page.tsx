@@ -2216,7 +2216,18 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                 disabled={actionLoading}
                               />
                             ) : (
-                              item.qty
+                              <>
+                                {item.qty}
+                                {item.qty_before_close &&
+                                  item.qty_before_close !== item.qty && (
+                                    <span
+                                      className="block text-xs text-muted-foreground"
+                                      title="Sisa ditutup admin (Aksi Admin > Tutup Sisa)"
+                                    >
+                                      semula {item.qty_before_close}
+                                    </span>
+                                  )}
+                              </>
                             )}
                           </TableCell>
                           <TableCell>

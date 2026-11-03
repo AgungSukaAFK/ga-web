@@ -161,6 +161,7 @@ import {
   VENDOR_TIPE_LABELS,
 } from "@/type/enum";
 import { CancelledDocumentNotice } from "@/components/admin-document-actions/CancelledDocumentNotice";
+import { ClosedRemainderNotice } from "@/components/admin-document-actions/ClosedRemainderNotice";
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
@@ -967,6 +968,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const showManualReceiveButton =
     canManuallyReceiveGoods &&
     po?.status !== DOC_STATUS_CANCELLED &&
+    // Sisa sudah ditutup admin - checklist terkunci (submitReceiveRecord).
+    !po?.closed_remainder &&
     (po?.status === PO_STATUS_PENDING_RECEIVE ||
       po?.status === PO_STATUS_PARTIAL_RECEIVE ||
       po?.status === PO_STATUS_FULL_RECEIVED ||
@@ -2275,6 +2278,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               reason={po.cancel_reason}
               refundNote={po.refund_note}
             />
+          )}
+          {po.closed_remainder && (
+            <ClosedRemainderNotice className="col-span-12" closed={po.closed_remainder} />
           )}
 
           <div className="col-span-12 lg:col-span-8 space-y-6">

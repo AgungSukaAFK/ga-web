@@ -11,6 +11,7 @@ import {
   PurchaseOrderListItem,
   Attachment,
   POItem,
+  PoClosedRemainder,
   ReceiveRecord,
   ReceiveRecordItem,
 } from "@/type";
@@ -281,7 +282,7 @@ export const fetchMrsForPoPicker = async (
   if (eligibleStatusMrs.length > 0) {
     const { data: pos, error: posError } = await supabase
       .from("purchase_orders")
-      .select("id, kode_po, status, items, mr_id")
+      .select("id, kode_po, status, items, closed_remainder, mr_id")
       .in(
         "mr_id",
         eligibleStatusMrs.map((mr) => mr.id),
@@ -454,7 +455,7 @@ export const fetchPoQtyBreakdownForMr = async (
   const [posResult, mrResult] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, kode_po, status, items")
+      .select("id, kode_po, status, items, closed_remainder")
       .eq("mr_id", mrId)
       .not("status", "in", INACTIVE_DOC_STATUS_FILTER),
     supabase
@@ -475,6 +476,7 @@ export type PoForBreakdown = {
   kode_po: string;
   status: string;
   items: POItem[] | null;
+  closed_remainder?: PoClosedRemainder | null;
 };
 
 // Inti fetchPoQtyBreakdownForMr tanpa fetch - dipisah supaya bisa dipakai
@@ -490,14 +492,21 @@ export const buildPoQtyBreakdown = (
   const breakdown: Record<string, PoQtyBreakdownEntry[]> = {};
   for (const po of pos) {
     const items: POItem[] = Array.isArray(po.items) ? po.items : [];
+    // Sisa PO yang ditutup admin tidak akan dikirim - tidak dihitung ter-PO.
+    const closedQty = new Map<string, number>();
+    for (const c of po.closed_remainder?.items || []) {
+      closedQty.set(c.part_number, (closedQty.get(c.part_number) || 0) + c.closed_qty);
+    }
     for (const item of items) {
       if (!item.part_number) continue;
       if (!breakdown[item.part_number]) breakdown[item.part_number] = [];
+      const closed = Math.min(closedQty.get(item.part_number) || 0, item.qty);
+      closedQty.set(item.part_number, (closedQty.get(item.part_number) || 0) - closed);
       breakdown[item.part_number].push({
         kode_po: po.kode_po,
         po_id: po.id,
         po_status: po.status,
-        qty: item.qty,
+        qty: item.qty - closed,
       });
     }
   }
@@ -1172,6 +1181,16 @@ export const submitReceiveRecord = async (
   receivedQtyByPartNumber: Record<string, number>,
 ): Promise<ReceiveRecord> => {
   if (!po.mr_id) throw new Error("PO ini tidak terhubung ke MR.");
+  const { data: closedRow } = await supabase
+    .from("purchase_orders")
+    .select("closed_remainder")
+    .eq("id", po.id)
+    .single();
+  if (closedRow?.closed_remainder) {
+    throw new Error(
+      "Sisa PO ini sudah ditutup admin - checklist penerimaan tidak bisa diubah lagi.",
+    );
+  }
 
   // Vendor tipe Site kirim langsung ke site tanpa lewat GA - jadi begitu
   // requester sendiri yang konfirmasi terima (checklist ini), item yang

@@ -125,7 +125,15 @@ const CATEGORIES: Record<
   },
   info: {
     label: "Info",
-    types: ["info", "mr_reopened", "po_reopened"],
+    types: [
+      "info",
+      "mr_reopened",
+      "po_reopened",
+      "mr_remainder_closed",
+      "po_remainder_closed",
+      "po_payment_reverted",
+      "po_receipt_reverted",
+    ],
     icon: Info,
     badge: "bg-slate-500",
   },

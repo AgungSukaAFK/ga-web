@@ -1017,7 +1017,7 @@ export const STATUS_GROUPS: {
       { status: "Completed", label: "Barang Diterima User", domain: "item", main: true, desc: "Requester sudah upload bukti/scan QR. Dipakai untuk laporan." },
       { status: "Pending BAST", label: "Pending Terima User", domain: "item", desc: "Status lama (data lama) dengan arti yang sama seperti Dalam Pengiriman: menunggu konfirmasi Requester." },
       { status: "Replaced", label: "Diganti", domain: "item", desc: "Barang disubstitusi dengan barang lain saat proses belanja." },
-      { status: "Cancelled", label: "Dibatalkan", domain: "item", desc: "Dibatalkan, mis. PO-nya di-Reject dan tidak ada PO pengganti, atau MR-nya dibatalkan admin." },
+      { status: "Cancelled", label: "Dibatalkan", domain: "item", desc: "Dibatalkan, mis. PO-nya di-Reject dan tidak ada PO pengganti, MR-nya dibatalkan admin, atau sisanya ditutup admin (Tutup Sisa) sebelum ada yang diterima." },
     ],
   },
   {

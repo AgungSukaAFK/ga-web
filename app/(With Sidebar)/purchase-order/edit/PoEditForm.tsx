@@ -1432,8 +1432,8 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                       }
                     : null
                 }
-                disabled={isBusy || dirty}
-                disabledReason="Simpan atau batalkan perubahan dulu sebelum menjalankan Aksi Admin."
+                disabled={isBusy}
+                hasUnsavedChanges={dirty}
                 onDone={() => setReloadKey((k) => k + 1)}
               />
             )}

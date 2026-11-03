@@ -99,6 +99,34 @@ interface AdminOverrideInput<TStep extends OverrideApprovalStep> {
   requestedStatus: string;
 }
 
+// Admin yang mencoba "membatalkan" dokumen berjalan lewat form (status
+// Rejected / approval ditolak) lalu terbentur aturan di atas diarahkan ke
+// Aksi Admin, yang memang dibuat untuk itu (item MR dilepas, PO ikut, budget).
+const withCancelHint = async <T,>(
+  docLabel: string,
+  input: AdminOverrideInput<OverrideApprovalStep>,
+  plan: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await plan();
+  } catch (err) {
+    const triesToStop =
+      (input.requestedStatus === "Rejected" && input.baselineStatus !== "Rejected") ||
+      input.nextApprovals.some(
+        (a, i) => a.status === "rejected" && input.baselineApprovals[i]?.status !== "rejected",
+      );
+    if (
+      triesToStop &&
+      err instanceof Error &&
+      !err.message.includes("Aksi Admin") &&
+      err.message !== staleError(docLabel).message
+    ) {
+      err.message += ` Untuk membatalkan ${docLabel} yang sudah berjalan, pakai "Aksi Admin > Batalkan ${docLabel}" (tombol di kanan atas).`;
+    }
+    throw err;
+  }
+};
+
 // Bagian bersama semua jenis dokumen: cek edit bersamaan, urutan approval,
 // dan stempel processed_at. `null` = tidak ada perubahan approval/status.
 const prepareOverride = <TStep extends OverrideApprovalStep>(
@@ -186,7 +214,13 @@ const notifyApprovalProgress = (
  * Validasi + hitung approvals & status MR yang akan disimpan form MR
  * Management. Lempar Error (pesan siap tampil) kalau perubahan tidak aman.
  */
-export const planAdminMrApprovalUpdate = async (
+export const planAdminMrApprovalUpdate = (
+  mrId: number,
+  input: AdminOverrideInput<Approval>,
+): Promise<AdminApprovalPlan<Approval>> =>
+  withCancelHint("MR", input, () => planMrApprovalUpdate(mrId, input));
+
+const planMrApprovalUpdate = async (
   mrId: number,
   input: AdminOverrideInput<Approval>,
 ): Promise<AdminApprovalPlan<Approval>> => {
@@ -458,7 +492,13 @@ export interface AdminPoApprovalPlan extends AdminApprovalPlan<Approval> {
  * Validasi + hitung approvals, status, & kolom pembayaran PO yang akan
  * disimpan form PO Management. Lempar Error kalau perubahan tidak aman.
  */
-export const planAdminPoApprovalUpdate = async (
+export const planAdminPoApprovalUpdate = (
+  poId: number,
+  input: AdminOverrideInput<Approval>,
+): Promise<AdminPoApprovalPlan> =>
+  withCancelHint("PO", input, () => planPoApprovalUpdate(poId, input));
+
+const planPoApprovalUpdate = async (
   poId: number,
   input: AdminOverrideInput<Approval>,
 ): Promise<AdminPoApprovalPlan> => {
