@@ -1,5 +1,7 @@
 // src/services/vendorService.ts
 
+import { orIlikePattern } from "@/lib/supabase/search-filter";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { createClient } from "@/lib/supabase/client";
 import { Vendor } from "@/type";
 
@@ -9,6 +11,7 @@ export const fetchVendors = async (
   page: number,
   limit: number,
   searchQuery: string | null,
+  sort?: { column: string; ascending: boolean },
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -17,19 +20,38 @@ export const fetchVendors = async (
 
   if (searchQuery) {
     // SEARCH CASE-INSENSITIVE
-    const search = `%${searchQuery}%`;
+    const search = orIlikePattern(searchQuery);
     query = query.or(
       `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search}`,
     );
   }
 
   const { data, error, count } = await query
-    .order("nama_vendor", { ascending: true })
+    .order(sort?.column ?? "nama_vendor", {
+      ascending: sort?.ascending ?? true,
+      nullsFirst: false,
+    })
+    .order("id", { ascending: true }) // urutan stabil antar halaman
     .range(from, to);
 
   if (error) throw error;
   return { data: data as Vendor[], count: count || 0 };
 };
+
+// Semua vendor untuk export Excel, tanpa terpotong limit 1000 Supabase.
+export const fetchAllVendors = async (searchQuery: string | null) =>
+  fetchAllRows<Vendor>(() => {
+    let query = supabase.from("vendors").select("*");
+    if (searchQuery) {
+      const search = orIlikePattern(searchQuery);
+      query = query.or(
+        `kode_vendor.ilike.${search},nama_vendor.ilike.${search},pic_contact_person.ilike.${search}`,
+      );
+    }
+    return query
+      .order("nama_vendor", { ascending: true })
+      .order("id", { ascending: true });
+  });
 
 export const createVendor = async (
   newData: Omit<Vendor, "id" | "created_at">,

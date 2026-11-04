@@ -171,6 +171,73 @@ export function FilterPanel({
   );
 }
 
+// --- Helper untuk menyusun isi panel ---
+
+/** Baris field select: jumlah kolom mengikuti lebar & banyaknya field. */
+export function FilterFields({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8.5rem),1fr))] gap-3">
+      {children}
+    </div>
+  );
+}
+
+/** Baris field rentang + tombol Terapkan (anak terakhir). */
+export function FilterRangeFields({ children }: { children: React.ReactNode }) {
+  return (
+    // Pakai container query: lebar panel ikut berubah saat sidebar dibuka/tutup.
+    <div className="@container mt-3">
+      <div className="grid grid-cols-1 items-end gap-3 @xl:grid-cols-2 @3xl:grid-cols-[1fr_1fr_auto]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function FilterApplyButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      onClick={onClick}
+      className="w-full @xl:col-span-2 @3xl:col-span-1 @3xl:w-auto"
+    >
+      Terapkan
+    </Button>
+  );
+}
+
+export function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** Dua input bersebelahan dalam satu field, mis. tanggal dari - sampai. */
+export function FilterRange({
+  from,
+  to,
+}: {
+  from: React.ReactNode;
+  to: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+      {from}
+      <span className="text-muted-foreground">–</span>
+      {to}
+    </div>
+  );
+}
+
 // --- Helper untuk menyusun teks chip ---
 
 /** "2026-10-09" -> "09 Okt 2026". */

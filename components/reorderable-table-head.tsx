@@ -130,7 +130,7 @@ export function ReorderableTableHead({
       }}
       onDragEnd={() => setDrag(null)}
     >
-      <span className="inline-flex items-center gap-1">
+      <span className="flex items-center gap-1">
         <GripVertical className="no-print h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/col:opacity-100" />
         {sortable ? (
           <SortButton

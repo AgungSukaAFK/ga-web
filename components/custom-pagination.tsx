@@ -16,6 +16,8 @@ interface CustomPaginationProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   siblingCount?: number;
+  hidePagesOnMobile?: boolean; // Sisakan tombol Previous/Next di layar kecil
+  className?: string;
 }
 
 export function CustomPagination({
@@ -23,6 +25,8 @@ export function CustomPagination({
   totalPages,
   onPageChange,
   siblingCount = 1,
+  hidePagesOnMobile = false,
+  className,
 }: CustomPaginationProps) {
   // --- Helper: Generate Array of Page Numbers ---
   const generatePagination = () => {
@@ -81,8 +85,10 @@ export function CustomPagination({
 
   if (totalPages <= 1) return null;
 
+  const pageItemClassName = hidePagesOnMobile ? "hidden sm:block" : undefined;
+
   return (
-    <Pagination>
+    <Pagination className={className}>
       <PaginationContent>
         {/* Tombol Previous */}
         <PaginationItem>
@@ -101,14 +107,14 @@ export function CustomPagination({
         {pages.map((page, idx) => {
           if (page === "DOTS") {
             return (
-              <PaginationItem key={`dots-${idx}`}>
+              <PaginationItem key={`dots-${idx}`} className={pageItemClassName}>
                 <PaginationEllipsis />
               </PaginationItem>
             );
           }
 
           return (
-            <PaginationItem key={idx}>
+            <PaginationItem key={idx} className={pageItemClassName}>
               <PaginationLink
                 href="#"
                 isActive={page === currentPage}

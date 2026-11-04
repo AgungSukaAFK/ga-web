@@ -120,6 +120,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { logActivity } from "@/services/logService";
+import { diffMrChanges } from "@/lib/document-change-log";
 import {
   applyAdminMrApprovalEffects,
   planAdminMrApprovalUpdate,
@@ -268,6 +269,9 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     }
   }, [mr?.due_date]);
 
+  // Data terakhir dari DB, pembanding rincian Riwayat Aktivitas.
+  const changeBaselineRef = useRef<Record<string, any> | null>(null);
+
   const fetchMrData = async () => {
     if (isNaN(mrId)) {
       setError("ID Material Request tidak valid.");
@@ -297,6 +301,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         due_date: mrData.due_date ? new Date(mrData.due_date) : undefined,
       };
       setMr(initialData as any);
+      changeBaselineRef.current = JSON.parse(JSON.stringify(initialData));
       approvalBaselineRef.current = {
         approvals: JSON.parse(JSON.stringify(initialData.approvals)),
         status: initialData.status,
@@ -409,14 +414,24 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       });
     } else {
       // LOG ACTIVITY: Update MR by Admin
-      await logActivity(
-        currentUser.id,
-        "UPDATE_MR_ADMIN",
-        "material_request",
-        String(mr.id),
-        `Admin ${userProfile?.nama || "Unknown"} melakukan perubahan data MR ${mr.kode_mr}`,
-        { updated_fields: Object.keys(updateData) }, // Simpan field apa saja yang diupdate
-      );
+      const costCenterName = (id: number | null | undefined) => {
+        if (!id) return "";
+        const option = costCenterList.find((cc) => cc.value === String(id));
+        return option?.label.replace(/ \(Rp.*$/, "") ?? `ID ${id}`;
+      };
+      const changes = changeBaselineRef.current
+        ? diffMrChanges(changeBaselineRef.current, updateData, costCenterName)
+        : [];
+      if (changes.length > 0) {
+        await logActivity(
+          currentUser.id,
+          "UPDATE_MR_ADMIN",
+          "material_request",
+          String(mr.id),
+          `Admin ${userProfile?.nama || "Unknown"} mengubah ${changes.length} data MR ${mr.kode_mr}`,
+          { changes, mode: "admin" },
+        );
+      }
       await applyAdminMrApprovalEffects(approvalPlan, {
         mrId: Number(mr.id),
         kodeMr: mr.kode_mr,
@@ -1473,21 +1488,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                         {mr.orders.map((item, index) => (
                           <TableRow key={index}>
                             <TableCell>
-                              {isEditing ? (
-                                <Input
-                                  value={item.name}
-                                  onChange={(e) =>
-                                    handleItemChange(
-                                      index,
-                                      "name",
-                                      e.target.value,
-                                    )
-                                  }
-                                  disabled={actionLoading}
-                                />
-                              ) : (
-                                <span className="font-medium">{item.name}</span>
-                              )}
+                              <span className="font-medium">{item.name}</span>
                               {(item.conversion_history || []).length > 0 && (
                                 <Button
                                   type="button"

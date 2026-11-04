@@ -3,16 +3,32 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { CustomPagination } from "@/components/custom-pagination";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
+import { ListSearchInput } from "@/components/list-search-input";
+import {
+  ColumnOrderReset,
+  ReorderableHeaderRow,
+  ReorderableTableHead,
+  type ReorderableColumn,
+} from "@/components/reorderable-table-head";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { resolveSort } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { useColumnOrder } from "@/hooks/use-column-order";
+import {
+  PO_DEFAULT_SORT,
+  PO_SEARCH_FIELDS,
+  PO_SORTABLE_COLUMNS,
+  applyPoCompanyAccess,
+  applyPoFilters,
+  buildPoSearchFilter,
+  type PoListFilters,
+} from "@/lib/po-list";
+import { Input } from "@/components/ui/input";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -21,27 +37,32 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, Newspaper, Search, Edit, CreditCard } from "lucide-react";
+import { Loader2, Edit, CreditCard, Eye } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useCallback, useTransition } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
-import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import { PurchaseOrderListItem, Profile, Approval } from "@/type";
 import { formatCurrency, formatDateFriendly } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   LIMIT_OPTIONS,
   STATUS_OPTIONS,
-  PAYMENT_VALIDATOR_USER_ID,
   isPoPaid,
   isDpBpPaymentTerm,
   getLastApprovedApprover,
@@ -49,7 +70,12 @@ import {
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 import {
   ActiveFilter,
+  FilterApplyButton,
+  FilterField,
+  FilterFields,
   FilterPanel,
+  FilterRange,
+  FilterRangeFields,
   filterOptionLabel,
   formatFilterDate,
   formatFilterRange,
@@ -64,6 +90,20 @@ const PAYMENT_TERM_OPTIONS = [
   { label: "BP & DP", value: "DP" },
 ];
 
+// Kolom tabel di antara "No" & "Aksi", urutan bawaan. Urutannya bisa digeser
+// user - lihat hooks/use-column-order.ts.
+const PO_MANAGEMENT_COLUMNS = [
+  { id: "kode_po", label: "Kode PO", sortDirection: "asc" },
+  { id: "kode_mr", label: "Ref. Kode MR", sortDirection: "asc" },
+  { id: "pembuat", label: "Pembuat", sortDirection: "asc" },
+  { id: "company", label: "Perusahaan", sortDirection: "asc" },
+  { id: "status", label: "Status", sortDirection: "asc" },
+  { id: "payment", label: "Payment" },
+  { id: "total_price", label: "Total Harga", sortDirection: "desc" },
+  { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
+] as const satisfies readonly ReorderableColumn[];
+type PoManagementColumnId = (typeof PO_MANAGEMENT_COLUMNS)[number]["id"];
+
 export function PoManagementClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -71,6 +111,10 @@ export function PoManagementClientContent() {
   const searchParams = useSearchParams();
 
   const [poList, setPoList] = useState<PurchaseOrderListItem[]>([]);
+  const columnOrder = useColumnOrder(
+    "table-column-order:po-management",
+    PO_MANAGEMENT_COLUMNS,
+  );
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [totalItems, setTotalItems] = useState<number>(0);
@@ -81,6 +125,7 @@ export function PoManagementClientContent() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || PO_DEFAULT_SORT;
   const statusFilter = searchParams.get("status") || "";
   const companyFilter = searchParams.get("company") || "";
 
@@ -91,6 +136,28 @@ export function PoManagementClientContent() {
   const endDate = searchParams.get("end_date") || "";
   const paymentFilter = searchParams.get("payment_status") || "";
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
+
+  const poFilters = useMemo<PoListFilters>(
+    () => ({
+      status: statusFilter,
+      assetType: "",
+      minPrice,
+      maxPrice,
+      startDate,
+      endDate,
+      payment: paymentFilter,
+      paymentTerm: paymentTermFilter,
+    }),
+    [
+      statusFilter,
+      minPrice,
+      maxPrice,
+      startDate,
+      endDate,
+      paymentFilter,
+      paymentTermFilter,
+    ],
+  );
 
   // --- LOCAL STATE UNTUK INPUT (Debounce/Apply Manual) ---
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
@@ -187,71 +254,19 @@ export function PoManagementClientContent() {
         { count: "exact" },
       );
 
-      // 1. Filter Search Text
+      // Hak akses company, search & filter sama dengan halaman Purchase Order
+      query = applyPoCompanyAccess(query, profileData.company, companyFilter);
       if (searchTerm) {
-        const { data: matchingMRs } = await s
-          .from("material_requests")
-          .select("id")
-          .ilike("kode_mr", `%${searchTerm}%`);
-        const matchingMrIds = matchingMRs ? matchingMRs.map((mr: any) => mr.id) : [];
-
-        let orFilter = `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%`;
-        if (matchingMrIds.length > 0) {
-          orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
-        }
-        query = query.or(orFilter);
+        query = query.or(await buildPoSearchFilter(s, searchTerm));
       }
-
-      // 2. Filter Status PO
-      if (statusFilter) query = query.eq("status", statusFilter);
-
-      // 3. Filter Harga & Tanggal
-      if (minPrice) query = query.gte("total_price", Number(minPrice));
-      if (maxPrice) query = query.lte("total_price", Number(maxPrice));
-      if (startDate) query = query.gte("created_at", startDate);
-      if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
-
-      // 4. Filter Payment (Paid/Unpaid) & Term
-      const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
-      if (paymentFilter === "paid") {
-        query = query.contains("approvals", paymentApprovalObject);
-      } else if (paymentFilter === "unpaid") {
-        query = query.not("approvals", "cs", paymentApprovalObject);
-      }
-      if (paymentTermFilter) {
-        query = query.ilike("payment_term", `%${paymentTermFilter}%`);
-      }
-
-      // 5. Logic Filter Perusahaan (GMI/GIS/LOURDES Access)
-      const userCompany = profileData.company;
-      if (userCompany === "LOURDES") {
-        if (companyFilter && companyFilter !== "all") {
-          query = query.eq("company_code", companyFilter);
-        }
-      } else if (userCompany === "GMI") {
-        if (companyFilter === "GMI") {
-          query = query.eq("company_code", "GMI");
-        } else if (companyFilter === "LOURDES") {
-          query = query.eq("company_code", "LOURDES");
-        } else {
-          query = query.in("company_code", ["GMI", "LOURDES"]);
-        }
-      } else if (userCompany === "GIS") {
-        if (companyFilter === "GIS") {
-          query = query.eq("company_code", "GIS");
-        } else if (companyFilter === "LOURDES") {
-          query = query.eq("company_code", "LOURDES");
-        } else {
-          query = query.in("company_code", ["GIS", "LOURDES"]);
-        }
-      } else {
-        if (userCompany) {
-          query = query.eq("company_code", userCompany);
-        }
-      }
+      query = applyPoFilters(query, poFilters);
 
       // Execute
-      query = query.order("created_at", { ascending: false }).range(from, to);
+      const sort = resolveSort(sortFilter, PO_SORTABLE_COLUMNS, PO_DEFAULT_SORT);
+      query = query
+        .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+        .order("id", { ascending: false }) // urutan stabil antar halaman
+        .range(from, to);
 
       const { data, error, count } = await query;
 
@@ -298,80 +313,73 @@ export function PoManagementClientContent() {
     endDate,
     paymentFilter,
     paymentTermFilter,
+    sortFilter,
+    poFilters,
     router,
   ]);
 
   // --- EXCEL EXPORT ---
-  const handleDownloadExcel = async () => {
+  const fetchAllPoCount = async () => {
+    const { count, error } = await applyPoCompanyAccess(
+      s.from("purchase_orders").select("id", { count: "exact", head: true }),
+      adminProfile?.company,
+    );
+    if (error) throw error;
+    return count ?? 0;
+  };
+
+  // mode "all"      : semua PO yang boleh dilihat admin (hak akses company tetap berlaku)
+  // mode "filtered" : sesuai filter, pencarian & urutan yang sedang diterapkan di tabel
+  const handleDownloadExcel = async (mode: ExcelDownloadMode) => {
     if (!adminProfile) return;
+    const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap untuk diunduh...");
+    const toastId = toast.loading(
+      useFilters
+        ? "Menyiapkan data PO sesuai filter..."
+        : "Menyiapkan semua data PO...",
+    );
+    const exportSort = useFilters
+      ? resolveSort(sortFilter, PO_SORTABLE_COLUMNS, PO_DEFAULT_SORT)
+      : { column: "created_at", ascending: false };
 
     try {
-      let query = s.from("purchase_orders").select(`
+      const searchOrFilter =
+        useFilters && searchTerm
+          ? await buildPoSearchFilter(s, searchTerm)
+          : "";
+
+      const buildQuery = () => {
+        let query = applyPoCompanyAccess(
+          s.from("purchase_orders").select(`
             kode_po, status, total_price, company_code, created_at,
             users_with_profiles!user_id (nama),
             material_requests!mr_id (kode_mr),
             approvals, payment_term, dp_paid, bp_paid, attachments
-        `);
+        `),
+          adminProfile.company,
+          useFilters ? companyFilter : undefined,
+        );
+        if (searchOrFilter) query = query.or(searchOrFilter);
+        if (useFilters) query = applyPoFilters(query, poFilters);
 
-      // Filter yang sama dengan View
-      if (searchTerm) {
-        const { data: matchingMRs } = await s
-          .from("material_requests")
-          .select("id")
-          .ilike("kode_mr", `%${searchTerm}%`);
-        const matchingMrIds = matchingMRs ? matchingMRs.map((mr: any) => mr.id) : [];
+        return query
+          .order(exportSort.column, {
+            ascending: exportSort.ascending,
+            nullsFirst: false,
+          })
+          .order("id", { ascending: true }); // urutan stabil antar halaman
+      };
 
-        let orFilter = `kode_po.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%`;
-        if (matchingMrIds.length > 0) {
-          orFilter += `,mr_id.in.(${matchingMrIds.join(",")})`;
-        }
-        query = query.or(orFilter);
-      }
-      if (statusFilter) query = query.eq("status", statusFilter);
-      if (minPrice) query = query.gte("total_price", Number(minPrice));
-      if (maxPrice) query = query.lte("total_price", Number(maxPrice));
-      if (startDate) query = query.gte("created_at", startDate);
-      if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+      const data = await fetchAllRows(buildQuery);
 
-      const paymentApprovalObject = `[{"userid": "${PAYMENT_VALIDATOR_USER_ID}", "status": "approved"}]`;
-      if (paymentFilter === "paid") {
-        query = query.contains("approvals", paymentApprovalObject);
-      } else if (paymentFilter === "unpaid") {
-        query = query.not("approvals", "cs", paymentApprovalObject);
-      }
-      if (paymentTermFilter) {
-        query = query.ilike("payment_term", `%${paymentTermFilter}%`);
-      }
-
-      // Filter Company Logic
-      const userCompany = adminProfile.company;
-      if (userCompany === "LOURDES") {
-        if (companyFilter && companyFilter !== "all")
-          query = query.eq("company_code", companyFilter);
-      } else if (userCompany === "GMI") {
-        if (companyFilter === "GMI") query = query.eq("company_code", "GMI");
-        else if (companyFilter === "LOURDES")
-          query = query.eq("company_code", "LOURDES");
-        else query = query.in("company_code", ["GMI", "LOURDES"]);
-      } else if (userCompany === "GIS") {
-        if (companyFilter === "GIS") query = query.eq("company_code", "GIS");
-        else if (companyFilter === "LOURDES")
-          query = query.eq("company_code", "LOURDES");
-        else query = query.in("company_code", ["GIS", "LOURDES"]);
-      } else {
-        if (userCompany) query = query.eq("company_code", userCompany);
-      }
-
-      const { data, error } = await query.order("created_at", {
-        ascending: false,
-      });
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        toast.warning("Tidak ada data PO untuk diekspor sesuai filter.");
-        setIsExporting(false);
+      if (data.length === 0) {
+        toast.warning(
+          useFilters
+            ? "Tidak ada data PO untuk diekspor sesuai filter."
+            : "Tidak ada data PO untuk diekspor.",
+          { id: toastId },
+        );
         return;
       }
 
@@ -401,12 +409,15 @@ export function PoManagementClientContent() {
 
       await exportStyledExcel(
         formattedData,
-        `Admin_Purchase_Orders_${new Date().toISOString().split("T")[0]}.xlsx`,
+        `Admin_Purchase_Orders_${useFilters ? "Filter" : "Semua"}_${new Date().toISOString().split("T")[0]}.xlsx`,
         "Purchase Orders",
       );
-      toast.success("Data PO berhasil diunduh!");
+      toast.success("Data PO berhasil diunduh!", { id: toastId });
     } catch (error: any) {
-      toast.error("Gagal mengunduh data", { description: error.message });
+      toast.error("Gagal mengunduh data", {
+        id: toastId,
+        description: error.message,
+      });
     } finally {
       setIsExporting(false);
     }
@@ -491,6 +502,57 @@ export function PoManagementClientContent() {
       },
     });
 
+  const renderPoCell = (po: PurchaseOrderListItem, column: PoManagementColumnId) => {
+    switch (column) {
+      case "kode_po":
+        return <TableCell className="font-semibold">{po.kode_po}</TableCell>;
+      case "kode_mr":
+        return (
+          <TableCell>
+            {po.material_requests?.kode_mr || "N/A"}
+          </TableCell>
+        );
+      case "pembuat":
+        return <TableCell>{po.users_with_profiles?.nama || "N/A"}</TableCell>;
+      case "company":
+        return (
+          <TableCell>
+            <Badge variant="outline">{po.company_code || "N/A"}</Badge>
+          </TableCell>
+        );
+      case "status":
+        return (
+          <TableCell>
+            <Badge variant="secondary">{po.status}</Badge>
+          </TableCell>
+        );
+      case "payment":
+        return (
+          <TableCell>
+            {isPoPaid(po.approvals) ? (
+              <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
+                <CreditCard className="h-3 w-3" /> Paid
+              </Badge>
+            ) : isDpBpPaymentTerm(po.payment_term) &&
+              (po.dp_paid || po.bp_paid) ? (
+              <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
+                <CreditCard className="h-3 w-3" />{" "}
+                {po.dp_paid ? "DP Lunas" : "BP Lunas"}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="w-fit">
+                Unpaid
+              </Badge>
+            )}
+          </TableCell>
+        );
+      case "total_price":
+        return <TableCell>{formatCurrency(po.total_price)}</TableCell>;
+      case "created_at":
+        return <TableCell>{formatDateFriendly(po.created_at)}</TableCell>;
+    }
+  };
+
   return (
     <Content
       title="Manajemen Purchase Order (Admin)"
@@ -500,35 +562,26 @@ export function PoManagementClientContent() {
       <div className="flex flex-col gap-4 mb-6">
         {/* --- Top Row: Search & Export --- */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-grow">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari Kode PO, Ref MR, Status..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <Button
-            onClick={handleDownloadExcel}
-            disabled={isExporting || loading || isPending}
-            className="w-full md:w-auto"
-          >
-            {isExporting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Newspaper className="mr-2 h-4 w-4" />
-            )}
-            Download Excel
-          </Button>
+          <ListSearchInput
+            placeholder="Cari PO, vendor, barang..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={PO_SEARCH_FIELDS}
+          />
+          <ExcelDownloadMenu
+            itemLabel="PO"
+            filteredCount={totalItems}
+            fetchAllCount={fetchAllPoCount}
+            onDownload={handleDownloadExcel}
+            isExporting={isExporting}
+          />
         </div>
 
         {/* --- Filter Section --- */}
         <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <FilterFields>
             {/* 1. Status PO */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Status</label>
+            <FilterField label="Status">
               <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
@@ -537,7 +590,7 @@ export function PoManagementClientContent() {
                 }
                 value={statusFilter || "all"}
               >
-                <SearchableSelectTrigger>
+                <SearchableSelectTrigger className="bg-background">
                   <SearchableSelectValue placeholder="Filter status" />
                 </SearchableSelectTrigger>
                 <SearchableSelectContent>
@@ -549,11 +602,9 @@ export function PoManagementClientContent() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-
+            </FilterField>
             {/* 2. Status Pembayaran */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Status Pembayaran</label>
+            <FilterField label="Status Pembayaran">
               <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
@@ -562,7 +613,7 @@ export function PoManagementClientContent() {
                 }
                 value={paymentFilter || "all"}
               >
-                <SearchableSelectTrigger>
+                <SearchableSelectTrigger className="bg-background">
                   <SearchableSelectValue placeholder="Paid / Unpaid" />
                 </SearchableSelectTrigger>
                 <SearchableSelectContent>
@@ -571,11 +622,9 @@ export function PoManagementClientContent() {
                   <SearchableSelectItem value="unpaid">Unpaid</SearchableSelectItem>
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-
+            </FilterField>
             {/* 3. Jenis Pembayaran */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Jenis Pembayaran</label>
+            <FilterField label="Jenis Pembayaran">
               <SearchableSelect
                 onValueChange={(value) =>
                   handleFilterChange({
@@ -584,7 +633,7 @@ export function PoManagementClientContent() {
                 }
                 value={paymentTermFilter || "all"}
               >
-                <SearchableSelectTrigger>
+                <SearchableSelectTrigger className="bg-background">
                   <SearchableSelectValue placeholder="Cash / Termin" />
                 </SearchableSelectTrigger>
                 <SearchableSelectContent>
@@ -595,14 +644,12 @@ export function PoManagementClientContent() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-
+            </FilterField>
             {/* 4. Filter Perusahaan (Dynamic) */}
             {(adminProfile?.company === "LOURDES" ||
               adminProfile?.company === "GMI" ||
               adminProfile?.company === "GIS") && (
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Perusahaan</label>
+              <FilterField label="Perusahaan">
                 <SearchableSelect
                   onValueChange={(value) =>
                     handleFilterChange({
@@ -611,7 +658,7 @@ export function PoManagementClientContent() {
                   }
                   value={companyFilter || "all"}
                 >
-                  <SearchableSelectTrigger>
+                  <SearchableSelectTrigger className="bg-background">
                     <SearchableSelectValue placeholder="Filter perusahaan" />
                   </SearchableSelectTrigger>
                   <SearchableSelectContent>
@@ -640,180 +687,159 @@ export function PoManagementClientContent() {
                     )}
                   </SearchableSelectContent>
                 </SearchableSelect>
-              </div>
+              </FilterField>
             )}
-          </div>
-
+          </FilterFields>
           {/* Row 2: Tanggal & Harga */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Dari Tanggal</label>
-              <Input
-                type="date"
-                value={startDateInput}
-                onChange={(e) => setStartDateInput(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Sampai Tanggal</label>
-              <Input
-                type="date"
-                value={endDateInput}
-                onChange={(e) => setEndDateInput(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Min Total Harga</label>
-              <Input
-                type="number"
-                placeholder="Rp 0"
-                value={minPriceInput}
-                onChange={(e) => setMinPriceInput(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Max Total Harga</label>
-              <Input
-                type="number"
-                placeholder="Rp 1.000.000"
-                value={maxPriceInput}
-                onChange={(e) => setMaxPriceInput(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Row 3: Button Terapkan */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="lg:col-span-3"></div>
-            <div className="flex flex-col gap-2 justify-end">
-              <Button
-                className="w-full"
-                onClick={() =>
-                  handleFilterChange({
-                    start_date: startDateInput || undefined,
-                    end_date: endDateInput || undefined,
-                    min_price: minPriceInput || undefined,
-                    max_price: maxPriceInput || undefined,
-                  })
+          <FilterRangeFields>
+            <FilterField label="Tanggal Dibuat">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Dari tanggal"
+                    type="date"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                    className="bg-background"
+                  />
                 }
-              >
-                Terapkan Filter
-              </Button>
-            </div>
-          </div>
+                to={
+                  <Input
+                    aria-label="Sampai tanggal"
+                    type="date"
+                    value={endDateInput}
+                    onChange={(e) => setEndDateInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterField label="Total Harga">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Min total harga"
+                    type="number"
+                    placeholder="Min"
+                    value={minPriceInput}
+                    onChange={(e) => setMinPriceInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+                to={
+                  <Input
+                    aria-label="Max total harga"
+                    type="number"
+                    placeholder="Max"
+                    value={maxPriceInput}
+                    onChange={(e) => setMaxPriceInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterApplyButton
+              onClick={() =>
+                handleFilterChange({
+                  start_date: startDateInput || undefined,
+                  end_date: endDateInput || undefined,
+                  min_price: minPriceInput || undefined,
+                  max_price: maxPriceInput || undefined,
+                })
+              }
+            />
+          </FilterRangeFields>
         </FilterPanel>
+
+        {columnOrder.isCustomOrder && (
+          <ColumnOrderReset onReset={columnOrder.resetOrder} />
+        )}
       </div>
 
-      <div className="border rounded-md overflow-x-auto">
-        <Table className="min-w-[1200px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px]">No</TableHead>
-              <TableHead>Kode PO</TableHead>
-              <TableHead>Ref. Kode MR</TableHead>
-              <TableHead>Pembuat</TableHead>
-              <TableHead>Perusahaan</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Payment</TableHead>
-              <TableHead>Total Harga</TableHead>
-              <TableHead>Tanggal Dibuat</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading || isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
-                  <div className="flex justify-center items-center gap-2">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Memuat data...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : poList.length > 0 ? (
-              poList.map((po, index) => (
-                <TableRow key={po.id}>
-                  <TableCell className="font-medium">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-                  <TableCell className="font-semibold">{po.kode_po}</TableCell>
-                  <TableCell>
-                    {po.material_requests?.kode_mr || "N/A"}
-                  </TableCell>
-                  <TableCell>{po.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{po.company_code || "N/A"}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{po.status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {isPoPaid(po.approvals) ? (
-                      <Badge className="flex w-fit items-center gap-1 bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700">
-                        <CreditCard className="h-3 w-3" /> Paid
-                      </Badge>
-                    ) : isDpBpPaymentTerm(po.payment_term) &&
-                      (po.dp_paid || po.bp_paid) ? (
-                      <Badge className="flex w-fit items-center gap-1 bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700">
-                        <CreditCard className="h-3 w-3" />{" "}
-                        {po.dp_paid ? "DP Lunas" : "BP Lunas"}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="w-fit">
-                        Unpaid
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{formatCurrency(po.total_price)}</TableCell>
-                  <TableCell>{formatDateFriendly(po.created_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/po-management/edit/${po.id}`}>
-                        <Edit className="mr-2 h-3 w-3" />
-                        Edit/View
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
-                  Tidak ada Purchase Order yang ditemukan.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(value) => handleFilterChange({ limit: value })}
+      <StickyHeaderTable
+        className="min-w-[1200px]"
+        containerClassName="border rounded-md overflow-x-auto"
+        header={
+          <ReorderableHeaderRow
+            order={columnOrder.order}
+            onMove={columnOrder.moveColumn}
           >
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {totalItems} PO.</span>
-        </div>
+            <TableHead className="w-[50px]">No</TableHead>
+            {columnOrder.orderedColumns.map((column) => (
+              <ReorderableTableHead
+                key={column.id}
+                column={column}
+                sort={{
+                  currentSort: sortFilter,
+                  onSortChange: (sort) => handleFilterChange({ sort }),
+                }}
+              />
+            ))}
+            <TableHead className="text-right">Aksi</TableHead>
+          </ReorderableHeaderRow>
+        }
+      >
+        <TableBody>
+          {loading || isPending ? (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center h-24">
+                <div className="flex justify-center items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Memuat data...
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : poList.length > 0 ? (
+            poList.map((po, index) => (
+              <TableRow key={po.id}>
+                <TableCell className="font-medium">
+                  {(currentPage - 1) * limit + index + 1}
+                </TableCell>
+                {columnOrder.orderedColumns.map(({ id }) => (
+                  <Fragment key={id}>{renderPoCell(po, id)}</Fragment>
+                ))}
+                <TableCell className="text-right">
+                  <RowActionsMenu>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href={`/purchase-order/${po.id}`}
+                        className="cursor-pointer"
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href={`/po-management/edit/${po.id}`}
+                        className="cursor-pointer"
+                      >
+                        <Edit className="mr-2 h-4 w-4" /> Edit Admin
+                      </Link>
+                    </DropdownMenuItem>
+                  </RowActionsMenu>
+                </TableCell>
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center h-24">
+                Tidak ada Purchase Order yang ditemukan.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </StickyHeaderTable>
 
-        <CustomPagination
-          currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / limit)}
-          onPageChange={handlePageChange}
-        />
-      </div>
+      <TablePaginationFooter
+        currentPage={currentPage}
+        totalItems={totalItems}
+        limit={limit}
+        limitOptions={LIMIT_OPTIONS}
+        itemLabel="PO"
+        onPageChange={handlePageChange}
+        onLimitChange={(value) => handleFilterChange({ limit: value })}
+        className="mt-6"
+      />
     </Content>
   );
 }

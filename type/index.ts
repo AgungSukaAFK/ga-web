@@ -302,7 +302,14 @@ export interface POItem {
   description?: string; // Untuk menampung 'note' dari Order MR
   link?: string; // Untuk menampung 'url' dari Order MR
   is_asset?: boolean; // Dari barang.is_asset - 1 PO tidak boleh campur asset & goods
+  // Riwayat penggantian barang di item ini, sama seperti Order.conversion_history.
+  conversion_history?: PoConversionRecord[];
 }
+
+export type PoConversionRecord = Omit<
+  MrConversionRecord,
+  "converted_po_kode" | "kept_old_po_kode"
+>;
 
 export interface PurchaseOrderPayload {
   kode_po: string;

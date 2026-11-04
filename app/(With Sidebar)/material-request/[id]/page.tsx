@@ -2145,31 +2145,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                           <TableCell>
                             {isEditing ? (
                               <div className="space-y-1">
-                                <Input
-                                  value={item.name}
-                                  onChange={(e) =>
-                                    handleItemChange(
-                                      index,
-                                      "name",
-                                      e.target.value,
-                                    )
-                                  }
-                                  disabled={actionLoading}
-                                  placeholder="Nama Item"
-                                />
-                                <Input
-                                  value={item.part_number || ""}
-                                  onChange={(e) =>
-                                    handleItemChange(
-                                      index,
-                                      "part_number",
-                                      e.target.value,
-                                    )
-                                  }
-                                  disabled={actionLoading}
-                                  placeholder="Part Number (Opsional)"
-                                  className="text-xs h-8"
-                                />
+                                <div className="font-medium">{item.name}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {item.part_number || "-"}
+                                </div>
                               </div>
                             ) : (
                               <div>

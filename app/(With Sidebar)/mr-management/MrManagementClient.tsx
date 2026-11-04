@@ -6,13 +6,6 @@ import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import {
   SearchableSelect,
   SearchableSelectTrigger,
   SearchableSelectValue,
@@ -31,9 +24,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import {
   FileText,
-  Newspaper,
-  Printer,
-  Search,
   Loader2,
   Edit,
   Layers,
@@ -45,11 +35,7 @@ import {
   MapPin,
   Tag,
   DollarSign,
-  MoreHorizontal,
   Upload,
-  ChevronDown,
-  Filter,
-  Database,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -57,6 +43,7 @@ import {
   Suspense,
   useEffect,
   useState,
+  Fragment,
   useCallback,
   useTransition,
 } from "react";
@@ -65,8 +52,29 @@ import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
 import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
-import { printWithFileName } from "@/lib/print";
-import { CustomPagination } from "@/components/custom-pagination";
+import {
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
+import { ListSearchInput } from "@/components/list-search-input";
+import {
+  ColumnOrderReset,
+  ReorderableHeaderRow,
+  ReorderableTableHead,
+  type ReorderableColumn,
+} from "@/components/reorderable-table-head";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { resolveSort } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { useColumnOrder } from "@/hooks/use-column-order";
+import {
+  MR_DEFAULT_SORT,
+  MR_SEARCH_FIELDS,
+  MR_SORTABLE_COLUMNS,
+  buildMrSearchFilter,
+  getMrAllowedScope,
+} from "@/lib/mr-list";
 import {
   formatCurrency,
   formatDateFriendly,
@@ -125,10 +133,14 @@ import {
 } from "@/components/ui/dialog";
 import { extractPlainText } from "@/lib/rich-content";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
-import { useWaitingApproverCompanies } from "@/hooks/use-waiting-approver-companies";
 import {
   ActiveFilter,
+  FilterApplyButton,
+  FilterField,
+  FilterFields,
   FilterPanel,
+  FilterRange,
+  FilterRangeFields,
   filterOptionLabel,
   formatFilterDate,
   formatFilterRange,
@@ -156,6 +168,30 @@ const dataLokasi: ComboboxData = [
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000, 10000];
 
+// Kolom tabel di antara "No" & "Aksi", urutan bawaan. Urutannya bisa digeser
+// user - lihat hooks/use-column-order.ts.
+const MR_MANAGEMENT_COLUMNS = [
+  { id: "kode_mr", label: "Kode MR", sortDirection: "asc" },
+  { id: "cost_center", label: "Cost Center", sortDirection: "asc" },
+  { id: "level", label: "Level", sortDirection: "asc" },
+  { id: "kategori", label: "Kategori", sortDirection: "asc" },
+  { id: "department", label: "Departemen", sortDirection: "asc" },
+  { id: "tujuan_site", label: "Tujuan Site", sortDirection: "asc" },
+  { id: "requester", label: "Requester", sortDirection: "asc" },
+  { id: "status", label: "Status", sortDirection: "asc" },
+  { id: "umur", label: "Umur", sortDirection: "desc" },
+  { id: "company", label: "Company", sortDirection: "asc" },
+  { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
+  { id: "due_date", label: "Due Date", sortDirection: "asc" },
+  {
+    id: "cost_estimation",
+    label: "Total Estimasi",
+    sortDirection: "desc",
+    className: "text-right",
+  },
+] as const satisfies readonly ReorderableColumn[];
+type MrManagementColumnId = (typeof MR_MANAGEMENT_COLUMNS)[number]["id"];
+
 export default function MrManagementClient() {
   const s = createClient();
   const router = useRouter();
@@ -164,7 +200,10 @@ export default function MrManagementClient() {
 
   // --- State Management ---
   const [dataMR, setDataMR] = useState<MaterialRequestListItem[]>([]);
-  const approverCompanies = useWaitingApproverCompanies(dataMR);
+  const columnOrder = useColumnOrder(
+    "table-column-order:mr-management",
+    MR_MANAGEMENT_COLUMNS,
+  );
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -201,6 +240,7 @@ export default function MrManagementClient() {
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
   const limit = parseInt(searchParams.get("limit") || "25", 10);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || MR_DEFAULT_SORT;
   const statusFilter = searchParams.get("status") || "";
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
@@ -325,17 +365,7 @@ export default function MrManagementClient() {
 
         // --- Filter Logic ---
         if (searchTerm) {
-          const { data: matchingUsers } = await s
-            .from("users_with_profiles")
-            .select("id")
-            .ilike("nama", `%${searchTerm}%`);
-
-          const userIds = matchingUsers?.map((u) => u.id) || [];
-          let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
-          if (userIds.length > 0) {
-            orFilter += `,userid.in.(${userIds.join(",")})`;
-          }
-          query = query.or(orFilter);
+          query = query.or(await buildMrSearchFilter(s, searchTerm));
         }
 
         if (statusFilter) query = query.eq("status", statusFilter);
@@ -354,16 +384,7 @@ export default function MrManagementClient() {
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
         // Company Visibility Logic
-        const userCompany = currentUser.company;
-        let allowedScope: string[] = [];
-
-        if (userCompany === "LOURDES") {
-          allowedScope = ["ALL"];
-        } else if (["GMI", "GIS"].includes(userCompany || "")) {
-          allowedScope = [userCompany!, "LOURDES"];
-        } else {
-          allowedScope = userCompany ? [userCompany] : [];
-        }
+        const allowedScope = getMrAllowedScope(currentUser.company);
 
         if (selectedCompanies.length > 0) {
           if (allowedScope.includes("ALL")) {
@@ -384,8 +405,14 @@ export default function MrManagementClient() {
           }
         }
 
+        const sort = resolveSort(
+          sortFilter,
+          MR_SORTABLE_COLUMNS,
+          MR_DEFAULT_SORT,
+        );
         const { data, error, count } = await query
-          .order("created_at", { ascending: false })
+          .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+          .order("id", { ascending: false }) // urutan stabil antar halaman
           .range(from, to);
 
         if (error) throw error;
@@ -420,6 +447,7 @@ export default function MrManagementClient() {
     currentPage,
     limit,
     searchTerm,
+    sortFilter,
     statusFilter,
     startDate,
     endDate,
@@ -477,31 +505,38 @@ export default function MrManagementClient() {
 
   // mode "all"      : semua MR yang boleh dilihat user (hak akses company tetap berlaku)
   // mode "filtered" : sesuai filter & pencarian yang sedang diterapkan di tabel
-  const handleDownloadExcel = async (mode: "all" | "filtered") => {
+  const fetchAllMrCount = async () => {
+    if (!currentUser) return 0;
+    let query = s
+      .from("material_requests")
+      .select("id", { count: "exact", head: true });
+    const allowedScope = getMrAllowedScope(currentUser.company);
+    if (!allowedScope.includes("ALL")) {
+      query = query.in("company_code", allowedScope);
+    }
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  };
+
+  const handleDownloadExcel = async (mode: ExcelDownloadMode) => {
     if (!currentUser) return;
     const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info(
+    const toastId = toast.loading(
       useFilters
-        ? "Mempersiapkan data sesuai filter..."
-        : "Mempersiapkan semua data...",
+        ? "Menyiapkan data MR sesuai filter..."
+        : "Menyiapkan semua data MR...",
     );
+    const exportSort = useFilters
+      ? resolveSort(sortFilter, MR_SORTABLE_COLUMNS, MR_DEFAULT_SORT)
+      : { column: "created_at", ascending: false };
 
     try {
-      // Pencarian sama persis dengan tabel (kode MR, remarks, nama requester)
-      let searchOrFilter = "";
-      if (useFilters && searchTerm) {
-        const { data: matchingUsers } = await s
-          .from("users_with_profiles")
-          .select("id")
-          .ilike("nama", `%${searchTerm}%`);
-
-        const userIds = matchingUsers?.map((u) => u.id) || [];
-        searchOrFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
-        if (userIds.length > 0) {
-          searchOrFilter += `,userid.in.(${userIds.join(",")})`;
-        }
-      }
+      const searchOrFilter =
+        useFilters && searchTerm
+          ? await buildMrSearchFilter(s, searchTerm)
+          : "";
 
       const userCompany = currentUser.company;
       const allowed =
@@ -553,7 +588,10 @@ export default function MrManagementClient() {
         }
 
         return query
-          .order("created_at", { ascending: false })
+          .order(exportSort.column, {
+            ascending: exportSort.ascending,
+            nullsFirst: false,
+          })
           .order("id", { ascending: true }); // urutan stabil antar halaman
       };
 
@@ -564,6 +602,7 @@ export default function MrManagementClient() {
           useFilters
             ? "Tidak ada data untuk diekspor sesuai filter."
             : "Tidak ada data untuk diekspor.",
+          { id: toastId },
         );
         setIsExporting(false);
         return;
@@ -616,18 +655,16 @@ export default function MrManagementClient() {
         `Rekap_MR_Admin${useFilters ? "_Filter" : "_Semua"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
         "Data MR & Tracking",
       );
-      toast.success("Download berhasil!");
+      toast.success("Download berhasil!", { id: toastId });
     } catch (error: any) {
-      toast.error("Gagal export excel", { description: error.message });
+      toast.error("Gagal export excel", {
+        id: toastId,
+        description: error.message,
+      });
     } finally {
       setIsExporting(false);
     }
   };
-
-  const handlePrint = () =>
-    printWithFileName(
-      `Rekap_MR_Admin_${new Date().toISOString().slice(0, 10)}`,
-    );
 
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
@@ -878,18 +915,12 @@ export default function MrManagementClient() {
   const renderStatusCell = (mr: MaterialRequestListItem) => {
     const approver =
       mr.status === "Pending Approval" ? getCurrentApprover(mr.approvals) : null;
-    const approverCompany = approver ? approverCompanies[approver.userid] : null;
     return (
       <div className="flex flex-col items-start gap-1">
         {getStatusBadge(mr.status)}
         {approver && (
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            Menunggu: {approver.nama}
-            {approverCompany && (
-              <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                {approverCompany}
-              </Badge>
-            )}
+          <span className="text-[11px] text-muted-foreground">
+            {approver.nama}
           </span>
         )}
         {mr.status === "Pending Validation" && <PicGaPopover />}
@@ -985,6 +1016,82 @@ export default function MrManagementClient() {
       },
     });
 
+  const renderMrCell = (mr: MaterialRequestListItem, column: MrManagementColumnId) => {
+    switch (column) {
+      case "kode_mr":
+        return (
+          <TableCell className="font-semibold text-foreground">
+            {mr.kode_mr}
+          </TableCell>
+        );
+      case "cost_center":
+        return (
+          <TableCell>
+            <Badge variant="outline">
+              {(mr as any).cost_centers?.code || "-"}
+            </Badge>
+          </TableCell>
+        );
+      case "level":
+        return (
+          <TableCell>
+            <Badge
+              variant="default"
+              className="bg-slate-600 dark:bg-slate-700"
+            >
+              <Layers className="h-3 w-3 mr-1" /> {mr.level || "OPEN 1"}
+            </Badge>
+          </TableCell>
+        );
+      case "kategori":
+        return <TableCell>{mr.kategori}</TableCell>;
+      case "department":
+        return <TableCell>{mr.department}</TableCell>;
+      case "tujuan_site":
+        return <TableCell>{mr.tujuan_site || "N/A"}</TableCell>;
+      case "requester":
+        return <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>;
+      case "status":
+        return <TableCell>{renderStatusCell(mr)}</TableCell>;
+      case "umur":
+        return (
+          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatAge(
+              mr.created_at,
+              mr.full_received_at,
+              mr.status === "Full Received",
+            )}
+          </TableCell>
+        );
+      case "company":
+        return (
+          <TableCell>
+            <Badge variant="outline" className="text-xs font-mono">
+              {mr.company_code}
+            </Badge>
+          </TableCell>
+        );
+      case "created_at":
+        return (
+          <TableCell className="text-sm text-muted-foreground">
+            {formatDateFriendly(mr.created_at ?? undefined)}
+          </TableCell>
+        );
+      case "due_date":
+        return (
+          <TableCell className="text-sm">
+            {mr.due_date ? formatDateFriendly(mr.due_date) : "-"}
+          </TableCell>
+        );
+      case "cost_estimation":
+        return (
+          <TableCell className="text-right font-medium">
+            {formatCurrency(Number(mr.cost_estimation))}
+          </TableCell>
+        );
+    }
+  };
+
   return (
     <Content
       title="Manajemen Material Request"
@@ -993,62 +1100,25 @@ export default function MrManagementClient() {
       <div className="flex flex-col gap-4 mb-6 no-print">
         {/* Row 1: Search & Actions */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-grow">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari Kode MR, Requester, Remarks..."
-              className="pl-10 bg-background"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  disabled={isExporting}
-                  variant="outline"
-                  className="w-full md:w-auto"
-                >
-                  {isExporting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Newspaper className="mr-2 h-4 w-4" />
-                  )}{" "}
-                  Excel
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
-                <DropdownMenuLabel>Export ke Excel</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => handleDownloadExcel("filtered")}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  Sesuai filter ({totalItems} MR)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleDownloadExcel("all")}>
-                  <Database className="mr-2 h-4 w-4" />
-                  Semua data
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              onClick={handlePrint}
-              variant="outline"
-              className="w-full md:w-auto"
-            >
-              <Printer className="mr-2 h-4 w-4" /> Cetak
-            </Button>
-          </div>
+          <ListSearchInput
+            placeholder="Cari MR, barang, requester..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={MR_SEARCH_FIELDS}
+          />
+          <ExcelDownloadMenu
+            itemLabel="MR"
+            filteredCount={totalItems}
+            fetchAllCount={fetchAllMrCount}
+            onDownload={handleDownloadExcel}
+            isExporting={isExporting}
+          />
         </div>
 
         {/* Row 2: Filter Grid */}
         <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Status</label>
+          <FilterFields>
+            <FilterField label="Status">
               <SearchableSelect
                 value={statusFilter || "all"}
                 onValueChange={(v) =>
@@ -1067,9 +1137,8 @@ export default function MrManagementClient() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Cost Center</label>
+            </FilterField>
+            <FilterField label="Cost Center">
               <SearchableSelect
                 value={costCenterFilter}
                 onValueChange={(v) => handleFilterChange({ cost_center: v })}
@@ -1086,9 +1155,8 @@ export default function MrManagementClient() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Level</label>
+            </FilterField>
+            <FilterField label="Level">
               <SearchableSelect
                 value={levelFilter || "all"}
                 onValueChange={(v) =>
@@ -1107,9 +1175,8 @@ export default function MrManagementClient() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Departemen</label>
+            </FilterField>
+            <FilterField label="Departemen">
               <SearchableSelect
                 value={departmentFilter || "all"}
                 onValueChange={(v) =>
@@ -1130,12 +1197,8 @@ export default function MrManagementClient() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Tujuan Site</label>
+            </FilterField>
+            <FilterField label="Tujuan Site">
               <SearchableSelect
                 value={siteFilter || "all"}
                 onValueChange={(v) =>
@@ -1156,52 +1219,9 @@ export default function MrManagementClient() {
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Min Estimasi</label>
-              <Input
-                type="number"
-                placeholder="Rp 0"
-                value={minEstimasiInput}
-                onChange={(e) => setMinEstimasiInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Max Estimasi</label>
-              <Input
-                type="number"
-                placeholder="Rp Max"
-                value={maxEstimasiInput}
-                onChange={(e) => setMaxEstimasiInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Dari Tanggal</label>
-              <Input
-                type="date"
-                value={startDateInput}
-                onChange={(e) => setStartDateInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Sampai Tanggal</label>
-              <Input
-                type="date"
-                value={endDateInput}
-                onChange={(e) => setEndDateInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-
+            </FilterField>
             {/* FILTER COMPANY */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Filter Perusahaan</label>
+            <FilterField label="Perusahaan">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -1230,204 +1250,170 @@ export default function MrManagementClient() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-
-            <div className="lg:col-span-2 flex flex-col gap-2 justify-end">
-              <Button
-                className="w-full"
-                onClick={() =>
-                  handleFilterChange({
-                    startDate: startDateInput,
-                    endDate: endDateInput,
-                    min_estimasi: minEstimasiInput,
-                    max_estimasi: maxEstimasiInput,
-                  })
+            </FilterField>
+          </FilterFields>
+          <FilterRangeFields>
+            <FilterField label="Tanggal Dibuat">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Dari tanggal"
+                    type="date"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                    className="bg-background"
+                  />
                 }
-              >
-                Terapkan Filter
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={clearFilters}
-                className="text-muted-foreground w-full"
-              >
-                <X className="mr-2 h-3 w-3" /> Reset Filter
-              </Button>
-            </div>
-          </div>
+                to={
+                  <Input
+                    aria-label="Sampai tanggal"
+                    type="date"
+                    value={endDateInput}
+                    onChange={(e) => setEndDateInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterField label="Estimasi">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Min estimasi"
+                    type="number"
+                    placeholder="Min"
+                    value={minEstimasiInput}
+                    onChange={(e) => setMinEstimasiInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+                to={
+                  <Input
+                    aria-label="Max estimasi"
+                    type="number"
+                    placeholder="Max"
+                    value={maxEstimasiInput}
+                    onChange={(e) => setMaxEstimasiInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterApplyButton
+              onClick={() =>
+                handleFilterChange({
+                  startDate: startDateInput,
+                  endDate: endDateInput,
+                  min_estimasi: minEstimasiInput,
+                  max_estimasi: maxEstimasiInput,
+                })
+              }
+            />
+          </FilterRangeFields>
         </FilterPanel>
+
+        {columnOrder.isCustomOrder && (
+          <ColumnOrderReset onReset={columnOrder.resetOrder} />
+        )}
       </div>
 
       {/* --- Table Data --- */}
-      <div
-        className="border rounded-md overflow-x-auto bg-card"
-        id="printable-area"
+      <StickyHeaderTable
+        className="min-w-[1600px]"
+        containerClassName="border rounded-md overflow-x-auto bg-card"
+        header={
+          <ReorderableHeaderRow
+            order={columnOrder.order}
+            onMove={columnOrder.moveColumn}
+          >
+            <TableHead className="w-[50px]">No</TableHead>
+            {columnOrder.orderedColumns.map((column) => (
+              <ReorderableTableHead
+                key={column.id}
+                column={column}
+                sort={{
+                  currentSort: sortFilter,
+                  onSortChange: (sort) => handleFilterChange({ sort }),
+                }}
+              />
+            ))}
+            <TableHead className="text-right no-print">Aksi</TableHead>
+          </ReorderableHeaderRow>
+        }
       >
-        <Table className="min-w-[1600px]">
-          <TableHeader className="bg-muted/50">
+        <TableBody>
+          {loading ? (
             <TableRow>
-              <TableHead className="w-[50px]">No</TableHead>
-              <TableHead>Kode MR</TableHead>
-              <TableHead>Cost Center</TableHead>
-              <TableHead>Level</TableHead>
-              <TableHead>Kategori</TableHead>
-              <TableHead>Departemen</TableHead>
-              <TableHead>Tujuan Site</TableHead>
-              <TableHead>Requester</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Umur</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Tanggal Dibuat</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead className="text-right">Total Estimasi</TableHead>
-              <TableHead className="text-right no-print">Aksi</TableHead>
+              <TableCell colSpan={15} className="h-24 text-center">
+                <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={15} className="h-24 text-center">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+          ) : dataMR.length > 0 ? (
+            dataMR.map((mr, index) => (
+              <TableRow
+                key={mr.id}
+                className="hover:bg-muted/50 transition-colors cursor-pointer group"
+                onClick={() => handleRowClick(mr)}
+              >
+                <TableCell className="text-muted-foreground">
+                  {(currentPage - 1) * limit + index + 1}
                 </TableCell>
-              </TableRow>
-            ) : dataMR.length > 0 ? (
-              dataMR.map((mr, index) => (
-                <TableRow
-                  key={mr.id}
-                  className="hover:bg-muted/50 transition-colors cursor-pointer group"
-                  onClick={() => handleRowClick(mr)}
+                {columnOrder.orderedColumns.map(({ id }) => (
+                  <Fragment key={id}>{renderMrCell(mr, id)}</Fragment>
+                ))}
+
+                {/* Aksi: View + Edit (Admin Only) */}
+                <TableCell
+                  className="text-right no-print"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <TableCell className="text-muted-foreground">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-
-                  <TableCell className="font-semibold text-foreground">
-                    {mr.kode_mr}
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge variant="outline">
-                      {(mr as any).cost_centers?.code || "-"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="default"
-                      className="bg-slate-600 dark:bg-slate-700"
-                    >
-                      <Layers className="h-3 w-3 mr-1" /> {mr.level || "OPEN 1"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{mr.kategori}</TableCell>
-                  <TableCell>{mr.department}</TableCell>
-                  <TableCell>{mr.tujuan_site || "N/A"}</TableCell>
-                  <TableCell>{mr.users_with_profiles?.nama || "N/A"}</TableCell>
-                  <TableCell>{renderStatusCell(mr)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatAge(
-                      mr.created_at,
-                      mr.full_received_at,
-                      mr.status === "Full Received",
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs font-mono">
-                      {mr.company_code}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDateFriendly(mr.created_at ?? undefined)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {mr.due_date ? formatDateFriendly(mr.due_date) : "-"}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(Number(mr.cost_estimation))}
-                  </TableCell>
-
-                  {/* Aksi: View + Edit (Admin Only) */}
-                  <TableCell className="text-right no-print">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          className="h-8 w-8 p-0"
-                          onClick={(e) => e.stopPropagation()}
+                  <RowActionsMenu>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href={`/material-request/${mr.id}`}
+                          className="cursor-pointer"
                         >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Aksi</DropdownMenuLabel>
+                          <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                        </Link>
+                      </DropdownMenuItem>
+                      {/* Admin Special: Edit available for most statuses except Closed */}
+                      {mr.status !== "Full Received" && (
                         <DropdownMenuItem asChild>
                           <Link
-                            href={`/material-request/${mr.id}`}
+                            href={`/mr-management/edit/${mr.id}`}
                             className="cursor-pointer"
                           >
-                            <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                            <Edit className="mr-2 h-4 w-4" /> Edit Admin
                           </Link>
                         </DropdownMenuItem>
-                        {/* Admin Special: Edit available for most statuses except Closed */}
-                        {mr.status !== "Full Received" && (
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href={`/mr-management/edit/${mr.id}`}
-                              className="cursor-pointer"
-                            >
-                              <Edit className="mr-2 h-4 w-4" /> Edit Admin
-                            </Link>
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={15}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  Tidak ada data ditemukan.
+                      )}
+                  </RowActionsMenu>
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell
+                colSpan={15}
+                className="h-24 text-center text-muted-foreground"
+              >
+                Tidak ada data ditemukan.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </StickyHeaderTable>
 
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mt-4 no-print">
-        {/* Limit Selector */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Show</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(val) => handleFilterChange({ limit: val, page: 1 })}
-          >
-            <SelectTrigger className="w-[80px] h-8 bg-background">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>entries</span>
-          <span className="hidden sm:inline-block ml-2">
-            (Total {totalItems})
-          </span>
-        </div>
-
-        <CustomPagination
-          currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / limit)}
-          onPageChange={handlePageChange}
-        />
-      </div>
+      <TablePaginationFooter
+        currentPage={currentPage}
+        totalItems={totalItems}
+        limit={limit}
+        limitOptions={PAGE_SIZE_OPTIONS}
+        itemLabel="MR"
+        onPageChange={handlePageChange}
+        onLimitChange={(val) => handleFilterChange({ limit: val, page: 1 })}
+        className="mt-4 no-print"
+      />
 
       {/* --- QUICK VIEW DIALOG --- */}
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>

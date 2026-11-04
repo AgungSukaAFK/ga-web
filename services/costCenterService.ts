@@ -1,5 +1,6 @@
 // src/services/costCenterService.ts
 
+import { orIlikePattern } from "@/lib/supabase/search-filter";
 import { createClient } from "@/lib/supabase/client";
 import { CostCenter, CostCenterHistory, Profile } from "@/type";
 import { toast } from "@/lib/toast";
@@ -15,7 +16,8 @@ export const fetchCostCenters = async (
   limit: number,
   searchQuery: string | null,
   companyFilter: string | null,
-  adminProfile: Profile | null
+  adminProfile: Profile | null,
+  sort?: { column: string; ascending: boolean },
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -23,7 +25,8 @@ export const fetchCostCenters = async (
   let query = supabase.from("cost_centers").select("*", { count: "exact" });
 
   if (searchQuery) {
-    query = query.or(`name.ilike.%${searchQuery}%,code.ilike.%${searchQuery}%`);
+    const search = orIlikePattern(searchQuery);
+    query = query.or(`name.ilike.${search},code.ilike.${search}`);
   }
 
   if (companyFilter) {
@@ -36,7 +39,11 @@ export const fetchCostCenters = async (
   }
 
   const { data, error, count } = await query
-    .order("name", { ascending: true })
+    .order(sort?.column ?? "name", {
+      ascending: sort?.ascending ?? true,
+      nullsFirst: false,
+    })
+    .order("id", { ascending: true }) // urutan stabil antar halaman
     .range(from, to);
 
   if (error) {

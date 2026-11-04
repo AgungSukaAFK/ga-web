@@ -22,6 +22,9 @@ interface ConfirmDialogProps extends PropsWithChildren {
   confirmText?: string;
   cancelText?: string;
   triggerButtonText?: string;
+  // Diisi = dialog dibuka dari luar (mis. item dropdown), tanpa trigger.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ConfirmDialog({
@@ -32,16 +35,20 @@ export function ConfirmDialog({
   cancelText = "Cancel",
   triggerButtonText = "Show Dialog",
   children,
+  open,
+  onOpenChange,
 }: ConfirmDialogProps) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        {/*
-          'children' prop allows you to pass any component as a trigger.
-          If no children are provided, it defaults to a <Button>.
-        */}
-        {children || <Button variant="outline">{triggerButtonText}</Button>}
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      {open === undefined && (
+        <AlertDialogTrigger asChild>
+          {/*
+            'children' prop allows you to pass any component as a trigger.
+            If no children are provided, it defaults to a <Button>.
+          */}
+          {children || <Button variant="outline">{triggerButtonText}</Button>}
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

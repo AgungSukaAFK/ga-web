@@ -3,7 +3,11 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { CustomPagination } from "@/components/custom-pagination";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +28,9 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -62,7 +64,6 @@ import {
   RefreshCw,
   Trash2,
   ExternalLink,
-  Search,
   Database,
   HardDrive,
   Sparkles,
@@ -140,6 +141,11 @@ function FilterField({ label, children }: { label: string; children: React.React
     </div>
   );
 }
+
+const SEARCH_FIELDS = [
+  "Nama file",
+  "Kode dokumen",
+];
 
 export function FileManagementClientContent() {
   const s = createClient();
@@ -444,15 +450,12 @@ export function FileManagementClientContent() {
       </div>
 
       <div className="flex flex-col gap-4 mb-6">
-        <div className="relative flex-grow">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari nama file / kode dokumen..."
-            className="pl-10"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-        </div>
+        <ListSearchInput
+          placeholder="Cari nama file atau kode..."
+          value={searchInput}
+          onChange={setSearchInput}
+          searchableFields={SEARCH_FIELDS}
+        />
 
         <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -551,115 +554,107 @@ export function FileManagementClientContent() {
         </div>
       )}
 
-      <div className="border rounded-md overflow-x-auto">
-        <Table className="min-w-[1100px]">
-          <TableHeader>
+      <StickyHeaderTable
+        className="min-w-[1100px]"
+        containerClassName="border rounded-md overflow-x-auto"
+        header={
+          <TableRow>
+            <TableHead className="w-[40px]">
+              <Checkbox checked={allOnPageSelected} onCheckedChange={toggleSelectAll} />
+            </TableHead>
+            <TableHead>Nama File</TableHead>
+            <TableHead>Dokumen</TableHead>
+            <TableHead>Storage</TableHead>
+            <TableHead>Ukuran</TableHead>
+            <TableHead>Tanggal</TableHead>
+            <TableHead className="text-right">Aksi</TableHead>
+          </TableRow>
+        }
+      >
+        <TableBody>
+          {loading ? (
             <TableRow>
-              <TableHead className="w-[40px]">
-                <Checkbox checked={allOnPageSelected} onCheckedChange={toggleSelectAll} />
-              </TableHead>
-              <TableHead>Nama File</TableHead>
-              <TableHead>Dokumen</TableHead>
-              <TableHead>Storage</TableHead>
-              <TableHead>Ukuran</TableHead>
-              <TableHead>Tanggal</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableCell colSpan={7} className="text-center h-24">
+                <div className="flex justify-center items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Memuat data...
+                </div>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center h-24">
-                  <div className="flex justify-center items-center gap-2">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Memuat data...
-                  </div>
+          ) : rows.length > 0 ? (
+            rows.map((entry) => (
+              <TableRow key={entry.id}>
+                <TableCell>
+                  <Checkbox checked={selected.has(entry.id)} onCheckedChange={() => toggleSelect(entry.id)} />
                 </TableCell>
-              </TableRow>
-            ) : rows.length > 0 ? (
-              rows.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell>
-                    <Checkbox checked={selected.has(entry.id)} onCheckedChange={() => toggleSelect(entry.id)} />
-                  </TableCell>
-                  <TableCell className="max-w-[240px]">
+                <TableCell className="max-w-[240px]">
+                  <a
+                    href={entry.viewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 hover:underline"
+                  >
+                    <span className="truncate">{entry.fileName}</span>
+                    <ExternalLink className="h-3 w-3 shrink-0" />
+                  </a>
+                  {entry.missing && (
+                    <Badge variant="destructive" className="mt-1">
+                      File hilang di storage
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{DOC_TYPE_LABEL[entry.source]}</Badge>
+                  {entry.documentHref ? (
                     <a
-                      href={entry.viewUrl}
+                      href={entry.documentHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 hover:underline"
+                      className="block text-xs text-muted-foreground hover:underline mt-1"
                     >
-                      <span className="truncate">{entry.fileName}</span>
-                      <ExternalLink className="h-3 w-3 shrink-0" />
+                      {entry.documentCode}
                     </a>
-                    {entry.missing && (
-                      <Badge variant="destructive" className="mt-1">
-                        File hilang di storage
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{DOC_TYPE_LABEL[entry.source]}</Badge>
-                    {entry.documentHref ? (
-                      <a
-                        href={entry.documentHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-xs text-muted-foreground hover:underline mt-1"
-                      >
-                        {entry.documentCode}
-                      </a>
-                    ) : (
-                      <div className="text-xs text-muted-foreground mt-1">-</div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{entry.bucket === "legacy" ? "Legacy" : "VPS"}</Badge>
-                  </TableCell>
-                  <TableCell>{entry.size !== null ? formatFileSize(entry.size) : "-"}</TableCell>
-                  <TableCell>{entry.uploadedAt ? formatDateWithTime(entry.uploadedAt) : "-"}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => setDeleteTarget([entry])}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center h-24">
-                  Tidak ada file ditemukan sesuai filter.
+                  ) : (
+                    <div className="text-xs text-muted-foreground mt-1">-</div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{entry.bucket === "legacy" ? "Legacy" : "VPS"}</Badge>
+                </TableCell>
+                <TableCell>{entry.size !== null ? formatFileSize(entry.size) : "-"}</TableCell>
+                <TableCell>{entry.uploadedAt ? formatDateWithTime(entry.uploadedAt) : "-"}</TableCell>
+                <TableCell className="text-right">
+                  <RowActionsMenu>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => setDeleteTarget([entry])}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                    </DropdownMenuItem>
+                  </RowActionsMenu>
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={7} className="text-center h-24">
+                Tidak ada file ditemukan sesuai filter.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </StickyHeaderTable>
 
-      <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select value={String(limit)} onValueChange={(value) => handleFilterChange({ limit: value })}>
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {total} file.</span>
-        </div>
-
-        <CustomPagination
-          currentPage={currentPage}
-          totalPages={Math.max(1, Math.ceil(total / limit))}
-          onPageChange={handlePageChange}
-        />
-      </div>
+      <TablePaginationFooter
+        currentPage={currentPage}
+        totalItems={total}
+        limit={limit}
+        limitOptions={LIMIT_OPTIONS}
+        itemLabel="file"
+        onPageChange={handlePageChange}
+        onLimitChange={(value) => handleFilterChange({ limit: value })}
+        className="mt-6"
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && !isDeleting && setDeleteTarget(null)}>
         <AlertDialogContent>

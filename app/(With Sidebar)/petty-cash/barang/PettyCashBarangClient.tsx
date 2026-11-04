@@ -3,15 +3,23 @@
 "use client";
 
 import { Content } from "@/components/content";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -25,17 +33,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
-import { Loader2, Search, Edit, Plus, Trash2, Box } from "lucide-react";
+import { Loader2, Edit, Plus, Trash2, Box } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "@/lib/toast";
@@ -56,7 +57,6 @@ import {
   PETTY_CASH_BARANG_KATEGORI_OPTIONS_BY_COA,
   UOM_OPTIONS,
 } from "@/type/enum";
-import { PaginationComponent } from "@/components/pagination-components";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
@@ -374,6 +374,26 @@ function BarangDialog({
   );
 }
 
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "part_name.asc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  part_number: { column: "part_number" },
+  part_name: { column: "part_name" },
+  coa_gmi: { column: "coa_gmi" },
+  coa_gis: { column: "coa_gis" },
+  uom: { column: "uom" },
+  last_purchase_price: { column: "last_purchase_price" },
+  updated_at: { column: "updated_at" },
+};
+
+const SEARCH_FIELDS = [
+  "Nama Barang",
+  "Kode",
+  "COA GMI",
+  "COA GIS",
+  "Vendor",
+];
+
 export default function PettyCashBarangClient() {
   const supabase = createClient();
   const router = useRouter();
@@ -383,6 +403,13 @@ export default function PettyCashBarangClient() {
 
   const [data, setData] = useState<PettyCashBarang[]>([]);
   const [totalItems, setTotalItems] = useState(0);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    description: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -394,6 +421,7 @@ export default function PettyCashBarangClient() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
   const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
     searchTerm,
@@ -429,6 +457,20 @@ export default function PettyCashBarangClient() {
     [searchParams],
   );
 
+  const handlePageChange = (page: number) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString({ page })}`);
+    });
+  };
+
+  const handleFilterChange = (
+    updates: Record<string, string | number | undefined>,
+  ) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString(updates)}`);
+    });
+  };
+
   const loadData = useCallback(() => {
     async function fetchData() {
       setLoading(true);
@@ -449,6 +491,7 @@ export default function PettyCashBarangClient() {
           currentPage,
           limit,
           searchTerm,
+          resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT),
         );
         setData(rows);
         setTotalItems(count);
@@ -459,7 +502,7 @@ export default function PettyCashBarangClient() {
       }
     }
     fetchData();
-  }, [supabase, currentPage, limit, searchTerm]);
+  }, [supabase, currentPage, limit, searchTerm, sortFilter]);
 
   useEffect(() => {
     loadData();
@@ -503,159 +546,187 @@ export default function PettyCashBarangClient() {
         }
       >
         <div className="flex flex-col gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari Nama, Kode, COA, atau Vendor..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="border rounded-md overflow-x-auto">
-          <Table className="min-w-[1000px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">No</TableHead>
-                <TableHead className="w-[120px]">Kode</TableHead>
-                <TableHead>Nama Barang</TableHead>
-                <TableHead className="w-[150px]">COA GMI</TableHead>
-                <TableHead className="w-[150px]">COA GIS</TableHead>
-                <TableHead className="w-[90px]">UoM</TableHead>
-                <TableHead className="w-[140px] text-right">
-                  Harga Ref
-                </TableHead>
-                <TableHead className="w-[160px]">Terakhir Diubah</TableHead>
-                {canModify && (
-                  <TableHead className="w-[110px] text-right">Aksi</TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || isPending ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : data.length > 0 ? (
-                data.map((item, index) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      {(currentPage - 1) * limit + index + 1}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.part_number || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{item.part_name}</div>
-                      {item.description && (
-                        <div
-                          className="text-xs text-muted-foreground truncate max-w-[280px]"
-                          title={item.description}
-                        >
-                          {item.description}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <CoaValue text={item.coa_gmi} />
-                    </TableCell>
-                    <TableCell>
-                      <CoaValue text={item.coa_gis} />
-                    </TableCell>
-                    <TableCell>
-                      {item.uom || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs">
-                      {item.last_purchase_price
-                        ? formatCurrency(item.last_purchase_price)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      <div>{item.updated_by_profile?.nama || "-"}</div>
-                      <div>
-                        {format(new Date(item.updated_at), "dd/MM/yyyy HH:mm")}
-                      </div>
-                    </TableCell>
-                    {canModify && (
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenEdit(item)}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <ConfirmDialog
-                          title={`Hapus Barang: ${item.part_name}`}
-                          description="Apakah Anda yakin ingin menghapus barang ini dari katalog Petty Cash? Tindakan ini tidak dapat dibatalkan."
-                          onConfirm={() => handleDelete(item)}
-                        >
-                          <Button variant="destructive" size="sm">
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </ConfirmDialog>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={9}
-                    className="text-center h-24 text-muted-foreground"
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <Box className="h-6 w-6" />
-                      Belum ada data barang Petty Cash.
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Tampilkan</span>
-            <Select
-              value={String(limit)}
-              onValueChange={(value) =>
-                startTransition(() =>
-                  router.push(
-                    `${pathname}?${createQueryString({ limit: value })}`,
-                  ),
-                )
-              }
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder={limit} />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={String(opt)}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>dari {totalItems} barang.</span>
-          </div>
-          <PaginationComponent
-            currentPage={currentPage}
-            totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
+          <ListSearchInput
+            placeholder="Cari barang, kode, atau COA..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
           />
         </div>
+
+        <StickyHeaderTable
+          className="min-w-[1000px]"
+          containerClassName="border rounded-md overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <SortableTableHead
+              sortKey="part_number"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              className="w-[120px]"
+            >
+              Kode
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="part_name"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Nama Barang
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="coa_gmi"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              className="w-[150px]"
+            >
+              COA GMI
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="coa_gis"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              className="w-[150px]"
+            >
+              COA GIS
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="uom"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              className="w-[90px]"
+            >
+              UoM
+            </SortableTableHead>
+              <TableHead className="w-[140px] text-right">
+                Harga Ref
+              </TableHead>
+              <SortableTableHead
+              sortKey="updated_at"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="w-[160px]"
+            >
+              Terakhir Diubah
+            </SortableTableHead>
+              {canModify && (
+                <TableHead className="w-[110px] text-right">Aksi</TableHead>
+              )}
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading || isPending ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : data.length > 0 ? (
+              data.map((item, index) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium">
+                    {(currentPage - 1) * limit + index + 1}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {item.part_number || (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">{item.part_name}</div>
+                    {item.description && (
+                      <div
+                        className="text-xs text-muted-foreground truncate max-w-[280px]"
+                        title={item.description}
+                      >
+                        {item.description}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <CoaValue text={item.coa_gmi} />
+                  </TableCell>
+                  <TableCell>
+                    <CoaValue text={item.coa_gis} />
+                  </TableCell>
+                  <TableCell>
+                    {item.uom || (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {item.last_purchase_price
+                      ? formatCurrency(item.last_purchase_price)
+                      : "-"}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div>{item.updated_by_profile?.nama || "-"}</div>
+                    <div>
+                      {format(new Date(item.updated_at), "dd/MM/yyyy HH:mm")}
+                    </div>
+                  </TableCell>
+                  {canModify && (
+                    <TableCell className="text-right">
+                      <RowActionsMenu>
+                        <DropdownMenuItem onSelect={() => handleOpenEdit(item)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() =>
+                            setConfirmAction({
+                              title: `Hapus Barang: ${item.part_name}`,
+                              description:
+                                "Apakah Anda yakin ingin menghapus barang ini dari katalog Petty Cash? Tindakan ini tidak dapat dibatalkan.",
+                              onConfirm: () => handleDelete(item),
+                            })
+                          }
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                        </DropdownMenuItem>
+                      </RowActionsMenu>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={9}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <Box className="h-6 w-6" />
+                    Belum ada data barang Petty Cash.
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(open) => !open && setConfirmAction(null)}
+          title={confirmAction?.title ?? ""}
+          description={confirmAction?.description ?? ""}
+          confirmText={confirmAction?.confirmText}
+          cancelText={confirmAction?.cancelText}
+          onConfirm={() => confirmAction?.onConfirm()}
+        />
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={totalItems}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="barang"
+          onPageChange={handlePageChange}
+          onLimitChange={(value) => handleFilterChange({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       <BarangDialog

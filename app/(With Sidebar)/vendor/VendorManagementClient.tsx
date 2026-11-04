@@ -3,15 +3,22 @@
 "use client";
 
 import { Content } from "@/components/content";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -20,11 +27,9 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -40,14 +45,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import {
   Loader2,
-  Search,
   Edit,
   Plus,
   Trash2,
   Mail,
   User,
   MapPin,
-  Newspaper,
   Building2,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -56,13 +59,13 @@ import { toast } from "@/lib/toast";
 import { Vendor, Profile } from "@/type";
 import {
   deleteVendor,
+  fetchAllVendors,
   fetchVendors,
   createVendor,
   updateVendor,
 } from "@/services/vendorService";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LIMIT_OPTIONS, VENDOR_TIPE_OPTIONS, VENDOR_TIPE_LABELS } from "@/type/enum";
-import { PaginationComponent } from "@/components/pagination-components";
 import { Badge } from "@/components/ui/badge";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
@@ -257,6 +260,23 @@ function VendorDialog({
 }
 
 // --- Komponen Klien Utama ---
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "nama_vendor.asc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  kode_vendor: { column: "kode_vendor" },
+  nama_vendor: { column: "nama_vendor" },
+  tipe_vendor: { column: "tipe_vendor" },
+  pic_contact_person: { column: "pic_contact_person" },
+  email: { column: "email" },
+  alamat: { column: "alamat" },
+};
+
+const SEARCH_FIELDS = [
+  "Kode Vendor",
+  "Nama Vendor",
+  "PIC Contact",
+];
+
 export function VendorManagementClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -267,6 +287,13 @@ export function VendorManagementClientContent() {
   const [vendorList, setVendorList] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalItems, setTotalItems] = useState<number>(0);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    description: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // State Dialog
@@ -277,6 +304,7 @@ export function VendorManagementClientContent() {
   // State dari URL
   const currentPage = Number(searchParams.get("page") || "1");
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const limit = Number(searchParams.get("limit") || 25);
 
   // State untuk input form
@@ -311,6 +339,20 @@ export function VendorManagementClientContent() {
     [searchParams]
   );
 
+  const handlePageChange = (page: number) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString({ page })}`);
+    });
+  };
+
+  const handleFilterChange = (
+    updates: Record<string, string | number | undefined>,
+  ) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString(updates)}`);
+    });
+  };
+
   const loadData = useCallback(() => {
     async function fetchData() {
       setLoading(true);
@@ -319,7 +361,8 @@ export function VendorManagementClientContent() {
         const { data: vData, count } = await fetchVendors(
           currentPage,
           limit,
-          searchTerm
+          searchTerm,
+          resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT),
         );
         setVendorList(vData);
         setTotalItems(count);
@@ -330,7 +373,7 @@ export function VendorManagementClientContent() {
       }
     }
     fetchData();
-  }, [s, currentPage, limit, searchTerm, router]);
+  }, [s, currentPage, limit, searchTerm, sortFilter, router]);
 
   useEffect(() => {
     loadData();
@@ -341,12 +384,18 @@ export function VendorManagementClientContent() {
     setIsFormOpen(true);
   };
 
-  const handleDownloadExcel = async () => {
+  const fetchAllVendorCount = async () => {
+    const { count } = await fetchVendors(1, 1, null);
+    return count;
+  };
+
+  const handleDownloadExcel = async (mode: ExcelDownloadMode) => {
     setIsExporting(true);
+    const toastId = toast.loading("Menyiapkan data vendor...");
     try {
-      const { data } = await fetchVendors(1, 10000, searchTerm);
-      if (!data || data.length === 0) {
-        toast.warning("Tidak ada data vendor untuk diexport.");
+      const data = await fetchAllVendors(mode === "filtered" ? searchTerm : null);
+      if (data.length === 0) {
+        toast.warning("Tidak ada data vendor untuk diexport.", { id: toastId });
         return;
       }
       const dataToExport = data.map((vendor, index) => ({
@@ -365,7 +414,7 @@ export function VendorManagementClientContent() {
         `Data_Vendor_${new Date().toISOString().split("T")[0]}.xlsx`,
         "Data Vendor",
       );
-      toast.success("File Excel berhasil didownload!");
+      toast.success("File Excel berhasil didownload!", { id: toastId });
     } catch (err: any) {
       toast.error("Gagal export data vendor", { description: err.message });
     } finally {
@@ -399,18 +448,6 @@ export function VendorManagementClientContent() {
         description="Kelola daftar Vendor (Pemasok) untuk Purchase Order."
         cardAction={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleDownloadExcel}
-              disabled={isExporting}
-            >
-              {isExporting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Newspaper className="mr-2 h-4 w-4" />
-              )}
-              Excel
-            </Button>
             <Button onClick={handleOpenNew}>
               <Plus className="mr-2 h-4 w-4" /> Tambah Vendor
             </Button>
@@ -418,141 +455,170 @@ export function VendorManagementClientContent() {
         }
         className="col-span-12"
       >
-        <div className="flex flex-col gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari berdasarkan Kode, Nama, atau PIC..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="border rounded-md overflow-x-auto">
-          <Table className="min-w-[1200px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">No</TableHead>
-                <TableHead>Kode Vendor</TableHead>
-                <TableHead>Nama Vendor</TableHead>
-                <TableHead>Tipe Vendor</TableHead>
-                <TableHead>PIC Contact</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Alamat</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || isPending ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : vendorList.length > 0 ? (
-                vendorList.map((vendor, index) => (
-                  <TableRow key={vendor.id}>
-                    <TableCell className="font-medium">
-                      {(currentPage - 1) * limit + index + 1}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs font-semibold">
-                      {vendor.kode_vendor}
-                    </TableCell>
-                    <TableCell>{vendor.nama_vendor}</TableCell>
-                    <TableCell>
-                      {vendor.tipe_vendor ? (
-                        <Badge variant="outline" className="gap-1">
-                          <Building2 className="h-3 w-3" />
-                          {VENDOR_TIPE_LABELS[vendor.tipe_vendor]}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        {vendor.pic_contact_person || "-"}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        {vendor.email || "-"}
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-[300px] truncate">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                        <span className="truncate">{vendor.alamat || "-"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenEdit(vendor)}
-                      >
-                        <Edit className="mr-2 h-3 w-3" /> Edit
-                      </Button>
-                      <ConfirmDialog
-                        title={`Hapus Vendor: ${vendor.kode_vendor}`}
-                        description="Apakah Anda yakin ingin menghapus data Vendor ini? Tindakan ini tidak dapat dibatalkan."
-                        onConfirm={() => handleDelete(vendor.id)}
-                      >
-                        <Button variant="destructive" size="sm">
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </ConfirmDialog>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    Tidak ada data vendor ditemukan.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Tampilkan</span>
-            <Select
-              value={String(limit)}
-              onValueChange={(value) =>
-                startTransition(() =>
-                  router.push(
-                    `${pathname}?${createQueryString({ limit: value })}`
-                  )
-                )
-              }
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder={limit} />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={String(opt)}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>dari {totalItems} vendor.</span>
-          </div>
-          <PaginationComponent
-            currentPage={currentPage}
-            totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
+        <div className="flex flex-col md:flex-row gap-4 mb-6">
+          <ListSearchInput
+            placeholder="Cari kode, nama, atau PIC..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
+          <ExcelDownloadMenu
+            itemLabel="vendor"
+            filteredCount={totalItems}
+            fetchAllCount={fetchAllVendorCount}
+            onDownload={handleDownloadExcel}
+            isExporting={isExporting}
           />
         </div>
+
+        <StickyHeaderTable
+          className="min-w-[1200px]"
+          containerClassName="border rounded-md overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <SortableTableHead
+              sortKey="kode_vendor"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Kode Vendor
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="nama_vendor"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Nama Vendor
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="tipe_vendor"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Tipe Vendor
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="pic_contact_person"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              PIC Contact
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="email"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Email
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="alamat"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Alamat
+            </SortableTableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading || isPending ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : vendorList.length > 0 ? (
+              vendorList.map((vendor, index) => (
+                <TableRow key={vendor.id}>
+                  <TableCell className="font-medium">
+                    {(currentPage - 1) * limit + index + 1}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs font-semibold">
+                    {vendor.kode_vendor}
+                  </TableCell>
+                  <TableCell>{vendor.nama_vendor}</TableCell>
+                  <TableCell>
+                    {vendor.tipe_vendor ? (
+                      <Badge variant="outline" className="gap-1">
+                        <Building2 className="h-3 w-3" />
+                        {VENDOR_TIPE_LABELS[vendor.tipe_vendor]}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      {vendor.pic_contact_person || "-"}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      {vendor.email || "-"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-[300px] truncate">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      <span className="truncate">{vendor.alamat || "-"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <RowActionsMenu>
+                      <DropdownMenuItem onSelect={() => handleOpenEdit(vendor)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() =>
+                          setConfirmAction({
+                            title: `Hapus Vendor: ${vendor.kode_vendor}`,
+                            description:
+                              "Apakah Anda yakin ingin menghapus data Vendor ini? Tindakan ini tidak dapat dibatalkan.",
+                            onConfirm: () => handleDelete(vendor.id),
+                          })
+                        }
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                      </DropdownMenuItem>
+                    </RowActionsMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center h-24">
+                  Tidak ada data vendor ditemukan.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(open) => !open && setConfirmAction(null)}
+          title={confirmAction?.title ?? ""}
+          description={confirmAction?.description ?? ""}
+          confirmText={confirmAction?.confirmText}
+          cancelText={confirmAction?.cancelText}
+          onConfirm={() => confirmAction?.onConfirm()}
+        />
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={totalItems}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="vendor"
+          onPageChange={handlePageChange}
+          onLimitChange={(value) => handleFilterChange({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       <VendorDialog

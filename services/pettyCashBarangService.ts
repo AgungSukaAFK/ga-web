@@ -7,6 +7,7 @@
 // yang membatasi insert/update/delete cuma admin & departemen GA (lihat
 // isGADepartment di lib/constants/departments.ts).
 
+import { orIlikePattern } from "@/lib/supabase/search-filter";
 import { createClient } from "@/lib/supabase/client";
 import { PettyCashBarang } from "@/type";
 import { PC_COA_OPTIONS } from "@/type/enum";
@@ -23,6 +24,7 @@ export const fetchPettyCashBarang = async (
   page: number,
   limit: number,
   searchQuery: string | null,
+  sort?: { column: string; ascending: boolean },
 ) => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -32,14 +34,18 @@ export const fetchPettyCashBarang = async (
     .select(SELECT_WITH_PROFILES, { count: "exact" });
 
   if (searchQuery) {
-    const search = `%${searchQuery}%`;
+    const search = orIlikePattern(searchQuery);
     query = query.or(
       `part_name.ilike.${search},part_number.ilike.${search},coa_gmi.ilike.${search},coa_gis.ilike.${search},vendor.ilike.${search}`,
     );
   }
 
   const { data, error, count } = await query
-    .order("part_name", { ascending: true })
+    .order(sort?.column ?? "part_name", {
+      ascending: sort?.ascending ?? true,
+      nullsFirst: false,
+    })
+    .order("id", { ascending: true }) // urutan stabil antar halaman
     .range(from, to);
 
   if (error) throw error;

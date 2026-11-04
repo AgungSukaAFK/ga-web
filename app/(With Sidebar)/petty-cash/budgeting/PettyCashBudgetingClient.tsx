@@ -15,7 +15,16 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination-components";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,13 +34,6 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import {
   SearchableSelect,
   SearchableSelectTrigger,
   SearchableSelectValue,
@@ -39,11 +41,9 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -75,7 +75,6 @@ import {
   History,
   Power,
   PowerOff,
-  Search,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { User } from "@supabase/supabase-js";
@@ -395,6 +394,24 @@ function HistoryDialog({
   );
 }
 
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "department.asc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  name: { column: "name" },
+  department: { column: "department" },
+  site: { column: "site" },
+  company_code: { column: "company_code" },
+  is_active: { column: "is_active" },
+  initial_budget: { column: "initial_budget" },
+  current_budget: { column: "current_budget" },
+};
+
+const SEARCH_FIELDS = [
+  "Nama",
+  "Departemen",
+  "Site/Lokasi",
+];
+
 export function PettyCashBudgetingClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -403,6 +420,13 @@ export function PettyCashBudgetingClientContent() {
 
   const [data, setData] = useState<PettyCashBudget[]>([]);
   const [totalItems, setTotalItems] = useState(0);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    description: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
@@ -411,6 +435,7 @@ export function PettyCashBudgetingClientContent() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const companyFilter = searchParams.get("company") || "";
 
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
@@ -451,6 +476,12 @@ export function PettyCashBudgetingClientContent() {
     [searchParams],
   );
 
+  const handlePageChange = (page: number) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString({ page })}`);
+    });
+  };
+
   const loadData = useCallback(() => {
     async function fetchData() {
       setLoading(true);
@@ -487,6 +518,7 @@ export function PettyCashBudgetingClientContent() {
           searchTerm,
           companyFilter,
           profileData,
+          resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT),
         );
         setData(budgetData);
         setTotalItems(count);
@@ -497,7 +529,7 @@ export function PettyCashBudgetingClientContent() {
       }
     }
     fetchData();
-  }, [s, currentPage, limit, searchTerm, companyFilter, router]);
+  }, [s, currentPage, limit, searchTerm, sortFilter, companyFilter, router]);
 
   useEffect(() => {
     loadData();
@@ -589,15 +621,12 @@ export function PettyCashBudgetingClientContent() {
         className="col-span-12"
       >
         <div className="flex flex-col gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari berdasarkan Nama, Departemen, atau Site..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+          <ListSearchInput
+            placeholder="Cari nama, departemen, site..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
           {adminProfile?.company === "LOURDES" && (
             <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -627,155 +656,179 @@ export function PettyCashBudgetingClientContent() {
           )}
         </div>
 
-        <div className="border rounded-md overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama</TableHead>
-                <TableHead>Departemen</TableHead>
-                <TableHead>Site/Lokasi</TableHead>
-                <TableHead>Perusahaan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Initial Budget</TableHead>
-                <TableHead className="text-right">Sisa Budget</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || isPending ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : data.length > 0 ? (
-                data.map((item) => {
-                  const isInactive = item.is_active === false;
-                  const dimClass = isInactive ? "opacity-50" : "";
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className={cn("font-medium", dimClass)}>
-                        {item.name}
-                      </TableCell>
-                      <TableCell className={dimClass}>
-                        {item.department}
-                      </TableCell>
-                      <TableCell className={cn("text-sm", dimClass)}>
-                        {item.site || "-"}
-                      </TableCell>
-                      <TableCell className={dimClass}>
-                        <Badge variant="outline">
-                          {item.company_code || "-"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {isInactive ? (
-                          <Badge variant="secondary">Nonaktif</Badge>
-                        ) : (
-                          <Badge className="bg-green-500 text-white">
-                            Aktif
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className={cn("text-right", dimClass)}>
-                        {formatCurrency(item.initial_budget)}
-                      </TableCell>
-                      <TableCell
-                        className={cn("text-right font-bold", dimClass)}
-                      >
-                        {formatCurrency(item.current_budget)}
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenHistory(item)}
-                        >
-                          <History className="mr-2 h-3 w-3" /> Riwayat
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleOpenEdit(item)}
-                        >
-                          <Edit className="mr-2 h-3 w-3" /> Edit/Top-up
-                        </Button>
-                        <ConfirmDialog
-                          title={
-                            isInactive
-                              ? `Aktifkan Budget: ${item.name}`
-                              : `Nonaktifkan Budget: ${item.name}`
-                          }
-                          description={
-                            isInactive
-                              ? `Aktifkan kembali Budget "${item.name}"?`
-                              : `Nonaktifkan Budget "${item.name}"? Budget ini tidak akan lagi otomatis dipasangkan ke Pengajuan baru dari kombinasi departemen+site+perusahaan ini.`
-                          }
-                          confirmText={isInactive ? "Aktifkan" : "Nonaktifkan"}
-                          cancelText="Batal"
-                          onConfirm={() => handleToggleActive(item)}
-                        >
-                          <Button
-                            variant={isInactive ? "outline" : "destructive"}
-                            size="sm"
-                            disabled={togglingId === item.id}
-                          >
-                            {togglingId === item.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : isInactive ? (
-                              <>
-                                <Power className="mr-2 h-3 w-3" /> Aktifkan
-                              </>
-                            ) : (
-                              <>
-                                <PowerOff className="mr-2 h-3 w-3" /> Nonaktifkan
-                              </>
-                            )}
-                          </Button>
-                        </ConfirmDialog>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    Belum ada budget - tambah budget pertama utk sebuah
-                    departemen.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Tampilkan</span>
-            <Select
-              value={String(limit)}
-              onValueChange={(value) => handleFilterChange({ limit: value })}
+        <StickyHeaderTable
+          containerClassName="border rounded-md overflow-x-auto"
+          header={
+            <TableRow>
+              <SortableTableHead
+              sortKey="name"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
             >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder={limit} />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={String(opt)}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>dari {totalItems} budget.</span>
-          </div>
-          <PaginationComponent
-            currentPage={currentPage}
-            totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
-          />
-        </div>
+              Nama
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="department"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Departemen
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="site"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Site/Lokasi
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="company_code"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Perusahaan
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="is_active"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+            >
+              Status
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="initial_budget"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="text-right"
+            >
+              Initial Budget
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="current_budget"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="text-right"
+            >
+              Sisa Budget
+            </SortableTableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading || isPending ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : data.length > 0 ? (
+              data.map((item) => {
+                const isInactive = item.is_active === false;
+                const dimClass = isInactive ? "opacity-50" : "";
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell className={cn("font-medium", dimClass)}>
+                      {item.name}
+                    </TableCell>
+                    <TableCell className={dimClass}>
+                      {item.department}
+                    </TableCell>
+                    <TableCell className={cn("text-sm", dimClass)}>
+                      {item.site || "-"}
+                    </TableCell>
+                    <TableCell className={dimClass}>
+                      <Badge variant="outline">
+                        {item.company_code || "-"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {isInactive ? (
+                        <Badge variant="secondary">Nonaktif</Badge>
+                      ) : (
+                        <Badge className="bg-green-500 text-white">
+                          Aktif
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className={cn("text-right", dimClass)}>
+                      {formatCurrency(item.initial_budget)}
+                    </TableCell>
+                    <TableCell
+                      className={cn("text-right font-bold", dimClass)}
+                    >
+                      {formatCurrency(item.current_budget)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <RowActionsMenu>
+                        <DropdownMenuItem onSelect={() => handleOpenHistory(item)}>
+                          <History className="mr-2 h-4 w-4" /> Riwayat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleOpenEdit(item)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit/Top-up
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={togglingId === item.id}
+                          className={isInactive ? undefined : "text-destructive focus:text-destructive"}
+                          onSelect={() =>
+                            setConfirmAction({
+                              title: isInactive
+                                ? `Aktifkan Budget: ${item.name}`
+                                : `Nonaktifkan Budget: ${item.name}`,
+                              description: isInactive
+                                ? `Aktifkan kembali Budget "${item.name}"?`
+                                : `Nonaktifkan Budget "${item.name}"? Budget ini tidak akan lagi otomatis dipasangkan ke Pengajuan baru dari kombinasi departemen+site+perusahaan ini.`,
+                              confirmText: isInactive ? "Aktifkan" : "Nonaktifkan",
+                              cancelText: "Batal",
+                              onConfirm: () => handleToggleActive(item),
+                            })
+                          }
+                        >
+                          {isInactive ? (
+                            <Power className="mr-2 h-4 w-4" />
+                          ) : (
+                            <PowerOff className="mr-2 h-4 w-4" />
+                          )}
+                          {isInactive ? "Aktifkan" : "Nonaktifkan"}
+                        </DropdownMenuItem>
+                      </RowActionsMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center h-24">
+                  Belum ada budget - tambah budget pertama utk sebuah
+                  departemen.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(open) => !open && setConfirmAction(null)}
+          title={confirmAction?.title ?? ""}
+          description={confirmAction?.description ?? ""}
+          confirmText={confirmAction?.confirmText}
+          cancelText={confirmAction?.cancelText}
+          onConfirm={() => confirmAction?.onConfirm()}
+        />
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={totalItems}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="budget"
+          onPageChange={handlePageChange}
+          onLimitChange={(value) => handleFilterChange({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       <BudgetDialog

@@ -1,7 +1,8 @@
 // src/app/(With Sidebar)/purchase-order/edit/PoEditForm.tsx
 //
 // Form edit PO yang dipakai bersama oleh:
-// - mode "user"  -> purchase-order/edit/[id] (dibuka dari detail PO)
+// - mode "user"  -> tidak dipakai lagi, purchase-order/edit/[id] sekarang
+//                   redirect ke detail PO
 // - mode "admin" -> po-management/edit/[id] (Manajemen PO)
 // Fitur & perhitungan (PPN/PPH/DP, lampiran, PO Aset) sama persis di kedua
 // mode; mode admin cuma menambah kontrol khusus admin: ubah Status PO, ubah
@@ -42,7 +43,7 @@ import {
   fetchPurchaseOrderById,
   updatePurchaseOrder,
 } from "@/services/purchaseOrderService";
-import { formatCurrency } from "@/lib/utils";
+import { formatDateWithTime, formatCurrency } from "@/lib/utils";
 import { withAssetMarker } from "@/lib/poAssetMarker";
 import {
   AlertTriangle,
@@ -61,7 +62,7 @@ import {
   ChevronsUpDown,
   Plus,
   Eye,
-  RefreshCcw,
+  ArrowLeftRight,
   FileText,
   Edit as EditIcon,
   ExternalLink,
@@ -69,6 +70,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { logActivity } from "@/services/logService";
+import { diffPoChanges } from "@/lib/document-change-log";
 import { removeAttachmentVps } from "@/services/storageService";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
@@ -87,6 +89,7 @@ import {
   Order,
   Vendor,
   StoredVendorDetails,
+  PoConversionRecord,
 } from "@/type";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -412,7 +415,11 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [isViewItemOpen, setIsViewItemOpen] = useState(false);
   const [viewItemIndex, setViewItemIndex] = useState<number | null>(null);
-  // Edit bebas nama/UoM/qty/harga item (khusus admin)
+  const [historyViewIndex, setHistoryViewIndex] = useState<number | null>(null);
+  // Data saat form dibuka, pembanding rincian Riwayat Aktivitas.
+  const changeBaselineRef = useRef<Record<string, any> | null>(null);
+  // Edit UoM/qty/harga item (khusus admin). Nama & part number harus sesuai
+  // master barang, jadi cuma bisa diganti lewat Konversi Barang.
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [itemFormData, setItemFormData] = useState<POItem>({
     barang_id: 0,
@@ -519,6 +526,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
         };
         setPoForm(initialData as any);
         resetBaseline();
+        changeBaselineRef.current = JSON.parse(JSON.stringify(initialData));
         originalAssetRef.current = {
           is_asset: !!initialData.is_asset,
           kode_po: initialData.kode_po,
@@ -793,10 +801,30 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   };
 
   const handleReplaceItem = (barang: Barang) => {
-    if (replacingIndex === null || !poForm) return;
+    if (replacingIndex === null || !poForm || !currentUser) return;
 
     const newItems = [...poForm.items];
     const item = { ...newItems[replacingIndex] };
+    if (barang.id === item.barang_id) {
+      toast.error("Barang yang dipilih sama dengan barang saat ini.");
+      return;
+    }
+
+    const conversionRecord: PoConversionRecord = {
+      from_barang_id: item.barang_id || null,
+      from_part_number: item.part_number || null,
+      from_name: item.name,
+      to_barang_id: barang.id,
+      to_part_number: barang.part_number,
+      to_name: barang.part_name || item.name,
+      converted_at: new Date().toISOString(),
+      converted_by: currentUser.id,
+      converted_by_name: userProfile?.nama || currentUser.email || "Admin",
+    };
+    item.conversion_history = [
+      ...(item.conversion_history || []),
+      conversionRecord,
+    ];
 
     item.barang_id = barang.id;
     item.part_number = barang.part_number;
@@ -818,7 +846,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     setReplacingIndex(null);
   };
 
-  // --- Edit bebas item (admin) ---
+  // --- Edit item (admin) ---
   const handleOpenEditItemDialog = (index: number) => {
     if (!poForm) return;
     setEditingItemIndex(index);
@@ -952,14 +980,22 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
 
       if (currentUser) {
         const actor = `${isAdmin ? "Admin " : ""}${userProfile?.nama || currentUser.email || "Unknown"}`;
-        await logActivity(
-          currentUser.id,
-          "UPDATE_PO",
-          "purchase_order",
-          String(poId),
-          `${actor} memperbarui data Purchase Order ${poForm.kode_po}`,
-          { updated_fields: Object.keys(payload), mode },
-        );
+        const changes = changeBaselineRef.current
+          ? diffPoChanges(changeBaselineRef.current, {
+              ...poForm,
+              ...payload,
+            })
+          : [];
+        if (changes.length > 0) {
+          await logActivity(
+            currentUser.id,
+            "UPDATE_PO",
+            "purchase_order",
+            String(poId),
+            `${actor} mengubah ${changes.length} data Purchase Order ${poForm.kode_po}`,
+            { changes, mode },
+          );
+        }
         const original = originalAssetRef.current;
         if (original && original.is_asset !== !!poForm.is_asset) {
           const label = (isAsset: boolean) => (isAsset ? "PO Aset" : "PO Biasa");
@@ -975,14 +1011,14 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
             },
           );
         }
-        if (poForm.mr_id) {
+        if (poForm.mr_id && changes.length > 0) {
           await logActivity(
             currentUser.id,
             "UPDATE_PO",
             "material_request",
             String(poForm.mr_id),
-            `${actor} memperbarui Purchase Order ${poForm.kode_po} yang terkait MR ini`,
-            { po_id: poId, updated_fields: Object.keys(payload) },
+            `${actor} mengubah ${changes.length} data Purchase Order ${poForm.kode_po} yang terkait MR ini`,
+            { po_id: poId, changes, mode },
           );
         }
       }
@@ -1616,19 +1652,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                 {poForm.items.map((item, index) => (
                   <TableRow key={index}>
                     <TableCell className="min-w-[160px] max-w-[320px] whitespace-normal [overflow-wrap:anywhere]">
-                      {/* Nama bisa diedit kalau item input manual (data lama) */}
-                      {item.barang_id === 0 ? (
-                        <Input
-                          value={item.name}
-                          onChange={(e) =>
-                            handleItemChange(index, "name", e.target.value)
-                          }
-                          placeholder="Nama Item..."
-                          className="h-8 text-sm"
-                        />
-                      ) : (
-                        <div className="font-medium">{item.name}</div>
-                      )}
+                      <div className="font-medium">{item.name}</div>
                       <div className="text-xs text-muted-foreground font-mono mt-1">
                         {item.part_number}
                       </div>
@@ -1636,6 +1660,19 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                         <span className="text-[10px] text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40 px-1 rounded inline-block mt-1">
                           Manual Input
                         </span>
+                      )}
+                      {(item.conversion_history || []).length > 0 && (
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-xs mt-0.5 block"
+                          onClick={() => setHistoryViewIndex(index)}
+                        >
+                          <ArrowLeftRight className="h-3 w-3 mr-1 inline" />
+                          Cek riwayat konversi (
+                          {item.conversion_history!.length}x)
+                        </Button>
                       )}
                     </TableCell>
                     <TableCell>
@@ -1674,7 +1711,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Edit Nama/UoM Item"
+                            title="Edit UoM/Qty/Harga Item"
                             onClick={() => handleOpenEditItemDialog(index)}
                           >
                             <EditIcon className="h-4 w-4" />
@@ -1683,10 +1720,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Cari/Ganti Barang di DB"
+                          title="Konversi Barang"
                           onClick={() => handleOpenReplaceDialog(index)}
                         >
-                          <RefreshCcw className="h-4 w-4 text-primary" />
+                          <ArrowLeftRight className="h-4 w-4 text-primary" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -2242,13 +2279,14 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
       <Dialog open={isReplaceDialogOpen} onOpenChange={setIsReplaceDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cari Barang di Master Data</DialogTitle>
+            <DialogTitle>Konversi Barang</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <BarangSearchCombobox onSelect={handleReplaceItem} />
             <p className="text-xs text-muted-foreground mt-2">
-              Pilih barang dari database untuk menggantikan item ini. Data Part
-              Number, Nama, dan UoM akan diperbarui.
+              Pilih barang dari database untuk menggantikan item ini. Part
+              Number, Nama, dan UoM ikut diperbarui, dan perubahannya tercatat
+              di riwayat konversi item.
             </p>
           </div>
           <DialogFooter>
@@ -2303,17 +2341,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                 </p>
               </div>
               <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
-                <Label htmlFor="itemNameDlg" className="text-right">
-                  Nama Item
-                </Label>
-                <Input
-                  id="itemNameDlg"
-                  className="col-span-3"
-                  value={itemFormData.name}
-                  onChange={(e) =>
-                    setItemFormData((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                />
+                <Label className="text-right">Nama Item</Label>
+                <p className="col-span-3 text-sm p-2 border rounded-md bg-muted/50">
+                  {itemFormData.name}
+                </p>
               </div>
               <div className="grid grid-cols-4 items-center gap-4 [&>*]:min-w-0">
                 <Label htmlFor="itemUomDlg" className="text-right">
@@ -2371,6 +2402,45 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* --- DIALOG RIWAYAT KONVERSI --- */}
+      <Dialog
+        open={historyViewIndex !== null}
+        onOpenChange={(open) => !open && setHistoryViewIndex(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Riwayat Konversi Barang</DialogTitle>
+          </DialogHeader>
+          {historyViewIndex !== null && (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {(poForm.items[historyViewIndex]?.conversion_history || [])
+                .slice()
+                .reverse()
+                .map((h, i) => (
+                  <div
+                    key={i}
+                    className="border rounded-md p-3 text-sm space-y-1"
+                  >
+                    <div>
+                      <strong>{h.from_name}</strong> ({h.from_part_number || "-"}
+                      ) → <strong>{h.to_name}</strong> ({h.to_part_number})
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      oleh {h.converted_by_name} -{" "}
+                      {formatDateWithTime(h.converted_at)}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryViewIndex(null)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* --- DIALOG VIEW DETAIL ITEM --- */}
       <Dialog open={isViewItemOpen} onOpenChange={setIsViewItemOpen}>

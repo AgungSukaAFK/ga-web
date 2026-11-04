@@ -3,16 +3,18 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination-components";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -21,11 +23,9 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
-import { Loader2, Search, Plus, Edit, Trash2 } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "@/lib/toast";
@@ -271,6 +271,23 @@ function StockDialog({
 }
 
 // --- Komponen Utama ---
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "created_at.desc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  created_at: { column: "created_at" },
+  part_name: { column: "barang(part_name)" },
+  part_number: { column: "barang(part_number)" },
+  company_code: { column: "company_code" },
+  quantity: { column: "quantity" },
+  location: { column: "location" },
+  note: { column: "note" },
+};
+
+const SEARCH_FIELDS = [
+  "Part Number",
+  "Nama Barang",
+];
+
 export function GaStockClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -287,6 +304,7 @@ export function GaStockClientContent() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const companyFilter = searchParams.get("company") || "";
 
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
@@ -322,6 +340,12 @@ export function GaStockClientContent() {
     },
     [searchParams],
   );
+
+  const handlePageChange = (page: number) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString({ page })}`);
+    });
+  };
 
   const loadData = useCallback(() => {
     async function fetchData() {
@@ -359,6 +383,7 @@ export function GaStockClientContent() {
           searchTerm,
           companyFilter,
           profileData,
+          resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT),
         );
         setData(rows);
         setTotalItems(count);
@@ -369,7 +394,7 @@ export function GaStockClientContent() {
       }
     }
     fetchData();
-  }, [s, currentPage, limit, searchTerm, companyFilter, router]);
+  }, [s, currentPage, limit, searchTerm, sortFilter, companyFilter, router]);
 
   useEffect(() => {
     loadData();
@@ -450,15 +475,12 @@ export function GaStockClientContent() {
         className="col-span-12"
       >
         <div className="flex flex-col gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari Part Number atau Nama Barang..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+          <ListSearchInput
+            placeholder="Cari part number atau nama..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
           {adminProfile?.company === "LOURDES" && (
             <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -492,113 +514,127 @@ export function GaStockClientContent() {
           )}
         </div>
 
-        <div className="border rounded-md overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama Barang</TableHead>
-                <TableHead>Part Number</TableHead>
-                <TableHead>Perusahaan</TableHead>
-                <TableHead className="text-right">Stok</TableHead>
-                <TableHead>Lokasi</TableHead>
-                <TableHead>Catatan</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || isPending ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : data.length > 0 ? (
-                data.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      {item.barang?.part_name || "-"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.barang?.part_number || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{item.company_code}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-bold">
-                      {Number(item.quantity)}
-                      {item.barang?.uom ? (
-                        <span className="ml-1 text-xs font-normal text-muted-foreground">
-                          {item.barang.uom}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="max-w-[180px] truncate">
-                      {item.location || "-"}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate">
-                      {item.note || "-"}
-                    </TableCell>
-                    <TableCell className="text-right space-x-2 whitespace-nowrap">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleOpenEdit(item)}
-                      >
-                        <Edit className="mr-2 h-3 w-3" /> Edit
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(item)}
-                        disabled={deletingId === item.id}
-                      >
-                        {deletingId === item.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    Belum ada data stok.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Tampilkan</span>
-            <Select
-              value={String(limit)}
-              onValueChange={(value) => handleFilterChange({ limit: value })}
+        <StickyHeaderTable
+          containerClassName="border rounded-md overflow-x-auto"
+          header={
+            <TableRow>
+              <SortableTableHead
+              sortKey="part_name"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
             >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder={limit} />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={String(opt)}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>dari {totalItems} item stok.</span>
-          </div>
-          <PaginationComponent
-            currentPage={currentPage}
-            totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
-          />
-        </div>
+              Nama Barang
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="part_number"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Part Number
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="company_code"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Perusahaan
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="quantity"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="text-right"
+            >
+              Stok
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="location"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Lokasi
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="note"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Catatan
+            </SortableTableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading || isPending ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : data.length > 0 ? (
+              data.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium">
+                    {item.barang?.part_name || "-"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {item.barang?.part_number || "-"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{item.company_code}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-bold">
+                    {Number(item.quantity)}
+                    {item.barang?.uom ? (
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        {item.barang.uom}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="max-w-[180px] truncate">
+                    {item.location || "-"}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {item.note || "-"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <RowActionsMenu>
+                      <DropdownMenuItem onSelect={() => handleOpenEdit(item)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        disabled={deletingId === item.id}
+                        onSelect={() => handleDelete(item)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                      </DropdownMenuItem>
+                    </RowActionsMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center h-24">
+                  Belum ada data stok.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={totalItems}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="item stok"
+          onPageChange={handlePageChange}
+          onLimitChange={(value) => handleFilterChange({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       <StockDialog

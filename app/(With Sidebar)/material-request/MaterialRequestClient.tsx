@@ -6,13 +6,6 @@ import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import {
   SearchableSelect,
   SearchableSelectTrigger,
   SearchableSelectValue,
@@ -31,13 +24,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import {
   FileText,
-  Newspaper,
-  Printer,
-  Search,
-  Loader2,
   Layers,
   Building2,
-  X,
   Eye,
   Calendar,
   User,
@@ -46,9 +34,6 @@ import {
   DollarSign,
   AlertCircle,
   Plus,
-  ChevronDown,
-  Filter,
-  Database,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -65,8 +50,21 @@ import { extractPlainText } from "@/lib/rich-content";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem } from "@/type";
 import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
-import { printWithFileName } from "@/lib/print";
-import { CustomPagination } from "@/components/custom-pagination";
+import {
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
+import { ListSearchInput } from "@/components/list-search-input";
+import {
+  MR_DEFAULT_SORT,
+  MR_SEARCH_FIELDS,
+  MR_SORTABLE_COLUMNS,
+  buildMrSearchFilter,
+  getMrAllowedScope,
+} from "@/lib/mr-list";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
 import {
   formatCurrency,
   formatDateFriendly,
@@ -89,7 +87,6 @@ import {
 import { ItemLevelBadge } from "@/components/item-level-badge";
 import {
   resolveSort,
-  type SortColumnConfig,
 } from "@/components/sortable-table-head";
 import {
   ColumnOrderReset,
@@ -124,10 +121,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useUrlSearchInput } from "@/hooks/use-url-search-input";
-import { useWaitingApproverCompanies } from "@/hooks/use-waiting-approver-companies";
 import {
   ActiveFilter,
+  FilterApplyButton,
+  FilterField,
+  FilterFields,
   FilterPanel,
+  FilterRange,
+  FilterRangeFields,
   filterOptionLabel,
   formatFilterDate,
   formatFilterRange,
@@ -167,32 +168,21 @@ const SORT_OPTIONS = [
   { label: "Due Date (Lama)", value: "due_date.desc" },
 ];
 
-// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
-const DEFAULT_SORT = "created_at.desc";
-const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
-  kode_mr: { column: "kode_mr" },
-  prioritas: { column: "prioritas" },
-  umur: { column: "created_at", invert: true },
-  created_at: { column: "created_at" },
-  due_date: { column: "due_date" },
-  cost_estimation: { column: "cost_estimation" },
-};
-
 // Kolom tabel di antara "No" & "Aksi" (keduanya tetap di tempat), urutan
 // bawaan. Urutannya bisa digeser user - lihat hooks/use-column-order.ts.
-// `sortDirection` diisi = bisa di-sort, id-nya harus ada di SORTABLE_COLUMNS.
+// `sortDirection` diisi = bisa di-sort, id-nya harus ada di MR_SORTABLE_COLUMNS.
 const MR_COLUMNS = [
   { id: "kode_mr", label: "Kode MR", sortDirection: "asc" },
   { id: "prioritas", label: "Priority", sortDirection: "asc" },
-  { id: "cost_center", label: "Cost Center" },
-  { id: "level", label: "Level" },
-  { id: "kategori", label: "Kategori" },
-  { id: "department", label: "Departemen" },
-  { id: "tujuan_site", label: "Tujuan Site" },
-  { id: "requester", label: "Requester" },
-  { id: "status", label: "Status" },
+  { id: "cost_center", label: "Cost Center", sortDirection: "asc" },
+  { id: "level", label: "Level", sortDirection: "asc" },
+  { id: "kategori", label: "Kategori", sortDirection: "asc" },
+  { id: "department", label: "Departemen", sortDirection: "asc" },
+  { id: "tujuan_site", label: "Tujuan Site", sortDirection: "asc" },
+  { id: "requester", label: "Requester", sortDirection: "asc" },
+  { id: "status", label: "Status", sortDirection: "asc" },
   { id: "umur", label: "Umur", sortDirection: "desc" },
-  { id: "company", label: "Company" },
+  { id: "company", label: "Company", sortDirection: "asc" },
   { id: "created_at", label: "Tanggal Dibuat", sortDirection: "desc" },
   { id: "due_date", label: "Due Date", sortDirection: "asc" },
   {
@@ -218,7 +208,6 @@ export function MaterialRequestContent({
 
   // --- State Management ---
   const [dataMR, setDataMR] = useState<MaterialRequestListItem[]>([]);
-  const approverCompanies = useWaitingApproverCompanies(dataMR);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -257,7 +246,7 @@ export function MaterialRequestContent({
   const endDate = searchParams.get("endDate") || "";
   const departmentFilter = searchParams.get("department") || "";
   const siteFilter = searchParams.get("tujuan_site") || "";
-  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
+  const sortFilter = searchParams.get("sort") || MR_DEFAULT_SORT;
   const levelFilter = searchParams.get("level") || "";
   const minEstimasi = searchParams.get("min_estimasi") || "";
   const maxEstimasi = searchParams.get("max_estimasi") || "";
@@ -374,17 +363,7 @@ export function MaterialRequestContent({
         if (onlyMine) query = query.eq("userid", currentUser.id);
 
         if (searchTerm) {
-          const { data: matchingUsers } = await s
-            .from("users_with_profiles")
-            .select("id")
-            .ilike("nama", `%${searchTerm}%`);
-
-          const userIds = matchingUsers?.map((u) => u.id) || [];
-          let orFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
-          if (userIds.length > 0) {
-            orFilter += `,userid.in.(${userIds.join(",")})`;
-          }
-          query = query.or(orFilter);
+          query = query.or(await buildMrSearchFilter(s, searchTerm));
         }
 
         if (statusFilter && statusFilter !== "all")
@@ -408,16 +387,7 @@ export function MaterialRequestContent({
           query = query.lte("cost_estimation", Number(maxEstimasi));
 
         // FILTER PERUSAHAAN (Untuk Tabel)
-        const userCompany = currentUser.company;
-        let allowedScope: string[] = [];
-
-        if (userCompany === "LOURDES") {
-          allowedScope = ["ALL"];
-        } else if (["GMI", "GIS"].includes(userCompany || "")) {
-          allowedScope = [userCompany!, "LOURDES"];
-        } else {
-          allowedScope = userCompany ? [userCompany] : [];
-        }
+        const allowedScope = getMrAllowedScope(currentUser.company);
 
         if (selectedCompanies.length > 0) {
           if (allowedScope.includes("ALL")) {
@@ -438,9 +408,10 @@ export function MaterialRequestContent({
           }
         }
 
-        const sort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
+        const sort = resolveSort(sortFilter, MR_SORTABLE_COLUMNS, MR_DEFAULT_SORT);
         query = query
           .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+          .order("id", { ascending: false }) // urutan stabil antar halaman
           .range(from, to);
 
         const { data, error, count } = await query;
@@ -536,48 +507,45 @@ export function MaterialRequestContent({
   };
 
   // --- Fungsi EXCEL ---
+  const fetchAllMrCount = async () => {
+    if (!currentUser) return 0;
+    let query = s
+      .from("material_requests")
+      .select("id", { count: "exact", head: true });
+    if (onlyMine) query = query.eq("userid", currentUser.id);
+    const allowedScope = getMrAllowedScope(currentUser.company);
+    if (!allowedScope.includes("ALL")) {
+      query = query.in("company_code", allowedScope);
+    }
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  };
+
   // mode "all"      : semua MR yang boleh dilihat user (hak akses company / MR Saya tetap berlaku)
   // mode "filtered" : sesuai filter, pencarian & urutan yang sedang diterapkan di tabel
-  const handleDownloadExcel = async (mode: "all" | "filtered") => {
+  const handleDownloadExcel = async (mode: ExcelDownloadMode) => {
     if (!currentUser) return;
     const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info(
+    const toastId = toast.loading(
       useFilters
-        ? "Mempersiapkan data sesuai filter untuk diunduh..."
-        : "Mempersiapkan semua data untuk diunduh...",
+        ? "Menyiapkan data MR sesuai filter..."
+        : "Menyiapkan semua data MR...",
     );
     const exportSort = useFilters
-      ? resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT)
+      ? resolveSort(sortFilter, MR_SORTABLE_COLUMNS, MR_DEFAULT_SORT)
       : { column: "created_at", ascending: false };
 
     try {
       // FILTER PENCARIAN (Sama persis dengan tabel)
-      let searchOrFilter = "";
-      if (useFilters && searchTerm) {
-        const { data: matchingUsers } = await s
-          .from("users_with_profiles")
-          .select("id")
-          .ilike("nama", `%${searchTerm}%`);
-
-        const userIds = matchingUsers?.map((u) => u.id) || [];
-        searchOrFilter = `kode_mr.ilike.%${searchTerm}%,remarks.ilike.%${searchTerm}%`;
-        if (userIds.length > 0) {
-          searchOrFilter += `,userid.in.(${userIds.join(",")})`;
-        }
-      }
+      const searchOrFilter =
+        useFilters && searchTerm
+          ? await buildMrSearchFilter(s, searchTerm)
+          : "";
 
       // HAK AKSES PERUSAHAAN (selalu berlaku, termasuk mode "all")
-      const userCompany = currentUser.company;
-      let allowedScope: string[] = [];
-
-      if (userCompany === "LOURDES") {
-        allowedScope = ["ALL"];
-      } else if (["GMI", "GIS"].includes(userCompany || "")) {
-        allowedScope = [userCompany!, "LOURDES"];
-      } else {
-        allowedScope = userCompany ? [userCompany] : [];
-      }
+      const allowedScope = getMrAllowedScope(currentUser.company);
 
       const buildQuery = () => {
         let query = s.from("material_requests").select(`
@@ -645,6 +613,7 @@ export function MaterialRequestContent({
           useFilters
             ? "Tidak ada data untuk diekspor sesuai filter."
             : "Tidak ada data untuk diekspor.",
+          { id: toastId },
         );
         setIsExporting(false);
         return;
@@ -733,18 +702,16 @@ export function MaterialRequestContent({
         `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}${useFilters ? "_Filter" : "_Semua"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
         "Data MR & Tracking",
       );
-      toast.success("Download berhasil!");
+      toast.success("Download berhasil!", { id: toastId });
     } catch (error: any) {
-      toast.error("Gagal export excel", { description: error.message });
+      toast.error("Gagal export excel", {
+        id: toastId,
+        description: error.message,
+      });
     } finally {
       setIsExporting(false);
     }
   };
-
-  const handlePrint = () =>
-    printWithFileName(
-      `${onlyMine ? "MR_Saya" : "Rekap_MR_Tracking"}_${new Date().toISOString().slice(0, 10)}`,
-    );
 
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
@@ -839,18 +806,12 @@ export function MaterialRequestContent({
   const renderStatusCell = (mr: MaterialRequestListItem) => {
     const approver =
       mr.status === "Pending Approval" ? getCurrentApprover(mr.approvals) : null;
-    const approverCompany = approver ? approverCompanies[approver.userid] : null;
     return (
       <div className="flex flex-col items-start gap-1">
         {getStatusBadge(mr.status)}
         {approver && (
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            Menunggu: {approver.nama}
-            {approverCompany && (
-              <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                {approverCompany}
-              </Badge>
-            )}
+          <span className="text-[11px] text-muted-foreground">
+            {approver.nama}
           </span>
         )}
         {mr.status === "Pending Validation" && <PicGaPopover />}
@@ -1090,62 +1051,25 @@ export function MaterialRequestContent({
       <div className="flex flex-col gap-4 mb-6 no-print">
         {/* Row 1: Search & Actions */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-grow">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari Kode MR, Requester..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  disabled={isExporting}
-                  variant="outline"
-                  className="w-full md:w-auto"
-                >
-                  {isExporting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Newspaper className="mr-2 h-4 w-4" />
-                  )}{" "}
-                  Excel
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
-                <DropdownMenuLabel>Export ke Excel</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => handleDownloadExcel("filtered")}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  Sesuai filter ({totalItems} MR)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleDownloadExcel("all")}>
-                  <Database className="mr-2 h-4 w-4" />
-                  Semua data
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              onClick={handlePrint}
-              variant="outline"
-              className="w-full md:w-auto"
-            >
-              <Printer className="mr-2 h-4 w-4" /> Cetak
-            </Button>
-          </div>
+          <ListSearchInput
+            placeholder="Cari MR, barang, requester..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={MR_SEARCH_FIELDS}
+          />
+          <ExcelDownloadMenu
+            itemLabel="MR"
+            filteredCount={totalItems}
+            fetchAllCount={fetchAllMrCount}
+            onDownload={handleDownloadExcel}
+            isExporting={isExporting}
+          />
         </div>
 
         {/* Row 2: Filter Grid */}
         <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Status</label>
+          <FilterFields>
+            <FilterField label="Status">
               <SearchableSelect
                 value={statusFilter || "all"}
                 onValueChange={(v) =>
@@ -1164,9 +1088,8 @@ export function MaterialRequestContent({
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Cost Center</label>
+            </FilterField>
+            <FilterField label="Cost Center">
               <SearchableSelect
                 value={costCenterFilter}
                 onValueChange={(v) => handleFilterChange({ cost_center: v })}
@@ -1183,9 +1106,8 @@ export function MaterialRequestContent({
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Priority</label>
+            </FilterField>
+            <FilterField label="Priority">
               <SearchableSelect
                 value={prioritasFilter || "all"}
                 onValueChange={(v) =>
@@ -1204,9 +1126,8 @@ export function MaterialRequestContent({
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Departemen</label>
+            </FilterField>
+            <FilterField label="Departemen">
               <SearchableSelect
                 value={departmentFilter || "all"}
                 onValueChange={(v) =>
@@ -1227,12 +1148,8 @@ export function MaterialRequestContent({
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Tujuan Site</label>
+            </FilterField>
+            <FilterField label="Tujuan Site">
               <SearchableSelect
                 value={siteFilter || "all"}
                 onValueChange={(v) =>
@@ -1253,52 +1170,9 @@ export function MaterialRequestContent({
                   ))}
                 </SearchableSelectContent>
               </SearchableSelect>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Min Estimasi</label>
-              <Input
-                type="number"
-                placeholder="Rp 0"
-                value={minEstimasiInput}
-                onChange={(e) => setMinEstimasiInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Max Estimasi</label>
-              <Input
-                type="number"
-                placeholder="Rp Max"
-                value={maxEstimasiInput}
-                onChange={(e) => setMaxEstimasiInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Dari Tanggal</label>
-              <Input
-                type="date"
-                value={startDateInput}
-                onChange={(e) => setStartDateInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Sampai Tanggal</label>
-              <Input
-                type="date"
-                value={endDateInput}
-                onChange={(e) => setEndDateInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-
+            </FilterField>
             {/* FILTER COMPANY */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Filter Perusahaan</label>
+            <FilterField label="Perusahaan">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -1327,31 +1201,66 @@ export function MaterialRequestContent({
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-
-            <div className="lg:col-span-2 flex flex-col gap-2 justify-end">
-              <Button
-                className="w-full"
-                onClick={() =>
-                  handleFilterChange({
-                    startDate: startDateInput,
-                    endDate: endDateInput,
-                    min_estimasi: minEstimasiInput,
-                    max_estimasi: maxEstimasiInput,
-                  })
+            </FilterField>
+          </FilterFields>
+          <FilterRangeFields>
+            <FilterField label="Tanggal Dibuat">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Dari tanggal"
+                    type="date"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                    className="bg-background"
+                  />
                 }
-              >
-                Terapkan Filter
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={clearFilters}
-                className="text-muted-foreground w-full"
-              >
-                <X className="mr-2 h-3 w-3" /> Reset Filter
-              </Button>
-            </div>
-          </div>
+                to={
+                  <Input
+                    aria-label="Sampai tanggal"
+                    type="date"
+                    value={endDateInput}
+                    onChange={(e) => setEndDateInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterField label="Estimasi">
+              <FilterRange
+                from={
+                  <Input
+                    aria-label="Min estimasi"
+                    type="number"
+                    placeholder="Min"
+                    value={minEstimasiInput}
+                    onChange={(e) => setMinEstimasiInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+                to={
+                  <Input
+                    aria-label="Max estimasi"
+                    type="number"
+                    placeholder="Max"
+                    value={maxEstimasiInput}
+                    onChange={(e) => setMaxEstimasiInput(e.target.value)}
+                    className="bg-background"
+                  />
+                }
+              />
+            </FilterField>
+            <FilterApplyButton
+              onClick={() =>
+                handleFilterChange({
+                  startDate: startDateInput,
+                  endDate: endDateInput,
+                  min_estimasi: minEstimasiInput,
+                  max_estimasi: maxEstimasiInput,
+                })
+              }
+            />
+          </FilterRangeFields>
         </FilterPanel>
 
         {columnOrder.isCustomOrder && (
@@ -1360,111 +1269,93 @@ export function MaterialRequestContent({
       </div>
 
       {/* --- Table Data --- */}
-      <div
-        className="border rounded-md overflow-x-auto bg-card"
-        id="printable-area"
+      <StickyHeaderTable
+        className="min-w-[1600px]"
+        containerClassName="border rounded-md overflow-x-auto bg-card"
+        header={
+          <ReorderableHeaderRow
+            order={columnOrder.order}
+            onMove={columnOrder.moveColumn}
+          >
+            <TableHead className="w-[50px]">No</TableHead>
+            {columnOrder.orderedColumns.map((column) => (
+              <ReorderableTableHead
+                key={column.id}
+                column={column}
+                sort={{
+                  currentSort: sortFilter,
+                  onSortChange: (sort) => handleFilterChange({ sort }),
+                }}
+              />
+            ))}
+            <TableHead className="text-right no-print">Aksi</TableHead>
+          </ReorderableHeaderRow>
+        }
       >
-        <Table className="min-w-[1600px]">
-          <TableHeader className="bg-muted/50">
-            <ReorderableHeaderRow
-              order={columnOrder.order}
-              onMove={columnOrder.moveColumn}
-            >
-              <TableHead className="w-[50px]">No</TableHead>
-              {columnOrder.orderedColumns.map((column) => (
-                <ReorderableTableHead
-                  key={column.id}
-                  column={column}
-                  sort={{
-                    currentSort: sortFilter,
-                    onSortChange: (sort) => handleFilterChange({ sort }),
-                  }}
-                />
-              ))}
-              <TableHead className="text-right no-print">Aksi</TableHead>
-            </ReorderableHeaderRow>
-          </TableHeader>
-          <TableBody>
-            {loading || isPending ? (
-              Array.from({ length: limit }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={16}>
-                    <Skeleton className="h-8 w-full" />
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : dataMR.length > 0 ? (
-              dataMR.map((mr, index) => (
-                <TableRow
-                  key={mr.id}
-                  className="hover:bg-muted/50 transition-colors cursor-pointer group"
-                  onClick={() => handleRowClick(mr)}
-                >
-                  <TableCell className="text-muted-foreground">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-
-                  {columnOrder.order.map((id) => (
-                    <Fragment key={id}>{renderMrCell(mr, id)}</Fragment>
-                  ))}
-
-                  <TableCell className="text-right no-print">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link href={`/material-request/${mr.id}`}>View</Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={16}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  Tidak ada data ditemukan.
+        <TableBody>
+          {loading || isPending ? (
+            Array.from({ length: limit }).map((_, i) => (
+              <TableRow key={i}>
+                <TableCell colSpan={16}>
+                  <Skeleton className="h-8 w-full" />
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          ) : dataMR.length > 0 ? (
+            dataMR.map((mr, index) => (
+              <TableRow
+                key={mr.id}
+                className="hover:bg-muted/50 transition-colors cursor-pointer group"
+                onClick={() => handleRowClick(mr)}
+              >
+                <TableCell className="text-muted-foreground">
+                  {(currentPage - 1) * limit + index + 1}
+                </TableCell>
 
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mt-4 no-print">
-        {/* Limit Selector */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Show</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(val) => handleFilterChange({ limit: val, page: 1 })}
-          >
-            <SelectTrigger className="w-[80px] h-8">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>entries</span>
-          <span className="hidden sm:inline-block ml-2">
-            (Total {totalItems})
-          </span>
-        </div>
+                {columnOrder.order.map((id) => (
+                  <Fragment key={id}>{renderMrCell(mr, id)}</Fragment>
+                ))}
 
-        <CustomPagination
-          currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / limit)}
-          onPageChange={handlePageChange}
-        />
-      </div>
+                <TableCell
+                  className="text-right no-print"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <RowActionsMenu>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href={`/material-request/${mr.id}`}
+                        className="cursor-pointer"
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                      </Link>
+                    </DropdownMenuItem>
+                  </RowActionsMenu>
+                </TableCell>
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell
+                colSpan={16}
+                className="h-24 text-center text-muted-foreground"
+              >
+                Tidak ada data ditemukan.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </StickyHeaderTable>
+
+      <TablePaginationFooter
+        currentPage={currentPage}
+        totalItems={totalItems}
+        limit={limit}
+        limitOptions={PAGE_SIZE_OPTIONS}
+        itemLabel="MR"
+        onPageChange={handlePageChange}
+        onLimitChange={(val) => handleFilterChange({ limit: val, page: 1 })}
+        className="mt-4 no-print"
+      />
 
       {/* --- QUICK VIEW DIALOG --- */}
       <Dialog open={isQuickViewOpen} onOpenChange={setIsQuickViewOpen}>

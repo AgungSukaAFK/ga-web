@@ -917,8 +917,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // handleApprovalAction.
   const dpBpRequiresFullPayment = po?.dp_bp_shipping_type !== "ship_after_dp";
 
-  const canEditPO =
-    userProfile?.role === "approver" || userProfile?.role === "admin";
+  // Edit PO terpusat di dokumen management admin (po-management/edit/[id]).
+  const canEditPO = userProfile?.role === "admin";
 
   // Siapa saja yang boleh upload lampiran PO/Finance/Invoice kapan pun
   // (ga dibatasi status PO): approver dari company yang sama dengan PO ini,
@@ -2260,7 +2260,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   po.status !== "Rejected" &&
                   po.status !== DOC_STATUS_CANCELLED && (
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/purchase-order/edit/${po.id}`}>
+                      <Link href={`/po-management/edit/${po.id}`}>
                         <EditIcon className="mr-2 h-4 w-4" /> Edit PO
                       </Link>
                     </Button>

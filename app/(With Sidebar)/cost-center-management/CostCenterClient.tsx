@@ -3,16 +3,18 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination-components";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -21,11 +23,9 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -40,7 +40,6 @@ import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
 import {
   Loader2,
-  Search,
   Edit,
   Plus,
   History,
@@ -362,6 +361,22 @@ function HistoryDialog({
 }
 
 // --- Komponen Klien Utama ---
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "name.asc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  name: { column: "name" },
+  code: { column: "code" },
+  company_code: { column: "company_code" },
+  is_active: { column: "is_active" },
+  initial_budget: { column: "initial_budget" },
+  current_budget: { column: "current_budget" },
+};
+
+const SEARCH_FIELDS = [
+  "Nama",
+  "Kode",
+];
+
 export function CostCenterClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -378,6 +393,7 @@ export function CostCenterClientContent() {
   const currentPage = Number(searchParams.get("page") || "1");
   const limit = Number(searchParams.get("limit") || 25);
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const companyFilter = searchParams.get("company") || "";
 
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
@@ -416,6 +432,12 @@ export function CostCenterClientContent() {
     [searchParams]
   );
 
+  const handlePageChange = (page: number) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString({ page })}`);
+    });
+  };
+
   const loadData = useCallback(() => {
     async function fetchData() {
       setLoading(true);
@@ -452,7 +474,8 @@ export function CostCenterClientContent() {
           limit,
           searchTerm,
           companyFilter,
-          profileData
+          profileData,
+          resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT),
         );
         setData(ccData);
         setTotalItems(count);
@@ -463,7 +486,7 @@ export function CostCenterClientContent() {
       }
     }
     fetchData();
-  }, [s, currentPage, limit, searchTerm, companyFilter, router]);
+  }, [s, currentPage, limit, searchTerm, sortFilter, companyFilter, router]);
 
   useEffect(() => {
     loadData();
@@ -561,15 +584,12 @@ export function CostCenterClientContent() {
         className="col-span-12"
       >
         <div className="flex flex-col gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari berdasarkan Nama atau Kode..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+          <ListSearchInput
+            placeholder="Cari nama atau kode..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
           {adminProfile?.company === "LOURDES" && (
             <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -599,131 +619,143 @@ export function CostCenterClientContent() {
           )}
         </div>
 
-        <div className="border rounded-md overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama</TableHead>
-                <TableHead>Kode</TableHead>
-                <TableHead>Perusahaan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Initial Budget</TableHead>
-                <TableHead className="text-right">Current Budget</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || isPending ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : data.length > 0 ? (
-                data.map((item) => {
-                  const isInactive = item.is_active === false;
-                  const dimClass = isInactive ? "opacity-50" : "";
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className={cn("font-medium", dimClass)}>
-                        {item.name}
-                      </TableCell>
-                      <TableCell className={cn("font-mono text-xs", dimClass)}>
-                        {item.code || "-"}
-                      </TableCell>
-                      <TableCell className={dimClass}>
-                        <Badge variant="outline">{item.company_code}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {isInactive ? (
-                          <Badge variant="secondary">Nonaktif</Badge>
-                        ) : (
-                          <Badge className="bg-green-500 text-white">
-                            Aktif
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className={cn("text-right", dimClass)}>
-                        {formatCurrency(item.initial_budget)}
-                      </TableCell>
-                      <TableCell className={cn("text-right font-bold", dimClass)}>
-                        {formatCurrency(item.current_budget)}
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenHistory(item)}
-                        >
-                          <History className="mr-2 h-3 w-3" /> Riwayat
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleOpenEdit(item)}
-                        >
-                          <Edit className="mr-2 h-3 w-3" /> Edit/Top-up
-                        </Button>
-                        <Button
-                          variant={isInactive ? "outline" : "destructive"}
-                          size="sm"
-                          onClick={() => handleToggleActive(item)}
-                          disabled={togglingId === item.id}
-                        >
-                          {togglingId === item.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : isInactive ? (
-                            <>
-                              <Power className="mr-2 h-3 w-3" /> Aktifkan
-                            </>
-                          ) : (
-                            <>
-                              <PowerOff className="mr-2 h-3 w-3" /> Nonaktifkan
-                            </>
-                          )}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    Tidak ada data cost center ditemukan.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Tampilkan</span>
-            <Select
-              value={String(limit)}
-              onValueChange={(value) => handleFilterChange({ limit: value })}
+        <StickyHeaderTable
+          containerClassName="border rounded-md overflow-x-auto"
+          header={
+            <TableRow>
+              <SortableTableHead
+              sortKey="name"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
             >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder={limit} />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={String(opt)}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>dari {totalItems} cost center.</span>
-          </div>
-          <PaginationComponent
-            currentPage={currentPage}
-            totalPages={Math.ceil(totalItems / limit)}
-            limit={limit}
-            basePath={pathname}
-          />
-        </div>
+              Nama
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="code"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Kode
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="company_code"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+            >
+              Perusahaan
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="is_active"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+            >
+              Status
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="initial_budget"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="text-right"
+            >
+              Initial Budget
+            </SortableTableHead>
+              <SortableTableHead
+              sortKey="current_budget"
+              currentSort={sortFilter}
+              onSortChange={(sort) => handleFilterChange({ sort })}
+              defaultDirection="desc"
+              className="text-right"
+            >
+              Current Budget
+            </SortableTableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading || isPending ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center h-24">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : data.length > 0 ? (
+              data.map((item) => {
+                const isInactive = item.is_active === false;
+                const dimClass = isInactive ? "opacity-50" : "";
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell className={cn("font-medium", dimClass)}>
+                      {item.name}
+                    </TableCell>
+                    <TableCell className={cn("font-mono text-xs", dimClass)}>
+                      {item.code || "-"}
+                    </TableCell>
+                    <TableCell className={dimClass}>
+                      <Badge variant="outline">{item.company_code}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {isInactive ? (
+                        <Badge variant="secondary">Nonaktif</Badge>
+                      ) : (
+                        <Badge className="bg-green-500 text-white">
+                          Aktif
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className={cn("text-right", dimClass)}>
+                      {formatCurrency(item.initial_budget)}
+                    </TableCell>
+                    <TableCell className={cn("text-right font-bold", dimClass)}>
+                      {formatCurrency(item.current_budget)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <RowActionsMenu>
+                        <DropdownMenuItem onSelect={() => handleOpenHistory(item)}>
+                          <History className="mr-2 h-4 w-4" /> Riwayat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleOpenEdit(item)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit/Top-up
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={togglingId === item.id}
+                          className={isInactive ? undefined : "text-destructive focus:text-destructive"}
+                          onSelect={() => handleToggleActive(item)}
+                        >
+                          {isInactive ? (
+                            <Power className="mr-2 h-4 w-4" />
+                          ) : (
+                            <PowerOff className="mr-2 h-4 w-4" />
+                          )}
+                          {isInactive ? "Aktifkan" : "Nonaktifkan"}
+                        </DropdownMenuItem>
+                      </RowActionsMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center h-24">
+                  Tidak ada data cost center ditemukan.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={totalItems}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="cost center"
+          onPageChange={handlePageChange}
+          onLimitChange={(value) => handleFilterChange({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       <CostCenterDialog

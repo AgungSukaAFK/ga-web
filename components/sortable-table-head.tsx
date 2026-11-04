@@ -99,20 +99,31 @@ export function SortButton({
         ? ArrowDown
         : ArrowUpDown;
 
+  const directionLabel = (dir: SortDirection) =>
+    dir === "asc" ? "Urutkan naik" : "Urutkan turun";
+  const nextActionLabel = !isActive
+    ? directionLabel(defaultDirection)
+    : direction === defaultDirection
+      ? directionLabel(defaultDirection === "asc" ? "desc" : "asc")
+      : "Kembalikan ke urutan bawaan";
+
   return (
     <button
       type="button"
       onClick={handleClick}
       className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group/sort flex h-10 w-full cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         alignRight && "flex-row-reverse",
         isActive && "text-foreground",
       )}
-      title="Klik untuk mengurutkan"
+      title={nextActionLabel}
     >
       {children}
       <Icon
-        className={cn("h-3.5 w-3.5 shrink-0", !isActive && "opacity-40")}
+        className={cn(
+          "h-3.5 w-3.5 shrink-0 transition-opacity",
+          !isActive && "opacity-40 group-hover/sort:opacity-100",
+        )}
       />
     </button>
   );

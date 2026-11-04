@@ -1,6 +1,7 @@
 // src/services/gaStockService.ts
 
 import { createClient } from "@/lib/supabase/client";
+import { orIlikePattern } from "@/lib/supabase/search-filter";
 import { GaStock, Profile } from "@/type";
 
 const supabase = createClient();
@@ -18,6 +19,7 @@ export const fetchGaStocks = async (
   searchQuery: string | null,
   companyFilter: string | null,
   adminProfile: Profile | null,
+  sort?: { column: string; ascending: boolean },
 ): Promise<{ data: GaStock[]; count: number }> => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -40,7 +42,7 @@ export const fetchGaStocks = async (
       .from("barang")
       .select("id")
       .or(
-        `part_number.ilike.%${searchQuery}%,part_name.ilike.%${searchQuery}%`,
+        `part_number.ilike.${orIlikePattern(searchQuery)},part_name.ilike.${orIlikePattern(searchQuery)}`,
       )
       .limit(1000);
     const ids = (matched ?? []).map((b: { id: number }) => b.id);
@@ -49,7 +51,11 @@ export const fetchGaStocks = async (
   }
 
   const { data, error, count } = await query
-    .order("created_at", { ascending: false })
+    .order(sort?.column ?? "created_at", {
+      ascending: sort?.ascending ?? false,
+      nullsFirst: false,
+    })
+    .order("id", { ascending: false }) // urutan stabil antar halaman
     .range(from, to);
 
   if (error) {

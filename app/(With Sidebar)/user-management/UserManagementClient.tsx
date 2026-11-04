@@ -3,16 +3,21 @@
 "use client";
 
 import { Content } from "@/components/content";
-import { PaginationComponent } from "@/components/pagination"; // Pastikan path ini benar
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { orIlikePattern } from "@/lib/supabase/search-filter";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -21,21 +26,19 @@ import {
   SearchableSelectItem,
 } from "@/components/ui/searchable-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Newspaper, Search, Edit } from "lucide-react";
+import { Loader2, Edit } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
-import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import { User as Profile } from "@/type"; // Menggunakan tipe User dari @/type
 import { formatDateFriendly } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
@@ -85,6 +88,25 @@ const dataDepartment: string[] = Array.from(
   ]),
 );
 
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "nama.asc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  nama: { column: "nama" },
+  email: { column: "email" },
+  nrp: { column: "nrp" },
+  company: { column: "company" },
+  role: { column: "role" },
+  lokasi: { column: "lokasi" },
+  department: { column: "department" },
+};
+
+const SEARCH_FIELDS = ["Nama", "Email", "NRP"];
+
+const userSearchFilter = (term: string) => {
+  const pattern = orIlikePattern(term);
+  return `nama.ilike.${pattern},email.ilike.${pattern},nrp.ilike.${pattern}`;
+};
+
 export function UserManagementClientContent() {
   const s = createClient();
   const router = useRouter();
@@ -103,6 +125,7 @@ export function UserManagementClientContent() {
   // State dari URL
   const currentPage = Number(searchParams.get("page") || "1");
   const searchTerm = searchParams.get("search") || "";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
   const roleFilter = searchParams.get("role") || "";
   const lokasiFilter = searchParams.get("lokasi") || "";
   const departmentFilter = searchParams.get("department") || "";
@@ -189,10 +212,7 @@ export function UserManagementClientContent() {
       let query = s.from("users_with_profiles").select(`*`, { count: "exact" });
 
       // Filter Pencarian
-      if (searchTerm)
-        query = query.or(
-          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`,
-        );
+      if (searchTerm) query = query.or(userSearchFilter(searchTerm));
       if (roleFilter) query = query.eq("role", roleFilter);
       if (lokasiFilter) query = query.eq("lokasi", lokasiFilter);
       if (departmentFilter) query = query.eq("department", departmentFilter);
@@ -210,7 +230,11 @@ export function UserManagementClientContent() {
       const statusIds = await fetchIdsByStatus(currentAdminProfile?.company);
       if (statusIds !== null) query = query.in("id", statusIds);
 
-      query = query.range(from, to).order("nama", { ascending: true });
+      const sort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
+      query = query
+        .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+        .order("id", { ascending: true }) // urutan stabil antar halaman
+        .range(from, to);
 
       const { data, error, count } = await query;
 
@@ -253,6 +277,7 @@ export function UserManagementClientContent() {
     statusFilter,
     fetchIdsByStatus,
     limit,
+    sortFilter,
     reloadKey,
   ]); // Tambahkan adminProfile sebagai dependency jika perlu
 
@@ -266,40 +291,76 @@ export function UserManagementClientContent() {
     });
   };
 
-  const handleDownloadExcel = async () => {
+  const fetchAllUserCount = async () => {
+    let query = s
+      .from("users_with_profiles")
+      .select("id", { count: "exact", head: true });
+    if (adminProfile?.company && adminProfile.company !== "LOURDES") {
+      query = query.eq("company", adminProfile.company);
+    }
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  };
+
+  // mode "all"      : semua user yang boleh dilihat admin (batas company tetap berlaku)
+  // mode "filtered" : sesuai filter, pencarian & urutan yang sedang diterapkan di tabel
+  const handleDownloadExcel = async (mode: ExcelDownloadMode) => {
+    const useFilters = mode === "filtered";
     setIsExporting(true);
-    toast.info("Mempersiapkan data lengkap untuk diunduh...");
+    const toastId = toast.loading(
+      useFilters
+        ? "Menyiapkan data user sesuai filter..."
+        : "Menyiapkan semua data user...",
+    );
+    const exportSort = useFilters
+      ? resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT)
+      : { column: "nama", ascending: true };
 
     try {
-      let query = s
-        .from("users_with_profiles")
-        .select(
-          `id, nama, email, role, lokasi, department, nrp, company, profile_created_at`,
+      const statusIds = useFilters
+        ? await fetchIdsByStatus(adminProfile?.company)
+        : null;
+
+      const buildQuery = () => {
+        let query = s
+          .from("users_with_profiles")
+          .select(
+            `id, nama, email, role, lokasi, department, nrp, company, profile_created_at`,
+          );
+
+        if (useFilters) {
+          if (searchTerm) query = query.or(userSearchFilter(searchTerm));
+          if (roleFilter) query = query.eq("role", roleFilter);
+          if (lokasiFilter) query = query.eq("lokasi", lokasiFilter);
+          if (departmentFilter) {
+            query = query.eq("department", departmentFilter);
+          }
+          if (statusIds !== null) query = query.in("id", statusIds);
+        }
+
+        // REVISI: Terapkan filter company admin
+        if (adminProfile?.company && adminProfile.company !== "LOURDES") {
+          query = query.eq("company", adminProfile.company);
+        }
+
+        return query
+          .order(exportSort.column, {
+            ascending: exportSort.ascending,
+            nullsFirst: false,
+          })
+          .order("id", { ascending: true }); // urutan stabil antar halaman
+      };
+
+      const data = await fetchAllRows(buildQuery);
+
+      if (data.length === 0) {
+        toast.warning(
+          useFilters
+            ? "Tidak ada data user untuk diekspor sesuai filter."
+            : "Tidak ada data user untuk diekspor.",
+          { id: toastId },
         );
-
-      // Terapkan semua filter aktif
-      if (searchTerm)
-        query = query.or(
-          `nama.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,nrp.ilike.%${searchTerm}%`,
-        );
-      if (roleFilter) query = query.eq("role", roleFilter);
-      if (lokasiFilter) query = query.eq("lokasi", lokasiFilter);
-      if (departmentFilter) query = query.eq("department", departmentFilter);
-
-      // REVISI: Terapkan filter company admin
-      if (adminProfile?.company && adminProfile.company !== "LOURDES") {
-        query = query.eq("company", adminProfile.company);
-      }
-
-      // Filter Status (Aktif/Nonaktif)
-      const statusIds = await fetchIdsByStatus(adminProfile?.company);
-      if (statusIds !== null) query = query.in("id", statusIds);
-
-      const { data, error } = await query.order("nama", { ascending: true });
-
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        toast.warning("Tidak ada data user untuk diekspor sesuai filter.");
         return;
       }
 
@@ -316,7 +377,7 @@ export function UserManagementClientContent() {
         );
       }
 
-      const formattedData = data.map((user) => ({
+      const formattedData = data.map((user: any) => ({
         Nama: user.nama,
         Email: user.email,
         Role: user.role,
@@ -331,13 +392,16 @@ export function UserManagementClientContent() {
 
       await exportStyledExcel(
         formattedData,
-        `Daftar_User_${new Date().toISOString().split("T")[0]}.xlsx`,
+        `Daftar_User_${useFilters ? "Filter" : "Semua"}_${new Date().toISOString().split("T")[0]}.xlsx`,
         "Daftar User",
       );
 
-      toast.success("Data user berhasil diunduh!");
+      toast.success("Data user berhasil diunduh!", { id: toastId });
     } catch (error: any) {
-      toast.error("Gagal mengunduh data", { description: error.message });
+      toast.error("Gagal mengunduh data", {
+        id: toastId,
+        description: error.message,
+      });
     } finally {
       setIsExporting(false);
     }
@@ -401,15 +465,12 @@ export function UserManagementClientContent() {
       {/* --- Filter Section --- */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-grow">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Cari nama, email, atau NRP..."
-              className="pl-10"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+          <ListSearchInput
+            placeholder="Cari nama, email, atau NRP..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
           <CreateUserDialog
             roles={dataRole}
             lokasiOptions={dataLokasi}
@@ -417,18 +478,13 @@ export function UserManagementClientContent() {
             adminCompany={adminProfile?.company}
             onCreated={() => setReloadKey((k) => k + 1)}
           />
-          <Button
-            onClick={handleDownloadExcel}
-            disabled={isExporting}
-            className="w-full md:w-auto"
-          >
-            {isExporting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Newspaper className="mr-2 h-4 w-4" />
-            )}
-            Download Excel
-          </Button>
+          <ExcelDownloadMenu
+            itemLabel="user"
+            filteredCount={totalItems}
+            fetchAllCount={fetchAllUserCount}
+            onDownload={handleDownloadExcel}
+            isExporting={isExporting}
+          />
         </div>
 
         <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
@@ -527,120 +583,150 @@ export function UserManagementClientContent() {
       </div>
 
       {/* --- Table Section --- */}
-      <div className="border rounded-md overflow-x-auto">
-        <Table className="min-w-[1000px]">
-          <TableHeader>
+      <StickyHeaderTable
+        className="min-w-[1000px]"
+        containerClassName="border rounded-md overflow-x-auto"
+        header={
             <TableRow>
               <TableHead className="w-[50px]">No</TableHead>
-              <TableHead>Nama</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>NRP</TableHead>
-              <TableHead>Perusahaan</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Lokasi</TableHead>
-              <TableHead>Departemen</TableHead>
+              <SortableTableHead
+                sortKey="nama"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Nama
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="email"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Email
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="nrp"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                NRP
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="company"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Perusahaan
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="role"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Role
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="lokasi"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Lokasi
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="department"
+                currentSort={sortFilter}
+                onSortChange={(sort) => handleFilterChange({ sort })}
+              >
+                Departemen
+              </SortableTableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading || isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
-                  <div className="flex justify-center items-center gap-2">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Memuat data...
+        }
+      >
+        <TableBody>
+          {loading || isPending ? (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center h-24">
+                <div className="flex justify-center items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Memuat data...
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : userList.length > 0 ? (
+            userList.map((user, index) => (
+              <TableRow
+                key={user.id}
+                onClick={() => router.push(`/user-management/${user.id}`)}
+                className="cursor-pointer"
+              >
+                <TableCell className="font-medium">
+                  {(currentPage - 1) * limit + index + 1}
+                </TableCell>
+                <TableCell className="font-semibold">
+                  <div className="flex items-center gap-2">
+                    <UserAvatar
+                      userId={user.id}
+                      name={user.nama || user.email}
+                      className="h-8 w-8"
+                      fallbackClassName="text-xs"
+                    />
+                    <span>{user.nama || "-"}</span>
                   </div>
                 </TableCell>
-              </TableRow>
-            ) : userList.length > 0 ? (
-              userList.map((user, index) => (
-                <TableRow
-                  key={user.id}
-                  onClick={() => router.push(`/user-management/${user.id}`)}
-                  className="cursor-pointer"
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.nrp || "-"}</TableCell>
+                <TableCell>{user.company || "-"}</TableCell>
+                <TableCell>{user.role || "-"}</TableCell>
+                <TableCell>{user.lokasi || "-"}</TableCell>
+                <TableCell>{user.department || "-"}</TableCell>
+                <TableCell>
+                  {user.is_active === false ? (
+                    <Badge variant="destructive">Nonaktif</Badge>
+                  ) : (
+                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
+                      Aktif
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell
+                  className="text-right"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <TableCell className="font-medium">
-                    {(currentPage - 1) * limit + index + 1}
-                  </TableCell>
-                  <TableCell className="font-semibold">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar
-                        userId={user.id}
-                        name={user.nama || user.email}
-                        className="h-8 w-8"
-                        fallbackClassName="text-xs"
-                      />
-                      <span>{user.nama || "-"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.nrp || "-"}</TableCell>
-                  <TableCell>{user.company || "-"}</TableCell>
-                  <TableCell>{user.role || "-"}</TableCell>
-                  <TableCell>{user.lokasi || "-"}</TableCell>
-                  <TableCell>{user.department || "-"}</TableCell>
-                  <TableCell>
-                    {user.is_active === false ? (
-                      <Badge variant="destructive">Nonaktif</Badge>
-                    ) : (
-                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/40">
-                        Aktif
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className="text-right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/user-management/${user.id}`}>
-                        <Edit className="mr-2 h-3 w-3" />
-                        Edit
+                  <RowActionsMenu>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href={`/user-management/${user.id}`}
+                        className="cursor-pointer"
+                      >
+                        <Edit className="mr-2 h-4 w-4" /> Edit
                       </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center h-24">
-                  Tidak ada user yang ditemukan.
+                    </DropdownMenuItem>
+                  </RowActionsMenu>
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center h-24">
+                Tidak ada user yang ditemukan.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </StickyHeaderTable>
 
       {/* --- Pagination & Limit Section --- */}
-      <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Tampilkan</span>
-          <Select
-            value={String(limit)}
-            onValueChange={(value) => handleFilterChange({ limit: value })}
-          >
-            <SelectTrigger className="w-[70px]">
-              <SelectValue placeholder={limit} />
-            </SelectTrigger>
-            <SelectContent>
-              {LIMIT_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span>dari {totalItems} user.</span>
-        </div>
-        <PaginationComponent
-          currentPage={currentPage}
-          totalItems={totalItems}
-          itemsPerPage={limit}
-          basePath={pathname}
-        />
-      </div>
+      <TablePaginationFooter
+        currentPage={currentPage}
+        totalItems={totalItems}
+        limit={limit}
+        limitOptions={LIMIT_OPTIONS}
+        itemLabel="user"
+        onPageChange={(page) => handleFilterChange({ page })}
+        onLimitChange={(value) => handleFilterChange({ limit: value })}
+        className="mt-6"
+      />
     </Content>
   );
 }

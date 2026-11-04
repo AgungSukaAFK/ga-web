@@ -14,12 +14,88 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { History, Loader2 } from "lucide-react";
 import { fetchActivityLogs } from "@/services/logService";
+import type { DocumentChange } from "@/lib/document-change-log";
 import { formatDateWithTime, cn } from "@/lib/utils";
 
 interface ActivityLogDialogProps {
   resourceType: string;
   resourceId: string;
   trigger?: React.ReactNode;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  CREATE_MR: "MR Dibuat",
+  UPDATE_MR: "MR Diubah",
+  UPDATE_MR_ADMIN: "Diedit Admin",
+  UPDATE_MR_DEPARTMENT: "Departemen Diubah",
+  APPROVE_MR: "Disetujui",
+  REJECT_MR: "Ditolak",
+  REJECT_MR_APPROVER: "Ditolak Approver",
+  VALIDATE_MR: "Divalidasi",
+  HOLD_MR: "Ditahan",
+  RESUBMIT_MR: "Diajukan Ulang",
+  CONVERT_MR_COMPANY: "Konversi Company",
+  CONVERT_MR_ITEM_BARANG: "Konversi Barang",
+  CREATE_PO: "PO Dibuat",
+  UPDATE_PO: "PO Diubah",
+  APPROVE_PO: "Disetujui",
+  REJECT_PO: "Ditolak",
+  VALIDATE_PO: "Divalidasi",
+  REJECT_PO_VALIDATION: "Validasi Ditolak",
+  CONVERT_PO_ITEM_BARANG: "Konversi Barang",
+  CHANGE_PO_TYPE: "Jenis PO Diubah",
+  RECEIVE_GOODS: "Barang Diterima",
+  UPDATE_PAYMENT_DP_BP: "Pembayaran Diubah",
+  UPDATE_ITEM_STATUS: "Status Item Diubah",
+  ADMIN_OVERRIDE_APPROVAL: "Approval Diubah Admin",
+};
+
+const actionLabel = (log: { action_type: string; metadata?: any }) => {
+  if (log.metadata?.mode === "admin") return "Diedit Admin";
+  return (
+    ACTION_LABELS[log.action_type] ??
+    log.action_type
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .replace(/^\w/, (c) => c.toUpperCase())
+  );
+};
+
+const VISIBLE_CHANGES = 5;
+
+function LogChanges({ changes }: { changes: DocumentChange[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? changes : changes.slice(0, VISIBLE_CHANGES);
+
+  return (
+    <div className="mt-1.5 rounded-md border bg-muted/40 p-2">
+      <ul className="space-y-1 text-[11px]">
+        {visible.map((change, i) => (
+          <li key={i} className="break-words">
+            <span className="font-medium">{change.label}</span>
+            {change.from !== undefined && change.to !== undefined ? (
+              <span className="text-muted-foreground">
+                : {change.from} → {change.to}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                : {change.to ?? change.from}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {changes.length > VISIBLE_CHANGES && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[11px] font-medium text-primary hover:underline"
+        >
+          {expanded ? "Sembunyikan" : `Lihat semua (${changes.length})`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function LogDescription({ text }: { text: string }) {
@@ -38,7 +114,7 @@ function LogDescription({ text }: { text: string }) {
         ref={ref}
         className={cn(
           "text-xs text-foreground/90",
-          !expanded && "line-clamp-1",
+          !expanded && "line-clamp-2",
         )}
       >
         {text}
@@ -82,7 +158,7 @@ export function ActivityLogDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Riwayat Aktivitas</DialogTitle>
           <DialogDescription>
@@ -117,13 +193,17 @@ export function ActivityLogDialog({
                         variant="secondary"
                         className="px-1.5 py-0 text-[9px]"
                       >
-                        {log.action_type}
+                        {actionLabel(log)}
                       </Badge>
                     </div>
                     <p className="text-xs font-semibold mt-0.5">
                       {log.users_with_profiles?.nama || "Sistem"}
                     </p>
                     <LogDescription text={log.description} />
+                    {Array.isArray(log.metadata?.changes) &&
+                      log.metadata.changes.length > 0 && (
+                        <LogChanges changes={log.metadata.changes} />
+                      )}
                   </div>
                 </div>
               ))}

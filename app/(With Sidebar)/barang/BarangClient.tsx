@@ -2,27 +2,34 @@
 
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
+  ExcelDownloadMenu,
+  type ExcelDownloadMode,
+} from "@/components/excel-download-menu";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import {
+  SortableTableHead,
+  resolveSort,
+  type SortColumnConfig,
+} from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { orIlikePattern } from "@/lib/supabase/search-filter";
+import { LIMIT_OPTIONS } from "@/type/enum";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -42,10 +49,9 @@ import { Content } from "@/components/content";
 import {
   Loader2,
   Plus,
-  Search,
   Trash2,
   Edit,
-  FileSpreadsheet,
+  Eye,
   Box,
   Tag,
   DollarSign,
@@ -57,10 +63,9 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Barang } from "@/type";
 import { formatCurrency, cn } from "@/lib/utils"; // Pastikan cn ada di utils atau hapus jika tidak pakai
-import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
@@ -84,6 +89,40 @@ const TruncatedCell = ({
   );
 };
 
+// Kolom yang bisa di-sort lewat klik header tabel (key = nilai di URL).
+const DEFAULT_SORT = "created_at.desc";
+const SORTABLE_COLUMNS: Record<string, SortColumnConfig> = {
+  created_at: { column: "created_at" },
+  part_number: { column: "part_number" },
+  part_name: { column: "part_name" },
+  category: { column: "category" },
+  vendor: { column: "vendor" },
+  last_purchase_price: { column: "last_purchase_price" },
+  is_asset: { column: "is_asset" },
+};
+
+const SEARCH_FIELDS = ["Part Number", "Nama Barang", "Vendor"];
+
+type BarangFilters = { search: string; category: string; isAsset: string };
+
+// Dipakai tabel & export Excel supaya hasilnya selalu sama.
+const applyBarangFilters = (query: any, filters: BarangFilters) => {
+  let result = query;
+  if (filters.search) {
+    const pattern = orIlikePattern(filters.search);
+    result = result.or(
+      `part_name.ilike.${pattern},part_number.ilike.${pattern},vendor.ilike.${pattern}`,
+    );
+  }
+  if (filters.category !== "all") {
+    result = result.eq("category", filters.category);
+  }
+  if (filters.isAsset !== "all") {
+    result = result.eq("is_asset", filters.isAsset === "true");
+  }
+  return result;
+};
+
 export default function BarangClient() {
   const router = useRouter();
   const pathname = usePathname();
@@ -91,22 +130,60 @@ export default function BarangClient() {
   const supabase = createClient();
   // Dibuka dari global search (components/topbar/topbar-search.tsx):
   // ?search= mengisi kotak cari, ?id= langsung membuka detail barang.
-  const urlSearch = searchParams.get("search");
   const urlDetailId = searchParams.get("id");
+
+  // --- URL PARAMS ---
+  const currentPage = Number(searchParams.get("page") || "1");
+  const limit = Number(searchParams.get("limit") || 25);
+  const searchTerm = searchParams.get("search") || "";
+  const selectedCategory = searchParams.get("category") || "all";
+  const isAssetFilter = searchParams.get("is_asset") || "all";
+  const sortFilter = searchParams.get("sort") || DEFAULT_SORT;
 
   // --- STATE ---
   const [data, setData] = useState<Barang[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [, startTransition] = useTransition();
 
-  // Filter & Pagination
-  const [searchTerm, setSearchTerm] = useState(urlSearch ?? "");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [isAssetFilter, setIsAssetFilter] = useState<"all" | "true" | "false">(
-    "all",
+  const createQueryString = useCallback(
+    (paramsToUpdate: Record<string, string | number | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(paramsToUpdate).forEach(([name, value]) => {
+        if (value !== undefined && String(value).trim() !== "") {
+          params.set(name, String(value));
+        } else {
+          params.delete(name);
+        }
+      });
+      if (Object.keys(paramsToUpdate).some((k) => k !== "page")) {
+        params.set("page", "1");
+      }
+      return params.toString();
+    },
+    [searchParams],
   );
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  const handleFilterChange = (
+    updates: Record<string, string | number | undefined>,
+  ) => {
+    startTransition(() => {
+      router.push(`${pathname}?${createQueryString(updates)}`);
+    });
+  };
+
+  // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) =>
+      startTransition(() => {
+        router.push(`${pathname}?${createQueryString({ search: value })}`);
+      }),
+  );
 
   // Detail Dialog State
   const [selectedItem, setSelectedItem] = useState<Barang | null>(null);
@@ -114,9 +191,7 @@ export default function BarangClient() {
 
   // --- FETCH DATA ---
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-
+    const fetchProfile = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -128,91 +203,130 @@ export default function BarangClient() {
           .single();
         setUserRole(profile?.role || "");
       }
+    };
 
-      const { data: barangData, error } = await supabase
-        .from("barang")
-        .select("*")
-        .order("created_at", { ascending: false });
+    // Opsi filter kategori: dari semua barang, bukan cuma halaman yang tampil.
+    const fetchCategories = async () => {
+      const rows = await fetchAllRows<{ category: string | null }>(() =>
+        supabase
+          .from("barang")
+          .select("category")
+          .not("category", "is", null)
+          .order("id", { ascending: true }),
+      );
+      setUniqueCategories(
+        Array.from(
+          new Set(rows.map((r) => r.category).filter((c): c is string => !!c)),
+        ).sort(),
+      );
+    };
+
+    fetchProfile();
+    fetchCategories().catch(() => setUniqueCategories([]));
+  }, []);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      const from = (currentPage - 1) * limit;
+      const sort = resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT);
+      const {
+        data: barangData,
+        error,
+        count,
+      } = await applyBarangFilters(
+        supabase.from("barang").select("*", { count: "exact" }),
+        { search: searchTerm, category: selectedCategory, isAsset: isAssetFilter },
+      )
+        .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+        .order("id", { ascending: false }) // urutan stabil antar halaman
+        .range(from, from + limit - 1);
 
       if (error) {
         toast.error("Gagal mengambil data barang");
       } else {
         setData(barangData || []);
+        setTotalItems(count || 0);
       }
       setLoading(false);
     };
 
     fetchData();
-  }, []);
-
-  // --- FILTERING LOGIC ---
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      const matchesSearch =
-        (item.part_name?.toLowerCase() || "").includes(
-          searchTerm.toLowerCase(),
-        ) ||
-        (item.part_number?.toLowerCase() || "").includes(
-          searchTerm.toLowerCase(),
-        ) ||
-        (item.vendor?.toLowerCase() || "").includes(searchTerm.toLowerCase());
-
-      const matchesCategory =
-        selectedCategory === "all" || item.category === selectedCategory;
-
-      let matchesAsset = true;
-      if (isAssetFilter === "true") matchesAsset = item.is_asset === true;
-      if (isAssetFilter === "false") matchesAsset = item.is_asset === false;
-
-      return matchesSearch && matchesCategory && matchesAsset;
-    });
-  }, [data, searchTerm, selectedCategory, isAssetFilter]);
-
-  const uniqueCategories = useMemo(() => {
-    const values = data
-      .map((item) => item.category)
-      .filter((c): c is string => !!c);
-    return Array.from(new Set(values)).sort();
-  }, [data]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, selectedCategory, isAssetFilter]);
-
-  useEffect(() => {
-    if (urlSearch !== null) setSearchTerm(urlSearch);
-  }, [urlSearch]);
-
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const paginatedData = filteredData.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
-  );
+  }, [
+    currentPage,
+    limit,
+    searchTerm,
+    selectedCategory,
+    isAssetFilter,
+    sortFilter,
+    reloadKey,
+  ]);
 
   // --- HANDLERS ---
-  const handleExportExcel = async () => {
-    if (filteredData.length === 0) {
-      toast.warning("Tidak ada data untuk diexport");
-      return;
-    }
-    const dataToExport = filteredData.map((item, index) => ({
-      No: index + 1,
-      "Part Number": item.part_number,
-      "Nama Barang": item.part_name,
-      Kategori: item.category,
-      UoM: item.uom,
-      Vendor: item.vendor,
-      "Harga Ref": item.last_purchase_price,
-      Link: item.link,
-      Aset: item.is_asset ? "Ya" : "Tidak",
-    }));
+  const fetchAllBarangCount = async () => {
+    const { count, error } = await supabase
+      .from("barang")
+      .select("id", { count: "exact", head: true });
+    if (error) throw error;
+    return count ?? 0;
+  };
 
-    await exportStyledExcel(
-      dataToExport,
-      `Master_Barang_${new Date().toISOString().split("T")[0]}.xlsx`,
-      "Data Barang",
+  const handleExportExcel = async (mode: ExcelDownloadMode) => {
+    const useFilters = mode === "filtered";
+    setIsExporting(true);
+    const toastId = toast.loading(
+      useFilters
+        ? "Menyiapkan data barang sesuai filter..."
+        : "Menyiapkan semua data barang...",
     );
-    toast.success("File Excel berhasil didownload!");
+    try {
+      const sort = useFilters
+        ? resolveSort(sortFilter, SORTABLE_COLUMNS, DEFAULT_SORT)
+        : { column: "created_at", ascending: false };
+      const rows = await fetchAllRows<Barang>(() => {
+        const query = supabase.from("barang").select("*");
+        return (
+          useFilters
+            ? applyBarangFilters(query, {
+                search: searchTerm,
+                category: selectedCategory,
+                isAsset: isAssetFilter,
+              })
+            : query
+        )
+          .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+          .order("id", { ascending: true });
+      });
+      if (rows.length === 0) {
+        toast.warning("Tidak ada data untuk diexport", { id: toastId });
+        return;
+      }
+      const dataToExport = rows.map((item, index) => ({
+        No: index + 1,
+        "Part Number": item.part_number,
+        "Nama Barang": item.part_name,
+        Kategori: item.category,
+        UoM: item.uom,
+        Vendor: item.vendor,
+        "Harga Ref": item.last_purchase_price,
+        Link: item.link,
+        Aset: item.is_asset ? "Ya" : "Tidak",
+      }));
+
+      await exportStyledExcel(
+        dataToExport,
+        `Master_Barang_${useFilters ? "Filter" : "Semua"}_${new Date().toISOString().split("T")[0]}.xlsx`,
+        "Data Barang",
+      );
+      toast.success("File Excel berhasil didownload!", { id: toastId });
+    } catch (error: any) {
+      toast.error("Gagal mengunduh data", {
+        id: toastId,
+        description: error.message,
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -221,7 +335,7 @@ export default function BarangClient() {
       toast.error("Gagal menghapus barang");
     } else {
       toast.success("Barang berhasil dihapus");
-      setData((prev) => prev.filter((item) => item.id !== id));
+      setReloadKey((k) => k + 1);
     }
   };
 
@@ -230,11 +344,22 @@ export default function BarangClient() {
     setIsDetailOpen(true);
   };
 
+  // Barang dari ?id= belum tentu ada di halaman tabel yang sedang tampil.
   useEffect(() => {
-    if (!urlDetailId || loading) return;
-    const item = data.find((b) => String(b.id) === urlDetailId);
-    if (item) openDetail(item);
-  }, [urlDetailId, loading, data]);
+    if (!urlDetailId) return;
+    let cancelled = false;
+    supabase
+      .from("barang")
+      .select("*")
+      .eq("id", urlDetailId)
+      .maybeSingle()
+      .then(({ data: item }) => {
+        if (!cancelled && item) openDetail(item as Barang);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [urlDetailId]);
 
   const handleDetailOpenChange = (open: boolean) => {
     setIsDetailOpen(open);
@@ -256,9 +381,10 @@ export default function BarangClient() {
   ].includes(userRole);
 
   const clearFilters = () => {
-    setSearchTerm("");
-    setSelectedCategory("all");
-    setIsAssetFilter("all");
+    resetSearchInput();
+    startTransition(() => {
+      router.push(pathname);
+    });
   };
 
   // --- Chip filter aktif ---
@@ -268,21 +394,24 @@ export default function BarangClient() {
       key: "search",
       label: "Cari",
       value: searchTerm,
-      onRemove: () => setSearchTerm(""),
+      onRemove: () => {
+        resetSearchInput();
+        handleFilterChange({ search: undefined });
+      },
     });
   if (selectedCategory !== "all")
     activeFilters.push({
       key: "category",
       label: "Kategori",
       value: selectedCategory,
-      onRemove: () => setSelectedCategory("all"),
+      onRemove: () => handleFilterChange({ category: undefined }),
     });
   if (isAssetFilter !== "all")
     activeFilters.push({
       key: "is_asset",
       label: "Tipe Aset",
       value: isAssetFilter === "true" ? "Asset" : "Barang",
-      onRemove: () => setIsAssetFilter("all"),
+      onRemove: () => handleFilterChange({ is_asset: undefined }),
     });
 
   return (
@@ -293,14 +422,6 @@ export default function BarangClient() {
         size="lg"
         cardAction={
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleExportExcel}
-              disabled={loading}
-            >
-              <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600" />
-              Excel
-            </Button>
             {canModify && (
               <Button onClick={() => router.push("/barang/tambah")}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -312,13 +433,19 @@ export default function BarangClient() {
       >
         <div className="space-y-4">
           {/* --- FILTER BAR --- */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari PN, Nama, atau Vendor..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 bg-background"
+          <div className="flex flex-col md:flex-row gap-4">
+            <ListSearchInput
+              placeholder="Cari part number, nama, vendor..."
+              value={searchInput}
+              onChange={setSearchInput}
+              searchableFields={SEARCH_FIELDS}
+            />
+            <ExcelDownloadMenu
+              itemLabel="barang"
+              filteredCount={totalItems}
+              fetchAllCount={fetchAllBarangCount}
+              onDownload={handleExportExcel}
+              isExporting={isExporting}
             />
           </div>
           <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
@@ -327,7 +454,11 @@ export default function BarangClient() {
                 <label className="text-sm font-medium">Kategori</label>
                 <SearchableSelect
                   value={selectedCategory}
-                  onValueChange={setSelectedCategory}
+                  onValueChange={(val) =>
+                    handleFilterChange({
+                      category: val === "all" ? undefined : val,
+                    })
+                  }
                 >
                   <SearchableSelectTrigger className="bg-background">
                     <SearchableSelectValue placeholder="Kategori" />
@@ -348,7 +479,11 @@ export default function BarangClient() {
                 <label className="text-sm font-medium">Tipe Aset</label>
                 <SearchableSelect
                   value={isAssetFilter}
-                  onValueChange={(val: any) => setIsAssetFilter(val)}
+                  onValueChange={(val) =>
+                    handleFilterChange({
+                      is_asset: val === "all" ? undefined : val,
+                    })
+                  }
                 >
                   <SearchableSelectTrigger className="bg-background">
                     <SearchableSelectValue placeholder="Tipe Aset" />
@@ -370,184 +505,192 @@ export default function BarangClient() {
           </FilterPanel>
 
           {/* --- TABLE --- */}
-          <div className="rounded-md border bg-card">
-            <Table>
-              <TableHeader>
+          <StickyHeaderTable
+            containerClassName="rounded-md border bg-card"
+            header={
                 <TableRow>
                   <TableHead className="w-[50px]">No</TableHead>
-                  <TableHead className="w-[130px]">Part Number</TableHead>
-                  <TableHead className="min-w-[200px]">Nama Barang</TableHead>
-                  <TableHead className="w-[120px]">Kategori</TableHead>
-                  <TableHead className="w-[150px]">Vendor</TableHead>
-                  <TableHead className="w-[140px] text-right">
+                  <SortableTableHead
+                    sortKey="part_number"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    className="w-[130px]"
+                  >
+                    Part Number
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="part_name"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    className="min-w-[200px]"
+                  >
+                    Nama Barang
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="category"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    className="w-[120px]"
+                  >
+                    Kategori
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="vendor"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    className="w-[150px]"
+                  >
+                    Vendor
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="last_purchase_price"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    defaultDirection="desc"
+                    className="w-[140px] text-right"
+                  >
                     Harga Ref
-                  </TableHead>
-                  <TableHead className="w-[80px] text-center">Aset</TableHead>
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="is_asset"
+                    currentSort={sortFilter}
+                    onSortChange={(sort) => handleFilterChange({ sort })}
+                    defaultDirection="desc"
+                    className="w-[80px]"
+                  >
+                    Aset
+                  </SortableTableHead>
                   {canModify && (
-                    <TableHead className="w-[100px] text-right">Aksi</TableHead>
+                    <TableHead className="w-[70px] text-right">Aksi</TableHead>
                   )}
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      <div className="flex justify-center items-center gap-2">
-                        <Loader2 className="h-5 w-5 animate-spin" /> Memuat
-                        data...
-                      </div>
+            }
+          >
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-24 text-center">
+                    <div className="flex justify-center items-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" /> Memuat
+                      data...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : data.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    Data tidak ditemukan.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                data.map((item, index) => (
+                  <TableRow
+                    key={item.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => openDetail(item)}
+                  >
+                    <TableCell>
+                      {(currentPage - 1) * limit + index + 1}
                     </TableCell>
-                  </TableRow>
-                ) : paginatedData.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="h-24 text-center text-muted-foreground"
-                    >
-                      Data tidak ditemukan.
+
+                    <TableCell className="font-mono text-xs font-medium">
+                      {item.part_number}
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedData.map((item, index) => (
-                    <TableRow
-                      key={item.id}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => openDetail(item)}
-                    >
-                      <TableCell>
-                        {(currentPage - 1) * itemsPerPage + index + 1}
-                      </TableCell>
 
-                      <TableCell className="font-mono text-xs font-medium">
-                        {item.part_number}
-                      </TableCell>
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.part_name}
+                        className="max-w-[250px] font-medium"
+                      />
+                    </TableCell>
 
-                      <TableCell>
-                        <TruncatedCell
-                          text={item.part_name}
-                          className="max-w-[250px] font-medium"
-                        />
-                      </TableCell>
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.category}
+                        className="max-w-[120px]"
+                      />
+                    </TableCell>
 
-                      <TableCell>
-                        <TruncatedCell
-                          text={item.category}
-                          className="max-w-[120px]"
-                        />
-                      </TableCell>
+                    <TableCell>
+                      <TruncatedCell
+                        text={item.vendor}
+                        className="max-w-[150px] text-muted-foreground"
+                      />
+                    </TableCell>
 
-                      <TableCell>
-                        <TruncatedCell
-                          text={item.vendor}
-                          className="max-w-[150px] text-muted-foreground"
-                        />
-                      </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {item.last_purchase_price
+                        ? formatCurrency(item.last_purchase_price)
+                        : "-"}
+                    </TableCell>
 
-                      <TableCell className="text-right font-mono text-xs">
-                        {item.last_purchase_price
-                          ? formatCurrency(item.last_purchase_price)
-                          : "-"}
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        {item.is_asset ? (
-                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/40 dark:border-blue-800 text-[10px]">
-                            Asset
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] text-muted-foreground"
-                          >
-                            Goods
-                          </Badge>
-                        )}
-                      </TableCell>
-
-                      {canModify && (
-                        <TableCell
-                          className="text-right"
-                          onClick={(e) => e.stopPropagation()}
+                    <TableCell className="text-center">
+                      {item.is_asset ? (
+                        <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/40 dark:border-blue-800 text-[10px]">
+                          Asset
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-muted-foreground"
                         >
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/40"
-                              onClick={(e) => {
-                                e.stopPropagation(); // Mencegah popup detail terbuka
-                                router.push(`/barang/edit/${item.id}`);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/40"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (
-                                  window.confirm(
-                                    `Anda yakin ingin menghapus ${item.part_name}?`,
-                                  )
-                                ) {
-                                  handleDelete(item.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                          Goods
+                        </Badge>
                       )}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                    </TableCell>
+
+                    {canModify && (
+                      <TableCell
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <RowActionsMenu>
+                          <DropdownMenuItem onSelect={() => openDetail(item)}>
+                            <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              router.push(`/barang/edit/${item.id}`)
+                            }
+                          >
+                            <Edit className="mr-2 h-4 w-4" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                              if (
+                                window.confirm(
+                                  `Anda yakin ingin menghapus ${item.part_name}?`,
+                                )
+                              ) {
+                                handleDelete(item.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                          </DropdownMenuItem>
+                        </RowActionsMenu>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </StickyHeaderTable>
 
           {/* --- PAGINATION --- */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <div className="text-xs text-muted-foreground">
-                Menampilkan {paginatedData.length} dari {filteredData.length}{" "}
-                data
-              </div>
-              <Pagination className="justify-end w-auto mx-0">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      className={
-                        currentPage === 1
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer"
-                      }
-                    />
-                  </PaginationItem>
-                  <PaginationItem>
-                    <span className="text-sm px-4">
-                      Hal {currentPage} / {totalPages}
-                    </span>
-                  </PaginationItem>
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() =>
-                        setCurrentPage((p) => Math.min(totalPages, p + 1))
-                      }
-                      className={
-                        currentPage === totalPages
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer"
-                      }
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
-          )}
+          <TablePaginationFooter
+            currentPage={currentPage}
+            totalItems={totalItems}
+            limit={limit}
+            limitOptions={LIMIT_OPTIONS}
+            itemLabel="barang"
+            onPageChange={(page) => handleFilterChange({ page })}
+            onLimitChange={(value) => handleFilterChange({ limit: value })}
+          />
         </div>
       </Content>
 

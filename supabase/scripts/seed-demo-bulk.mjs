@@ -219,7 +219,7 @@ function main() {
     query("select id, kode_vendor, nama_vendor, tipe_vendor, pic_contact_person, alamat, email from public.vendors").map((v) => [v.kode_vendor, v])
   );
   const barang = query("select id, part_number, part_name, uom, last_purchase_price from public.barang order by id");
-  const profiles = query("select id, role, department, email from public.profiles where email like '%@demo.com'");
+  const profiles = query("select id, role, department, email, nama from public.profiles where email like '%@demo.com'");
   const costCenters = query("select id, code from public.cost_centers order by id");
   const counters = Object.fromEntries(
     query(`select doc_type, last_number from public.document_number_counters where company_code = '${COMPANY}' and year = 2026`).map((c) => [c.doc_type, c.last_number])
@@ -229,7 +229,7 @@ function main() {
   const approverOf = (dept) => profiles.find((p) => p.role === "approver" && p.department === dept);
   const admins = profiles.filter((p) => p.role === "admin");
   const approval = (p, type, status, at) => ({
-    nama: p.email,
+    nama: p.nama || p.email,
     role: p.role,
     type,
     email: p.email,
@@ -348,7 +348,7 @@ function main() {
         message: pick(DISCUSS),
         user_id: p.id,
         timestamp: new Date(createdMs + (i + 1) * int(2, 20) * HOUR).toISOString(),
-        user_name: p.email,
+        user_name: p.nama || p.email,
       };
     });
 

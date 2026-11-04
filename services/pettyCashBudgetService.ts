@@ -15,6 +15,7 @@
 // fetchCostCenters (paginasi + search + filter company, LOURDES bebas
 // lihat semua company, GMI/GIS dikunci ke company sendiri).
 
+import { orIlikePattern } from "@/lib/supabase/search-filter";
 import { createClient } from "@/lib/supabase/client";
 import { PettyCashBudget, PettyCashBudgetHistory, Profile } from "@/type";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
@@ -27,6 +28,7 @@ export const fetchBudgets = async (
   searchQuery: string | null,
   companyFilter: string | null,
   adminProfile: Profile | null,
+  sort?: { column: string; ascending: boolean },
 ): Promise<{ data: PettyCashBudget[]; count: number }> => {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
@@ -36,8 +38,9 @@ export const fetchBudgets = async (
     .select("*", { count: "exact" });
 
   if (searchQuery) {
+    const search = orIlikePattern(searchQuery);
     query = query.or(
-      `name.ilike.%${searchQuery}%,department.ilike.%${searchQuery}%,site.ilike.%${searchQuery}%`,
+      `name.ilike.${search},department.ilike.${search},site.ilike.${search}`,
     );
   }
 
@@ -52,7 +55,11 @@ export const fetchBudgets = async (
   }
 
   const { data, error, count } = await query
-    .order("department", { ascending: true })
+    .order(sort?.column ?? "department", {
+      ascending: sort?.ascending ?? true,
+      nullsFirst: false,
+    })
+    .order("id", { ascending: true }) // urutan stabil antar halaman
     .range(from, to);
 
   if (error) throw error;
