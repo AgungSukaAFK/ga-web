@@ -483,6 +483,20 @@ export const UOM_OPTIONS = [
   "Orang",
 ] as const;
 
+// Label tampilan status Petty Cash. Nilai di DB tetap apa adanya (dipakai
+// query, RLS, & trigger). Sub-Voucher "Selesai" artinya dananya sudah dibayar,
+// bukan alurnya tuntas - jadi labelnya dibedakan.
+const PC_STATUS_LABELS: Record<string, string> = {
+  "In Approval": "Menunggu Approval",
+  Approved: "Disetujui",
+  Rejected: "Ditolak",
+};
+
+export const pcStatusLabel = (status: string, doc?: string) =>
+  doc === "sub_voucher" && status === "Selesai"
+    ? "Dibayar"
+    : (PC_STATUS_LABELS[status] ?? status);
+
 // Status "Input Pengajuan" Petty Cash (petty_cash_pengajuan, item-based) -
 // text bebas di DB (bukan check constraint). "Selesai" TIDAK PERNAH diset
 // dari app code - ikut status Voucher aktifnya lewat trigger DB
@@ -521,7 +535,8 @@ export const PC_PENGAJUAN_STATUS_COLOR_DEFAULT =
 // parsial). "Selesai" TIDAK PERNAH diset dari app code - trigger DB
 // (supabase/migrations/0004_petty_cash.sql (asal: petty_cash_voucher_deklarasi_complete_setup.sql)) yang otomatis menaikkan
 // Voucher ke "Selesai" begitu SEMUA sub-voucher-nya sudah dideklarasikan &
-// disetujui DAN totalnya menutup total_amount Voucher.
+// disetujui DAN totalnya menutup total_amount Voucher atau sisanya sudah
+// ditutup (0022_petty_cash_tutup_sisa_voucher.sql).
 export const PC_VOUCHER_STATUS_OPTIONS = [
   "In Approval",
   "Approved",

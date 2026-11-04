@@ -138,6 +138,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DiscussionSection } from "../../material-request/[id]/discussion-component";
 import { QRCodeCanvas } from "qrcode.react";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { differenceInCalendarDays } from "date-fns";
@@ -321,7 +322,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const [deliveryCourier, setDeliveryCourier] = useState("");
   const [deliveryTrackingNumber, setDeliveryTrackingNumber] = useState("");
   const [deliveryNote, setDeliveryNote] = useState("");
-  const [deliveryFiles, setDeliveryFiles] = useState<FileList | null>(null);
+  const [deliveryFiles, setDeliveryFiles] = useState<File[] | null>(null);
   const [sendingDelivery, setSendingDelivery] = useState(false);
   // Mode edit dari dialog yang sama - dipicu dari tombol "Edit" di Detail
   // Pengiriman (GA approver, selama barangnya masih "On Delivery").
@@ -1181,16 +1182,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // dilakukan kapan pun (ga dibatasi status PO) oleh approver company yang
   // sama atau requester MR terkait (lihat canUploadAttachment).
   const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
+    files: File[],
     type: "po" | "finance" | "invoice" | "quotation",
   ) => {
-    const file = e.target.files?.[0];
+    const file = files[0];
     if (!file || !po) return;
 
     const sizeError = getAttachmentSizeError(file);
     if (sizeError) {
       toast.error("Ukuran file terlalu besar", { description: sizeError });
-      e.target.value = "";
       return;
     }
 
@@ -1274,21 +1274,17 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       });
     } finally {
       setIsLoading(false);
-      e.target.value = "";
     }
   };
 
   // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
   // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah.
-  const handlePurchasingAttachmentUpload = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handlePurchasingAttachmentUpload = (files: File[]) => {
     if (!purchasingAttachmentType) {
       toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
-      e.target.value = "";
       return;
     }
-    handleAttachmentUpload(e, purchasingAttachmentType);
+    handleAttachmentUpload(files, purchasingAttachmentType);
   };
 
   const handleApprovalAction = async (
@@ -2906,11 +2902,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <Label htmlFor="po-attachment-upload" className="text-xs">
                       Tambah Lampiran PO
                     </Label>
-                    <Input
+                    <FileDropzone
                       id="po-attachment-upload"
-                      type="file"
                       className="mt-1"
-                      onChange={(e) => handleAttachmentUpload(e, "po")}
+                      onFiles={(files) => handleAttachmentUpload(files, "po")}
                       disabled={isUploadingPO}
                     />
                     {isUploadingPO && (
@@ -2952,11 +2947,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     >
                       Tambah Lampiran Finance
                     </Label>
-                    <Input
+                    <FileDropzone
                       id="finance-attachment-upload"
-                      type="file"
                       className="mt-1"
-                      onChange={(e) => handleAttachmentUpload(e, "finance")}
+                      onFiles={(files) => handleAttachmentUpload(files, "finance")}
                       disabled={isUploadingFinance}
                     />
                     {isUploadingFinance && (
@@ -3012,11 +3006,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
                         </SearchableSelectContent>
                       </SearchableSelect>
-                      <Input
+                      <FileDropzone
                         id="purchasing-attachment-upload"
-                        type="file"
                         className="flex-1"
-                        onChange={handlePurchasingAttachmentUpload}
+                        onFiles={handlePurchasingAttachmentUpload}
                         disabled={isUploadingPurchasing}
                       />
                     </div>
@@ -3406,14 +3399,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                   >
                     Bukti Pembayaran (wajib)
                   </Label>
-                  <Input
-                    key={isDpBpDialogOpen ? "proof-open" : "proof-closed"}
+                  <FileDropzone
                     id="payment-proof-upload"
-                    type="file"
                     className="mt-1"
-                    onChange={(e) =>
-                      setPaymentProofFile(e.target.files?.[0] || null)
-                    }
+                    onFiles={(files) => setPaymentProofFile(files[0])}
+                    selectedFiles={paymentProofFile ? [paymentProofFile] : null}
                     disabled={actionLoading}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
@@ -4221,11 +4211,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           ? "Tambah Bukti Pengiriman (opsional)"
                           : "Bukti Pengiriman (wajib)"}
                       </Label>
-                      <Input
+                      <FileDropzone
                         id="delivery-file"
-                        type="file"
                         multiple
-                        onChange={(e) => setDeliveryFiles(e.target.files)}
+                        onFiles={setDeliveryFiles}
+                        selectedFiles={deliveryFiles}
                         className="mt-2"
                       />
                     </div>

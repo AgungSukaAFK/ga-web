@@ -13,6 +13,7 @@
 // Pengajuan di sheet Pengajuan/Ringkasan. Satu query nested (sama pola dgn
 // fetchMyPengajuanWithChain), diambil bertahap lewat fetchAllRows.
 
+import { pcStatusLabel } from "@/type/enum";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows, exportStyledExcelWorkbook, StyledSheet } from "@/lib/excel-export";
 import { extractPlainText } from "@/lib/rich-content";
@@ -240,7 +241,8 @@ const sum = (values: number[]) =>
 const pembatalanLabel = (list: PettyCashPembatalan[] | null | undefined) => {
   const pending = getPendingPembatalan(list);
   if (pending) return "Menunggu Persetujuan";
-  return sortDocsNewestFirst(list)[0]?.status ?? "-";
+  const status = sortDocsNewestFirst(list)[0]?.status;
+  return status ? pcStatusLabel(status) : "-";
 };
 
 const ITEM_CURRENCY = ["Harga Satuan", "Subtotal"];
@@ -275,11 +277,11 @@ const buildRingkasan = (chain: PettyCashPengajuanWithChain[]) =>
       Site: pj.site || "-",
       Budget: pj.petty_cash_budget?.name || "-",
       Eskalasi: yesNo(pj.is_eskalasi),
-      "Status Pengajuan": pj.status,
+      "Status Pengajuan": pcStatusLabel(pj.status),
       "Status Utama": computePcOverallStatus(pj).label,
       "Total Pengajuan": Number(pj.total_amount) || 0,
       "Kode Voucher": voucher?.kode_voucher || "-",
-      "Status Voucher": voucher?.status || "-",
+      "Status Voucher": voucher ? pcStatusLabel(voucher.status) : "-",
       "Metode Pencairan": voucher ? formatPcPayment(voucher, "-") : "-",
       "Total Voucher": Number(voucher?.total_amount) || 0,
       "Jumlah Tarikan": svs.length,
@@ -309,7 +311,7 @@ const buildPengajuan = (chain: PettyCashPengajuanWithChain[]) =>
         Site: pj.site || "-",
         Budget: pj.petty_cash_budget?.name || "-",
         Eskalasi: yesNo(pj.is_eskalasi),
-        Status: pj.status,
+        Status: pcStatusLabel(pj.status),
         "Progres Approval": approvalProgress(pj.approvals),
         "Approver Saat Ini": approvalCurrent(pj.approvals),
         "Total Pengajuan": Number(pj.total_amount) || 0,
@@ -343,7 +345,7 @@ const buildVoucher = (rows: VoucherRow[]) =>
         Site: v.site || "-",
         Budget: v.petty_cash_budget?.name || "-",
         Eskalasi: yesNo(pj.is_eskalasi),
-        Status: v.status,
+        Status: pcStatusLabel(v.status),
         "Progres Approval": approvalProgress(v.approvals),
         "Approver Saat Ini": approvalCurrent(v.approvals),
         "Metode Pencairan": v.payment_method || "-",
@@ -353,6 +355,7 @@ const buildVoucher = (rows: VoucherRow[]) =>
         "Total Voucher": Number(v.total_amount) || 0,
         "Total Ditarik": totalDitarik,
         "Sisa Belum Ditarik": Math.max((Number(v.total_amount) || 0) - totalDitarik, 0),
+        "Sisa Ditutup": Number(v.closed_remainder?.amount) || 0,
       },
       v.items,
     );
@@ -379,7 +382,7 @@ const buildTarikan = (rows: TarikanRow[]) =>
         Company: v.company_code,
         Departemen: v.department,
         Site: v.site || "-",
-        "Status Pembayaran": sv.status,
+        "Status Pembayaran": pcStatusLabel(sv.status, "sub_voucher"),
         "Metode Pencairan": payment.payment_method
           ? `${payment.payment_method}${payment.final ? "" : " (rencana)"}`
           : "-",
@@ -391,7 +394,7 @@ const buildTarikan = (rows: TarikanRow[]) =>
         "Jumlah Bukti Bayar": (sv.payment_proof ?? []).length,
         "Nominal Tarikan": Number(sv.amount) || 0,
         "Kode Deklarasi": dek?.kode_deklarasi || "-",
-        "Status Deklarasi": dek?.status || "Belum dideklarasikan",
+        "Status Deklarasi": dek ? pcStatusLabel(dek.status) : "Belum dideklarasikan",
       },
       sv.items,
     );
@@ -412,7 +415,7 @@ const buildDeklarasi = (rows: TarikanRow[]) =>
             Company: d.company_code,
             Departemen: d.department,
             Site: d.site || "-",
-            Status: d.status,
+            Status: pcStatusLabel(d.status),
             "Progres Approval": approvalProgress(d.approvals),
             "Approver Saat Ini": approvalCurrent(d.approvals),
             "Nominal Tarikan": Number(sv.amount) || 0,
@@ -503,6 +506,7 @@ export const buildPcExportSheets = (
         "Total Voucher",
         "Total Ditarik",
         "Sisa Belum Ditarik",
+        "Sisa Ditutup",
         ...ITEM_CURRENCY,
       ],
     }),

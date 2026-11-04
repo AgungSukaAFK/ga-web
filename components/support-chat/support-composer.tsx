@@ -7,6 +7,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
+import { useFileDrop } from "@/hooks/use-file-drop";
 import { FileText, Loader2, Paperclip, SendHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -100,6 +101,11 @@ export function SupportComposer({
     setFile(f);
   };
 
+  const { isDragging, dropProps } = useFileDrop({
+    onFiles: (files) => pickFile(files[0]),
+    disabled: sending,
+  });
+
   const canSend = !sending && (text.trim().length > 0 || !!file);
 
   const submit = async () => {
@@ -129,7 +135,13 @@ export function SupportComposer({
   };
 
   return (
-    <div className="space-y-2 border-t bg-background p-3">
+    <div
+      {...dropProps}
+      className={cn(
+        "space-y-2 border-t bg-background p-3",
+        isDragging && "outline-2 -outline-offset-4 outline-dashed outline-primary/60",
+      )}
+    >
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {file && (
         <AttachmentChip

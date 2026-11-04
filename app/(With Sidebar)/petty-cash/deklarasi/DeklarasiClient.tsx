@@ -17,12 +17,20 @@
 // Kalau Deklarasi yang disetujui lebih kecil dari nominal tarikan, sisanya
 // bisa dikembalikan lewat tabel "Sisa Dana Bisa Dikembalikan" (wajib bukti
 // setor, dikonfirmasi Finance - lihat services/pettyCashPengembalianService.ts).
+//
+// `?sv=<id>` (deklarasiHref, lib/pcChain.ts) langsung membuka form tarikan itu.
+// Di mobile, tabel & form diganti kartu (pemakaian utamanya foto struk dari HP).
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Content } from "@/components/content";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -48,6 +56,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useListUrlParams } from "@/hooks/use-list-url-params";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { paginateRows } from "@/lib/client-list";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAttachmentDirect } from "@/lib/uploadDirect";
 import {
@@ -63,10 +74,12 @@ import {
   PettyCashSubVoucher,
 } from "@/type";
 import {
+  LIMIT_OPTIONS,
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
   PC_PENGEMBALIAN_STATUS_COLORS,
   PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT,
+  pcStatusLabel,
 } from "@/type/enum";
 import {
   fetchMyDeklarasi,
@@ -86,15 +99,16 @@ import { pickCurrentDoc } from "@/lib/pcChain";
 import { PcPengembalianForm } from "@/components/petty-cash/PcPengembalianForm";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
+import { PcDownloadMenuItems } from "@/components/petty-cash/PcPrintMenu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Loader2,
   RefreshCcw,
   FileCheck2,
   FileText,
   CalendarDays,
-  UploadCloud,
   X,
   Eye,
   Clock,
@@ -119,8 +133,59 @@ const StatusBadge = ({
   fallback?: string;
 }) => (
   <Badge className={`whitespace-nowrap ${colors[status] || fallback}`}>
-    {status}
+    {pcStatusLabel(status)}
   </Badge>
+);
+
+const MobileCard = ({
+  title,
+  badge,
+  note,
+  actions,
+  children,
+}: {
+  title: string;
+  badge?: React.ReactNode;
+  note?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <div className="space-y-2 rounded-md border p-3">
+    <div className="flex items-start justify-between gap-2">
+      <p className="min-w-0 font-mono text-xs font-semibold [overflow-wrap:anywhere]">
+        {title}
+      </p>
+      {badge}
+    </div>
+    {note}
+    <dl className="space-y-1 text-sm">{children}</dl>
+    {actions && <div className="flex items-center gap-1.5 pt-1">{actions}</div>}
+  </div>
+);
+
+const MobileField = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <div className="flex justify-between gap-3">
+    <dt className="shrink-0 text-muted-foreground">{label}</dt>
+    <dd className="min-w-0 text-right [overflow-wrap:anywhere]">{children}</dd>
+  </div>
+);
+
+const MobileEmpty = ({ children }: { children: React.ReactNode }) => (
+  <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">
+    {children}
+  </p>
+);
+
+const MobileLoading = () => (
+  <div className="flex justify-center rounded-md border p-6">
+    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  </div>
 );
 
 type DeclareRow = {
@@ -140,6 +205,11 @@ type DeclareRow = {
 export default function DeklarasiClient() {
   const notesEditorRef = useRef<RichMentionEditorHandle>(null);
   const supabase = createClient();
+  const router = useRouter();
+  const isMobile = useIsMobile();
+  const { searchParams, page, limit, setParams, setFilters } =
+    useListUrlParams();
+  const deepLinkSv = searchParams.get("sv");
 
   const [userId, setUserId] = useState<string | null>(null);
   const [eligible, setEligible] = useState<PettyCashSubVoucher[]>([]);
@@ -226,6 +296,18 @@ export default function DeklarasiClient() {
     setAttachments([]);
   };
 
+  useEffect(() => {
+    if (loading || !deepLinkSv) return;
+    const target = eligible.find((sv) => String(sv.id) === deepLinkSv);
+    if (target) {
+      openDeclareForm(target);
+    } else {
+      toast.info("Tarikan ini sudah tidak perlu dideklarasikan.");
+    }
+    // replace: tombol Back tidak boleh membuka form-nya lagi.
+    router.replace("/petty-cash/deklarasi", { scroll: false });
+  }, [loading, deepLinkSv]);
+
   const closeDeclareForm = () => {
     setSelected(null);
     setRows([]);
@@ -249,8 +331,8 @@ export default function DeklarasiClient() {
   // Batas yang sama dijaga trigger check_petty_cash_deklarasi_total di DB.
   const overLimit = !!selected && totalAmount > selected.amount;
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
 
     const sizeError = getAttachmentSizeError(file);
@@ -277,7 +359,6 @@ export default function DeklarasiClient() {
       });
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -363,6 +444,12 @@ export default function DeklarasiClient() {
     }
   };
 
+  const {
+    rows: visibleDeklarasi,
+    currentPage,
+    offset,
+  } = paginateRows(deklarasiList, page, limit);
+
   return (
     <>
       <Content
@@ -389,7 +476,7 @@ export default function DeklarasiClient() {
           {awaitingPayment.length > 0 && (
             <Alert>
               <Clock className="h-4 w-4" />
-              <AlertTitle>
+              <AlertTitle className="line-clamp-none">
                 {awaitingPayment.length} tarikan masih menunggu pembayaran Finance
               </AlertTitle>
               <AlertDescription>
@@ -404,80 +491,156 @@ export default function DeklarasiClient() {
               <FileCheck2 className="h-4 w-4 text-primary" />
               Sub-Voucher Siap Dideklarasikan
             </h3>
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[700px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[200px]">
-                      Kode Sub-Voucher
-                    </TableHead>
-                    <TableHead className="w-[180px]">Dari Voucher</TableHead>
-                    <TableHead className="w-[150px] text-right">
-                      Nominal Dicairkan
-                    </TableHead>
-                    <TableHead className="w-[140px]">Ditarik</TableHead>
-                    <TableHead className="w-[160px] text-center">
-                      Aksi
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center h-28">
-                        <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                      </TableCell>
-                    </TableRow>
-                  ) : eligible.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center h-28 text-muted-foreground"
-                      >
-                        Belum ada Sub-Voucher yang siap dideklarasikan.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    eligible.map((sv) => (
-                      <TableRow key={sv.id}>
-                        <TableCell className="text-sm">
-                          <div className="font-semibold">
-                            {sv.kode_sub_voucher}
-                          </div>
-                          {rejectedOf(sv) && (
-                            <Link
-                              href={`/petty-cash/deklarasi/${rejectedOf(sv)!.id}`}
-                              target="_blank"
-                              className="text-[11px] text-red-600 dark:text-red-400 hover:underline"
-                            >
-                              Deklarasi {rejectedOf(sv)!.kode_deklarasi} ditolak
-                              - lihat alasan
-                            </Link>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {sv.petty_cash_voucher?.kode_voucher || "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-sm">
-                          {formatCurrency(sv.amount)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {formatDate(sv.created_at)}
-                        </TableCell>
-                        <TableCell className="text-center">
+            {isMobile ? (
+              <div className="space-y-2">
+                {loading ? (
+                  <MobileLoading />
+                ) : eligible.length === 0 ? (
+                  <MobileEmpty>
+                    Belum ada Sub-Voucher yang siap dideklarasikan.
+                  </MobileEmpty>
+                ) : (
+                  eligible.map((sv) => (
+                    <MobileCard
+                      key={sv.id}
+                      title={sv.kode_sub_voucher}
+                      note={
+                        rejectedOf(sv) && (
+                          <Link
+                            href={`/petty-cash/deklarasi/${rejectedOf(sv)!.id}`}
+                            target="_blank"
+                            className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Deklarasi {rejectedOf(sv)!.kode_deklarasi} ditolak
+                            - lihat alasan
+                          </Link>
+                        )
+                      }
+                      actions={
+                        <>
                           <Button
                             size="sm"
+                            className="flex-1"
                             onClick={() => openDeclareForm(sv)}
                           >
                             {rejectedOf(sv) ? "Ajukan Ulang" : "Buat Deklarasi"}
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                          <RowActionsMenu>
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/petty-cash/sub-voucher/${sv.id}`}
+                                target="_blank"
+                                className="cursor-pointer"
+                              >
+                                <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                              </Link>
+                            </DropdownMenuItem>
+                          </RowActionsMenu>
+                        </>
+                      }
+                    >
+                      <MobileField label="Dari Voucher">
+                        {sv.petty_cash_voucher?.kode_voucher || "-"}
+                      </MobileField>
+                      <MobileField label="Nominal Dicairkan">
+                        <span className="font-medium tabular-nums">
+                          {formatCurrency(sv.amount)}
+                        </span>
+                      </MobileField>
+                      <MobileField label="Ditarik">
+                        {formatDate(sv.created_at)}
+                      </MobileField>
+                    </MobileCard>
+                  ))
+                )}
+              </div>
+            ) : (
+<StickyHeaderTable
+              className="min-w-[750px]"
+              containerClassName="rounded-md border overflow-x-auto"
+              header={
+                <TableRow>
+                  <TableHead className="w-[50px]">No</TableHead>
+                  <TableHead className="w-[200px]">
+                    Kode Sub-Voucher
+                  </TableHead>
+                  <TableHead className="w-[180px]">Dari Voucher</TableHead>
+                  <TableHead className="w-[150px] text-right">
+                    Nominal Dicairkan
+                  </TableHead>
+                  <TableHead className="w-[140px]">Ditarik</TableHead>
+                  <TableHead className="w-[210px] text-right">Aksi</TableHead>
+                </TableRow>
+              }
+            >
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center">
+                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                    </TableCell>
+                  </TableRow>
+                ) : eligible.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      Belum ada Sub-Voucher yang siap dideklarasikan.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  eligible.map((sv, index) => (
+                    <TableRow key={sv.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell className="text-sm">
+                        <div className="font-mono text-xs font-semibold">
+                          {sv.kode_sub_voucher}
+                        </div>
+                        {rejectedOf(sv) && (
+                          <Link
+                            href={`/petty-cash/deklarasi/${rejectedOf(sv)!.id}`}
+                            target="_blank"
+                            className="text-[11px] text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Deklarasi {rejectedOf(sv)!.kode_deklarasi} ditolak
+                            - lihat alasan
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {sv.petty_cash_voucher?.kode_voucher || "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm tabular-nums">
+                        {formatCurrency(sv.amount)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(sv.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button size="sm" onClick={() => openDeclareForm(sv)}>
+                            {rejectedOf(sv) ? "Ajukan Ulang" : "Buat Deklarasi"}
+                          </Button>
+                          <RowActionsMenu>
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/petty-cash/sub-voucher/${sv.id}`}
+                                target="_blank"
+                                className="cursor-pointer"
+                              >
+                                <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                              </Link>
+                            </DropdownMenuItem>
+                          </RowActionsMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </StickyHeaderTable>
+)}
           </div>
 
           <div>
@@ -485,73 +648,126 @@ export default function DeklarasiClient() {
               <FileText className="h-4 w-4 text-primary" />
               Deklarasi Saya
             </h3>
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[750px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[180px]">Kode Deklarasi</TableHead>
-                    <TableHead className="w-[180px]">Dari Voucher</TableHead>
-                    <TableHead className="w-[150px] text-right">
-                      Nominal Riil
-                    </TableHead>
-                    <TableHead className="w-[140px]">Status</TableHead>
-                    <TableHead className="w-[60px] text-center">
-                      Aksi
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center h-28">
-                        <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                      </TableCell>
-                    </TableRow>
-                  ) : deklarasiList.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center h-28 text-muted-foreground"
-                      >
-                        Belum ada Deklarasi yang dibuat.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    deklarasiList.map((d) => (
-                      <TableRow key={d.id}>
-                        <TableCell className="font-semibold text-sm">
-                          {d.kode_deklarasi}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {d.petty_cash_voucher?.kode_voucher || "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-sm">
+            {isMobile ? (
+              <div className="space-y-2">
+                {loading ? (
+                  <MobileLoading />
+                ) : deklarasiList.length === 0 ? (
+                  <MobileEmpty>Belum ada Deklarasi yang dibuat.</MobileEmpty>
+                ) : (
+                  visibleDeklarasi.map((d) => (
+                    <MobileCard
+                      key={d.id}
+                      title={d.kode_deklarasi}
+                      badge={<StatusBadge status={d.status} />}
+                      actions={
+                        <div className="ml-auto">
+                          <RowActionsMenu>
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/petty-cash/deklarasi/${d.id}`}
+                                target="_blank"
+                                className="cursor-pointer"
+                              >
+                                <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                              </Link>
+                            </DropdownMenuItem>
+                            <PcDownloadMenuItems href={`/petty-cash/deklarasi/${d.id}`} />
+                          </RowActionsMenu>
+                        </div>
+                      }
+                    >
+                      <MobileField label="Dari Voucher">
+                        {d.petty_cash_voucher?.kode_voucher || "-"}
+                      </MobileField>
+                      <MobileField label="Nominal Riil">
+                        <span className="font-medium tabular-nums">
                           {formatCurrency(d.total_amount)}
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={d.status} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-primary"
-                          >
+                        </span>
+                      </MobileField>
+                    </MobileCard>
+                  ))
+                )}
+              </div>
+            ) : (
+<StickyHeaderTable
+              className="min-w-[800px]"
+              containerClassName="rounded-md border overflow-x-auto"
+              header={
+                <TableRow>
+                  <TableHead className="w-[50px]">No</TableHead>
+                  <TableHead className="w-[180px]">Kode Deklarasi</TableHead>
+                  <TableHead className="w-[180px]">Dari Voucher</TableHead>
+                  <TableHead className="w-[150px] text-right">
+                    Nominal Riil
+                  </TableHead>
+                  <TableHead className="w-[140px]">Status</TableHead>
+                  <TableHead className="w-[70px] text-right">Aksi</TableHead>
+                </TableRow>
+              }
+            >
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center">
+                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                    </TableCell>
+                  </TableRow>
+                ) : deklarasiList.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      Belum ada Deklarasi yang dibuat.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  visibleDeklarasi.map((d, index) => (
+                    <TableRow key={d.id}>
+                      <TableCell>{offset + index + 1}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold">
+                        {d.kode_deklarasi}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {d.petty_cash_voucher?.kode_voucher || "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm tabular-nums">
+                        {formatCurrency(d.total_amount)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={d.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <RowActionsMenu>
+                          <DropdownMenuItem asChild>
                             <Link
                               href={`/petty-cash/deklarasi/${d.id}`}
                               target="_blank"
+                              className="cursor-pointer"
                             >
-                              <Eye className="h-4 w-4" />
+                              <Eye className="mr-2 h-4 w-4" /> Lihat Detail
                             </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                          </DropdownMenuItem>
+                          <PcDownloadMenuItems href={`/petty-cash/deklarasi/${d.id}`} />
+                        </RowActionsMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </StickyHeaderTable>
+)}
+            <TablePaginationFooter
+              currentPage={currentPage}
+              totalItems={deklarasiList.length}
+              limit={limit}
+              limitOptions={LIMIT_OPTIONS}
+              itemLabel="deklarasi"
+              onPageChange={(value) => setParams({ page: value })}
+              onLimitChange={(value) => setFilters({ limit: value })}
+              className="mt-6"
+            />
           </div>
 
           {returnable.length > 0 && (
@@ -560,56 +776,94 @@ export default function DeklarasiClient() {
                 <Undo2 className="h-4 w-4 text-primary" />
                 Sisa Dana Bisa Dikembalikan
               </h3>
-              <div className="rounded-md border overflow-x-auto">
-                <Table className="min-w-[750px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[200px]">
-                        Kode Sub-Voucher
-                      </TableHead>
-                      <TableHead className="w-[150px] text-right">
-                        Nominal Tarikan
-                      </TableHead>
-                      <TableHead className="w-[150px] text-right">
-                        Deklarasi Disetujui
-                      </TableHead>
-                      <TableHead className="w-[150px] text-right">
-                        Sisa Dana
-                      </TableHead>
-                      <TableHead className="w-[160px] text-center">
-                        Aksi
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {returnable.map((r) => (
-                      <TableRow key={r.subVoucher.id}>
-                        <TableCell className="font-semibold text-sm">
-                          {r.subVoucher.kode_sub_voucher}
-                        </TableCell>
-                        <TableCell className="text-right text-sm">
+              {isMobile ? (
+                <div className="space-y-2">
+                  {returnable.map((r) => (
+                    <MobileCard
+                      key={r.subVoucher.id}
+                      title={r.subVoucher.kode_sub_voucher}
+                      actions={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setSelectedReturn(r)}
+                        >
+                          Kembalikan Sisa
+                        </Button>
+                      }
+                    >
+                      <MobileField label="Nominal Tarikan">
+                        <span className="tabular-nums">
                           {formatCurrency(r.subVoucher.amount)}
-                        </TableCell>
-                        <TableCell className="text-right text-sm">
+                        </span>
+                      </MobileField>
+                      <MobileField label="Deklarasi Disetujui">
+                        <span className="tabular-nums">
                           {formatCurrency(r.declared)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-sm">
+                        </span>
+                      </MobileField>
+                      <MobileField label="Sisa Dana">
+                        <span className="font-medium tabular-nums">
                           {formatCurrency(r.sisa)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setSelectedReturn(r)}
-                          >
-                            Kembalikan Sisa
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                        </span>
+                      </MobileField>
+                    </MobileCard>
+                  ))}
+                </div>
+              ) : (
+<StickyHeaderTable
+                className="min-w-[800px]"
+                containerClassName="rounded-md border overflow-x-auto"
+                header={
+                  <TableRow>
+                    <TableHead className="w-[50px]">No</TableHead>
+                    <TableHead className="w-[200px]">
+                      Kode Sub-Voucher
+                    </TableHead>
+                    <TableHead className="w-[150px] text-right">
+                      Nominal Tarikan
+                    </TableHead>
+                    <TableHead className="w-[150px] text-right">
+                      Deklarasi Disetujui
+                    </TableHead>
+                    <TableHead className="w-[150px] text-right">
+                      Sisa Dana
+                    </TableHead>
+                    <TableHead className="w-[210px] text-right">Aksi</TableHead>
+                  </TableRow>
+                }
+              >
+                <TableBody>
+                  {returnable.map((r, index) => (
+                    <TableRow key={r.subVoucher.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold">
+                        {r.subVoucher.kode_sub_voucher}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {formatCurrency(r.subVoucher.amount)}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {formatCurrency(r.declared)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm tabular-nums">
+                        {formatCurrency(r.sisa)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedReturn(r)}
+                        >
+                          Kembalikan Sisa
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </StickyHeaderTable>
+)}
             </div>
           )}
 
@@ -619,51 +873,89 @@ export default function DeklarasiClient() {
                 <Undo2 className="h-4 w-4 text-primary" />
                 Pengembalian Saya
               </h3>
-              <div className="rounded-md border overflow-x-auto">
-                <Table className="min-w-[750px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[220px]">
-                        Kode Pengembalian
-                      </TableHead>
-                      <TableHead className="w-[140px]">Diajukan</TableHead>
-                      <TableHead className="w-[150px] text-right">
-                        Nominal
-                      </TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pengembalianList.map((pg) => (
-                      <TableRow key={pg.id}>
-                        <TableCell className="font-semibold text-sm">
-                          {pg.kode_pengembalian}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {formatDate(pg.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-sm">
+              {isMobile ? (
+                <div className="space-y-2">
+                  {pengembalianList.map((pg) => (
+                    <MobileCard
+                      key={pg.id}
+                      title={pg.kode_pengembalian}
+                      badge={
+                        <StatusBadge
+                          status={pg.status}
+                          colors={PC_PENGEMBALIAN_STATUS_COLORS}
+                          fallback={PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT}
+                        />
+                      }
+                      note={
+                        pg.status === "Ditolak" &&
+                        pg.reject_reason && (
+                          <p className="text-xs text-muted-foreground">
+                            Alasan: {pg.reject_reason}
+                          </p>
+                        )
+                      }
+                    >
+                      <MobileField label="Diajukan">
+                        {formatDate(pg.created_at)}
+                      </MobileField>
+                      <MobileField label="Nominal">
+                        <span className="font-medium tabular-nums">
                           {formatCurrency(pg.amount)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <div className="flex flex-col items-start gap-1">
-                            <StatusBadge
-                              status={pg.status}
-                              colors={PC_PENGEMBALIAN_STATUS_COLORS}
-                              fallback={PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT}
-                            />
-                            {pg.status === "Ditolak" && pg.reject_reason && (
-                              <span className="text-[11px] text-muted-foreground">
-                                Alasan: {pg.reject_reason}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                        </span>
+                      </MobileField>
+                    </MobileCard>
+                  ))}
+                </div>
+              ) : (
+<StickyHeaderTable
+                className="min-w-[800px]"
+                containerClassName="rounded-md border overflow-x-auto"
+                header={
+                  <TableRow>
+                    <TableHead className="w-[50px]">No</TableHead>
+                    <TableHead className="w-[220px]">
+                      Kode Pengembalian
+                    </TableHead>
+                    <TableHead className="w-[140px]">Diajukan</TableHead>
+                    <TableHead className="w-[150px] text-right">
+                      Nominal
+                    </TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                }
+              >
+                <TableBody>
+                  {pengembalianList.map((pg, index) => (
+                    <TableRow key={pg.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold">
+                        {pg.kode_pengembalian}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(pg.created_at)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-sm tabular-nums">
+                        {formatCurrency(pg.amount)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge
+                            status={pg.status}
+                            colors={PC_PENGEMBALIAN_STATUS_COLORS}
+                            fallback={PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT}
+                          />
+                          {pg.status === "Ditolak" && pg.reject_reason && (
+                            <span className="text-[11px] text-muted-foreground">
+                              Alasan: {pg.reject_reason}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </StickyHeaderTable>
+)}
             </div>
           )}
         </div>
@@ -694,7 +986,66 @@ export default function DeklarasiClient() {
 
           {selected && (
             <div className="space-y-4">
-              <div className="overflow-x-auto rounded-md border">
+              {isMobile ? (
+                <div className="space-y-3">
+                  {rows.map((r, i) => (
+                    <div key={i} className="space-y-3 rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium [overflow-wrap:anywhere]">
+                            {r.part_name}
+                          </p>
+                          {r.category && (
+                            <p className="text-xs text-muted-foreground">
+                              {r.category}
+                            </p>
+                          )}
+                        </div>
+                        <PcCoaBadge coa={r.coa} />
+                      </div>
+                      <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
+                        <div className="space-y-1">
+                          <Label htmlFor={`deklarasi-qty-${i}`}>Qty</Label>
+                          <Input
+                            id={`deklarasi-qty-${i}`}
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            value={r.qty}
+                            onChange={(e) =>
+                              updateRow(i, { qty: e.target.value })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Harga Satuan</Label>
+                          <CurrencyInput
+                            value={r.unit_price}
+                            onValueChange={(val) =>
+                              updateRow(i, { unit_price: val })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <Input
+                        aria-label="Catatan barang"
+                        value={r.note}
+                        onChange={(e) => updateRow(i, { note: e.target.value })}
+                        placeholder="Catatan (opsional)"
+                      />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium tabular-nums">
+                          {formatCurrency(
+                            (Number(r.qty) || 0) * (r.unit_price || 0),
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+<div className="overflow-x-auto rounded-md border">
                 <Table className="min-w-[850px]">
                   <TableHeader>
                     <TableRow>
@@ -767,6 +1118,7 @@ export default function DeklarasiClient() {
                   </TableBody>
                 </Table>
               </div>
+              )}
 
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="text-sm text-muted-foreground">
@@ -775,7 +1127,7 @@ export default function DeklarasiClient() {
                     {formatCurrency(selected.amount)}
                   </span>
                 </div>
-                <div className="text-right">
+                <div className="w-full text-right sm:w-auto">
                   <p className="text-xs text-muted-foreground">
                     Total Deklarasi (riil)
                   </p>
@@ -837,40 +1189,13 @@ export default function DeklarasiClient() {
                     (Opsional)
                   </span>
                 </Label>
-                <div className="p-4 border-2 border-dashed rounded-lg bg-muted/10 transition-colors hover:bg-muted/30">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-sm text-muted-foreground text-center sm:text-left">
-                      <p className="font-medium text-foreground">
-                        Upload Bukti Struk/Nota
-                      </p>
-                      <p className="text-xs">
-                        Format: JPG, PNG, PDF. Maks: 5MB.
-                      </p>
-                    </div>
-                    <Input
-                      type="file"
-                      className="hidden"
-                      id="deklarasi-file-upload"
-                      onChange={handleFileUpload}
-                      disabled={uploading}
-                    />
-                    <Button
-                      asChild
-                      variant="outline"
-                      className="cursor-pointer shrink-0"
-                      disabled={uploading}
-                    >
-                      <label htmlFor="deklarasi-file-upload">
-                        {uploading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <UploadCloud className="h-4 w-4 mr-2" />
-                        )}
-                        {uploading ? "Mengunggah..." : "Pilih File"}
-                      </label>
-                    </Button>
-                  </div>
-                </div>
+                <FileDropzone
+                  id="deklarasi-file-upload"
+                  onFiles={handleFileUpload}
+                  loading={uploading}
+                  title="Upload Bukti Struk/Nota"
+                  hint="Seret & lepas atau klik untuk memilih. JPG, PNG, PDF, maks 5MB."
+                />
 
                 {attachments.length > 0 && (
                   <div className="grid gap-2">
@@ -903,7 +1228,8 @@ export default function DeklarasiClient() {
             </div>
           )}
 
-          <DialogFooter>
+          {/* Sticky di mobile: tombol kirim tetap terlihat di form yang panjang. */}
+          <DialogFooter className="sticky -bottom-6 -mx-6 -mb-6 border-t bg-background px-6 py-3 sm:static sm:m-0 sm:border-0 sm:p-0">
             <Button
               variant="ghost"
               onClick={closeDeclareForm}

@@ -32,13 +32,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Content } from "@/components/content";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -556,71 +555,76 @@ export default function ApprovalPettyCashClient() {
           </Button>
         }
       >
-        <div className="rounded-md border overflow-x-auto">
-          <Table className="min-w-[800px]">
-            <TableHeader>
+        <StickyHeaderTable
+          className="min-w-[850px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <TableHead className="w-[180px]">Kode Pengajuan</TableHead>
+              <TableHead>Pemohon</TableHead>
+              <TableHead className="w-[140px]">Departemen</TableHead>
+              <TableHead className="w-[150px] text-right">
+                Total Pengajuan
+              </TableHead>
+              <TableHead className="w-[130px]">Dibutuhkan</TableHead>
+              <TableHead className="w-[110px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead className="w-[180px]">Kode Pengajuan</TableHead>
-                <TableHead>Pemohon</TableHead>
-                <TableHead className="w-[140px]">Departemen</TableHead>
-                <TableHead className="w-[150px] text-right">
-                  Total Pengajuan
-                </TableHead>
-                <TableHead className="w-[130px]">Dibutuhkan</TableHead>
-                <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-32">
-                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                  </TableCell>
-                </TableRow>
-              ) : pengajuanQueue.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center h-32 text-muted-foreground"
-                  >
-                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                    Tidak ada Pengajuan yang menunggu persetujuan Anda.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                pengajuanQueue.map((pj) => (
-                  <TableRow key={pj.id}>
-                    <TableCell className="font-semibold text-sm">
-                      <div className="flex flex-col items-start gap-1">
+            ) : pengajuanQueue.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                  Tidak ada Pengajuan yang menunggu persetujuan Anda.
+                </TableCell>
+              </TableRow>
+            ) : (
+              pengajuanQueue.map((pj, index) => (
+                <TableRow key={pj.id}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="font-mono text-xs font-semibold">
                         {pj.kode_pengajuan}
-                        <PcEskalasiBadge show={pj.is_eskalasi} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {pj.users_with_profiles?.nama || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">{pj.department}</TableCell>
-                    <TableCell className="text-right font-medium text-sm">
-                      {formatCurrency(pj.total_amount)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {formatDate(pj.needed_date)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setSelectedPengajuan(pj)}
-                      >
-                        Proses
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                      </span>
+                      <PcEskalasiBadge show={pj.is_eskalasi} />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {pj.users_with_profiles?.nama || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">{pj.department}</TableCell>
+                  <TableCell className="text-right font-medium text-sm tabular-nums">
+                    {formatCurrency(pj.total_amount)}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {formatDate(pj.needed_date)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setSelectedPengajuan(pj)}
+                    >
+                      Proses
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </StickyHeaderTable>
       </Content>
 
       {/* --- SESI 2: VOUCHER --- */}
@@ -628,77 +632,82 @@ export default function ApprovalPettyCashClient() {
         title="Approval Voucher"
         description="Daftar Pengajuan Voucher Petty Cash yang menunggu persetujuan Anda."
       >
-        <div className="rounded-md border overflow-x-auto">
-          <Table className="min-w-[850px]">
-            <TableHeader>
+        <StickyHeaderTable
+          className="min-w-[900px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <TableHead className="w-[180px]">Kode Voucher</TableHead>
+              <TableHead className="w-[180px]">Dari Pengajuan</TableHead>
+              <TableHead>Pemohon</TableHead>
+              <TableHead className="w-[140px]">Departemen</TableHead>
+              <TableHead className="w-[150px] text-right">
+                Total Voucher
+              </TableHead>
+              <TableHead className="w-[130px]">Dibutuhkan</TableHead>
+              <TableHead className="w-[110px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead className="w-[180px]">Kode Voucher</TableHead>
-                <TableHead className="w-[180px]">Dari Pengajuan</TableHead>
-                <TableHead>Pemohon</TableHead>
-                <TableHead className="w-[140px]">Departemen</TableHead>
-                <TableHead className="w-[150px] text-right">
-                  Total Voucher
-                </TableHead>
-                <TableHead className="w-[130px]">Dibutuhkan</TableHead>
-                <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-32">
-                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                  </TableCell>
-                </TableRow>
-              ) : voucherQueue.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center h-32 text-muted-foreground"
-                  >
-                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                    Tidak ada Voucher yang menunggu persetujuan Anda.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                voucherQueue.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="font-semibold text-sm">
-                      <div className="flex flex-col items-start gap-1">
+            ) : voucherQueue.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                  Tidak ada Voucher yang menunggu persetujuan Anda.
+                </TableCell>
+              </TableRow>
+            ) : (
+              voucherQueue.map((v, index) => (
+                <TableRow key={v.id}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="font-mono text-xs font-semibold">
                         {v.kode_voucher}
-                        <PcEskalasiBadge
-                          show={v.petty_cash_pengajuan?.is_eskalasi}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {v.users_with_profiles?.nama || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">{v.department}</TableCell>
-                    <TableCell className="text-right font-medium text-sm">
-                      {formatCurrency(v.total_amount)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {formatDate(v.needed_date)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setSelectedVoucher(v)}
-                      >
-                        Proses
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                      </span>
+                      <PcEskalasiBadge
+                        show={v.petty_cash_pengajuan?.is_eskalasi}
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {v.petty_cash_pengajuan?.kode_pengajuan || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {v.users_with_profiles?.nama || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">{v.department}</TableCell>
+                  <TableCell className="text-right font-medium text-sm tabular-nums">
+                    {formatCurrency(v.total_amount)}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {formatDate(v.needed_date)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setSelectedVoucher(v)}
+                    >
+                      Proses
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </StickyHeaderTable>
       </Content>
 
       {/* --- SESI 3: DEKLARASI --- */}
@@ -706,68 +715,71 @@ export default function ApprovalPettyCashClient() {
         title="Approval Deklarasi"
         description="Daftar Deklarasi Petty Cash yang menunggu persetujuan Anda."
       >
-        <div className="rounded-md border overflow-x-auto">
-          <Table className="min-w-[900px]">
-            <TableHeader>
+        <StickyHeaderTable
+          className="min-w-[950px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <TableHead className="w-[180px]">Kode Deklarasi</TableHead>
+              <TableHead className="w-[180px]">Dari Voucher</TableHead>
+              <TableHead>Pemohon</TableHead>
+              <TableHead className="w-[140px]">Departemen</TableHead>
+              <TableHead className="w-[150px] text-right">
+                Total Deklarasi
+              </TableHead>
+              <TableHead className="w-[110px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead className="w-[180px]">Kode Deklarasi</TableHead>
-                <TableHead className="w-[180px]">Dari Voucher</TableHead>
-                <TableHead>Pemohon</TableHead>
-                <TableHead className="w-[140px]">Departemen</TableHead>
-                <TableHead className="w-[150px] text-right">
-                  Total Deklarasi
-                </TableHead>
-                <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-32">
-                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+            ) : deklarasiQueue.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                  Tidak ada Deklarasi yang menunggu persetujuan Anda.
+                </TableCell>
+              </TableRow>
+            ) : (
+              deklarasiQueue.map((d, index) => (
+                <TableRow key={d.id}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell className="font-mono text-xs font-semibold">
+                    {d.kode_deklarasi}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {d.petty_cash_voucher?.kode_voucher || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {d.users_with_profiles?.nama || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">{d.department}</TableCell>
+                  <TableCell className="text-right font-medium text-sm tabular-nums">
+                    {formatCurrency(d.total_amount)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setSelectedDeklarasi(d)}
+                    >
+                      Proses
+                    </Button>
                   </TableCell>
                 </TableRow>
-              ) : deklarasiQueue.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center h-32 text-muted-foreground"
-                  >
-                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                    Tidak ada Deklarasi yang menunggu persetujuan Anda.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                deklarasiQueue.map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell className="font-semibold text-sm">
-                      {d.kode_deklarasi}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {d.petty_cash_voucher?.kode_voucher || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {d.users_with_profiles?.nama || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">{d.department}</TableCell>
-                    <TableCell className="text-right font-medium text-sm">
-                      {formatCurrency(d.total_amount)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setSelectedDeklarasi(d)}
-                      >
-                        Proses
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+              ))
+            )}
+          </TableBody>
+        </StickyHeaderTable>
       </Content>
 
       {/* --- SESI 4: PEMBAYARAN SUB-VOUCHER (Finance/admin only) --- */}
@@ -776,77 +788,80 @@ export default function ApprovalPettyCashClient() {
           title="Pembayaran Sub-Voucher"
           description="Daftar tarikan dana Petty Cash yang menunggu ditransfer/dibayar Finance."
         >
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1050px]">
-              <TableHeader>
+          <StickyHeaderTable
+            className="min-w-[1100px]"
+            containerClassName="rounded-md border overflow-x-auto"
+            header={
+              <TableRow>
+                <TableHead className="w-[50px]">No</TableHead>
+                <TableHead className="w-[180px]">Kode Sub-Voucher</TableHead>
+                <TableHead className="w-[180px]">Dari Voucher</TableHead>
+                <TableHead>Pemohon</TableHead>
+                <TableHead className="w-[140px]">Departemen</TableHead>
+                <TableHead className="w-[220px]">Metode Pencairan</TableHead>
+                <TableHead className="w-[150px] text-right">
+                  Nominal Tarikan
+                </TableHead>
+                <TableHead className="w-[110px] text-right">Aksi</TableHead>
+              </TableRow>
+            }
+          >
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead className="w-[180px]">Kode Sub-Voucher</TableHead>
-                  <TableHead className="w-[180px]">Dari Voucher</TableHead>
-                  <TableHead>Pemohon</TableHead>
-                  <TableHead className="w-[140px]">Departemen</TableHead>
-                  <TableHead className="w-[220px]">Metode Pencairan</TableHead>
-                  <TableHead className="w-[150px] text-right">
-                    Nominal Tarikan
-                  </TableHead>
-                  <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                  <TableCell colSpan={8} className="h-24 text-center">
+                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center h-32">
-                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+              ) : paymentQueue.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                    Tidak ada tarikan yang menunggu pembayaran.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paymentQueue.map((sv, index) => (
+                  <TableRow key={sv.id}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">
+                      {sv.kode_sub_voucher}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {sv.petty_cash_voucher?.kode_voucher || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {sv.users_with_profiles?.nama || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {sv.petty_cash_voucher?.department || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <PcPaymentInfoView
+                        payment={resolveSubVoucherPayment(sv)}
+                        compact
+                      />
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm tabular-nums">
+                      {formatCurrency(sv.amount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openPaymentDialog(sv)}
+                      >
+                        Proses
+                      </Button>
                     </TableCell>
                   </TableRow>
-                ) : paymentQueue.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center h-32 text-muted-foreground"
-                    >
-                      <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                      Tidak ada tarikan yang menunggu pembayaran.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paymentQueue.map((sv) => (
-                    <TableRow key={sv.id}>
-                      <TableCell className="font-semibold text-sm">
-                        {sv.kode_sub_voucher}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {sv.petty_cash_voucher?.kode_voucher || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {sv.users_with_profiles?.nama || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {sv.petty_cash_voucher?.department || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <PcPaymentInfoView
-                          payment={resolveSubVoucherPayment(sv)}
-                          compact
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-sm">
-                        {formatCurrency(sv.amount)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => openPaymentDialog(sv)}
-                        >
-                          Proses
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                ))
+              )}
+            </TableBody>
+          </StickyHeaderTable>
         </Content>
       )}
 
@@ -856,70 +871,73 @@ export default function ApprovalPettyCashClient() {
           title="Konfirmasi Pengembalian Dana"
           description="Sisa dana tarikan yang dikembalikan requester - konfirmasi setelah uangnya benar-benar diterima."
         >
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[850px]">
-              <TableHeader>
+          <StickyHeaderTable
+            className="min-w-[900px]"
+            containerClassName="rounded-md border overflow-x-auto"
+            header={
+              <TableRow>
+                <TableHead className="w-[50px]">No</TableHead>
+                <TableHead className="w-[200px]">Kode Pengembalian</TableHead>
+                <TableHead className="w-[180px]">Dari Tarikan</TableHead>
+                <TableHead>Pemohon</TableHead>
+                <TableHead className="w-[140px]">Departemen</TableHead>
+                <TableHead className="w-[150px] text-right">
+                  Nominal Dikembalikan
+                </TableHead>
+                <TableHead className="w-[110px] text-right">Aksi</TableHead>
+              </TableRow>
+            }
+          >
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead className="w-[200px]">Kode Pengembalian</TableHead>
-                  <TableHead className="w-[180px]">Dari Tarikan</TableHead>
-                  <TableHead>Pemohon</TableHead>
-                  <TableHead className="w-[140px]">Departemen</TableHead>
-                  <TableHead className="w-[150px] text-right">
-                    Nominal Dikembalikan
-                  </TableHead>
-                  <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                  <TableCell colSpan={7} className="h-24 text-center">
+                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center h-32">
-                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+              ) : pengembalianQueue.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                    Tidak ada pengembalian dana yang menunggu konfirmasi.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pengembalianQueue.map((pg, index) => (
+                  <TableRow key={pg.id}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">
+                      {pg.kode_pengembalian}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {pg.petty_cash_sub_voucher?.kode_sub_voucher || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {pg.users_with_profiles?.nama || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {pg.petty_cash_voucher?.department || "-"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm tabular-nums">
+                      {formatCurrency(pg.amount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setSelectedPengembalian(pg)}
+                      >
+                        Proses
+                      </Button>
                     </TableCell>
                   </TableRow>
-                ) : pengembalianQueue.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center h-32 text-muted-foreground"
-                    >
-                      <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                      Tidak ada pengembalian dana yang menunggu konfirmasi.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pengembalianQueue.map((pg) => (
-                    <TableRow key={pg.id}>
-                      <TableCell className="font-semibold text-sm">
-                        {pg.kode_pengembalian}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {pg.petty_cash_sub_voucher?.kode_sub_voucher || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {pg.users_with_profiles?.nama || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {pg.petty_cash_voucher?.department || "-"}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-sm">
-                        {formatCurrency(pg.amount)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setSelectedPengembalian(pg)}
-                        >
-                          Proses
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                ))
+              )}
+            </TableBody>
+          </StickyHeaderTable>
         </Content>
       )}
 
@@ -929,75 +947,80 @@ export default function ApprovalPettyCashClient() {
           title="Permintaan Pembatalan"
           description="Pengajuan yang diminta dibatalkan pemohon. Selama menunggu, Tarik Dana & pembayaran tarikannya ditahan."
         >
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[850px]">
-              <TableHeader>
+          <StickyHeaderTable
+            className="min-w-[900px]"
+            containerClassName="rounded-md border overflow-x-auto"
+            header={
+              <TableRow>
+                <TableHead className="w-[50px]">No</TableHead>
+                <TableHead className="w-[200px]">Kode Pengajuan</TableHead>
+                <TableHead>Pemohon</TableHead>
+                <TableHead className="w-[140px]">Departemen</TableHead>
+                <TableHead>Alasan</TableHead>
+                <TableHead className="w-[150px] text-right">
+                  Total Pengajuan
+                </TableHead>
+                <TableHead className="w-[110px] text-right">Aksi</TableHead>
+              </TableRow>
+            }
+          >
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead className="w-[200px]">Kode Pengajuan</TableHead>
-                  <TableHead>Pemohon</TableHead>
-                  <TableHead className="w-[140px]">Departemen</TableHead>
-                  <TableHead>Alasan</TableHead>
-                  <TableHead className="w-[150px] text-right">
-                    Total Pengajuan
-                  </TableHead>
-                  <TableHead className="w-[110px] text-center">Aksi</TableHead>
+                  <TableCell colSpan={7} className="h-24 text-center">
+                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center h-32">
-                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                    </TableCell>
-                  </TableRow>
-                ) : pembatalanQueue.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center h-32 text-muted-foreground"
-                    >
-                      <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                      Tidak ada permintaan pembatalan yang menunggu.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pembatalanQueue.map((pb) => (
-                    <TableRow key={pb.id}>
-                      <TableCell className="font-semibold text-sm">
-                        <div className="flex flex-col items-start gap-1">
+              ) : pembatalanQueue.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                    Tidak ada permintaan pembatalan yang menunggu.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pembatalanQueue.map((pb, index) => (
+                  <TableRow key={pb.id}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="font-mono text-xs font-semibold">
                           {pb.petty_cash_pengajuan?.kode_pengajuan || "-"}
-                          <PcEskalasiBadge
-                            show={pb.petty_cash_pengajuan?.is_eskalasi}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {pb.users_with_profiles?.nama || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {pb.petty_cash_pengajuan?.department || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[260px] truncate">
-                        {pb.reason}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-sm">
-                        {formatCurrency(pb.petty_cash_pengajuan?.total_amount ?? 0)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setSelectedPembatalan(pb)}
-                        >
-                          Proses
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                        </span>
+                        <PcEskalasiBadge
+                          show={pb.petty_cash_pengajuan?.is_eskalasi}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {pb.users_with_profiles?.nama || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {pb.petty_cash_pengajuan?.department || "-"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[260px] truncate">
+                      {pb.reason}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm tabular-nums">
+                      {formatCurrency(pb.petty_cash_pengajuan?.total_amount ?? 0)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setSelectedPembatalan(pb)}
+                      >
+                        Proses
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </StickyHeaderTable>
         </Content>
       )}
 

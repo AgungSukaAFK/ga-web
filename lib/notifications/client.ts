@@ -12,6 +12,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { GA_DEPARTMENTS } from "@/lib/constants/departments";
+import { deklarasiHref } from "@/lib/pcChain";
 import { formatCurrency } from "@/lib/utils";
 
 // ─────────────────────────────────────────────
@@ -842,7 +843,7 @@ export async function notifyOnPcPaid({
     type: "pc_paid",
     title: "Dana Petty Cash Sudah Dibayar",
     message: `Tarikan ${kode} sebesar ${formatCurrency(amount)} sudah dibayar Finance. Ajukan Deklarasi setelah dana dipakai.`,
-    link: "/petty-cash/deklarasi",
+    link: deklarasiHref(subVoucherId),
     resourceId: String(subVoucherId),
     resourceType: "petty_cash",
   });

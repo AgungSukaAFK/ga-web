@@ -3,10 +3,11 @@
 // Form singkat mulai percakapan baru dengan admin IT - kategori, subjek, dan
 // pesan pertama (+ lampiran opsional). Sisanya lanjut di thread chat.
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "@/lib/toast";
-import { Loader2, Paperclip, Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,7 +54,6 @@ export function NewSupportTicketDialog({
   const [pesan, setPesan] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setKategori("");
@@ -150,24 +150,6 @@ export function NewSupportTicketDialog({
           </div>
 
           <div className="space-y-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (!f) return;
-                const sizeError = getAttachmentSizeError(f);
-                if (sizeError) {
-                  toast.error("Ukuran file terlalu besar", {
-                    description: sizeError,
-                  });
-                  return;
-                }
-                setFile(f);
-              }}
-            />
             {file ? (
               <AttachmentChip
                 file={file}
@@ -175,16 +157,21 @@ export function NewSupportTicketDialog({
                 disabled={saving}
               />
             ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
+              <FileDropzone
+                onFiles={(files) => {
+                  const sizeError = getAttachmentSizeError(files[0]);
+                  if (sizeError) {
+                    toast.error("Ukuran file terlalu besar", {
+                      description: sizeError,
+                    });
+                    return;
+                  }
+                  setFile(files[0]);
+                }}
                 disabled={saving}
-              >
-                <Paperclip className="mr-2 h-4 w-4" />
-                Lampirkan screenshot / file (opsional)
-              </Button>
+                title="Lampirkan screenshot / file (opsional)"
+                hint="Seret & lepas atau klik untuk memilih"
+              />
             )}
           </div>
 

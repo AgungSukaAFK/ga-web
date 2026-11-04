@@ -416,6 +416,9 @@ export const fetchMyPengajuanWithChain = async (
   return (data ?? []) as unknown as PettyCashPengajuanWithChain[];
 };
 
+export const PENGAJUAN_LIST_SELECT =
+  "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget), petty_cash_pembatalan(id, status, reason, created_at)";
+
 /**
  * Semua Pengajuan lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_pengajuan_update_admin di
@@ -425,9 +428,7 @@ export const fetchMyPengajuanWithChain = async (
 export const fetchAllPengajuan = async (): Promise<PettyCashPengajuan[]> => {
   const { data, error } = await supabase
     .from("petty_cash_pengajuan")
-    .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_budget(name, current_budget), petty_cash_pembatalan(id, status, reason, created_at)",
-    )
+    .select(PENGAJUAN_LIST_SELECT)
     .order("created_at", { ascending: false });
 
   if (error) throw error;

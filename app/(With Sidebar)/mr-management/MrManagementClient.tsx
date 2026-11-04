@@ -4,6 +4,7 @@
 
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import {
   SearchableSelect,
@@ -233,7 +234,7 @@ export default function MrManagementClient() {
   const [selectedItemsForBast, setSelectedItemsForBast] = useState<Order[]>(
     [],
   );
-  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
+  const [bastFiles, setBastFiles] = useState<File[] | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
   // --- URL Params ---
@@ -1730,11 +1731,11 @@ export default function MrManagementClient() {
               <Label htmlFor="admin-item-bast-file">
                 File Bukti Penerimaan / Bukti Foto
               </Label>
-              <Input
+              <FileDropzone
                 id="admin-item-bast-file"
-                type="file"
                 multiple
-                onChange={(e) => setBastFiles(e.target.files)}
+                onFiles={setBastFiles}
+                selectedFiles={bastFiles}
                 className="mt-2"
               />
             </div>

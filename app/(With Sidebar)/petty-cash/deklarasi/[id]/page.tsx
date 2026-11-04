@@ -43,6 +43,7 @@ import {
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
   PC_DEKLARASI_STATUS_OPTIONS,
+  pcStatusLabel,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
@@ -309,7 +310,7 @@ function DeklarasiDetailContent({ id }: { id: string }) {
       >
         <div className="space-y-6">
           <div className="mb-4 flex items-center gap-3 flex-wrap">
-            <Badge className={statusColor}>{doc.status}</Badge>
+            <Badge className={statusColor}>{pcStatusLabel(doc.status)}</Badge>
             <span className="text-xs text-muted-foreground">
               Dari Voucher{" "}
               <span className="font-medium text-foreground">

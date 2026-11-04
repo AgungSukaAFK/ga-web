@@ -9,7 +9,7 @@ Dokumen ini pasangan dari dua dokumen lain:
 | ------------------ | ---------------------------------------------------------------------- |
 | `styling-guide.md` | Visual: stack, token warna, 4 mode tema, aksen, tipografi, aset gambar |
 | `taste-ui.md`      | **Ini.** Komponen apa yang dipakai, kapan, bagaimana halaman disusun, dan aturan interaksinya |
-| `update.md`        | Implementasi lengkap fitur Update Web (database, service, halaman)     |
+| `update.md`        | Implementasi lengkap fitur Update Web (database, service, halaman). Sudah tidak ada di working tree; ambil lewat `git show f0a0783^:update.md` |
 
 Label di dokumen ini:
 
@@ -54,8 +54,9 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
    berubah jadi "Mengajukan...", toast `loading` diganti `success/error` di
    toast yang sama.
 6. **Satu kebutuhan, satu komponen.** Kalau sudah ada `FilterPanel`,
-   `CustomPagination`, `ConfirmDialog`, `DiscussionPanel`, pakai itu. Jangan
-   bikin varian baru.
+   `StickyHeaderTable`, `TablePaginationFooter`, `RowActionsMenu`,
+   `ConfirmDialog`, `DiscussionPanel`, pakai itu. Jangan bikin varian baru.
+   Semua tabel list harus terasa sama, termasuk yang aksinya cuma satu.
 7. **Mobile & layar sentuh tetap layak.** Grid turun ke 1 kolom, tabel lebar
    boleh scroll horizontal di dalam card (bukan seluruh halaman), panel
    samping berubah jadi overlay. Aksi yang di desktop baru muncul saat hover
@@ -64,7 +65,8 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
    (lihat 3.16).
 8. **Jejak selalu ada.** Dokumen penting punya Riwayat Aktivitas, jalur
    approval dengan waktu proses, dan diskusi. User tidak perlu bertanya
-   "ini nyangkut di siapa?".
+   "ini nyangkut di siapa?". Edit dokumen tercatat rinci per field (nilai
+   lama → baru), bukan sekadar "dokumen diubah".
 9. **Konfirmasi untuk yang tidak bisa dibatalkan** (hapus, reject, logout),
    tidak untuk aksi biasa.
 10. **Hormati preferensi aksesibilitas:** ukuran font global (rem), fokus
@@ -106,8 +108,7 @@ Ini yang membuat sistem terasa "sama", lebih dari sekadar warna:
 | Primitive sidebar   | `components/ui/sidebar.tsx`                 | shadcn, `collapsible="icon"`                                |
 
 Detail visual shell (class link aktif, breadcrumb) ada di
-`styling-guide.md` bagian 7.1. Header di sana masih versi lama (`h-16`, tidak
-sticky); versi sekarang dijelaskan di 3.2a.
+`styling-guide.md` bagian 7.1. Perilaku header dijelaskan di 3.2a.
 
 **Cara menyusun menu:**
 
@@ -164,6 +165,7 @@ Copy seluruh folder. Yang perlu diketahui karena berbeda dari shadcn default:
 | `table`                 | Sudah `overflow-x-auto`                                                 |
 | `dialog`, `alert-dialog` | Sudah `max-h-[calc(100dvh-2rem)] overflow-y-auto`: isi yang lebih tinggi dari layar (umum di HP/PWA) bisa di-scroll. Dialog yang mengatur scroll sendiri menimpanya lewat `className` |
 | `chart`                 | Wrapper recharts (`ChartContainer`, tooltip, legend)                    |
+| `toast-copy-button`, `copy-text-button` | Tombol salin buatan sendiri, memakai `writeClipboard` (`lib/clipboard.ts`) |
 
 Belum ada `ui/switch`. `notification-settings.tsx` membuat switch sederhana
 sendiri. Kalau sistem baru butuh switch di banyak tempat, tambahkan
@@ -487,31 +489,38 @@ tombol, atau popover.
 Susunan dari atas ke bawah, di dalam satu `<Content>`:
 
 ```
-[🔍 Cari Kode, Requester...........................] [Excel ▾] [Cetak]
+[🔍 Cari MR, barang, requester..............  ⓘ] [Download Data (Excel) ▾]
 ┌ Filter (3) ▾ ─────────────────────────────────────────── ✕ Reset ┐
 │ (Status: Approved ✕) (Departemen: IT ✕) (Tanggal: 01 Okt – 09 Okt ✕) │
 ├───────────────────────────────────────────────────────────────────┤
-│ grid 1/2/4 kolom berisi field filter (hanya saat dibuka)          │
+│ field filter + field rentang [Terapkan] (hanya saat dibuka)       │
 └───────────────────────────────────────────────────────────────────┘
               Urutan kolom sudah diubah. [↺ Kembalikan urutan bawaan]   ← hanya kalau diubah
-┌ Tabel (border rounded-md, overflow-x-auto, header bg-muted/50) ───┐
-│ No │ ⋮⋮Kode ↕ │ ⋮⋮Tanggal ↓ │ ⋮⋮Status │ … │ ⋮⋮Total ↕ │    Aksi    │
+┌ Header: menempel di bawah top bar saat halaman discroll ──────────┐
+│ No │ ⋮⋮Kode ↕ │ ⋮⋮Tanggal ↓ │ ⋮⋮Status │ … │ ⋮⋮Total ↕ │     Aksi │
+├ Isi: border rounded-md, overflow-x-auto ──────────────────────────┤
+│ 1  │ MR-001   │ 09 Okt 2026 │ Approved │ … │ Rp 150.000 │      ⋯  │
 └───────────────────────────────────────────────────────────────────┘
   (⋮⋮ = grip, muncul saat hover; header bisa digeser. No & Aksi tetap)
-Tampilkan [25 ▾] per halaman                    ‹ 1 2 3 … 9 ›
+Baris [25 ▾]  1–25 dari 230 MR         ‹ 1 2 3 … 10 ›  Hal. [1] / 10 [Buka]
 ```
 
 | Bagian            | Komponen / util                                         |
 | ----------------- | ------------------------------------------------------- |
-| Kotak cari        | `Input` + ikon `Search` + `useUrlSearchInput`           |
-| Panel filter      | `FilterPanel` + helper `formatFilterDate/Rupiah/Range`, `filterOptionLabel` |
+| Kotak cari        | `ListSearchInput` + `useUrlSearchInput`                 |
+| Panel filter      | `FilterPanel` + `FilterFields`, `FilterField`, `FilterRangeFields`, `FilterRange`, `FilterApplyButton` + helper `formatFilterDate/Rupiah/Range`, `filterOptionLabel` |
+| Tabel             | `StickyHeaderTable` (**semua** tabel halaman list)      |
 | Header sortable   | `SortableTableHead` + `resolveSort`                     |
 | Header bisa digeser | `ReorderableHeaderRow` + `ReorderableTableHead` + `useColumnOrder` + `ColumnOrderReset` |
-| Paginasi          | `CustomPagination` (**satu-satunya** komponen paginasi) |
-| Jumlah baris      | `ui/select` berisi `LIMIT_OPTIONS` (`type/enum.ts`)     |
-| Export            | `exportStyledExcel` + `fetchAllRows` (`lib/excel-export.ts`) |
+| Kolom Aksi        | `RowActionsMenu`                                        |
+| Footer tabel      | `TablePaginationFooter` (jumlah baris, rentang data, paginasi, lompat halaman) |
+| Export            | `ExcelDownloadMenu` + `exportStyledExcel` + `fetchAllRows` (`lib/excel-export.ts`) |
 | Quick view        | Klik baris → `Dialog` ringkasan → tombol "Lihat Detail Lengkap" |
 | Cetak *(opsional)* | `window.print()` + class `no-print` / `#printable-area` |
+
+`CustomPagination` tetap satu-satunya paginasi, tapi di tabel list dipakai lewat
+`TablePaginationFooter`. Panggil langsung hanya untuk daftar yang bukan tabel,
+mis. isi kartu dashboard.
 
 #### `useUrlSearchInput(urlValue, onCommit, delay = 500)`
 Input pencarian yang tersinkron ke `?search=` dengan debounce. **Wajib
@@ -523,8 +532,34 @@ const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
   searchParams.get("search") || "",
   (value) => router.push(`${pathname}?${createQueryString({ search: value, page: 1 })}`),
 );
-<Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
 ```
+
+#### `ListSearchInput`
+```tsx
+// Harus sama dengan kolom yang benar-benar dicari di query.
+const SEARCH_FIELDS = ["Kode vendor", "Nama vendor", "PIC contact"];
+
+<ListSearchInput placeholder="Cari kode, nama, atau PIC..." value={searchInput}
+  onChange={setSearchInput} searchableFields={SEARCH_FIELDS} />
+```
+- Placeholder **pendek** supaya tidak terpotong di layar sempit. Daftar lengkap
+  ada di popover ikon bantuan ("Bisa dicari berdasarkan").
+- Satu baris dengan `ExcelDownloadMenu`: `flex flex-col gap-4 md:flex-row`.
+
+#### Pencarian di query
+- Kata kunci di dalam `.or()` selalu lewat `orIlikePattern(term)`
+  (`lib/supabase/search-filter.ts`). Tanpa itu, koma atau kurung di kata kunci
+  merusak sintaks filter PostgREST.
+- Data di kolom JSON (mis. barang di dalam dokumen) tidak bisa di-`ilike`
+  langsung. Buat computed field di Postgres, lalu pakai seperti kolom biasa.
+  Contoh: `mr_items_search_text` di `0021_list_search_items.sql`. Migrasi harus
+  jalan **sebelum** kodenya dideploy, kalau tidak search error.
+- Data relasi (nama user, cost center): cari id-nya dulu, lalu `kolom.in.(…)`.
+- Aturan list yang dipakai lebih dari satu halaman disatukan di
+  `lib/<dokumen>-list.ts`: kolom sort, hak akses, filter, `*_SEARCH_FIELDS`,
+  dan `build*SearchFilter`. Tabel dan export memanggil fungsi yang sama, jadi
+  hasilnya selalu sama. Contoh: `lib/mr-list.ts`, `lib/po-list.ts`.
+- Tambahkan `.order("id")` setelah sort utama supaya urutan stabil antar halaman.
 
 #### `FilterPanel`
 ```tsx
@@ -540,14 +575,26 @@ if (startDate || endDate) activeFilters.push({
 });
 
 <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium">Status</label>
-      <SearchableSelect …/>
-    </div>
-  </div>
+  <FilterFields>
+    <FilterField label="Status"><SearchableSelect …/></FilterField>
+    <FilterField label="Departemen"><SearchableSelect …/></FilterField>
+  </FilterFields>
+  <FilterRangeFields>
+    <FilterField label="Tanggal Dibuat">
+      <FilterRange from={<Input type="date" …/>} to={<Input type="date" …/>} />
+    </FilterField>
+    <FilterField label="Total Harga">
+      <FilterRange from={<Input type="number" …/>} to={<Input type="number" …/>} />
+    </FilterField>
+    <FilterApplyButton onClick={applyRangeFilters} />
+  </FilterRangeFields>
 </FilterPanel>
 ```
+- `FilterFields` mengatur jumlah kolom sendiri dari lebar dan banyaknya field.
+  `FilterRangeFields` memakai container query karena lebar panel berubah saat
+  sidebar dibuka/tutup. Jangan menulis grid manual.
+- Select langsung berlaku. Field rentang baru berlaku setelah "Terapkan", yang
+  selalu jadi anak terakhir `FilterRangeFields`.
 - Tertutup saat pertama kali dibuka. Status buka/tutup diingat global.
 - Chip filter aktif selalu tampil walau panel tertutup; bisa dihapus satu-satu.
 - Mengubah filter apa pun → reset `page` ke 1.
@@ -567,6 +614,44 @@ Klik berputar: arah default → kebalikannya → kembali ke urutan bawaan
 Isi header yang bisa diklik tersedia terpisah sebagai `SortButton` (+
 `sortAriaValue` untuk `aria-sort`), dipakai kalau `<th>`-nya bukan
 `SortableTableHead`, mis. di `ReorderableTableHead`.
+
+Seluruh sel header bisa diklik, bukan hanya teksnya. Ikon menebal saat hover,
+dan `title` menyebut hasil klik berikutnya: "Urutkan naik", "Urutkan turun",
+atau "Kembalikan ke urutan bawaan".
+
+#### `StickyHeaderTable`
+Header tabel tetap terlihat di bawah top bar saat halaman discroll. `header`
+diisi baris header, `children` diisi `<TableBody>`:
+
+```tsx
+<StickyHeaderTable
+  className="min-w-[1200px]"
+  containerClassName="rounded-md border overflow-x-auto"
+  header={
+    <TableRow>
+      <TableHead className="w-[50px]">No</TableHead>
+      <SortableTableHead sortKey="kode" currentSort={sortParam} onSortChange={setSort}>Kode</SortableTableHead>
+      <TableHead className="text-right">Aksi</TableHead>
+    </TableRow>
+  }
+>
+  <TableBody>…</TableBody>
+</StickyHeaderTable>
+```
+
+- Tabel tetap dirender saat loading. Yang berganti hanya isi `TableBody`,
+  jadi header tidak berkedip tiap pindah halaman atau ganti filter.
+- `position: sticky` di `<th>` hanya menempel ke container `overflow-x-auto`,
+  jadi `header` dirender dua kali: elemen sticky terpisah dan `<thead>` asli
+  yang disembunyikan. `<thead>` asli tetap jadi acuan lebar kolom dan dipakai
+  saat cetak.
+- Posisi vertikal murni CSS supaya header tidak goyang. JS hanya menyamakan
+  lebar kolom dan scroll horizontal, satu arah dari tabel ke header. Kalau
+  header ikut menulis balik, scroll jadi patah-patah.
+- Butuh `data-app-topbar` di header top bar (tinggi top bar dibaca dari situ).
+- Harus berada di dalam `<Content>`: pembungkus sticky memakai `bg-card` untuk
+  menutup celah di atas header.
+- Jangan pasang `overflow-*` di ancestor, karena sticky akan berhenti bekerja.
 
 #### Kolom yang bisa digeser (`useColumnOrder`)
 Untuk list utama yang kolomnya banyak (di ga-web: Material Request &
@@ -597,25 +682,30 @@ const renderCell = (row: Row, id: MrColumnId) => {
 
 {columnOrder.isCustomOrder && <ColumnOrderReset onReset={columnOrder.resetOrder} />}
 
-<TableHeader className="bg-muted/50">
-  <ReorderableHeaderRow order={columnOrder.order} onMove={columnOrder.moveColumn}>
-    <TableHead className="w-[50px]">No</TableHead>
-    {columnOrder.orderedColumns.map((column) => (
-      <ReorderableTableHead key={column.id} column={column}
-        sort={{ currentSort: sortParam, onSortChange: (sort) => handleFilterChange({ sort }) }} />
+<StickyHeaderTable
+  className="min-w-[1600px]"
+  containerClassName="rounded-md border overflow-x-auto"
+  header={
+    <ReorderableHeaderRow order={columnOrder.order} onMove={columnOrder.moveColumn}>
+      <TableHead className="w-[50px]">No</TableHead>
+      {columnOrder.orderedColumns.map((column) => (
+        <ReorderableTableHead key={column.id} column={column}
+          sort={{ currentSort: sortParam, onSortChange: (sort) => handleFilterChange({ sort }) }} />
+      ))}
+      <TableHead className="text-right no-print">Aksi</TableHead>
+    </ReorderableHeaderRow>
+  }
+>
+  <TableBody>
+    {rows.map((row, i) => (
+      <TableRow key={row.id}>
+        <TableCell>{(page - 1) * limit + i + 1}</TableCell>
+        {columnOrder.order.map((id) => <Fragment key={id}>{renderCell(row, id)}</Fragment>)}
+        <TableCell className="text-right no-print">…</TableCell>
+      </TableRow>
     ))}
-    <TableHead className="text-right no-print">Aksi</TableHead>
-  </ReorderableHeaderRow>
-</TableHeader>
-<TableBody>
-  {rows.map((row, i) => (
-    <TableRow key={row.id}>
-      <TableCell>{(page - 1) * limit + i + 1}</TableCell>
-      {columnOrder.order.map((id) => <Fragment key={id}>{renderCell(row, id)}</Fragment>)}
-      <TableCell className="text-right no-print">…</TableCell>
-    </TableRow>
-  ))}
-</TableBody>
+  </TableBody>
+</StickyHeaderTable>
 ```
 
 - **No & Aksi tidak ikut digeser** (ditulis di luar daftar kolom).
@@ -638,6 +728,80 @@ const renderCell = (row: Row, id: MrColumnId) => {
 - Urutan geser hanya untuk tampilan tabel. Export Excel menyusun kolomnya
   sendiri di fungsi export dan tidak ikut berubah.
 
+#### `RowActionsMenu`
+Kolom Aksi **selalu** tombol titik tiga + dropdown, walau aksinya cuma satu,
+supaya semua tabel terlihat sama.
+
+```tsx
+// Satu ConfirmDialog untuk seluruh tabel, dibuka dari item dropdown.
+const [confirmAction, setConfirmAction] = useState<{
+  title: string; description: string; onConfirm: () => void;
+} | null>(null);
+
+<TableCell className="text-right no-print" onClick={(e) => e.stopPropagation()}>
+  <RowActionsMenu>
+    <DropdownMenuItem asChild>
+      <Link href={`/vendor/${row.id}`}><Eye className="mr-2 h-4 w-4" /> Lihat Detail</Link>
+    </DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => openEdit(row)}>
+      <Edit className="mr-2 h-4 w-4" /> Edit
+    </DropdownMenuItem>
+    <DropdownMenuItem className="text-destructive focus:text-destructive"
+      onSelect={() => setConfirmAction({
+        title: `Hapus Vendor: ${row.kode}`,
+        description: "Tindakan ini tidak dapat dibatalkan.",
+        onConfirm: () => handleDelete(row.id),
+      })}>
+      <Trash2 className="mr-2 h-4 w-4" /> Hapus
+    </DropdownMenuItem>
+  </RowActionsMenu>
+</TableCell>
+
+<ConfirmDialog destructive open={!!confirmAction}
+  onOpenChange={(open) => !open && setConfirmAction(null)}
+  title={confirmAction?.title} description={confirmAction?.description}
+  onConfirm={() => confirmAction?.onConfirm()} />
+```
+
+- Aksi berbahaya paling bawah, merah.
+- `RowActionsMenu` memakai `modal={false}`. Mode modal menyisakan
+  `pointer-events: none` di `body` kalau menu tertutup bersamaan dengan
+  dialog yang terbuka.
+- Di baris yang bisa diklik, sel Aksi wajib `stopPropagation`.
+
+#### `ExcelDownloadMenu`
+```tsx
+<ExcelDownloadMenu itemLabel="vendor" filteredCount={totalItems}
+  fetchAllCount={fetchAllCount} onDownload={handleDownloadExcel} isExporting={isExporting} />
+```
+- Tombol "Download Data (Excel)" dengan dua pilihan: **Semua data** dan
+  **Sesuai filter (N vendor)**.
+- Total "Semua data" dihitung saat menu dibuka, supaya halaman tidak menambah
+  query tiap dimuat. "Sesuai filter" nonaktif kalau hasilnya 0.
+- Mode `"all"` melepas filter, tapi hak akses tetap berlaku.
+- Handler: `toast.loading` → ambil data lewat `fetchAllRows` →
+  `exportStyledExcel` → `toast.success`. Kalau data kosong: `toast.warning`,
+  bukan file kosong.
+
+#### `TablePaginationFooter`
+```tsx
+<TablePaginationFooter currentPage={page} totalItems={total} limit={limit}
+  limitOptions={LIMIT_OPTIONS} itemLabel="vendor"
+  onPageChange={handlePageChange}
+  onLimitChange={(value) => handleFilterChange({ limit: value })}
+  className="mt-6" />
+```
+- Menampilkan "Baris [25]", "1–25 dari 230 vendor", paginasi, dan isian
+  "Hal. [n] / total [Buka]". Pagination dan isian halaman hanya muncul kalau
+  halamannya lebih dari satu.
+- Isian halaman hanya menerima angka. Angka di luar rentang dibawa ke halaman
+  terdekat yang valid, dan nilainya ikut berubah saat pindah lewat tombol atau
+  Back browser.
+- Di mobile, angka halaman disembunyikan (`hidePagesOnMobile`).
+- Ganti limit lewat `handleFilterChange`, jadi `page` kembali ke 1. Default 25.
+- Maksimal satu footer per halaman (`id` isian halaman tetap).
+- Beri `no-print` di `className` kalau halaman bisa dicetak.
+
 #### Quick view
 Klik baris tabel membuka `Dialog` berisi ringkasan dokumen (info utama +
 daftar item ringkas). Footer: "Tutup" (outline) dan "Lihat Detail Lengkap"
@@ -648,11 +812,15 @@ daftar item ringkas). Footer: "Tutup" (outline) dan "Lihat Detail Lengkap"
 - Kolom pertama nomor urut: `(page - 1) * limit + index + 1`.
 - Kolom status memakai `StatusBadge` (9.5).
 - Angka/uang rata kanan (`text-right`, `tabular-nums`).
-- Tabel sangat lebar boleh `min-w-[…px]` di dalam wrapper `overflow-x-auto`.
-- Kosong: satu baris `colSpan` penuh, `text-center text-muted-foreground`,
-  teks "Tidak ada data ditemukan."
-- Export Excel berupa dropdown dua opsi: **"Sesuai filter (N data)"** dan
-  **"Semua data"**. Kalau tidak ada data → `toast` info, bukan file kosong.
+- Kode dokumen `font-mono text-xs font-semibold`. Teks panjang
+  `max-w-[…px] truncate`.
+- Tabel sangat lebar memakai `min-w-[…px]` lewat `className`
+  `StickyHeaderTable`, dengan `overflow-x-auto` di `containerClassName`.
+- Baris yang bisa diklik: `cursor-pointer hover:bg-muted/50 transition-colors`.
+- Loading: list utama memakai baris `<Skeleton className="h-8 w-full" />`
+  sejumlah `limit`; master data boleh satu baris `Loader2` di tengah (`h-24`).
+- Kosong: satu baris `colSpan` penuh, `h-24 text-center`, teks "Tidak ada data
+  ditemukan." `colSpan` harus sama dengan jumlah kolom.
 
 ### 3.5 Form create / edit
 
@@ -737,6 +905,9 @@ pesan bantu `text-xs text-muted-foreground` di bawah.
 - Upload langsung ke storage via signed URL (`lib/uploadDirect.ts`), batas
   `MAX_ATTACHMENT_SIZE_BYTES` (`lib/attachments.ts`), cek dengan
   `getAttachmentSizeError(file)`; pesan error upload lewat `getUploadErrorMessage(err)`.
+- Input upload selalu `FileDropzone` (`components/file-dropzone.tsx`): klik atau
+  seret & lepas, handler terima `File[]`. Area custom (mis. composer chat) pakai
+  hook `useFileDrop` (`hooks/use-file-drop.ts`).
 - File terlalu besar → `LinkAttachmentForm`: lampiran berupa link (Google
   Drive dll), disimpan sebagai attachment `is_link: true`.
 - Progress lewat toast: `toast.loading("Mengunggah 3 file...")` →
@@ -815,11 +986,37 @@ di bawah titik, opsional `detail` tebal. Cocok untuk kartu ringkasan
 #### Riwayat Aktivitas
 `<ActivityLogDialog resourceType="material_request" resourceId={id} />`:
 tombol outline "Riwayat Aktivitas" → dialog timeline (titik primary + garis
-vertikal), tiap entri berisi waktu, badge `action_type`, nama pelaku ("Sistem"
-kalau kosong), deskripsi yang dipotong 1 baris + "Lihat selengkapnya".
-Data diambil saat dialog dibuka. Butuh tabel log + `services/logService.ts`
-(`logActivity`, `fetchActivityLogs`). **Setiap aksi penting wajib memanggil
-`logActivity`.**
+vertikal), tiap entri berisi waktu, badge aksi, nama pelaku ("Sistem" kalau
+kosong), deskripsi yang dipotong 2 baris + "Lihat selengkapnya", dan kotak
+rincian perubahan. Data diambil saat dialog dibuka. Butuh tabel log +
+`services/logService.ts` (`logActivity`, `fetchActivityLogs`). **Setiap aksi
+penting wajib memanggil `logActivity`.**
+
+- Badge memakai label bahasa Indonesia dari `ACTION_LABELS` ("Disetujui",
+  "Diedit Admin"), bukan kode `action_type` mentah. Kode yang belum terdaftar
+  diubah jadi kalimat biasa. `metadata.mode === "admin"` selalu "Diedit Admin".
+- Rincian: `Label: nilai lama → nilai baru`, 5 baris pertama, sisanya lewat
+  "Lihat semua (N)".
+
+**Rincian perubahan saat edit** (`lib/document-change-log.ts`): simpan salinan
+data saat form dibuka, bandingkan saat disimpan, lalu tulis ke `metadata.changes`.
+Kalau tidak ada yang berubah, jangan menulis log.
+
+```ts
+const changeBaselineRef = useRef<Record<string, any> | null>(null);
+changeBaselineRef.current = JSON.parse(JSON.stringify(initialData)); // saat data dimuat
+
+const changes = changeBaselineRef.current
+  ? diffMrChanges(changeBaselineRef.current, updateData, costCenterName)
+  : [];
+if (changes.length > 0) {
+  await logActivity(user.id, "UPDATE_MR_ADMIN", "material_request", String(id),
+    `Admin ${nama} mengubah ${changes.length} data MR ${kode}`, { changes, mode: "admin" });
+}
+```
+Sistem baru menulis daftar field per dokumen sendiri (pola `diffMrChanges`,
+`diffPoChanges`): nilai sudah dalam bentuk yang mudah dibaca (Rupiah, tanggal,
+nama), teks panjang dipotong.
 
 #### Follow-up approval *(opsional)*
 `FollowupApprovalButton`: tombol "Follow-up" ke approver yang sedang
@@ -907,9 +1104,13 @@ memicu `onClick` baris tabel (sudah ditangani dengan `stopPropagation`).
   confirmText="Log out" onConfirm={handleLogout} />
 ```
 Kalau `onConfirm` async, dialog tetap terbuka dan tombol menampilkan spinner
-sampai selesai; kalau gagal (throw), dialog tidak menutup.
+sampai selesai; kalau gagal (throw), dialog tidak menutup. Konfirmasi dari
+kolom Aksi tabel: lihat `RowActionsMenu` di 3.4.
 
-**Toast (`sonner`)**, posisi kanan bawah, `richColors`:
+**Toast (`sonner`)**, posisi kanan bawah, `richColors`, ada tombol tutup.
+Import dari `@/lib/toast`, bukan `sonner`: API-nya sama, tapi toast hasil
+otomatis punya tombol Salin (user bisa menyalin pesan error untuk dilaporkan).
+`toast.loading` sengaja tanpa tombol Salin.
 
 ```ts
 const id = toast.loading("Mengajukan MR...");
@@ -1144,15 +1345,23 @@ export default function XxxClient() {
   return (
     <Content title="Daftar Xxx" description="…" cardAction={<TombolBuat />}>
       <div className="mb-6 flex flex-col gap-4 no-print">
-        <div className="flex flex-col gap-4 md:flex-row">{/* cari + Excel */}</div>
+        <div className="flex flex-col gap-4 md:flex-row">
+          <ListSearchInput placeholder="Cari …" value={searchInput} onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS} />
+          <ExcelDownloadMenu itemLabel="Xxx" filteredCount={total} fetchAllCount={fetchAllCount}
+            onDownload={handleDownloadExcel} isExporting={isExporting} />
+        </div>
         <FilterPanel activeFilters={activeFilters} onReset={() => router.push(pathname)}>…</FilterPanel>
       </div>
-      {loading ? <Skeleton className="h-96 w-full" /> : <div className="overflow-x-auto rounded-md border bg-card"><Table>…</Table></div>}
-      <div className="mt-4 flex flex-col items-center justify-between gap-4 sm:flex-row">
-        {/* Select limit */}
-        <CustomPagination currentPage={page} totalPages={Math.ceil(total / limit)}
-          onPageChange={(p) => router.push(`${pathname}?${createQueryString({ page: p })}`)} />
-      </div>
+      <StickyHeaderTable className="min-w-[1200px]" containerClassName="rounded-md border overflow-x-auto"
+        header={<TableRow>…</TableRow>}>
+        <TableBody>{/* loading → baris Skeleton, kosong → satu baris colSpan, ada → baris data + RowActionsMenu */}</TableBody>
+      </StickyHeaderTable>
+      <TablePaginationFooter currentPage={page} totalItems={total} limit={limit}
+        limitOptions={LIMIT_OPTIONS} itemLabel="Xxx"
+        onPageChange={(p) => router.push(`${pathname}?${createQueryString({ page: p })}`)}
+        onLimitChange={(value) => handleFilterChange({ limit: value })}
+        className="mt-6 no-print" />
     </Content>
   );
 }
@@ -1180,8 +1389,8 @@ Lihat 3.11.
 
 ### 4.6 Master data (CRUD sederhana)
 List page (4.1) + tombol "Tambah" → `Dialog` form (atau halaman `tambah/`
-kalau field banyak) + hapus via `ConfirmDialog destructive`. Contoh di
-ga-web: Vendor, Cost Center, Barang.
+kalau field banyak). Edit dan hapus lewat `RowActionsMenu`, hapus memakai
+`ConfirmDialog destructive`. Contoh di ga-web: Vendor, Cost Center, Barang.
 
 ---
 
@@ -1223,6 +1432,11 @@ di database (Pending Approval, Approved, Rejected, …).
 | `lib/utils.ts` → `randomUUID`     | UUID v4 yang jalan di luar secure context (3.16)           |
 | `hooks/use-image-attachment-upload.ts` | Upload gambar untuk diskusi                           |
 | `lib/excel-export.ts`             | `exportStyledExcel(data, fileName, sheet?)`, `fetchAllRows(buildQuery)` (melewati batas 1000 baris Supabase) |
+| `lib/supabase/search-filter.ts`   | `orIlikePattern(term)`: pola `ilike` aman untuk `.or()` (3.4) |
+| `lib/mr-list.ts`, `lib/po-list.ts` | Contoh aturan list bersama: sort, hak akses, filter, search (3.4) |
+| `lib/document-change-log.ts`      | `diffMrChanges`, `diffPoChanges`: rincian perubahan untuk Riwayat Aktivitas (3.6) |
+| `lib/toast.tsx`                   | `toast` dengan tombol Salin (3.9)                          |
+| `lib/clipboard.ts`                | `writeClipboard(text)`: jalan di HTTP (IP LAN) dan di dalam Dialog |
 | `lib/attachments.ts`              | `resolveAttachmentUrl`, `normalizeLinkUrl`, `formatFileSize`, `getAttachmentSizeError`, `getUploadErrorMessage`, batas ukuran |
 | `lib/uploadDirect.ts`             | Upload via signed URL                                       |
 | `lib/rich-content.ts`             | `parseRichValue`, `stringifyRichContent`, `extractPlainText` |
@@ -1238,7 +1452,17 @@ di database (Pending Approval, Approved, Rejected, …).
 | Jangan                                                          | Gantinya                                       |
 | --------------------------------------------------------------- | ---------------------------------------------- |
 | Simpan filter/search/page di `useState`                         | URL search params + `useUrlSearchInput`        |
-| Komponen pagination / konfirmasi / filter baru                  | `CustomPagination`, `ConfirmDialog`, `FilterPanel` |
+| Komponen pagination / konfirmasi / filter baru                  | `TablePaginationFooter`, `ConfirmDialog`, `FilterPanel` |
+| `<Table>` langsung di halaman list                              | `StickyHeaderTable`                            |
+| Mengganti seluruh tabel dengan satu Skeleton saat loading       | Baris loading di `TableBody`, header tetap tampil |
+| Deretan tombol di kolom Aksi                                    | `RowActionsMenu`, walau aksinya cuma satu      |
+| `ConfirmDialog` ber-trigger di dalam item dropdown              | State `confirmAction` + satu `ConfirmDialog` controlled |
+| Placeholder search panjang berisi semua kolom                   | Placeholder pendek + `searchableFields`        |
+| `%${term}%` mentah di dalam `.or()`                             | `orIlikePattern(term)`                         |
+| Query export ditulis terpisah dari query tabel                  | Fungsi filter & search yang sama (`lib/<dokumen>-list.ts`) |
+| `import { toast } from "sonner"`                                | `@/lib/toast`                                  |
+| `navigator.clipboard.writeText` langsung                        | `writeClipboard` dari `lib/clipboard.ts`       |
+| Log edit yang hanya berisi daftar nama field                    | `metadata.changes` berisi nilai lama → baru    |
 | `<Card>` langsung di level halaman                              | `<Content>`                                    |
 | Spinner satu halaman penuh                                      | Skeleton berbentuk layout                      |
 | Menyimpan preferensi tampilan ke database                       | `localStorage` (per perangkat), key ber-prefix sistem |
@@ -1264,10 +1488,16 @@ di database (Pending Approval, Approved, Rejected, …).
 
 - [ ] Halaman memakai `<Content>` di grid 12 kolom, rapi di lebar 375px.
 - [ ] List: search/filter/sort/page di URL; tombol Back browser bekerja.
+- [ ] List memakai `ListSearchInput`, `StickyHeaderTable`, `RowActionsMenu`, dan
+      `TablePaginationFooter`; `searchableFields` sama dengan kolom yang dicari.
+- [ ] Header tabel menempel saat discroll dan sejajar dengan kolomnya, termasuk
+      setelah scroll horizontal dan saat sidebar dibuka/tutup.
+- [ ] Export Excel dan tabel memakai filter yang sama.
 - [ ] Ada skeleton saat loading, empty state, dan pesan error yang jelas.
 - [ ] Form panjang memakai `FormSummaryLayout`; field wajib masuk checklist.
 - [ ] Aksi async: tombol disabled + label "...ing", toast loading → hasil.
-- [ ] Aksi destruktif lewat `ConfirmDialog`; aksi penting dicatat ke log.
+- [ ] Aksi destruktif lewat `ConfirmDialog`; aksi penting dicatat ke log; edit
+      dokumen menyimpan rincian perubahan.
 - [ ] Status memakai `StatusBadge`; nama orang memakai `UserAvatar`.
 - [ ] Diuji di light, soft-light, dark, soft-dark + 1 aksen non-default.
 - [ ] Diuji dengan ukuran font "Sangat Besar" dan sidebar mode ikon.
@@ -1510,9 +1740,10 @@ export function StepChain({ steps }: { steps: StepChainItem[] }) {
 
 ### 9.4 `components/confirm-dialog.tsx`
 Menggantikan **dua** komponen di ga-web: `confirm-dialog.tsx` (default teks
-masih Inggris, hanya mode trigger) dan `dialog-confirm.tsx` /
-`MyAlertDialog` (hanya mode controlled). Versi ini mendukung keduanya,
-default bahasa Indonesia, varian destruktif, dan `onConfirm` async.
+masih Inggris, tanpa varian destruktif dan `onConfirm` async) dan
+`dialog-confirm.tsx` / `MyAlertDialog` (hanya mode controlled). Versi ini
+mendukung mode trigger dan controlled, default bahasa Indonesia, varian
+destruktif, dan `onConfirm` async.
 
 ```tsx
 "use client";
@@ -1709,15 +1940,15 @@ bukan status dokumen.
 
 | Area                 | Copy dari ga-web                                                                           | Copy lalu adaptasi                                              | Buat baru (bagian 9) | Jangan dibawa |
 | -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | -------------------- | ------------- |
-| Fondasi              | `components/ui/*`, `lib/utils.ts`, `lib/theme-provider.tsx`, `lib/fonts.ts`, `lib/font-options.ts`, `app/globals.css`, `components.json` | key localStorage di `theme-provider` & `font-options` (prefix) | – | – |
+| Fondasi              | `components/ui/*`, `lib/utils.ts`, `lib/theme-provider.tsx`, `lib/view-transition.ts`, `lib/fonts.ts`, `lib/font-options.ts`, `lib/toast.tsx`, `lib/clipboard.ts`, `app/globals.css`, `components.json` | key localStorage di `theme-provider` & `font-options` (prefix) | – | – |
 | Shell                | `nav-main`, `sidebar-search`, `navigation-progress`, `lib/sidebar/nav-pending.ts`          | `app-sidebar` (badge), `lib/sidebar/nav-config.ts` (menu & role), `nav-user` (Link + `ConfirmDialog`), `lib/sidebar/menu-search.ts` (keyword), `lib/sidebar/menu-visibility.ts` (prefix key) | – | – |
 | Top bar              | `topbar/topbar-icon-button`, `topbar/topbar-appearance`, `lib/view-transition.ts`, blok "View transitions" di `globals.css` | `topbar/topbar.tsx` (urutan aksi, kolom profil), `topbar/topbar-profile` (`MyAlertDialog` → `ConfirmDialog`), `topbar/topbar-inbox` + `use-inbox.ts` (sumber notif) | – | – |
 | Global search        | `topbar/topbar-search.tsx`, `topbar/use-global-search.ts`                                  | `topbar/search-sections.ts` (`KIND_META`, `DATA_GROUPS`, `QUICK_ACTIONS`, placeholder), RPC `supabase/migrations/0008_global_search.sql` (tabel, kolom, batas akses), key riwayat (prefix) | – | – |
 | Shell *(opsional)*   | –                                                                                          | `team-switcher` + `lib/constants/web-apps.ts`                    | – | – |
 | Layout               | `content`                                                                                  | –                                                               | `info-item`          | – |
-| List                 | `filter-panel`, `sortable-table-head`, `reorderable-table-head`, `custom-pagination`, `hooks/use-url-search-input.ts`, `hooks/use-column-order.ts`, `lib/excel-export.ts` | key `table-column-order:` (prefix) | – | `pagination.tsx`, `pagination-components.tsx` |
+| List                 | `filter-panel`, `list-search-input`, `sticky-header-table`, `sortable-table-head`, `reorderable-table-head`, `row-actions-menu`, `excel-download-menu`, `table-pagination-footer`, `custom-pagination`, `hooks/use-url-search-input.ts`, `hooks/use-column-order.ts`, `lib/excel-export.ts`, `lib/supabase/fetch-all-rows.ts`, `lib/supabase/search-filter.ts` | key `table-column-order:` (prefix), `supabase/migrations/0021_list_search_items.sql` (kalau ada data JSON yang dicari) | – | – |
 | Form                 | `form-summary-panel`, `combobox`, `date-picker`, `link-attachment-form`, `lib/attachments.ts`, `lib/uploadDirect.ts`, `lib/debounce-async.ts` | checklist per form (pola `lib/mrEditSummaryChecks.ts`), key localStorage panel ringkasan | – | – |
-| Detail & workflow    | `activity-log-dialog`, `services/logService.ts`, `hooks/use-go-back.ts`                    | `followup-approval-button` *(opsional)*, `PcRevisionHistory` *(opsional)* | `approval-path`, `step-chain` | `petty-cash/PcChainStepper.tsx` |
+| Detail & workflow    | `services/logService.ts`, `hooks/use-go-back.ts`                                           | `activity-log-dialog` (`ACTION_LABELS`), `lib/document-change-log.ts` (daftar field per dokumen), `followup-approval-button` *(opsional)*, `PcRevisionHistory` *(opsional)* | `approval-path`, `step-chain` | `petty-cash/PcChainStepper.tsx` |
 | Status               | –                                                                                          | –                                                               | `lib/constants/status.ts`, `status-badge` | `getStatusBadge` inline di halaman |
 | Konfirmasi           | –                                                                                          | –                                                               | `confirm-dialog`     | `confirm-dialog.tsx` lama, `dialog-confirm.tsx` |
 | Diskusi              | `discussion-panel`, `discussion-message-bubble`, `discussion-attachment-view`, `message-attachment-toolbar`, `emoji-sticker-picker`, `rich-content-view`, `note-with-links`, `message-with-mentions`, `lib/discussion-reply.ts`, `lib/rich-content.ts`, `hooks/use-image-attachment-upload.ts` | `rich-mention-editor`, `components/tiptap/*`, `services/mentionSearchService.ts` (jenis mention) | – | – |
@@ -1732,7 +1963,7 @@ bukan status dokumen.
 | Auth                 | `auth/auth-input`                                                                          | `auth/auth-shell` (headline, slide), `app/pending-approval`      | – | `sign-up-form`, `auth-button`, `logout-button` |
 | Modul opsional       | –                                                                                          | Update Web (`update.md`), Feedback, Dokumentasi, Tentang App, verifikasi publik + cetak, `CameraCaptureDialog` + `lib/photoStamp.ts`, template approval | – | – |
 | Sisa template starter | –                                                                                         | –                                                               | – | `app/protected/*`, `components/tutorial/*`, `hero`, `deploy-button`, `env-var-warning`, `next-logo`, `supabase-logo`, landing `app/page.tsx` + `menu-open` + `toggle-menu` |
-| Domain procurement   | –                                                                                          | –                                                               | – | `asset-goods-badge`, `item-level-badge`, `item-vendor-history-popover`, `pic-popover`, `pic-ga-popover`, `pic-po-popover`, `bank-account-form-dialog`, `approver-search-add`, `components/petty-cash/*` (selain yang diadaptasi di atas), `lib/poAssetMarker.ts`, `lib/pcApprovalFlow.ts`, `lib/companyDetails.ts`, `lib/mrEditSummaryChecks.ts` (hanya contoh pola) |
+| Domain procurement   | –                                                                                          | –                                                               | – | `asset-goods-badge`, `item-level-badge`, `item-vendor-history-popover`, `pic-popover`, `pic-ga-popover`, `pic-po-popover`, `bank-account-form-dialog`, `approver-search-add`, `components/petty-cash/*` (selain yang diadaptasi di atas), `lib/poAssetMarker.ts`, `lib/pcApprovalFlow.ts`, `lib/companyDetails.ts`, `lib/mrEditSummaryChecks.ts`, `lib/mr-list.ts`, `lib/po-list.ts` (tiga terakhir hanya contoh pola) |
 
 ## Lampiran B. Ringkasan keputusan (21 Okt 2026)
 
@@ -1765,3 +1996,13 @@ bukan status dokumen.
   standalone), modul Chat Admin beserta shortcut-nya di top bar.
 - Logout di top bar & global search memakai `ConfirmDialog` (9.4), bukan
   `MyAlertDialog` seperti di ga-web.
+
+**Tambahan 4 Nov 2026** (penyeragaman halaman list):
+
+- **Inti:** `StickyHeaderTable`, `TablePaginationFooter`, `RowActionsMenu`,
+  `ListSearchInput`, `ExcelDownloadMenu`, helper field `FilterPanel`, aturan
+  list bersama (`lib/<dokumen>-list.ts`), `orIlikePattern`, rincian perubahan
+  di Riwayat Aktivitas, `toast` dari `lib/toast.tsx`.
+- `components/pagination.tsx` dan `pagination-components.tsx` sudah dihapus dari
+  ga-web. Tabel list memakai `CustomPagination` lewat `TablePaginationFooter`.
+- `styling-guide.md` dikembalikan ke repo dan disesuaikan dengan kode saat ini.

@@ -51,6 +51,7 @@ import {
   PC_PENGAJUAN_STATUS_COLORS,
   PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
   PC_PENGAJUAN_STATUS_OPTIONS,
+  pcStatusLabel,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { buildPcPenarikanSummary, canRequestPembatalan } from "@/lib/pcChain";
@@ -347,7 +348,7 @@ function PengajuanDetailContent({ id }: { id: string }) {
       >
         <div className="space-y-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Badge className={statusColor}>{doc.status}</Badge>
+            <Badge className={statusColor}>{pcStatusLabel(doc.status)}</Badge>
             <PcEskalasiBadge show={doc.is_eskalasi} />
           </div>
           <PcPembatalanStatus pembatalan={doc.petty_cash_pembatalan} />

@@ -83,6 +83,43 @@ export const canRequestPembatalan = (pengajuan: {
   );
 };
 
+/** Halaman Deklarasi, langsung membuka form utk tarikan `subVoucherId`. */
+export const deklarasiHref = (subVoucherId: string | number) =>
+  `/petty-cash/deklarasi?sv=${subVoucherId}`;
+
+/** Sisa Voucher yang belum ditarik; tarikan yang dibatalkan sudah di-refund. */
+export const computeVoucherSisa = (voucher: {
+  total_amount: number;
+  petty_cash_sub_voucher?: { amount: number; status: string }[] | null;
+}): number =>
+  voucher.total_amount -
+  toEmbedArray(voucher.petty_cash_sub_voucher)
+    .filter((sv) => sv.status !== "Dibatalkan")
+    .reduce((sum, sv) => sum + Number(sv.amount), 0);
+
+/**
+ * Sisa Voucher boleh ditutup: masih Approved, ada sisa, belum pernah ditutup,
+ * tidak sedang diajukan pembatalan, dan minimal 1 tarikan sudah dibayar
+ * (kalau belum, jalurnya Pembatalan). Dicek ulang di RPC
+ * close_petty_cash_voucher_remainder - ini cuma utk menampilkan tombol.
+ */
+export const canCloseVoucherRemainder = (
+  voucher: {
+    status: string;
+    total_amount: number;
+    closed_remainder?: unknown;
+    petty_cash_sub_voucher?: { amount: number; status: string }[] | null;
+  },
+  pembatalan?: { status: string }[] | null,
+): boolean =>
+  voucher.status === "Approved" &&
+  !voucher.closed_remainder &&
+  !getPendingPembatalan(pembatalan) &&
+  computeVoucherSisa(voucher) > 0 &&
+  toEmbedArray(voucher.petty_cash_sub_voucher).some(
+    (sv) => sv.status === "Selesai",
+  );
+
 /** Semua dokumen, terbaru di atas (aktif + riwayat yang ditolak). */
 export const sortDocsNewestFirst = <T extends ChainDocLike>(
   list: T | T[] | null | undefined,

@@ -54,8 +54,8 @@ export const drawnOf = (v: PettyCashVoucher) =>
     .reduce((sum, sv) => sum + sv.amount, 0);
 
 /**
- * Voucher yang masih bisa ditarik: sudah full-approved, masih ada sisa, &
- * Pengajuan-nya tidak sedang diajukan pembatalan (ditahan juga di RPC
+ * Voucher yang masih bisa ditarik: sudah full-approved, masih ada sisa yang
+ * belum ditutup, & Pengajuan-nya tidak sedang diajukan pembatalan (ditahan juga di RPC
  * create_petty_cash_sub_voucher). `pembatalan` = riwayat pembatalan
  * Pengajuan-nya kalau pemanggil memegangnya dari rantai Pengajuan (default:
  * dari join v.petty_cash_pengajuan, kalau ada).
@@ -65,6 +65,7 @@ export const canDrawVoucher = (
   pembatalan?: { status: string }[] | null,
 ) =>
   v.status === "Approved" &&
+  !v.closed_remainder &&
   v.total_amount - drawnOf(v) > 0 &&
   !getPendingPembatalan(pembatalan ?? v.petty_cash_pengajuan?.petty_cash_pembatalan);
 

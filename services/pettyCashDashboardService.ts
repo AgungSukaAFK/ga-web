@@ -17,6 +17,7 @@
 import { formatCurrency } from "@/lib/utils";
 import {
   getActiveDoc,
+  deklarasiHref,
   getPendingPembatalan,
   pickCurrentDoc,
   sortDocsNewestFirst,
@@ -230,7 +231,7 @@ export const computePcOverallStatus = (
   // "Approved" & requester BOLEH menarik lagi kapan saja.
   const totalDitarik = subVouchers.reduce((sum, sv) => sum + sv.amount, 0);
   const sisa = voucher.total_amount - totalDitarik;
-  if (sisa > 0) {
+  if (sisa > 0 && !voucher.closed_remainder) {
     return statusOf("sebagian_tuntas", {
       label: "Sebagian Tuntas, Sisa Bisa Ditarik",
       tone: "info",
@@ -340,6 +341,17 @@ export const computeChainSteps = (
   return [pengajuanStep, voucherStep, tarikanStep, deklarasiStep];
 };
 
+// Kalau cuma 1 tarikan yang menunggu Deklarasi, langsung buka form-nya.
+const deklarasiCtaHref = (pengajuan: PettyCashPengajuanWithChain) => {
+  const voucher = pickCurrentDoc(pengajuan.petty_cash_voucher);
+  const menunggu = (voucher?.petty_cash_sub_voucher ?? []).filter(
+    (sv) => sv.status === "Selesai" && !getActiveDoc(sv.petty_cash_deklarasi),
+  );
+  return menunggu.length === 1
+    ? deklarasiHref(menunggu[0].id)
+    : "/petty-cash/deklarasi";
+};
+
 /** Satu baris di panel "Perlu Tindakan Anda" - status utama bertone "action" + CTA siap pakai. */
 export interface PcActionItem {
   pengajuan: PettyCashPengajuanWithChain;
@@ -372,13 +384,13 @@ export const buildActionItems = (
       ctaHref = "/petty-cash/pengajuan-voucher";
     } else if (status.key === "menunggu_ajukan_deklarasi") {
       ctaLabel = "Ajukan Deklarasi";
-      ctaHref = "/petty-cash/deklarasi";
+      ctaHref = deklarasiCtaHref(pengajuan);
     } else if (status.key === "voucher_ditolak") {
       ctaLabel = "Ajukan Ulang Voucher";
       ctaHref = "/petty-cash/pengajuan-voucher";
     } else if (status.key === "deklarasi_ditolak") {
       ctaLabel = "Ajukan Ulang Deklarasi";
-      ctaHref = "/petty-cash/deklarasi";
+      ctaHref = deklarasiCtaHref(pengajuan);
     }
 
     items.push({ pengajuan, status, ctaLabel, ctaHref });

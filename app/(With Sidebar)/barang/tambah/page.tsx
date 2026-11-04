@@ -2,11 +2,12 @@
 
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGoBack } from "@/hooks/use-go-back";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,7 +58,6 @@ export default function TambahBarangPage() {
   // State Import CSV
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // State Form Manual
   const [formData, setFormData] = useState({
@@ -171,8 +171,8 @@ export default function TambahBarangPage() {
   };
 
   // --- PROCESS CSV ---
-  const processCsvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processCsvFile = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
 
     setCsvLoading(true);
@@ -256,7 +256,6 @@ export default function TambahBarangPage() {
         toast.error(`Gagal Import: ${err.message}`, { id: toastId });
       } finally {
         setCsvLoading(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     };
     reader.readAsText(file);
@@ -328,37 +327,13 @@ export default function TambahBarangPage() {
                   </Button>
                 </div>
 
-                <div
-                  className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/20 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    type="file"
-                    accept=".csv"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={processCsvFile}
-                    disabled={csvLoading}
-                  />
-                  {csvLoading ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      <p className="text-sm font-medium">Memproses data...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="p-3 bg-primary/10 rounded-full mb-3">
-                        <FileSpreadsheet className="h-6 w-6 text-primary" />
-                      </div>
-                      <p className="text-sm font-medium text-foreground">
-                        Klik untuk upload file CSV
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Maksimal 5MB
-                      </p>
-                    </>
-                  )}
-                </div>
+                <FileDropzone
+                  accept=".csv"
+                  onFiles={processCsvFile}
+                  loading={csvLoading}
+                  title="Seret & lepas file CSV, atau klik untuk memilih"
+                  hint="Maksimal 5MB"
+                />
               </div>
 
               <div className="flex items-start gap-2 p-3 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200 rounded text-xs">

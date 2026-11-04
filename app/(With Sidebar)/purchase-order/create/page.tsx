@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -957,17 +958,16 @@ function CreatePOPageContent() {
   };
 
   const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
+    files: File[],
     type: "po" | "finance" | "invoice" | "quotation",
   ) => {
-    const file = e.target.files?.[0];
+    const file = files[0];
     if (!file) return;
     if (poForm.kode_po === "Generating...") return;
 
     const sizeError = getAttachmentSizeError(file);
     if (sizeError) {
       toast.error("Ukuran file terlalu besar", { description: sizeError });
-      e.target.value = "";
       return;
     }
 
@@ -997,22 +997,18 @@ function CreatePOPageContent() {
       toast.error("Gagal upload", { description: getUploadErrorMessage(err) });
     } finally {
       setIsLoading(false);
-      e.target.value = "";
     }
   };
 
   // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
   // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah,
   // supaya tiap file yang masuk selalu jelas taggingnya.
-  const handlePurchasingAttachmentUpload = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handlePurchasingAttachmentUpload = (files: File[]) => {
     if (!purchasingAttachmentType) {
       toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
-      e.target.value = "";
       return;
     }
-    handleAttachmentUpload(e, purchasingAttachmentType);
+    handleAttachmentUpload(files, purchasingAttachmentType);
   };
 
   const removeAttachment = (index: number) => {
@@ -2221,10 +2217,9 @@ function CreatePOPageContent() {
                     <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
                   </SearchableSelectContent>
                 </SearchableSelect>
-                <Input
-                  type="file"
-                  onChange={handlePurchasingAttachmentUpload}
-                  disabled={isUploadingPurchasing}
+                <FileDropzone
+                  onFiles={handlePurchasingAttachmentUpload}
+                  loading={isUploadingPurchasing}
                   className="flex-1"
                 />
               </div>
@@ -2258,10 +2253,9 @@ function CreatePOPageContent() {
             <div className="grid gap-5 md:grid-cols-2 border-t pt-5 [&>*]:min-w-0">
               <div>
                 <Label>Lampiran PO</Label>
-                <Input
-                  type="file"
-                  onChange={(e) => handleAttachmentUpload(e, "po")}
-                  disabled={isUploadingPO}
+                <FileDropzone
+                  onFiles={(files) => handleAttachmentUpload(files, "po")}
+                  loading={isUploadingPO}
                   className="mt-1"
                 />
                 <ul className="space-y-1 mt-2">
@@ -2287,10 +2281,9 @@ function CreatePOPageContent() {
               </div>
               <div>
                 <Label>Lampiran Finance</Label>
-                <Input
-                  type="file"
-                  onChange={(e) => handleAttachmentUpload(e, "finance")}
-                  disabled={isUploadingFinance}
+                <FileDropzone
+                  onFiles={(files) => handleAttachmentUpload(files, "finance")}
+                  loading={isUploadingFinance}
                   className="mt-1"
                 />
                 <ul className="space-y-1 mt-2">

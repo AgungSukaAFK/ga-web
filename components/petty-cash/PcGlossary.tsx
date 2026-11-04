@@ -25,6 +25,7 @@ export type PcTermKey =
   | "tarikan"
   | "deklarasi"
   | "pengembalian"
+  | "tutup_sisa"
   | "pembatalan"
   | "eskalasi";
 
@@ -60,6 +61,11 @@ export const PC_TERMS: Record<PcTermKey, { label: string; definition: string }> 
     label: "Pengembalian Dana",
     definition:
       "Setoran sisa dana ke Finance kalau Deklarasi yang disetujui lebih kecil dari nominal tarikan.",
+  },
+  tutup_sisa: {
+    label: "Tutup Sisa Voucher",
+    definition:
+      "Menyatakan sisa Voucher yang belum ditarik tidak akan dipakai, supaya Voucher bisa selesai. Bisa dilakukan setelah ada tarikan yang dibayar, wajib alasan, dan bersifat final.",
   },
   pembatalan: {
     label: "Pembatalan",

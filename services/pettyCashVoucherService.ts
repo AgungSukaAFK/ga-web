@@ -193,6 +193,9 @@ export const fetchMyVouchers = async (
   return (data ?? []) as unknown as PettyCashVoucherWithChain[];
 };
 
+export const VOUCHER_LIST_SELECT =
+  "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan, is_eskalasi), petty_cash_budget(name, current_budget)";
+
 /**
  * Semua Voucher lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_voucher_update_admin di
@@ -201,9 +204,7 @@ export const fetchMyVouchers = async (
 export const fetchAllVouchers = async (): Promise<PettyCashVoucher[]> => {
   const { data, error } = await supabase
     .from("petty_cash_voucher")
-    .select(
-      "*, users_with_profiles:profiles!user_id(nama, email), petty_cash_pengajuan(kode_pengajuan, is_eskalasi), petty_cash_budget(name, current_budget)",
-    )
+    .select(VOUCHER_LIST_SELECT)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -583,6 +584,18 @@ export const editAndApproveVoucherStep = async (
  * (supabase/migrations/0015_petty_cash_revisi.sql), perubahannya dicatat
  * sbg entri diskusi Voucher.
  */
+export const closeVoucherRemainder = async (
+  id: number,
+  reason: string,
+): Promise<PettyCashVoucher> => {
+  const { data, error } = await supabase.rpc(
+    "close_petty_cash_voucher_remainder",
+    { p_id: id, p_reason: reason },
+  );
+  if (error) throw error;
+  return data as unknown as PettyCashVoucher;
+};
+
 export const updateVoucherPaymentMethod = async (
   voucherId: number,
   payment: PcPaymentInfo,

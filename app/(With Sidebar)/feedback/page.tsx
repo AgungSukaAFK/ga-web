@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -281,12 +282,9 @@ export default function FeedbackPage() {
           <div className="space-y-2">
             <Label htmlFor="attachment">Lampiran (Opsional)</Label>
             {!attachment ? (
-              <Input
+              <FileDropzone
                 id="attachment"
-                type="file"
-                onChange={(e) =>
-                  setAttachment(e.target.files ? e.target.files[0] : null)
-                }
+                onFiles={(files) => setAttachment(files[0])}
                 disabled={loading}
               />
             ) : (

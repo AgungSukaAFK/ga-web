@@ -3,6 +3,7 @@
 "use client";
 
 import { Content } from "@/components/content";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
@@ -600,14 +601,12 @@ export default function BuatMRPage() {
     }));
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || formCreateMR.kode_mr === "Memuat...") {
+  const handleFileUpload = async (fileList: File[]) => {
+    if (fileList.length === 0 || formCreateMR.kode_mr === "Memuat...") {
       toast.warning("Kode MR belum siap, tunggu sebentar.");
       return;
     }
 
-    const fileList = Array.from(files);
     const oversizedErrors = fileList
       .map((file) => getAttachmentSizeError(file))
       .filter((err): err is string => !!err);
@@ -623,7 +622,6 @@ export default function BuatMRPage() {
     }
 
     if (validFiles.length === 0) {
-      e.target.value = "";
       return;
     }
 
@@ -664,7 +662,6 @@ export default function BuatMRPage() {
       }
     } finally {
       setIsUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -1477,11 +1474,10 @@ export default function BuatMRPage() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="file">
-                <Input
-                  type="file"
+                <FileDropzone
                   multiple
-                  onChange={handleFileUpload}
-                  disabled={isUploading}
+                  onFiles={handleFileUpload}
+                  loading={isUploading}
                 />
               </TabsContent>
               <TabsContent value="link">

@@ -172,6 +172,8 @@ export const fetchDeklarasiById = async (
   return data as unknown as PettyCashDeklarasi;
 };
 
+export const DEKLARASI_LIST_SELECT = `*, users_with_profiles:profiles!user_id(nama, email), ${VOUCHER_WITH_PENGAJUAN}`;
+
 /**
  * Semua Deklarasi lintas user/departemen - dipakai halaman Management Petty
  * Cash (admin only, lihat petty_cash_deklarasi_update_admin di
@@ -180,9 +182,7 @@ export const fetchDeklarasiById = async (
 export const fetchAllDeklarasi = async (): Promise<PettyCashDeklarasi[]> => {
   const { data, error } = await supabase
     .from("petty_cash_deklarasi")
-    .select(
-      `*, users_with_profiles:profiles!user_id(nama, email), ${VOUCHER_WITH_PENGAJUAN}`,
-    )
+    .select(DEKLARASI_LIST_SELECT)
     .order("created_at", { ascending: false });
 
   if (error) throw error;

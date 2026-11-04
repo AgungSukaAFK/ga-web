@@ -22,6 +22,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,7 +59,7 @@ import {
 import { Attachment, PettyCashBudget, PettyCashPengajuanItem } from "@/type";
 import { getLocalDateString } from "@/lib/utils";
 import { fetchActiveBudgets } from "@/services/pettyCashBudgetService";
-import { AlertTriangle, Loader2, ShieldAlert, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, Loader2, ShieldAlert, X } from "lucide-react";
 
 export interface PcAdminForceEditValues {
   needed_date?: string;
@@ -163,8 +164,8 @@ export function PcAdminForceEditDialog({
       );
   }, [showBudget, open, companyCode]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
     const sizeError = getAttachmentSizeError(file);
     if (sizeError) {
@@ -186,7 +187,6 @@ export function PcAdminForceEditDialog({
       });
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -364,31 +364,11 @@ export function PcAdminForceEditDialog({
 
           <div className="space-y-2">
             <Label>Lampiran</Label>
-            <div className="flex items-center gap-3">
-              <Input
-                type="file"
-                className="hidden"
-                id="admin-force-edit-file-upload"
-                onChange={handleFileUpload}
-                disabled={uploading}
-              />
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="cursor-pointer"
-                disabled={uploading}
-              >
-                <label htmlFor="admin-force-edit-file-upload">
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <UploadCloud className="h-4 w-4 mr-2" />
-                  )}
-                  Tambah Lampiran
-                </label>
-              </Button>
-            </div>
+            <FileDropzone
+              id="admin-force-edit-file-upload"
+              onFiles={handleFileUpload}
+              loading={uploading}
+            />
             {attachments.length > 0 && (
               <div className="grid gap-2 pt-1">
                 {attachments.map((file, index) => (

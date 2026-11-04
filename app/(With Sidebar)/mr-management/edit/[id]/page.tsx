@@ -71,6 +71,7 @@ import {
   formatDateWithTime, // Pastikan ada fungsi ini di utils
 } from "@/lib/utils";
 import { DiscussionSection } from "../../../material-request/[id]/discussion-component";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Combobox, ComboboxData } from "@/components/combobox";
@@ -977,13 +978,9 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   };
 
   // --- Attachment Handlers ---
-  const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !mr) return;
+  const handleAttachmentUpload = async (fileList: File[]) => {
+    if (fileList.length === 0 || !mr) return;
 
-    const fileList = Array.from(files);
     const oversizedErrors = fileList
       .map((file) => getAttachmentSizeError(file))
       .filter((err): err is string => !!err);
@@ -999,7 +996,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
     }
 
     if (validFiles.length === 0) {
-      e.target.value = "";
       return;
     }
 
@@ -1059,7 +1055,6 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
       });
     } finally {
       setIsUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -1645,12 +1640,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                       </TabsTrigger>
                     </TabsList>
                     <TabsContent value="file">
-                      <Input
+                      <FileDropzone
                         id="attachments"
-                        type="file"
                         multiple
                         disabled={actionLoading || isUploading}
-                        onChange={handleAttachmentUpload}
+                        onFiles={handleAttachmentUpload}
                       />
                     </TabsContent>
                     <TabsContent value="link">

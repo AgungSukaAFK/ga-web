@@ -80,7 +80,7 @@ export function PcPrintMenu({
 /**
  * Tombol Download PDF utk dokumen Petty Cash di luar halaman detailnya.
  * `href` = halaman detail dokumen (mis. `/petty-cash/voucher/12`).
- * `iconOnly` utk kolom Aksi tabel yang sempit.
+ * `iconOnly` utk baris sempit di dalam modal rantai dokumen.
  */
 export function PcDownloadMenu({
   href,
@@ -133,6 +133,21 @@ export function PcDownloadMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/** Pilihan Download PDF sebagai item di dalam RowActionsMenu tabel list. */
+export function PcDownloadMenuItems({ href }: { href: string }) {
+  return PRINT_OPTIONS.map(({ mode, icon: Icon, title }) => (
+    <DropdownMenuItem key={mode} asChild>
+      <a
+        href={`${href}?print=${mode}`}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <Icon className="mr-2 h-4 w-4" /> PDF {title}
+      </a>
+    </DropdownMenuItem>
+  ));
 }
 
 /**

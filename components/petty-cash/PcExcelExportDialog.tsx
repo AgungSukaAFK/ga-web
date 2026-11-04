@@ -34,7 +34,7 @@ import { DatePicker } from "@/components/date-picker";
 import { toast } from "@/lib/toast";
 import { getLocalDateString } from "@/lib/utils";
 import { dataDepartment, dataLokasi } from "@/type/comboboxData";
-import { PC_PENGAJUAN_STATUS_OPTIONS } from "@/type/enum";
+import { PC_PENGAJUAN_STATUS_OPTIONS, pcStatusLabel } from "@/type/enum";
 import {
   EMPTY_PC_EXPORT_FILTERS,
   exportPettyCashExcel,
@@ -195,7 +195,10 @@ export function PcExcelExportDialog({
               "Status Pengajuan",
               filters.status,
               (v) => set("status", v),
-              PC_PENGAJUAN_STATUS_OPTIONS.map((s) => ({ value: s, label: s })),
+              PC_PENGAJUAN_STATUS_OPTIONS.map((s) => ({
+                value: s,
+                label: pcStatusLabel(s),
+              })),
               "Semua Status",
             )}
             {selectField(

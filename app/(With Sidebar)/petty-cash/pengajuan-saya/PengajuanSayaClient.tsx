@@ -20,13 +20,19 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { createClient } from "@/lib/supabase/client";
+import { useListUrlParams } from "@/hooks/use-list-url-params";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { paginateRows, sortRows } from "@/lib/client-list";
 import { formatCurrency } from "@/lib/utils";
 import { PcGlossaryButton } from "@/components/petty-cash/PcGlossary";
 import {
+  canCloseVoucherRemainder,
   canRequestPembatalan,
+  computeVoucherSisa,
+  deklarasiHref,
   getActiveDoc,
   getPendingPembatalan,
   pickCurrentDoc,
@@ -49,6 +55,7 @@ import {
   PettyCashVoucherWithChain,
 } from "@/type";
 import {
+  LIMIT_OPTIONS,
   PC_COA_OPTIONS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
   PC_DEKLARASI_STATUS_COLORS,
@@ -61,15 +68,29 @@ import {
   PC_VOUCHER_STATUS_COLOR_DEFAULT,
   PC_VOUCHER_STATUS_COLORS,
   PC_VOUCHER_STATUS_OPTIONS,
+  pcStatusLabel,
 } from "@/type/enum";
 import { Content } from "@/components/content";
 import {
   ActiveFilter,
+  FilterApplyButton,
+  FilterField,
+  FilterFields,
   FilterPanel,
+  FilterRange,
+  FilterRangeFields,
+  formatFilterDate,
   formatFilterRange,
 } from "@/components/filter-panel";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -99,7 +120,10 @@ import {
   canDrawVoucher,
   drawnOf,
 } from "@/components/petty-cash/PcTarikDanaDialog";
-import { PcDownloadMenu } from "@/components/petty-cash/PcPrintMenu";
+import {
+  PcDownloadMenu,
+  PcDownloadMenuItems,
+} from "@/components/petty-cash/PcPrintMenu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -108,13 +132,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { DatePicker } from "@/components/date-picker";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
 import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
 import {
   PcAjukanPembatalanButton,
   PcPembatalanStatus,
 } from "@/components/petty-cash/PcPembatalan";
+import {
+  PcSisaDitutupInfo,
+  PcTutupSisaButton,
+} from "@/components/petty-cash/PcTutupSisaVoucher";
+import { computePcOverallStatus } from "@/services/pettyCashDashboardService";
 import {
   AlertTriangle,
   ArrowRight,
@@ -125,12 +153,10 @@ import {
   Eye,
   ExternalLink,
   FileCheck2,
-  Loader2,
   PlusCircle,
   ReceiptText,
   RefreshCcw,
   RotateCcw,
-  Search,
   Send,
   Wallet,
 } from "lucide-react";
@@ -160,6 +186,47 @@ const toDayKey = (d: string | Date) => {
   const dt = new Date(d);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 };
+
+const SEARCH_FIELDS = [
+  "Kode dokumen",
+  "Departemen",
+  "Catatan",
+  "Nama barang",
+];
+
+const createdTime = (doc: { created_at: string | Date }) =>
+  new Date(doc.created_at).getTime();
+
+const PENGAJUAN_SORT: Record<
+  string,
+  (pj: PettyCashPengajuanWithChain) => string | number
+> = {
+  tanggal: createdTime,
+  kode: (pj) => pj.kode_pengajuan,
+  departemen: (pj) => pj.department,
+  barang: (pj) => pj.items?.length ?? 0,
+  total: (pj) => pj.total_amount,
+  status: (pj) => pj.status,
+};
+
+const VOUCHER_SORT: Record<string, (row: VoucherRow) => string | number> = {
+  tanggal: ({ voucher }) => createdTime(voucher),
+  kode: ({ voucher }) => voucher.kode_voucher,
+  departemen: ({ voucher }) => voucher.department,
+  total: ({ voucher }) => voucher.total_amount,
+  status: ({ voucher }) => voucher.status,
+};
+
+const DEKLARASI_SORT: Record<string, (row: DeklarasiRow) => string | number> = {
+  tanggal: ({ deklarasi }) => createdTime(deklarasi),
+  kode: ({ deklarasi }) => deklarasi.kode_deklarasi,
+  departemen: ({ deklarasi }) => deklarasi.department,
+  total: ({ deklarasi }) => deklarasi.total_amount,
+  status: ({ deklarasi }) => deklarasi.status,
+};
+
+const isMode = (value: string | null): value is Mode =>
+  value === "pengajuan" || value === "voucher" || value === "deklarasi";
 
 const buildHaystack = (
   parts: (string | null | undefined)[],
@@ -209,22 +276,32 @@ const StatusBadge = ({
   status,
   colors,
   fallback,
+  label,
 }: {
   status: string;
   colors: Record<string, string>;
   fallback: string;
+  label?: string;
 }) => (
   <Badge className={`${colors[status] || fallback} whitespace-nowrap`}>
-    {status}
+    {label ?? pcStatusLabel(status)}
   </Badge>
 );
 
 export default function PengajuanSayaClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
+  const {
+    searchParams,
+    page,
+    limit,
+    sort: sortParam,
+    setParams,
+    setFilters,
+  } = useListUrlParams();
+  const tabParam = searchParams.get("tab");
+  const mode: Mode = isMode(tabParam) ? tabParam : "pengajuan";
 
-  const [mode, setMode] = useState<Mode>("pengajuan");
   const [chain, setChain] = useState<PettyCashPengajuanWithChain[]>([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<{
@@ -235,11 +312,20 @@ export default function PengajuanSayaClient() {
     null,
   );
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [companyFilter, setCompanyFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState<Date | undefined>();
-  const [dateTo, setDateTo] = useState<Date | undefined>();
+  const search = searchParams.get("search") || "";
+  const statusFilter = searchParams.get("status") || "all";
+  const companyFilter = searchParams.get("company") || "all";
+  const dateFrom = searchParams.get("startDate") || "";
+  const dateTo = searchParams.get("endDate") || "";
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    search,
+    (value) => setFilters({ search: value }),
+  );
+  // Rentang tanggal baru berlaku setelah "Terapkan".
+  const [dateDraft, setDateDraft] = useState({ from: dateFrom, to: dateTo });
+  useEffect(() => {
+    setDateDraft({ from: dateFrom, to: dateTo });
+  }, [dateFrom, dateTo]);
 
   const [userId, setUserId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -306,18 +392,24 @@ export default function PengajuanSayaClient() {
     );
   }, [chain]);
 
-  // Reset status filter tiap ganti mode - opsinya beda per jenis dokumen
+  // Reset status & sort tiap ganti mode - opsi status beda per jenis dokumen
   // (mis. "Selesai" tidak ada di status Deklarasi).
-  useEffect(() => {
-    setStatusFilter("all");
-  }, [mode]);
+  const handleModeChange = (value: string) =>
+    setFilters({
+      tab: value === "pengajuan" ? undefined : value,
+      status: undefined,
+      sort: undefined,
+    });
 
   const resetFilters = () => {
-    setSearch("");
-    setStatusFilter("all");
-    setCompanyFilter("all");
-    setDateFrom(undefined);
-    setDateTo(undefined);
+    resetSearchInput();
+    setFilters({
+      search: undefined,
+      status: undefined,
+      company: undefined,
+      startDate: undefined,
+      endDate: undefined,
+    });
   };
 
   // ===== Data turunan dari `chain` (satu sumber data utk 3 mode) =====
@@ -355,9 +447,9 @@ export default function PengajuanSayaClient() {
       if (statusFilter !== "all" && pj.status !== statusFilter) return false;
       if (companyFilter !== "all" && pj.company_code !== companyFilter)
         return false;
-      if (dateFrom && toDayKey(pj.created_at) < toDayKey(dateFrom))
+      if (dateFrom && toDayKey(pj.created_at) < dateFrom)
         return false;
-      if (dateTo && toDayKey(pj.created_at) > toDayKey(dateTo)) return false;
+      if (dateTo && toDayKey(pj.created_at) > dateTo) return false;
       if (!q) return true;
       return buildHaystack(
         [pj.kode_pengajuan, pj.department, pj.notes],
@@ -373,9 +465,9 @@ export default function PengajuanSayaClient() {
         return false;
       if (companyFilter !== "all" && voucher.company_code !== companyFilter)
         return false;
-      if (dateFrom && toDayKey(voucher.created_at) < toDayKey(dateFrom))
+      if (dateFrom && toDayKey(voucher.created_at) < dateFrom)
         return false;
-      if (dateTo && toDayKey(voucher.created_at) > toDayKey(dateTo))
+      if (dateTo && toDayKey(voucher.created_at) > dateTo)
         return false;
       if (!q) return true;
       return buildHaystack(
@@ -398,9 +490,9 @@ export default function PengajuanSayaClient() {
         return false;
       if (companyFilter !== "all" && deklarasi.company_code !== companyFilter)
         return false;
-      if (dateFrom && toDayKey(deklarasi.created_at) < toDayKey(dateFrom))
+      if (dateFrom && toDayKey(deklarasi.created_at) < dateFrom)
         return false;
-      if (dateTo && toDayKey(deklarasi.created_at) > toDayKey(dateTo))
+      if (dateTo && toDayKey(deklarasi.created_at) > dateTo)
         return false;
       if (!q) return true;
       return buildHaystack(
@@ -416,6 +508,22 @@ export default function PengajuanSayaClient() {
       ).includes(q);
     });
   }, [deklarasiRows, search, statusFilter, companyFilter, dateFrom, dateTo]);
+
+  const pengajuanPage = paginateRows(
+    sortRows(filteredPengajuan, sortParam, PENGAJUAN_SORT),
+    page,
+    limit,
+  );
+  const voucherPage = paginateRows(
+    sortRows(filteredVoucherRows, sortParam, VOUCHER_SORT),
+    page,
+    limit,
+  );
+  const deklarasiPage = paginateRows(
+    sortRows(filteredDeklarasiRows, sortParam, DEKLARASI_SORT),
+    page,
+    limit,
+  );
 
   const openChainModal = (
     pengajuan: PettyCashPengajuanWithChain,
@@ -518,6 +626,23 @@ export default function PengajuanSayaClient() {
       ),
     });
   }
+  if (
+    selectedVoucher &&
+    canCloseVoucherRemainder(selectedVoucher, selectedPengajuan?.petty_cash_pembatalan)
+  ) {
+    nextSteps.push({
+      hint: "Sisanya tidak dipakai? Tutup supaya Voucher bisa selesai.",
+      action: (
+        <PcTutupSisaButton
+          key="tutup-sisa"
+          size="default"
+          voucher={selectedVoucher}
+          sisa={computeVoucherSisa(selectedVoucher)}
+          onClosed={loadData}
+        />
+      ),
+    });
+  }
   if (selectedPengajuan && getPendingPembatalan(selectedPengajuan.petty_cash_pembatalan)) {
     nextSteps.push({
       hint: "Pembatalan sedang menunggu persetujuan Finance - Tarik Dana ditahan.",
@@ -544,7 +669,13 @@ export default function PengajuanSayaClient() {
       hint: `${awaitingDeklarasi.length} tarikan sudah dibayar Finance & belum dideklarasikan.`,
       action: (
         <Button asChild key="deklarasi" variant="secondary">
-          <Link href="/petty-cash/deklarasi">
+          <Link
+            href={
+              awaitingDeklarasi.length === 1
+                ? deklarasiHref(awaitingDeklarasi[0].id)
+                : "/petty-cash/deklarasi"
+            }
+          >
             <FileCheck2 /> Buat Deklarasi
           </Link>
         </Button>
@@ -580,68 +711,62 @@ export default function PengajuanSayaClient() {
   };
 
   // --- Chip filter aktif ---
-  const formatChipDate = (d: Date) =>
-    d.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
   const activeFilters: ActiveFilter[] = [];
   if (search.trim())
     activeFilters.push({
       key: "search",
       label: "Cari",
       value: search.trim(),
-      onRemove: () => setSearch(""),
+      onRemove: () => {
+        resetSearchInput();
+        setFilters({ search: undefined });
+      },
     });
   if (statusFilter !== "all")
     activeFilters.push({
       key: "status",
       label: "Status",
-      value: statusFilter,
-      onRemove: () => setStatusFilter("all"),
+      value: pcStatusLabel(statusFilter),
+      onRemove: () => setFilters({ status: undefined }),
     });
   if (companyFilter !== "all")
     activeFilters.push({
       key: "company",
       label: "Company",
       value: companyFilter,
-      onRemove: () => setCompanyFilter("all"),
+      onRemove: () => setFilters({ company: undefined }),
     });
   if (dateFrom || dateTo)
     activeFilters.push({
       key: "tanggal",
       label: "Tanggal",
-      value: formatFilterRange(
-        dateFrom ? formatChipDate(dateFrom) : "",
-        dateTo ? formatChipDate(dateTo) : "",
-      ),
-      onRemove: () => {
-        setDateFrom(undefined);
-        setDateTo(undefined);
-      },
+      value: formatFilterRange(dateFrom, dateTo, formatFilterDate),
+      onRemove: () => setFilters({ startDate: undefined, endDate: undefined }),
     });
+
+  const sortProps = {
+    currentSort: sortParam,
+    onSortChange: (sort: string | undefined) => setFilters({ sort }),
+  };
 
   // Dipanggil sebagai fungsi (bukan <FilterBar />) supaya tidak di-mount
   // ulang tiap render - state buka/tutup panel & fokus input tetap terjaga.
   const renderFilterBar = () => (
-    <div className="flex flex-col gap-2 mb-4">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Cari kode (termasuk Sub-Voucher), departemen, catatan, atau nama barang..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-8"
-        />
-      </div>
+    <div className="mb-6 flex flex-col gap-4">
+      <ListSearchInput
+        placeholder="Cari kode, departemen, barang..."
+        value={searchInput}
+        onChange={setSearchInput}
+        searchableFields={SEARCH_FIELDS}
+      />
       <FilterPanel activeFilters={activeFilters} onReset={resetFilters}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Status</label>
+        <FilterFields>
+          <FilterField label="Status">
             <SearchableSelect
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(value) =>
+                setFilters({ status: value === "all" ? undefined : value })
+              }
             >
               <SearchableSelectTrigger>
                 <SearchableSelectValue placeholder="Semua Status" />
@@ -652,17 +777,18 @@ export default function PengajuanSayaClient() {
                 </SearchableSelectItem>
                 {statusOptionsByMode[mode].map((s) => (
                   <SearchableSelectItem key={s} value={s}>
-                    {s}
+                    {pcStatusLabel(s)}
                   </SearchableSelectItem>
                 ))}
               </SearchableSelectContent>
             </SearchableSelect>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Company</label>
+          </FilterField>
+          <FilterField label="Company">
             <SearchableSelect
               value={companyFilter}
-              onValueChange={setCompanyFilter}
+              onValueChange={(value) =>
+                setFilters({ company: value === "all" ? undefined : value })
+              }
             >
               <SearchableSelectTrigger>
                 <SearchableSelectValue placeholder="Company" />
@@ -678,26 +804,70 @@ export default function PengajuanSayaClient() {
                 ))}
               </SearchableSelectContent>
             </SearchableSelect>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Dari Tanggal</label>
-            <DatePicker
-              value={dateFrom}
-              onChange={setDateFrom}
-              placeholder="Tanggal mulai"
+          </FilterField>
+        </FilterFields>
+        <FilterRangeFields>
+          <FilterField label="Tanggal Dibuat">
+            <FilterRange
+              from={
+                <Input
+                  type="date"
+                  aria-label="Dari tanggal"
+                  value={dateDraft.from}
+                  onChange={(e) =>
+                    setDateDraft((draft) => ({
+                      ...draft,
+                      from: e.target.value,
+                    }))
+                  }
+                />
+              }
+              to={
+                <Input
+                  type="date"
+                  aria-label="Sampai tanggal"
+                  value={dateDraft.to}
+                  onChange={(e) =>
+                    setDateDraft((draft) => ({ ...draft, to: e.target.value }))
+                  }
+                />
+              }
             />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Sampai Tanggal</label>
-            <DatePicker
-              value={dateTo}
-              onChange={setDateTo}
-              placeholder="Tanggal akhir"
-            />
-          </div>
-        </div>
+          </FilterField>
+          <FilterApplyButton
+            onClick={() =>
+              setFilters({ startDate: dateDraft.from, endDate: dateDraft.to })
+            }
+          />
+        </FilterRangeFields>
       </FilterPanel>
     </div>
+  );
+
+  const renderTableSkeleton = (colSpan: number) =>
+    Array.from({ length: Math.min(limit, 25) }).map((_, i) => (
+      <TableRow key={i}>
+        <TableCell colSpan={colSpan}>
+          <Skeleton className="h-8 w-full" />
+        </TableCell>
+      </TableRow>
+    ));
+
+  const renderFooter = (
+    currentPage: number,
+    totalItems: number,
+    itemLabel: string,
+  ) => (
+    <TablePaginationFooter
+      currentPage={currentPage}
+      totalItems={totalItems}
+      limit={limit}
+      limitOptions={LIMIT_OPTIONS}
+      itemLabel={itemLabel}
+      onPageChange={(value) => setParams({ page: value })}
+      onLimitChange={(value) => setFilters({ limit: value })}
+      className="mt-6"
+    />
   );
 
   return (
@@ -715,7 +885,7 @@ export default function PengajuanSayaClient() {
           </div>
         }
       >
-        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+        <Tabs value={mode} onValueChange={handleModeChange}>
           <TabsList className="mb-4">
             <TabsTrigger value="pengajuan">Pengajuan</TabsTrigger>
             <TabsTrigger value="voucher">Voucher & Sub-Voucher</TabsTrigger>
@@ -764,126 +934,145 @@ export default function PengajuanSayaClient() {
               </Button>
             </div>
             {renderFilterBar()}
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1060px] table-fixed">
-                <TableHeader>
+            <StickyHeaderTable
+              className="min-w-[1080px] table-fixed"
+              containerClassName="rounded-md border overflow-x-auto"
+              header={
+                <TableRow>
+                  <TableHead className="w-[50px]">No</TableHead>
+                  <SortableTableHead sortKey="tanggal" defaultDirection="desc" className="w-[120px]" {...sortProps}>
+                    Tanggal
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="kode" className="w-[190px]" {...sortProps}>
+                    Kode Pengajuan
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="departemen" className="w-[130px]" {...sortProps}>
+                    Departemen
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="barang" defaultDirection="desc" className="w-[90px] text-right" {...sortProps}>
+                    Barang
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="total" defaultDirection="desc" className="w-[130px] text-right" {...sortProps}>
+                    Total
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="status" className="w-[140px]" {...sortProps}>
+                    Status
+                  </SortableTableHead>
+                  <TableHead className="w-[160px]">Voucher</TableHead>
+                  <TableHead className="w-[70px] text-right">Aksi</TableHead>
+                </TableRow>
+              }
+            >
+              <TableBody>
+                {loading ? (
+                  renderTableSkeleton(9)
+                ) : pengajuanPage.rows.length === 0 ? (
                   <TableRow>
-                    <TableHead className="w-[100px]">Tanggal</TableHead>
-                    <TableHead className="w-[190px]">Kode Pengajuan</TableHead>
-                    <TableHead className="w-[130px]">Departemen</TableHead>
-                    <TableHead className="w-[70px] text-center">Barang</TableHead>
-                    <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[140px]">Status</TableHead>
-                    <TableHead className="w-[160px]">Voucher</TableHead>
-                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
+                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      {chain.length === 0
+                        ? "Belum ada pengajuan Petty Cash."
+                        : "Tidak ada data ditemukan."}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center h-32">
-                        <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredPengajuan.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
-                        <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                        {chain.length === 0
-                          ? "Belum ada pengajuan Petty Cash."
-                          : "Tidak ada data yang cocok dengan filter."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredPengajuan.map((pj) => {
-                      const voucher = pickCurrentDoc(pj.petty_cash_voucher);
-                      const voucherCreatable = canCreateVoucher(pj);
-                      return (
-                        <TableRow
-                          key={pj.id}
-                          className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => openChainModal(pj, "pengajuan")}
-                        >
-                          <TableCell className="text-sm whitespace-nowrap">{formatDate(pj.created_at)}</TableCell>
-                          <TableCell className="font-semibold text-sm text-primary" title={pj.kode_pengajuan}>
-                            <div className="flex flex-col items-start gap-1 min-w-0">
-                              <span className="truncate max-w-full">{pj.kode_pengajuan}</span>
-                              <PcEskalasiBadge show={pj.is_eskalasi} />
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm truncate" title={pj.department}>{pj.department}</TableCell>
-                          <TableCell className="text-center text-sm">{pj.items?.length ?? 0}</TableCell>
-                          <TableCell className="text-right font-semibold text-sm">{formatCurrency(pj.total_amount)}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-col items-start gap-1.5">
-                              <StatusBadge status={pj.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
-                              {getPendingPembatalan(pj.petty_cash_pembatalan) && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-yellow-700 dark:text-yellow-300">
-                                  <Ban className="h-3 w-3" /> Pembatalan diajukan
-                                </span>
-                              )}
-                              {pj.status === "Rejected" && (
-                                <Button asChild variant="outline" size="sm" className={cellButtonClass} onClick={stop}>
-                                  <Link href={`/petty-cash/input-pengajuan?ulang=${pj.id}`}>
-                                    <RotateCcw /> Ajukan Ulang
-                                  </Link>
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col items-start gap-1.5">
-                              {voucher ? (
-                                <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
-                              ) : (
-                                !voucherCreatable && (
-                                  <span className="text-xs text-muted-foreground italic">Belum ada</span>
-                                )
-                              )}
-                              {voucherCreatable ? (
+                ) : (
+                  pengajuanPage.rows.map((pj, index) => {
+                    const voucher = pickCurrentDoc(pj.petty_cash_voucher);
+                    const voucherCreatable = canCreateVoucher(pj);
+                    const overall = computePcOverallStatus(pj);
+                    return (
+                      <TableRow
+                        key={pj.id}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => openChainModal(pj, "pengajuan")}
+                      >
+                        <TableCell>{pengajuanPage.offset + index + 1}</TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">{formatDate(pj.created_at)}</TableCell>
+                        <TableCell title={pj.kode_pengajuan}>
+                          <div className="flex flex-col items-start gap-1 min-w-0">
+                            <span className="truncate max-w-full font-mono text-xs font-semibold text-primary">{pj.kode_pengajuan}</span>
+                            <PcEskalasiBadge show={pj.is_eskalasi} />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm truncate" title={pj.department}>{pj.department}</TableCell>
+                        <TableCell className="text-right text-sm tabular-nums">{pj.items?.length ?? 0}</TableCell>
+                        <TableCell className="text-right font-semibold text-sm tabular-nums">{formatCurrency(pj.total_amount)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1.5">
+                            <StatusBadge status={pj.status} colors={PC_PENGAJUAN_STATUS_COLORS} fallback={PC_PENGAJUAN_STATUS_COLOR_DEFAULT} />
+                            {pj.status === "Approved" && overall.key !== "pembatalan_menunggu" && (
+                              <span
+                                className={`text-[11px] whitespace-normal ${overall.tone === "action" ? "text-orange-700 dark:text-orange-300" : "text-muted-foreground"}`}
+                              >
+                                {overall.label}
+                              </span>
+                            )}
+                            {getPendingPembatalan(pj.petty_cash_pembatalan) && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-yellow-700 dark:text-yellow-300">
+                                <Ban className="h-3 w-3" /> Pembatalan diajukan
+                              </span>
+                            )}
+                            {pj.status === "Rejected" && (
+                              <Button asChild variant="outline" size="sm" className={cellButtonClass} onClick={stop}>
+                                <Link href={`/petty-cash/input-pengajuan?ulang=${pj.id}`}>
+                                  <RotateCcw /> Ajukan Ulang
+                                </Link>
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1.5">
+                            {voucher ? (
+                              <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
+                            ) : (
+                              !voucherCreatable && (
+                                <span className="text-xs text-muted-foreground italic">Belum ada</span>
+                              )
+                            )}
+                            {voucherCreatable ? (
+                              <Button
+                                size="sm"
+                                className={cellButtonClass}
+                                onClick={(e) => {
+                                  stop(e);
+                                  setCreateTarget(pj);
+                                }}
+                              >
+                                <Send /> {voucher ? "Ajukan Ulang" : "Buat Voucher"}
+                              </Button>
+                            ) : (
+                              voucher &&
+                              canDrawVoucher(voucher, pj.petty_cash_pembatalan) && (
                                 <Button
                                   size="sm"
+                                  variant="outline"
                                   className={cellButtonClass}
                                   onClick={(e) => {
                                     stop(e);
-                                    setCreateTarget(pj);
+                                    setDrawTarget(voucher);
                                   }}
                                 >
-                                  <Send /> {voucher ? "Ajukan Ulang" : "Buat Voucher"}
+                                  <Wallet /> Tarik Dana
                                 </Button>
-                              ) : (
-                                voucher &&
-                                canDrawVoucher(voucher, pj.petty_cash_pembatalan) && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className={cellButtonClass}
-                                    onClick={(e) => {
-                                      stop(e);
-                                      setDrawTarget(voucher);
-                                    }}
-                                  >
-                                    <Wallet /> Tarik Dana
-                                  </Button>
-                                )
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell onClick={stop}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Button variant="outline" size="sm" onClick={() => openChainModal(pj, "pengajuan")}>
-                                <Eye /> Detail
-                              </Button>
-                              <PcDownloadMenu href={`/petty-cash/pengajuan/${pj.id}`} iconOnly />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                              )
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right" onClick={stop}>
+                          <RowActionsMenu>
+                            <DropdownMenuItem onSelect={() => openChainModal(pj, "pengajuan")}>
+                              <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                            </DropdownMenuItem>
+                            <PcDownloadMenuItems href={`/petty-cash/pengajuan/${pj.id}`} />
+                          </RowActionsMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </StickyHeaderTable>
+            {renderFooter(pengajuanPage.currentPage, filteredPengajuan.length, "pengajuan")}
           </TabsContent>
 
           {/* ===== MODE: VOUCHER & SUB-VOUCHER ===== */}
@@ -894,165 +1083,175 @@ export default function PengajuanSayaClient() {
               </Button>
             </div>
             {renderFilterBar()}
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1190px] table-fixed">
-                <TableHeader>
+            <StickyHeaderTable
+              className="min-w-[1260px] table-fixed"
+              containerClassName="rounded-md border overflow-x-auto"
+              header={
+                <TableRow>
+                  <TableHead className="w-[50px]">No</TableHead>
+                  <SortableTableHead sortKey="tanggal" defaultDirection="desc" className="w-[120px]" {...sortProps}>
+                    Tanggal
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="kode" className="w-[190px]" {...sortProps}>
+                    Kode
+                  </SortableTableHead>
+                  <TableHead className="w-[170px]">Asal Dokumen</TableHead>
+                  <SortableTableHead sortKey="departemen" className="w-[120px]" {...sortProps}>
+                    Departemen
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="total" defaultDirection="desc" className="w-[130px] text-right" {...sortProps}>
+                    Total
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="status" className="w-[170px]" {...sortProps}>
+                    Status
+                  </SortableTableHead>
+                  <TableHead className="w-[240px]">Tarikan / Deklarasi</TableHead>
+                  <TableHead className="w-[70px] text-right">Aksi</TableHead>
+                </TableRow>
+              }
+            >
+              <TableBody>
+                {loading ? (
+                  renderTableSkeleton(9)
+                ) : voucherPage.rows.length === 0 ? (
                   <TableRow>
-                    <TableHead className="w-[100px]">Tanggal</TableHead>
-                    <TableHead className="w-[190px]">Kode</TableHead>
-                    <TableHead className="w-[170px]">Asal Dokumen</TableHead>
-                    <TableHead className="w-[120px]">Departemen</TableHead>
-                    <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[170px]">Status</TableHead>
-                    <TableHead className="w-[190px]">Tarikan / Deklarasi</TableHead>
-                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
+                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      {voucherRows.length === 0
+                        ? "Belum ada Voucher Petty Cash."
+                        : "Tidak ada data ditemukan."}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center h-32">
-                        <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredVoucherRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
-                        <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                        {voucherRows.length === 0
-                          ? "Belum ada Voucher Petty Cash."
-                          : "Tidak ada data yang cocok dengan filter."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredVoucherRows.map(({ pengajuan, voucher }) => {
-                      const subVouchers = voucher.petty_cash_sub_voucher ?? [];
-                      const drawn = drawnOf(voucher);
-                      const declaredCount = subVouchers.filter(
-                        (sv) => !!getActiveDoc(sv.petty_cash_deklarasi),
-                      ).length;
-                      return (
-                        <Fragment key={voucher.id}>
-                          <TableRow
-                            className="cursor-pointer hover:bg-muted/50 transition-colors"
-                            onClick={() => openChainModal(pengajuan, "voucher")}
-                          >
-                            <TableCell className="text-sm whitespace-nowrap">{formatDate(voucher.created_at)}</TableCell>
-                            <TableCell className="font-semibold text-sm text-primary truncate" title={voucher.kode_voucher}>
-                              {voucher.kode_voucher}
-                            </TableCell>
-                            <TableCell className="text-sm truncate" title={pengajuan.kode_pengajuan}>
-                              {pengajuan.kode_pengajuan}
-                            </TableCell>
-                            <TableCell className="text-sm truncate" title={voucher.department}>{voucher.department}</TableCell>
-                            <TableCell className="text-right font-semibold text-sm">{formatCurrency(voucher.total_amount)}</TableCell>
-                            <TableCell>
-                              <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              <div className="font-medium text-sm text-foreground tabular-nums">
-                                {formatCurrency(drawn)} / {formatCurrency(voucher.total_amount)}
-                              </div>
-                              <div className="text-muted-foreground">
-                                {declaredCount}/{subVouchers.length} SV dideklarasikan
-                              </div>
-                              {canDrawVoucher(voucher, pengajuan.petty_cash_pembatalan) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className={`${cellButtonClass} mt-1.5`}
-                                  onClick={(e) => {
-                                    stop(e);
-                                    setDrawTarget(voucher);
-                                  }}
-                                >
-                                  <Wallet /> Tarik Dana
-                                </Button>
-                              )}
-                            </TableCell>
-                            <TableCell onClick={stop}>
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button variant="outline" size="sm" onClick={() => openChainModal(pengajuan, "voucher")}>
-                                  <Eye /> Detail
-                                </Button>
-                                <PcDownloadMenu href={`/petty-cash/voucher/${voucher.id}`} iconOnly />
-                              </div>
-                            </TableCell>
-                          </TableRow>
-
-                          {/* Sub-Voucher (tarikan dana) tampil menjorok di bawah Voucher induknya */}
-                          {[...subVouchers].sort(byCreatedAsc).map((sv) => {
-                            const dek = pickCurrentDoc(sv.petty_cash_deklarasi);
-                            return (
-                              <TableRow
-                                key={`sv-${sv.id}`}
-                                className="cursor-pointer bg-muted/30 hover:bg-muted/60 transition-colors"
-                                onClick={() => openChainModal(pengajuan, "voucher")}
+                ) : (
+                  voucherPage.rows.map(({ pengajuan, voucher }, index) => {
+                    const subVouchers = voucher.petty_cash_sub_voucher ?? [];
+                    const drawn = drawnOf(voucher);
+                    const declaredCount = subVouchers.filter(
+                      (sv) => !!getActiveDoc(sv.petty_cash_deklarasi),
+                    ).length;
+                    return (
+                      <Fragment key={voucher.id}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => openChainModal(pengajuan, "voucher")}
+                        >
+                          <TableCell>{voucherPage.offset + index + 1}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{formatDate(voucher.created_at)}</TableCell>
+                          <TableCell className="font-mono text-xs font-semibold text-primary truncate" title={voucher.kode_voucher}>
+                            {voucher.kode_voucher}
+                          </TableCell>
+                          <TableCell className="text-sm truncate" title={pengajuan.kode_pengajuan}>
+                            {pengajuan.kode_pengajuan}
+                          </TableCell>
+                          <TableCell className="text-sm truncate" title={voucher.department}>{voucher.department}</TableCell>
+                          <TableCell className="text-right font-semibold text-sm tabular-nums">{formatCurrency(voucher.total_amount)}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={voucher.status} colors={PC_VOUCHER_STATUS_COLORS} fallback={PC_VOUCHER_STATUS_COLOR_DEFAULT} />
+                          </TableCell>
+                          <TableCell className="text-xs whitespace-normal">
+                            <div className="font-medium text-sm text-foreground tabular-nums">
+                              {formatCurrency(drawn)} / {formatCurrency(voucher.total_amount)}
+                            </div>
+                            <div className="text-muted-foreground">
+                              {declaredCount}/{subVouchers.length} SV dideklarasikan
+                            </div>
+                            {canDrawVoucher(voucher, pengajuan.petty_cash_pembatalan) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`${cellButtonClass} mt-1.5`}
+                                onClick={(e) => {
+                                  stop(e);
+                                  setDrawTarget(voucher);
+                                }}
                               >
-                                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(sv.created_at)}</TableCell>
-                                <TableCell>
-                                  <div className="flex items-start gap-1.5 pl-2 min-w-0">
-                                    <CornerDownRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                                    <div className="flex min-w-0 flex-col gap-1">
-                                      <Badge variant="outline" className="w-fit px-1.5 py-0 text-[10px] font-medium border-sky-300 text-sky-700 dark:border-sky-800 dark:text-sky-300">
-                                        Sub-Voucher
-                                      </Badge>
-                                      <span className="truncate text-sm font-medium" title={sv.kode_sub_voucher}>
-                                        {sv.kode_sub_voucher}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  <span className="block">Tarikan dari Voucher</span>
-                                  <span className="block truncate text-sm" title={voucher.kode_voucher}>{voucher.kode_voucher}</span>
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground truncate" title={voucher.department}>{voucher.department}</TableCell>
-                                <TableCell className="text-right font-medium text-sm tabular-nums">{formatCurrency(sv.amount)}</TableCell>
-                                <TableCell>
-                                  <StatusBadge status={sv.status} colors={PC_SUB_VOUCHER_STATUS_COLORS} fallback={PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT} />
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {sv.status === "Menunggu Pembayaran" ? (
-                                    <span className="flex items-center gap-1 text-yellow-700 dark:text-yellow-300">
-                                      <Clock className="h-3 w-3 shrink-0" /> Menunggu pembayaran Finance
+                                <Wallet /> Tarik Dana
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right" onClick={stop}>
+                            <RowActionsMenu>
+                              <DropdownMenuItem onSelect={() => openChainModal(pengajuan, "voucher")}>
+                                <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                              </DropdownMenuItem>
+                              <PcDownloadMenuItems href={`/petty-cash/voucher/${voucher.id}`} />
+                            </RowActionsMenu>
+                          </TableCell>
+                        </TableRow>
+
+                        {/* Sub-Voucher (tarikan dana) tampil menjorok di bawah Voucher induknya */}
+                        {[...subVouchers].sort(byCreatedAsc).map((sv) => {
+                          const dek = pickCurrentDoc(sv.petty_cash_deklarasi);
+                          return (
+                            <TableRow
+                              key={`sv-${sv.id}`}
+                              className="cursor-pointer bg-muted/30 hover:bg-muted/60 transition-colors"
+                              onClick={() => openChainModal(pengajuan, "voucher")}
+                            >
+                              <TableCell />
+                              <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(sv.created_at)}</TableCell>
+                              <TableCell>
+                                <div className="flex items-start gap-1.5 pl-2 min-w-0">
+                                  <CornerDownRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                  <div className="flex min-w-0 flex-col gap-1">
+                                    <Badge variant="outline" className="w-fit px-1.5 py-0 text-[10px] font-medium border-sky-300 text-sky-700 dark:border-sky-800 dark:text-sky-300">
+                                      Sub-Voucher
+                                    </Badge>
+                                    <span className="truncate font-mono text-xs font-medium" title={sv.kode_sub_voucher}>
+                                      {sv.kode_sub_voucher}
                                     </span>
-                                  ) : dek ? (
-                                    <span className="flex flex-wrap items-center gap-1 text-muted-foreground">
-                                      Deklarasi
-                                      <StatusBadge status={dek.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground italic">Belum dideklarasikan</span>
-                                  )}
-                                  {isAwaitingDeklarasi(sv) && (
-                                    <Button asChild size="sm" variant="outline" className={`${cellButtonClass} mt-1.5`} onClick={stop}>
-                                      <Link href="/petty-cash/deklarasi">
-                                        <FileCheck2 /> Deklarasikan
-                                      </Link>
-                                    </Button>
-                                  )}
-                                </TableCell>
-                                <TableCell onClick={stop}>
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <Button asChild variant="outline" size="sm">
-                                      <Link href={`/petty-cash/sub-voucher/${sv.id}`}>
-                                        <Eye /> Detail
-                                      </Link>
-                                    </Button>
-                                    <PcDownloadMenu href={`/petty-cash/sub-voucher/${sv.id}`} iconOnly />
                                   </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </Fragment>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <span className="block">Tarikan dari Voucher</span>
+                                <span className="block truncate text-sm" title={voucher.kode_voucher}>{voucher.kode_voucher}</span>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground truncate" title={voucher.department}>{voucher.department}</TableCell>
+                              <TableCell className="text-right font-medium text-sm tabular-nums">{formatCurrency(sv.amount)}</TableCell>
+                              <TableCell>
+                                <StatusBadge status={sv.status} label={pcStatusLabel(sv.status, "sub_voucher")} colors={PC_SUB_VOUCHER_STATUS_COLORS} fallback={PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT} />
+                              </TableCell>
+                              <TableCell className="text-xs whitespace-normal">
+                                {sv.status === "Menunggu Pembayaran" ? (
+                                  <span className="flex items-center gap-1 text-yellow-700 dark:text-yellow-300">
+                                    <Clock className="h-3 w-3 shrink-0" /> Menunggu pembayaran Finance
+                                  </span>
+                                ) : dek ? (
+                                  <span className="flex flex-wrap items-center gap-1 text-muted-foreground">
+                                    Deklarasi
+                                    <StatusBadge status={dek.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
+                                  </span>
+                                ) : (
+                                  <span className="block text-muted-foreground italic">Belum dideklarasikan</span>
+                                )}
+                                {isAwaitingDeklarasi(sv) && (
+                                  <Button asChild size="sm" variant="outline" className={`${cellButtonClass} mt-1.5`} onClick={stop}>
+                                    <Link href={deklarasiHref(sv.id)}>
+                                      <FileCheck2 /> Deklarasikan
+                                    </Link>
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right" onClick={stop}>
+                                <RowActionsMenu>
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/petty-cash/sub-voucher/${sv.id}`} className="cursor-pointer">
+                                      <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <PcDownloadMenuItems href={`/petty-cash/sub-voucher/${sv.id}`} />
+                                </RowActionsMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })
+                )}
+              </TableBody>
+            </StickyHeaderTable>
+            {renderFooter(voucherPage.currentPage, filteredVoucherRows.length, "voucher")}
           </TabsContent>
 
           {/* ===== MODE: DEKLARASI ===== */}
@@ -1063,77 +1262,82 @@ export default function PengajuanSayaClient() {
               </Button>
             </div>
             {renderFilterBar()}
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1080px] table-fixed">
-                <TableHeader>
+            <StickyHeaderTable
+              className="min-w-[1100px] table-fixed"
+              containerClassName="rounded-md border overflow-x-auto"
+              header={
+                <TableRow>
+                  <TableHead className="w-[50px]">No</TableHead>
+                  <SortableTableHead sortKey="tanggal" defaultDirection="desc" className="w-[120px]" {...sortProps}>
+                    Tanggal
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="kode" className="w-[190px]" {...sortProps}>
+                    Kode Deklarasi
+                  </SortableTableHead>
+                  <TableHead className="w-[220px]">Asal Sub-Voucher / Voucher</TableHead>
+                  <SortableTableHead sortKey="departemen" className="w-[130px]" {...sortProps}>
+                    Departemen
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="total" defaultDirection="desc" className="w-[130px] text-right" {...sortProps}>
+                    Total
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="status" className="w-[170px]" {...sortProps}>
+                    Status
+                  </SortableTableHead>
+                  <TableHead className="w-[70px] text-right">Aksi</TableHead>
+                </TableRow>
+              }
+            >
+              <TableBody>
+                {loading ? (
+                  renderTableSkeleton(8)
+                ) : deklarasiPage.rows.length === 0 ? (
                   <TableRow>
-                    <TableHead className="w-[100px]">Tanggal</TableHead>
-                    <TableHead className="w-[190px]">Kode Deklarasi</TableHead>
-                    <TableHead className="w-[220px]">Asal Sub-Voucher / Voucher</TableHead>
-                    <TableHead className="w-[130px]">Departemen</TableHead>
-                    <TableHead className="w-[130px] text-right">Total</TableHead>
-                    <TableHead className="w-[170px]">Status</TableHead>
-                    <TableHead className="w-[140px] text-right">Aksi</TableHead>
+                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                      {deklarasiRows.length === 0
+                        ? "Belum ada Deklarasi Petty Cash."
+                        : "Tidak ada data ditemukan."}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center h-32">
-                        <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                ) : (
+                  deklarasiPage.rows.map((row, index) => (
+                    <TableRow
+                      key={row.deklarasi.id}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`)}
+                    >
+                      <TableCell>{deklarasiPage.offset + index + 1}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{formatDate(row.deklarasi.created_at)}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold text-primary truncate" title={row.deklarasi.kode_deklarasi}>
+                        {row.deklarasi.kode_deklarasi}
+                      </TableCell>
+                      <TableCell className="text-xs truncate">
+                        <div className="text-sm">{row.subVoucher.kode_sub_voucher}</div>
+                        <div className="text-muted-foreground">
+                          {row.voucher.kode_voucher} · {row.pengajuan.kode_pengajuan}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm truncate" title={row.deklarasi.department}>
+                        {row.deklarasi.department}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-sm tabular-nums">{formatCurrency(row.deklarasi.total_amount)}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={row.deklarasi.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
+                      </TableCell>
+                      <TableCell className="text-right" onClick={stop}>
+                        <RowActionsMenu>
+                          <DropdownMenuItem onSelect={() => openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`)}>
+                            <Eye className="mr-2 h-4 w-4" /> Lihat Detail
+                          </DropdownMenuItem>
+                          <PcDownloadMenuItems href={`/petty-cash/deklarasi/${row.deklarasi.id}`} />
+                        </RowActionsMenu>
                       </TableCell>
                     </TableRow>
-                  ) : filteredDeklarasiRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center h-32 text-muted-foreground">
-                        <Wallet className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                        {deklarasiRows.length === 0
-                          ? "Belum ada Deklarasi Petty Cash."
-                          : "Tidak ada data yang cocok dengan filter."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredDeklarasiRows.map((row) => (
-                      <TableRow
-                        key={row.deklarasi.id}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`)}
-                      >
-                        <TableCell className="text-sm whitespace-nowrap">{formatDate(row.deklarasi.created_at)}</TableCell>
-                        <TableCell className="font-semibold text-sm text-primary truncate" title={row.deklarasi.kode_deklarasi}>
-                          {row.deklarasi.kode_deklarasi}
-                        </TableCell>
-                        <TableCell className="text-xs truncate">
-                          <div className="text-sm">{row.subVoucher.kode_sub_voucher}</div>
-                          <div className="text-muted-foreground">
-                            {row.voucher.kode_voucher} · {row.pengajuan.kode_pengajuan}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm truncate" title={row.deklarasi.department}>
-                          {row.deklarasi.department}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-sm">{formatCurrency(row.deklarasi.total_amount)}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={row.deklarasi.status} colors={PC_DEKLARASI_STATUS_COLORS} fallback={PC_DEKLARASI_STATUS_COLOR_DEFAULT} />
-                        </TableCell>
-                        <TableCell onClick={stop}>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openChainModal(row.pengajuan, `deklarasi-${row.deklarasi.id}`)}
-                            >
-                              <Eye /> Detail
-                            </Button>
-                            <PcDownloadMenu href={`/petty-cash/deklarasi/${row.deklarasi.id}`} iconOnly />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  ))
+                )}
+              </TableBody>
+            </StickyHeaderTable>
+            {renderFooter(deklarasiPage.currentPage, filteredDeklarasiRows.length, "deklarasi")}
           </TabsContent>
         </Tabs>
       </Content>
@@ -1257,6 +1461,11 @@ export default function PengajuanSayaClient() {
                     </AccordionTrigger>
                     <AccordionContent>
                       <DocSectionActions href={`/petty-cash/voucher/${selectedVoucher.id}`} />
+                      {selectedVoucher.closed_remainder && (
+                        <div className="mb-2">
+                          <PcSisaDitutupInfo closed={selectedVoucher.closed_remainder} />
+                        </div>
+                      )}
                       {rejectedVoucherHistory.length > 0 && (
                         <p className="text-xs text-muted-foreground mb-2">
                           Voucher sebelumnya ditolak:{" "}
@@ -1332,7 +1541,7 @@ export default function PengajuanSayaClient() {
                                       </TableCell>
                                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(sv.amount)}</TableCell>
                                       <TableCell className="text-sm">
-                                        <StatusBadge status={sv.status} colors={PC_SUB_VOUCHER_STATUS_COLORS} fallback={PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT} />
+                                        <StatusBadge status={sv.status} label={pcStatusLabel(sv.status, "sub_voucher")} colors={PC_SUB_VOUCHER_STATUS_COLORS} fallback={PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT} />
                                       </TableCell>
                                       <TableCell className="text-sm">
                                         {dek ? (
@@ -1341,10 +1550,10 @@ export default function PengajuanSayaClient() {
                                             className="text-primary hover:underline text-left"
                                             onClick={() => focusSection(`deklarasi-${dek.id}`)}
                                           >
-                                            {dek.kode_deklarasi} - {dek.status}
+                                            {dek.kode_deklarasi} - {pcStatusLabel(dek.status)}
                                           </button>
                                         ) : isAwaitingDeklarasi(sv) ? (
-                                          <Link href="/petty-cash/deklarasi" className="text-primary hover:underline">
+                                          <Link href={deklarasiHref(sv.id)} className="text-primary hover:underline">
                                             Belum dideklarasikan - buat sekarang
                                           </Link>
                                         ) : (

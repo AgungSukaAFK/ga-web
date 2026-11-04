@@ -49,6 +49,7 @@ import {
   PC_PENGEMBALIAN_STATUS_COLOR_DEFAULT,
   PC_SUB_VOUCHER_STATUS_COLORS,
   PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
+  pcStatusLabel,
 } from "@/type/enum";
 import {
   computeSisaPengembalian,
@@ -281,7 +282,9 @@ function SubVoucherDetailContent({ id }: { id: string }) {
       >
         <div className="space-y-6">
           <div className="mb-4 flex items-center gap-3 flex-wrap">
-            <Badge className={statusColor}>{doc.status}</Badge>
+            <Badge className={statusColor}>
+              {pcStatusLabel(doc.status, "sub_voucher")}
+            </Badge>
             <PcEskalasiBadge show={voucher?.petty_cash_pengajuan?.is_eskalasi} />
             <span className="text-xs text-muted-foreground">
               Dari Voucher{" "}
@@ -405,7 +408,7 @@ function SubVoucherDetailContent({ id }: { id: string }) {
                           PC_DEKLARASI_STATUS_COLOR_DEFAULT
                         }
                       >
-                        {d.status}
+                        {pcStatusLabel(d.status ?? "")}
                       </Badge>
                     </span>
                   </div>

@@ -5,14 +5,16 @@
 // / petty_cash_sub_voucher / petty_cash_deklarasi), lintas user &
 // departemen, 4 tab (Pengajuan/Voucher/Sub-Voucher/Deklarasi - tab
 // Sub-Voucher BARU, sebelumnya dokumen ini sama sekali tidak termonitor di
-// sini). Klik row/Eye buka dialog PREVIEW ringkas (read-only) - untuk
+// sini). Klik row buka dialog PREVIEW ringkas (read-only) - untuk
 // override status/jalur approval, ganti kode, edit paksa, & hapus
 // berantai, admin diarahkan ke link "Detail Lengkap" (halaman
 // petty-cash/{stage}/[id]/page.tsx, lihat PcAdminOverridePanel/
 // PcAdminSubVoucherPanel di sana) - kecuali HAPUS yang juga tersedia
-// sebagai aksi cepat langsung dari baris tabel (tombol tong sampah),
-// supaya admin tidak perlu buka detail dulu kalau cuma mau membersihkan
-// dokumen sampah.
+// sebagai aksi cepat di menu Aksi baris tabel, supaya admin tidak perlu
+// buka detail dulu kalau cuma mau membersihkan dokumen sampah.
+//
+// Tab, search, filter, sort, & halaman tersimpan di URL. Data tiap halaman
+// diambil dari server (services/pettyCashManagementService.ts).
 //
 // AKSES: admin, departemen GA, & departemen Finance (canMonitorPettyCash,
 // lib/constants/departments.ts) - GA/Finance cuma MONITOR + Download Excel
@@ -32,17 +34,26 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Content } from "@/components/content";
-import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Table,
+  ActiveFilter,
+  FilterField,
+  FilterFields,
+  FilterPanel,
+} from "@/components/filter-panel";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
+import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +74,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useListUrlParams } from "@/hooks/use-list-url-params";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
@@ -92,11 +105,15 @@ import {
   PC_DEKLARASI_STATUS_OPTIONS,
   PC_DEKLARASI_STATUS_COLORS,
   PC_DEKLARASI_STATUS_COLOR_DEFAULT,
+  LIMIT_OPTIONS,
+  pcStatusLabel,
 } from "@/type/enum";
-import { fetchAllPengajuan } from "@/services/pettyCashPengajuanService";
-import { fetchAllVouchers } from "@/services/pettyCashVoucherService";
-import { fetchAllSubVouchers } from "@/services/pettyCashSubVoucherService";
-import { fetchAllDeklarasi } from "@/services/pettyCashDeklarasiService";
+import {
+  fetchPcManagementPage,
+  PC_MANAGEMENT_DEFAULT_SORT,
+  PC_MANAGEMENT_SEARCH_FIELDS,
+  PcManagementDoc,
+} from "@/services/pettyCashManagementService";
 import {
   adminDeletePettyCashDocument,
   getDeleteImpactWarning,
@@ -105,18 +122,14 @@ import {
   Loader2,
   RefreshCcw,
   Eye,
-  FileSpreadsheet,
+  ExternalLink,
+  Newspaper,
   ShieldAlert,
-  Search,
   Trash2,
 } from "lucide-react";
 
 type StageKey = PcDocType;
-type AnyDoc =
-  | PettyCashPengajuan
-  | PettyCashVoucher
-  | PettyCashSubVoucher
-  | PettyCashDeklarasi;
+type AnyDoc = PcManagementDoc;
 
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("id-ID", {
@@ -232,7 +245,6 @@ const STAGE_CONFIG: Record<
     statusOptions: readonly string[];
     statusColors: Record<string, string>;
     statusColorDefault: string;
-    fetchAll: () => Promise<AnyDoc[]>;
   }
 > = {
   pengajuan: {
@@ -240,28 +252,24 @@ const STAGE_CONFIG: Record<
     statusOptions: PC_PENGAJUAN_STATUS_OPTIONS,
     statusColors: PC_PENGAJUAN_STATUS_COLORS,
     statusColorDefault: PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
-    fetchAll: fetchAllPengajuan,
   },
   voucher: {
     label: "Voucher",
     statusOptions: PC_VOUCHER_STATUS_OPTIONS,
     statusColors: PC_VOUCHER_STATUS_COLORS,
     statusColorDefault: PC_VOUCHER_STATUS_COLOR_DEFAULT,
-    fetchAll: fetchAllVouchers,
   },
   sub_voucher: {
     label: "Sub-Voucher",
     statusOptions: PC_SUB_VOUCHER_STATUS_OPTIONS,
     statusColors: PC_SUB_VOUCHER_STATUS_COLORS,
     statusColorDefault: PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
-    fetchAll: fetchAllSubVouchers,
   },
   deklarasi: {
     label: "Deklarasi",
     statusOptions: PC_DEKLARASI_STATUS_OPTIONS,
     statusColors: PC_DEKLARASI_STATUS_COLORS,
     statusColorDefault: PC_DEKLARASI_STATUS_COLOR_DEFAULT,
-    fetchAll: fetchAllDeklarasi,
   },
 };
 
@@ -271,6 +279,9 @@ const DETAIL_PATH: Record<StageKey, string> = {
   sub_voucher: "sub-voucher",
   deklarasi: "deklarasi",
 };
+
+const isStageKey = (value: string | null): value is StageKey =>
+  !!value && value in STAGE_CONFIG;
 
 export default function PettyCashManagementClient() {
   const supabase = createClient();
@@ -284,13 +295,34 @@ export default function PettyCashManagementClient() {
   const isAdmin = access?.isAdmin ?? false;
   const [isExportOpen, setIsExportOpen] = useState(false);
 
-  const [stage, setStage] = useState<StageKey>("pengajuan");
-  const [docs, setDocs] = useState<AnyDoc[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    searchParams,
+    page,
+    limit,
+    sort: sortParam,
+    setParams,
+    setFilters,
+  } = useListUrlParams();
+  const tabParam = searchParams.get("tab");
+  const stage: StageKey = isStageKey(tabParam) ? tabParam : "pengajuan";
+  const searchTerm = searchParams.get("search") || "";
+  const statusFilter = searchParams.get("status") || "";
+  const companyFilter = searchParams.get("company") || "";
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) => setFilters({ search: value }),
+  );
+
+  // `stage` ikut disimpan: baris tab lama tidak boleh dirender dengan aturan
+  // tab baru selama data tab baru belum datang.
+  const [result, setResult] = useState<{
+    stage: StageKey;
+    rows: AnyDoc[];
+    count: number;
+  }>({ stage, rows: [], count: 0 });
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [selected, setSelected] = useState<AnyDoc | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -327,47 +359,63 @@ export default function PettyCashManagementClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const data = await config.fetchAll();
-      setDocs(data);
-    } catch (error: any) {
-      toast.error("Gagal memuat data", { description: error.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const canView = access?.canView ?? false;
+  const allowedCompanies = access?.allowedCompanies ?? null;
+
   useEffect(() => {
     if (!canView) return;
-    setStatusFilter("all");
-    setSearch("");
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, canView]);
+    let cancelled = false;
+    setLoading(true);
+    fetchPcManagementPage(stage, {
+      page,
+      limit,
+      search: searchTerm,
+      status: statusFilter,
+      company: companyFilter,
+      allowedCompanies,
+      sort: sortParam,
+    })
+      .then(({ data, count }) => {
+        if (!cancelled) setResult({ stage, rows: data, count });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setResult({ stage, rows: [], count: 0 });
+        toast.error("Gagal memuat data", { description: error.message });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canView,
+    stage,
+    page,
+    limit,
+    searchTerm,
+    statusFilter,
+    companyFilter,
+    allowedCompanies,
+    sortParam,
+    reloadKey,
+  ]);
 
-  const allowedCompanies = access?.allowedCompanies ?? null;
-  const filteredDocs = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return docs.filter((row) => {
-      const company = getCompanyCode(stage, row);
-      if (allowedCompanies && !allowedCompanies.includes(company)) return false;
-      if (companyFilter !== "all" && company !== companyFilter) return false;
-      if (statusFilter !== "all" && row.status !== statusFilter) return false;
-      if (!q) return true;
-      const kode = getKode(stage, row).toLowerCase();
-      const dept = getDepartment(stage, row).toLowerCase();
-      const pemohon = row.users_with_profiles?.nama?.toLowerCase() || "";
-      return kode.includes(q) || dept.includes(q) || pemohon.includes(q);
-    });
-  }, [docs, search, statusFilter, companyFilter, stage, allowedCompanies]);
+  // Back/Forward bisa mengganti tab saat preview masih terbuka.
+  useEffect(() => {
+    setSelected(null);
+  }, [stage]);
+
+  const reload = () => setReloadKey((key) => key + 1);
+  const isLoading = loading || result.stage !== stage;
 
   const getStatusBadge = (status: string) => {
     const colorClass = config.statusColors[status] || config.statusColorDefault;
     return (
-      <Badge className={`${colorClass} whitespace-nowrap`}>{status}</Badge>
+      <Badge className={`${colorClass} whitespace-nowrap`}>
+        {pcStatusLabel(status, stage)}
+      </Badge>
     );
   };
 
@@ -382,7 +430,19 @@ export default function PettyCashManagementClient() {
     );
     toast.success(`${deleteTarget.kode} berhasil dihapus.`);
     setDeleteTarget(null);
-    await loadData();
+    // Baris terakhir di halaman ini terhapus - range-nya jadi di luar data.
+    if (result.rows.length === 1 && page > 1) setParams({ page: page - 1 });
+    else reload();
+  };
+
+  const handleStageChange = (value: string) => {
+    resetSearchInput();
+    setFilters({
+      tab: value === "pengajuan" ? undefined : value,
+      search: undefined,
+      status: undefined,
+      sort: undefined,
+    });
   };
 
   if (access === null) {
@@ -411,34 +471,40 @@ export default function PettyCashManagementClient() {
 
   // --- Chip filter aktif ---
   const activeFilters: ActiveFilter[] = [];
-  if (search.trim())
+  if (searchTerm)
     activeFilters.push({
       key: "search",
       label: "Cari",
-      value: search.trim(),
-      onRemove: () => setSearch(""),
+      value: searchTerm,
+      onRemove: () => {
+        resetSearchInput();
+        setFilters({ search: undefined });
+      },
     });
-  if (statusFilter !== "all")
+  if (statusFilter)
     activeFilters.push({
       key: "status",
       label: "Status",
       value: statusFilter,
-      onRemove: () => setStatusFilter("all"),
+      onRemove: () => setFilters({ status: undefined }),
     });
-  if (companyFilter !== "all")
+  if (companyFilter)
     activeFilters.push({
       key: "company",
       label: "Company",
       value: companyFilter,
-      onRemove: () => setCompanyFilter("all"),
+      onRemove: () => setFilters({ company: undefined }),
     });
 
   const clearFilters = () => {
-    setSearch("");
-    setStatusFilter("all");
-    setCompanyFilter("all");
+    resetSearchInput();
+    setFilters({ search: undefined, status: undefined, company: undefined });
   };
   const companyOptions = allowedCompanies ?? ["GMI", "GIS", "LOURDES"];
+  const sortProps = {
+    currentSort: sortParam,
+    onSortChange: (sort: string | undefined) => setFilters({ sort }),
+  };
 
   return (
     <>
@@ -450,52 +516,54 @@ export default function PettyCashManagementClient() {
             : "Pantau semua dokumen Petty Cash lintas departemen & Download Excel (read-only)."
         }
         cardAction={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => setIsExportOpen(true)}>
-              <FileSpreadsheet className="h-4 w-4 mr-1" />
-              Download Excel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadData}
-              disabled={loading}
-            >
-              <RefreshCcw
-                className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reload}
+            disabled={isLoading}
+          >
+            <RefreshCcw
+              className={`h-4 w-4 mr-1 ${isLoading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
         }
       >
-        <div className="space-y-4">
-          <Tabs value={stage} onValueChange={(v) => setStage(v as StageKey)}>
-            <TabsList className="max-w-full justify-start overflow-x-auto">
-              <TabsTrigger value="pengajuan">Pengajuan</TabsTrigger>
-              <TabsTrigger value="voucher">Voucher</TabsTrigger>
-              <TabsTrigger value="sub_voucher">Sub-Voucher</TabsTrigger>
-              <TabsTrigger value="deklarasi">Deklarasi</TabsTrigger>
-            </TabsList>
-          </Tabs>
+        <Tabs value={stage} onValueChange={handleStageChange} className="mb-4">
+          <TabsList className="max-w-full justify-start overflow-x-auto">
+            <TabsTrigger value="pengajuan">Pengajuan</TabsTrigger>
+            <TabsTrigger value="voucher">Voucher</TabsTrigger>
+            <TabsTrigger value="sub_voucher">Sub-Voucher</TabsTrigger>
+            <TabsTrigger value="deklarasi">Deklarasi</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari kode, departemen, atau nama pemohon..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
+        <div className="mb-6 flex flex-col gap-4">
+          <div className="flex flex-col gap-4 md:flex-row">
+            <ListSearchInput
+              placeholder="Cari kode, departemen, pemohon..."
+              value={searchInput}
+              onChange={setSearchInput}
+              searchableFields={PC_MANAGEMENT_SEARCH_FIELDS}
             />
+            <Button
+              variant="outline"
+              className="w-full md:w-auto"
+              onClick={() => setIsExportOpen(true)}
+            >
+              <Newspaper className="mr-2 h-4 w-4" />
+              Download Data (Excel)
+            </Button>
           </div>
 
           <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Status</label>
+            <FilterFields>
+              <FilterField label="Status">
                 <SearchableSelect
-                  value={statusFilter}
-                  onValueChange={setStatusFilter}
+                  value={statusFilter || "all"}
+                  onValueChange={(value) =>
+                    setFilters({ status: value === "all" ? undefined : value })
+                  }
                 >
                   <SearchableSelectTrigger>
                     <SearchableSelectValue placeholder="Semua Status" />
@@ -506,18 +574,21 @@ export default function PettyCashManagementClient() {
                     </SearchableSelectItem>
                     {config.statusOptions.map((s) => (
                       <SearchableSelectItem key={s} value={s}>
-                        {s}
+                        {pcStatusLabel(s, stage)}
                       </SearchableSelectItem>
                     ))}
                   </SearchableSelectContent>
                 </SearchableSelect>
-              </div>
+              </FilterField>
               {companyOptions.length > 1 && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Company</label>
+                <FilterField label="Company">
                   <SearchableSelect
-                    value={companyFilter}
-                    onValueChange={setCompanyFilter}
+                    value={companyFilter || "all"}
+                    onValueChange={(value) =>
+                      setFilters({
+                        company: value === "all" ? undefined : value,
+                      })
+                    }
                   >
                     <SearchableSelectTrigger>
                       <SearchableSelectValue placeholder="Semua Company" />
@@ -533,106 +604,154 @@ export default function PettyCashManagementClient() {
                       ))}
                     </SearchableSelectContent>
                   </SearchableSelect>
-                </div>
+                </FilterField>
               )}
-            </div>
+            </FilterFields>
           </FilterPanel>
-
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[900px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[110px]">Tanggal</TableHead>
-                  <TableHead className="w-[190px]">Kode</TableHead>
-                  <TableHead>Pemohon</TableHead>
-                  <TableHead className="w-[140px]">Departemen</TableHead>
-                  <TableHead className="w-[140px] text-right">Total</TableHead>
-                  <TableHead className="w-[140px]">Status</TableHead>
-                  <TableHead className="w-[90px] text-center">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center h-32">
-                      <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                    </TableCell>
-                  </TableRow>
-                ) : filteredDocs.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center h-32 text-muted-foreground"
-                    >
-                      Tidak ada data yang cocok.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredDocs.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => openDetail(row)}
-                    >
-                      <TableCell className="whitespace-nowrap text-sm">
-                        {formatDate(row.created_at)}
-                      </TableCell>
-                      <TableCell className="font-semibold text-sm">
-                        <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="truncate max-w-full">
-                            {getKode(stage, row)}
-                          </span>
-                          <PcEskalasiBadge show={isEskalasiDoc(stage, row)} />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm truncate">
-                        {row.users_with_profiles?.nama || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm truncate">
-                        {getDepartment(stage, row)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-sm">
-                        {formatCurrency(getTotalAmount(stage, row))}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(row.status)}</TableCell>
-                      <TableCell className="text-center">
-                        <div
-                          className="flex items-center justify-center gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-primary"
-                            onClick={() => openDetail(row)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          {isAdmin && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                setDeleteTarget({
-                                  docType: stage,
-                                  id: row.id,
-                                  kode: getKode(stage, row),
-                                })
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
         </div>
+
+        <StickyHeaderTable
+          className="min-w-[960px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <SortableTableHead
+                sortKey="tanggal"
+                defaultDirection="desc"
+                className="w-[120px]"
+                {...sortProps}
+                currentSort={sortParam || PC_MANAGEMENT_DEFAULT_SORT}
+              >
+                Tanggal
+              </SortableTableHead>
+              <SortableTableHead sortKey="kode" className="w-[210px]" {...sortProps}>
+                Kode
+              </SortableTableHead>
+              <TableHead>Pemohon</TableHead>
+              {/* Departemen Sub-Voucher ada di Voucher induknya. */}
+              {stage === "sub_voucher" ? (
+                <TableHead className="w-[140px]">Departemen</TableHead>
+              ) : (
+                <SortableTableHead
+                  sortKey="departemen"
+                  className="w-[140px]"
+                  {...sortProps}
+                >
+                  Departemen
+                </SortableTableHead>
+              )}
+              <SortableTableHead
+                sortKey="total"
+                defaultDirection="desc"
+                className="w-[140px] text-right"
+                {...sortProps}
+              >
+                Total
+              </SortableTableHead>
+              <SortableTableHead sortKey="status" className="w-[150px]" {...sortProps}>
+                Status
+              </SortableTableHead>
+              <TableHead className="w-[70px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: Math.min(limit, 25) }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={8}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : result.rows.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  Tidak ada data ditemukan.
+                </TableCell>
+              </TableRow>
+            ) : (
+              result.rows.map((row, index) => (
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => openDetail(row)}
+                >
+                  <TableCell>{(page - 1) * limit + index + 1}</TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    {formatDate(row.created_at)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1 min-w-0">
+                      <span className="truncate max-w-full font-mono text-xs font-semibold">
+                        {getKode(stage, row)}
+                      </span>
+                      <PcEskalasiBadge show={isEskalasiDoc(stage, row)} />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm truncate">
+                    {row.users_with_profiles?.nama || "-"}
+                  </TableCell>
+                  <TableCell className="text-sm truncate">
+                    {getDepartment(stage, row)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-sm tabular-nums">
+                    {formatCurrency(getTotalAmount(stage, row))}
+                  </TableCell>
+                  <TableCell>{getStatusBadge(row.status)}</TableCell>
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RowActionsMenu>
+                      <DropdownMenuItem onSelect={() => openDetail(row)}>
+                        <Eye className="mr-2 h-4 w-4" /> Lihat Ringkasan
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href={`/petty-cash/${DETAIL_PATH[stage]}/${row.id}`}
+                          className="cursor-pointer"
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" /> Lihat Detail
+                          Lengkap
+                        </Link>
+                      </DropdownMenuItem>
+                      {isAdmin && (
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() =>
+                            setDeleteTarget({
+                              docType: stage,
+                              id: row.id,
+                              kode: getKode(stage, row),
+                            })
+                          }
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                        </DropdownMenuItem>
+                      )}
+                    </RowActionsMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <TablePaginationFooter
+          currentPage={page}
+          totalItems={result.stage === stage ? result.count : 0}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="dokumen"
+          onPageChange={(value) => setParams({ page: value })}
+          onLimitChange={(value) => setFilters({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       {/* DIALOG PREVIEW (read-only) - override/edit paksa/ganti kode ada di

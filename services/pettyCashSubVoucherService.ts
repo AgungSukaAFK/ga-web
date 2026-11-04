@@ -45,7 +45,7 @@ import {
 
 const supabase = createClient();
 
-const SUB_VOUCHER_WITH_VOUCHER = `
+export const SUB_VOUCHER_WITH_VOUCHER = `
   *, petty_cash_voucher(kode_voucher, total_amount, items, company_code,
     department, week_of_month, site, approvals, pengajuan_id,
     payment_method, bank_name, bank_account_number, bank_account_holder_name,

@@ -34,6 +34,7 @@ import { PettyCashPengajuan } from "@/type";
 import {
   PC_PENGAJUAN_STATUS_COLOR_DEFAULT,
   PC_PENGAJUAN_STATUS_COLORS,
+  pcStatusLabel,
 } from "@/type/enum";
 import { History, Loader2, Wallet } from "lucide-react";
 
@@ -143,7 +144,7 @@ export function PcRequesterHistoryDialog({
                             PC_PENGAJUAN_STATUS_COLOR_DEFAULT
                           } whitespace-nowrap`}
                         >
-                          {pj.status}
+                          {pcStatusLabel(pj.status)}
                         </Badge>
                       </TableCell>
                     </TableRow>

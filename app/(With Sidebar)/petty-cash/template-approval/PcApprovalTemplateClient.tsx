@@ -13,8 +13,19 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
-import { ActiveFilter, FilterPanel } from "@/components/filter-panel";
+import {
+  ActiveFilter,
+  FilterField,
+  FilterFields,
+  FilterPanel,
+} from "@/components/filter-panel";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,6 +67,7 @@ import {
 } from "@/services/pcApprovalTemplateService";
 import { PcApprovalType } from "@/type";
 import {
+  LIMIT_OPTIONS,
   PC_APPROVAL_TYPE_OPTIONS,
   PC_APPROVAL_TYPE_COLORS,
   PC_APPROVAL_TYPE_DEKLARASI,
@@ -74,12 +86,35 @@ import {
   getPcApprovalLevel,
   hasFinanceApprover,
 } from "@/lib/pcApprovalFlow";
-import { Loader2, Plus, Trash2, Edit, Search, Copy } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit, Copy } from "lucide-react";
 import { format } from "date-fns";
+import { useListUrlParams } from "@/hooks/use-list-url-params";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { paginateRows, sortRows } from "@/lib/client-list";
 import { cn } from "@/lib/utils";
+
+const SEARCH_FIELDS = ["Nama template", "Nama approver"];
+
+const SORT_ACCESSORS: Record<
+  string,
+  (template: PcApprovalTemplate) => string | number
+> = {
+  nama: (template) => template.template_name,
+  tipe: (template) => template.approval_type,
+  approver: (template) => template.approval_path.length,
+  diubah: (template) => new Date(template.updated_at).getTime(),
+};
 
 export default function PcApprovalTemplateClient() {
   const router = useRouter();
+  const {
+    searchParams,
+    page,
+    limit,
+    sort: sortParam,
+    setParams,
+    setFilters,
+  } = useListUrlParams();
   const [templates, setTemplates] = useState<PcApprovalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -98,8 +133,14 @@ export default function PcApprovalTemplateClient() {
   const [duplicateName, setDuplicateName] = useState("");
   const [isDuplicating, setIsDuplicating] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<PcApprovalType | "all">("all");
+  const searchQuery = searchParams.get("search") || "";
+  const typeFilter = (searchParams.get("type") || "all") as
+    | PcApprovalType
+    | "all";
+  const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
+    searchQuery,
+    (value) => setFilters({ search: value }),
+  );
 
   const filteredTemplates = templates.filter((template) => {
     if (typeFilter !== "all" && template.approval_type !== typeFilter)
@@ -112,6 +153,15 @@ export default function PcApprovalTemplateClient() {
     );
     return matchesName || matchesApprover;
   });
+  const {
+    rows: visibleTemplates,
+    currentPage,
+    offset,
+  } = paginateRows(
+    sortRows(filteredTemplates, sortParam, SORT_ACCESSORS),
+    page,
+    limit,
+  );
 
   const loadTemplates = async () => {
     setLoading(true);
@@ -274,19 +324,26 @@ export default function PcApprovalTemplateClient() {
       key: "search",
       label: "Cari",
       value: searchQuery.trim(),
-      onRemove: () => setSearchQuery(""),
+      onRemove: () => {
+        resetSearchInput();
+        setFilters({ search: undefined });
+      },
     });
   if (typeFilter !== "all")
     activeFilters.push({
       key: "type",
       label: "Tipe Approval",
       value: typeFilter,
-      onRemove: () => setTypeFilter("all"),
+      onRemove: () => setFilters({ type: undefined }),
     });
 
   const clearFilters = () => {
-    setSearchQuery("");
-    setTypeFilter("all");
+    resetSearchInput();
+    setFilters({ search: undefined, type: undefined });
+  };
+  const sortProps = {
+    currentSort: sortParam,
+    onSortChange: (sort: string | undefined) => setFilters({ sort }),
   };
 
   return (
@@ -300,24 +357,20 @@ export default function PcApprovalTemplateClient() {
           </Button>
         }
       >
-        <div className="mb-4 flex flex-col gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nama template atau nama approver..."
-              className="pl-8"
-            />
-          </div>
+        <div className="mb-6 flex flex-col gap-4">
+          <ListSearchInput
+            placeholder="Cari template atau approver..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
           <FilterPanel activeFilters={activeFilters} onReset={clearFilters}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Tipe Approval</label>
+            <FilterFields>
+              <FilterField label="Tipe Approval">
                 <SearchableSelect
                   value={typeFilter}
                   onValueChange={(value) =>
-                    setTypeFilter(value as PcApprovalType | "all")
+                    setFilters({ type: value === "all" ? undefined : value })
                   }
                 >
                   <SearchableSelectTrigger>
@@ -334,136 +387,167 @@ export default function PcApprovalTemplateClient() {
                     ))}
                   </SearchableSelectContent>
                 </SearchableSelect>
-              </div>
-            </div>
+              </FilterField>
+            </FilterFields>
           </FilterPanel>
         </div>
-        <div className="border rounded-md overflow-x-auto">
-          <Table>
-            <TableHeader>
+
+        <StickyHeaderTable
+          className="min-w-[1000px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <SortableTableHead sortKey="nama" {...sortProps}>
+                Nama Template
+              </SortableTableHead>
+              <SortableTableHead sortKey="tipe" className="w-[170px]" {...sortProps}>
+                Tipe Approval
+              </SortableTableHead>
+              <TableHead>Deskripsi</TableHead>
+              <SortableTableHead
+                sortKey="approver"
+                defaultDirection="desc"
+                className="w-[160px]"
+                {...sortProps}
+              >
+                Jumlah Approver
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="diubah"
+                defaultDirection="desc"
+                className="w-[170px]"
+                {...sortProps}
+              >
+                Terakhir Diubah
+              </SortableTableHead>
+              <TableHead className="w-[70px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead>Nama Template</TableHead>
-                <TableHead className="w-[160px]">Tipe Approval</TableHead>
-                <TableHead>Deskripsi</TableHead>
-                <TableHead className="w-[140px]">Jumlah Approver</TableHead>
-                <TableHead className="w-[160px]">Terakhir Diubah</TableHead>
-                <TableHead className="text-right w-[160px]">Aksi</TableHead>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : filteredTemplates.length > 0 ? (
-                filteredTemplates.map((template) => (
-                  <TableRow
-                    key={template.id}
-                    className="cursor-pointer"
-                    onClick={() => setDetailTemplate(template)}
+            ) : visibleTemplates.length > 0 ? (
+              visibleTemplates.map((template, index) => (
+                <TableRow
+                  key={template.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => setDetailTemplate(template)}
+                >
+                  <TableCell>{offset + index + 1}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex flex-col items-start gap-1">
+                    {template.template_name}
+                    {template.auto_rules.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {template.auto_rules.map((rule, i) => (
+                          <Badge
+                            key={i}
+                            variant="outline"
+                            className="font-normal text-[10px] text-primary border-primary/40"
+                          >
+                            Auto: {rule.department} • {rule.site || "-"} •{" "}
+                            {rule.company_code || "-"}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "font-normal",
+                      PC_APPROVAL_TYPE_COLORS[template.approval_type] ||
+                        PC_APPROVAL_TYPE_COLOR_DEFAULT,
+                    )}
                   >
-                    <TableCell className="font-medium">
-                      <div className="flex flex-col items-start gap-1">
-                        {template.template_name}
-                        {template.auto_rules.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {template.auto_rules.map((rule, i) => (
-                              <Badge
-                                key={i}
-                                variant="outline"
-                                className="font-normal text-[10px] text-primary border-primary/40"
-                              >
-                                Auto: {rule.department} • {rule.site || "-"} •{" "}
-                                {rule.company_code || "-"}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "font-normal",
-                          PC_APPROVAL_TYPE_COLORS[template.approval_type] ||
-                            PC_APPROVAL_TYPE_COLOR_DEFAULT,
-                        )}
-                      >
-                        {template.approval_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[320px] truncate text-muted-foreground">
-                      {template.description || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Badge variant="outline" className="font-normal">
-                          {template.approval_path.length} orang
+                    {template.approval_type}
+                  </Badge>
+                </TableCell>
+                <TableCell className="max-w-[320px] truncate text-muted-foreground">
+                  {template.description || "-"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Badge variant="outline" className="font-normal">
+                      {template.approval_path.length} orang
+                    </Badge>
+                    {template.approval_type === PC_APPROVAL_TYPE_DEKLARASI &&
+                      !hasFinanceApprover(template.approval_path) && (
+                        <Badge
+                          variant="outline"
+                          className="font-normal border-destructive/40 text-destructive"
+                          title="Approval Deklarasi wajib memiliki minimal 1 approver Finance - Deklarasi baru akan ditolak sampai template ini dilengkapi."
+                        >
+                          Belum ada Finance
                         </Badge>
-                        {template.approval_type === PC_APPROVAL_TYPE_DEKLARASI &&
-                          !hasFinanceApprover(template.approval_path) && (
-                            <Badge
-                              variant="outline"
-                              className="font-normal border-destructive/40 text-destructive"
-                              title="Approval Deklarasi wajib memiliki minimal 1 approver Finance - Deklarasi baru akan ditolak sampai template ini dilengkapi."
-                            >
-                              Belum ada Finance
-                            </Badge>
-                          )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      <div>{template.updated_by_profile?.nama || "-"}</div>
-                      <div>
-                        {format(
-                          new Date(template.updated_at),
-                          "dd/MM/yyyy HH:mm",
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className="text-right"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleOpenEdit(template)}
+                      )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  <div>{template.updated_by_profile?.nama || "-"}</div>
+                  <div>
+                    {format(
+                      new Date(template.updated_at),
+                      "dd/MM/yyyy HH:mm",
+                    )}
+                  </div>
+                </TableCell>
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RowActionsMenu>
+                      <DropdownMenuItem onSelect={() => handleOpenEdit(template)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => openDuplicateDialog(template)}
                       >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openDuplicateDialog(template)}
+                        <Copy className="mr-2 h-4 w-4" /> Duplikat
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => openDeleteConfirm(template.id)}
                       >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openDeleteConfirm(template.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
-                    {searchQuery.trim() || typeFilter !== "all"
-                      ? "Tidak ada template yang cocok dengan filter/pencarian."
-                      : "Belum ada template Petty Cash dibuat."}
+                        <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                      </DropdownMenuItem>
+                    </RowActionsMenu>
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  {searchQuery.trim() || typeFilter !== "all"
+                    ? "Tidak ada data ditemukan."
+                    : "Belum ada template Petty Cash dibuat."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={filteredTemplates.length}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="template"
+          onPageChange={(value) => setParams({ page: value })}
+          onLimitChange={(value) => setFilters({ limit: value })}
+          className="mt-6"
+        />
       </Content>
 
       {/* Modal Buat/Edit Template */}

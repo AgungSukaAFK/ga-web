@@ -86,6 +86,7 @@ import {
   formatAge,
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Combobox, ComboboxData } from "@/components/combobox";
@@ -306,7 +307,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [selectedItemsForBast, setSelectedItemsForBast] = useState<Order[]>(
     [],
   );
-  const [bastFiles, setBastFiles] = useState<FileList | null>(null);
+  const [bastFiles, setBastFiles] = useState<File[] | null>(null);
   const [uploadingBast, setUploadingBast] = useState(false);
 
   // --- FETCH DATA ---
@@ -1330,13 +1331,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
   // --- ATTACHMENT HANDLERS ---
 
-  const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !mr) return;
+  const handleAttachmentUpload = async (fileList: File[]) => {
+    if (fileList.length === 0 || !mr) return;
 
-    const fileList = Array.from(files);
     const oversizedErrors = fileList
       .map((file) => getAttachmentSizeError(file))
       .filter((err): err is string => !!err);
@@ -1352,7 +1349,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
 
     if (validFiles.length === 0) {
-      e.target.value = "";
       return;
     }
 
@@ -1423,7 +1419,6 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       });
     } finally {
       setIsUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -2570,12 +2565,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             {isEditing ? (
               <div className="space-y-4">
                 <Label htmlFor="attachments">Tambah Lampiran</Label>
-                <Input
+                <FileDropzone
                   id="attachments"
-                  type="file"
                   multiple
                   disabled={actionLoading || isUploading}
-                  onChange={handleAttachmentUpload}
+                  onFiles={handleAttachmentUpload}
                 />
                 {isUploading && (
                   <div className="flex items-center text-sm text-muted-foreground">
@@ -3371,11 +3365,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <Label htmlFor="item-bast-file">
                 File Bukti Penerimaan / Bukti Foto
               </Label>
-              <Input
+              <FileDropzone
                 id="item-bast-file"
-                type="file"
                 multiple
-                onChange={(e) => setBastFiles(e.target.files)}
+                onFiles={setBastFiles}
+                selectedFiles={bastFiles}
                 className="mt-2"
               />
             </div>

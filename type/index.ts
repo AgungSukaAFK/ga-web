@@ -1118,6 +1118,15 @@ export interface PettyCashVoucher extends PcPaymentInfo {
   approvals: PettyCashPengajuanApprover[];
   discussions: any[];
   revisions: PcDocumentRevision[];
+  // Sisa yang ditutup pemilik/admin dan tidak akan ditarik - lihat
+  // supabase/migrations/0022_petty_cash_tutup_sisa_voucher.sql.
+  closed_remainder: {
+    amount: number;
+    reason: string;
+    closed_by: string;
+    closed_by_name: string;
+    closed_at: string;
+  } | null;
   created_at: string | Date;
   created_by: string | null;
   updated_at: string | Date;

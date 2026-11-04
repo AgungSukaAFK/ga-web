@@ -19,7 +19,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { FileDropzone } from "@/components/file-dropzone";
 import {
   Table,
   TableBody,
@@ -47,7 +47,7 @@ import {
 import { fetchVoucherOwnerBankAccounts } from "@/services/pettyCashVoucherService";
 import { PcCoaBadge } from "./PcCoaBadge";
 import { PcPaymentMethodField } from "./PcPaymentMethodField";
-import { Landmark, Loader2, UploadCloud, X } from "lucide-react";
+import { Landmark, Loader2, X } from "lucide-react";
 
 interface PcSubVoucherPaymentFormProps {
   subVoucher: PettyCashSubVoucher;
@@ -84,8 +84,8 @@ export function PcSubVoucherPaymentForm({
   const canSubmit =
     !paymentError && (!proofRequired || files.length > 0);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleUpload = async (picked: File[]) => {
+    const file = picked[0];
     if (!file) return;
 
     const sizeError = getAttachmentSizeError(file);
@@ -112,7 +112,6 @@ export function PcSubVoucherPaymentForm({
       });
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -186,40 +185,17 @@ export function PcSubVoucherPaymentForm({
             </span>
           )}
         </p>
-        <div className="p-4 border-2 border-dashed rounded-lg bg-muted/10 transition-colors hover:bg-muted/30">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-sm text-muted-foreground text-center sm:text-left">
-              <p className="font-medium text-foreground">
-                {payment.payment_method === "Cash"
-                  ? "Upload Bukti Serah Terima (opsional)"
-                  : "Upload Bukti Transfer"}
-              </p>
-              <p className="text-xs">Format: JPG, PNG, PDF. Maks: 5MB.</p>
-            </div>
-            <Input
-              type="file"
-              className="hidden"
-              id={inputId}
-              onChange={handleUpload}
-              disabled={uploading}
-            />
-            <Button
-              asChild
-              variant="outline"
-              className="cursor-pointer shrink-0"
-              disabled={uploading}
-            >
-              <label htmlFor={inputId}>
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <UploadCloud className="h-4 w-4 mr-2" />
-                )}
-                {uploading ? "Mengunggah..." : "Pilih File"}
-              </label>
-            </Button>
-          </div>
-        </div>
+        <FileDropzone
+          id={inputId}
+          onFiles={handleUpload}
+          loading={uploading}
+          title={
+            payment.payment_method === "Cash"
+              ? "Upload Bukti Serah Terima (opsional)"
+              : "Upload Bukti Transfer"
+          }
+          hint="Seret & lepas atau klik untuk memilih. JPG, PNG, PDF, maks 5MB."
+        />
 
         {files.length > 0 && (
           <div className="grid gap-2">

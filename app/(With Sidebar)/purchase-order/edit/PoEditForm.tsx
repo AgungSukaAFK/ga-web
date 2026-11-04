@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -1037,16 +1038,15 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   };
 
   const handleAttachmentUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
+    files: File[],
     type: "po" | "finance" | "invoice" | "quotation",
   ) => {
-    const file = e.target.files?.[0];
+    const file = files[0];
     if (!file || !poForm) return;
 
     const sizeError = getAttachmentSizeError(file);
     if (sizeError) {
       toast.error("Ukuran file terlalu besar", { description: sizeError });
-      e.target.value = "";
       return;
     }
 
@@ -1101,21 +1101,17 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
       });
     } finally {
       setIsLoading(false);
-      e.target.value = "";
     }
   };
 
   // Wrapper khusus "Lampiran Purchasing" - jenis lampirannya (Quotation/
   // Invoice) wajib dipilih dulu lewat Select sebelum file bisa diunggah.
-  const handlePurchasingAttachmentUpload = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handlePurchasingAttachmentUpload = (files: File[]) => {
     if (!purchasingAttachmentType) {
       toast.error("Pilih jenis lampiran (Quotation/Invoice) terlebih dahulu.");
-      e.target.value = "";
       return;
     }
-    handleAttachmentUpload(e, purchasingAttachmentType);
+    handleAttachmentUpload(files, purchasingAttachmentType);
   };
 
   const removeAttachment = (indexToRemove: number) => {
@@ -2094,11 +2090,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                     </SearchableSelectItem>
                   </SearchableSelectContent>
                 </SearchableSelect>
-                <Input
+                <FileDropzone
                   id="purchasing-attachment-upload"
-                  type="file"
                   className="flex-1"
-                  onChange={handlePurchasingAttachmentUpload}
+                  onFiles={handlePurchasingAttachmentUpload}
                   disabled={isBusy}
                 />
               </div>
@@ -2121,11 +2116,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
             <div className="grid gap-5 md:grid-cols-2 border-t pt-5 [&>*]:min-w-0">
               <div>
                 <Label htmlFor="po-attachment-upload">Lampiran PO</Label>
-                <Input
+                <FileDropzone
                   id="po-attachment-upload"
-                  type="file"
                   className="mt-1"
-                  onChange={(e) => handleAttachmentUpload(e, "po")}
+                  onFiles={(files) => handleAttachmentUpload(files, "po")}
                   disabled={isBusy}
                 />
                 {isUploadingPO && (
@@ -2146,11 +2140,10 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                 <Label htmlFor="finance-attachment-upload">
                   Lampiran Finance
                 </Label>
-                <Input
+                <FileDropzone
                   id="finance-attachment-upload"
-                  type="file"
                   className="mt-1"
-                  onChange={(e) => handleAttachmentUpload(e, "finance")}
+                  onFiles={(files) => handleAttachmentUpload(files, "finance")}
                   disabled={isBusy}
                 />
                 {isUploadingFinance && (

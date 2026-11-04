@@ -13,15 +13,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Content } from "@/components/content";
+import { ListSearchInput } from "@/components/list-search-input";
+import { RowActionsMenu } from "@/components/row-actions-menu";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import { StickyHeaderTable } from "@/components/sticky-header-table";
+import { TablePaginationFooter } from "@/components/table-pagination-footer";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -34,9 +38,13 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useListUrlParams } from "@/hooks/use-list-url-params";
+import { useUrlSearchInput } from "@/hooks/use-url-search-input";
+import { paginateRows, sortRows } from "@/lib/client-list";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { PettyCashPengajuanItem, PettyCashPengajuanTemplate } from "@/type";
+import { LIMIT_OPTIONS } from "@/type/enum";
 import {
   fetchMyPengajuanTemplates,
   createPengajuanTemplate,
@@ -50,16 +58,39 @@ import {
   Plus,
   Pencil,
   Trash2,
-  FileSignature,
   PlayCircle,
 } from "lucide-react";
 
 const totalOf = (items: PettyCashPengajuanItem[]) =>
   items.reduce((sum, it) => sum + it.subtotal, 0);
 
+const SEARCH_FIELDS = ["Nama template", "Nama barang"];
+
+const SORT_ACCESSORS: Record<
+  string,
+  (t: PettyCashPengajuanTemplate) => string | number
+> = {
+  nama: (t) => t.nama_template,
+  jumlah: (t) => t.items?.length ?? 0,
+  total: (t) => totalOf(t.items || []),
+};
+
 export default function PettyCashPengajuanTemplateClient() {
   const supabase = createClient();
   const router = useRouter();
+  const {
+    searchParams,
+    page,
+    limit,
+    sort: sortParam,
+    setParams,
+    setFilters,
+  } = useListUrlParams();
+  const searchTerm = searchParams.get("search") || "";
+  const [searchInput, setSearchInput] = useUrlSearchInput(
+    searchTerm,
+    (value) => setFilters({ search: value }),
+  );
 
   const [userId, setUserId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<PettyCashPengajuanTemplate[]>([]);
@@ -72,6 +103,8 @@ export default function PettyCashPengajuanTemplateClient() {
   const [namaTemplate, setNamaTemplate] = useState("");
   const [items, setItems] = useState<PettyCashPengajuanItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] =
+    useState<PettyCashPengajuanTemplate | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -155,6 +188,27 @@ export default function PettyCashPengajuanTemplateClient() {
     router.push(`/petty-cash/input-pengajuan?template=${t.id}`);
   };
 
+  const query = searchTerm.trim().toLowerCase();
+  const filteredTemplates = templates.filter(
+    (t) =>
+      !query ||
+      t.nama_template.toLowerCase().includes(query) ||
+      (t.items || []).some((it) => it.part_name.toLowerCase().includes(query)),
+  );
+  const {
+    rows: visibleTemplates,
+    currentPage,
+    offset,
+  } = paginateRows(
+    sortRows(filteredTemplates, sortParam, SORT_ACCESSORS),
+    page,
+    limit,
+  );
+  const sortProps = {
+    currentSort: sortParam,
+    onSortChange: (sort: string | undefined) => setFilters({ sort }),
+  };
+
   return (
     <>
       <Content
@@ -179,92 +233,118 @@ export default function PettyCashPengajuanTemplateClient() {
           </div>
         }
       >
-        <div className="rounded-md border overflow-x-auto">
-          <Table className="min-w-[700px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama Template</TableHead>
-                <TableHead className="w-[120px] text-center">
-                  Jumlah Barang
-                </TableHead>
-                <TableHead className="w-[160px] text-right">
-                  Total Estimasi
-                </TableHead>
-                <TableHead className="w-[180px] text-center">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center h-32">
-                    <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
-                  </TableCell>
-                </TableRow>
-              ) : templates.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="text-center h-32 text-muted-foreground"
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <FileSignature className="h-8 w-8" />
-                      Belum ada template. Buat template pertama Anda.
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                templates.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-semibold text-sm">
-                      {t.nama_template}
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {t.items?.length ?? 0}
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-sm">
-                      {formatCurrency(totalOf(t.items || []))}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUse(t)}
-                        >
-                          <PlayCircle className="h-4 w-4 mr-1" /> Gunakan
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => openEdit(t)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <ConfirmDialog
-                          title={`Hapus Template "${t.nama_template}"?`}
-                          description="Template ini akan dihapus permanen. Aksi ini tidak bisa dibatalkan."
-                          confirmText="Hapus"
-                          cancelText="Batal"
-                          onConfirm={() => handleDelete(t)}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </ConfirmDialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+        <div className="mb-6">
+          <ListSearchInput
+            placeholder="Cari template atau barang..."
+            value={searchInput}
+            onChange={setSearchInput}
+            searchableFields={SEARCH_FIELDS}
+          />
         </div>
+
+        <StickyHeaderTable
+          className="min-w-[700px]"
+          containerClassName="rounded-md border overflow-x-auto"
+          header={
+            <TableRow>
+              <TableHead className="w-[50px]">No</TableHead>
+              <SortableTableHead sortKey="nama" {...sortProps}>
+                Nama Template
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="jumlah"
+                defaultDirection="desc"
+                className="w-[150px] text-right"
+                {...sortProps}
+              >
+                Jumlah Barang
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="total"
+                defaultDirection="desc"
+                className="w-[170px] text-right"
+                {...sortProps}
+              >
+                Total Estimasi
+              </SortableTableHead>
+              <TableHead className="w-[70px] text-right">Aksi</TableHead>
+            </TableRow>
+          }
+        >
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  <Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" />
+                </TableCell>
+              </TableRow>
+            ) : visibleTemplates.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  {templates.length === 0
+                    ? "Belum ada template. Buat template pertama Anda."
+                    : "Tidak ada data ditemukan."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              visibleTemplates.map((t, index) => (
+                <TableRow key={t.id}>
+                  <TableCell>{offset + index + 1}</TableCell>
+                  <TableCell className="font-semibold text-sm">
+                    {t.nama_template}
+                  </TableCell>
+                  <TableCell className="text-right text-sm tabular-nums">
+                    {t.items?.length ?? 0}
+                  </TableCell>
+                  <TableCell className="text-right font-medium text-sm tabular-nums">
+                    {formatCurrency(totalOf(t.items || []))}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <RowActionsMenu>
+                      <DropdownMenuItem onSelect={() => handleUse(t)}>
+                        <PlayCircle className="mr-2 h-4 w-4" /> Gunakan
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => openEdit(t)}>
+                        <Pencil className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => setDeleteTarget(t)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                      </DropdownMenuItem>
+                    </RowActionsMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </StickyHeaderTable>
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalItems={filteredTemplates.length}
+          limit={limit}
+          limitOptions={LIMIT_OPTIONS}
+          itemLabel="template"
+          onPageChange={(value) => setParams({ page: value })}
+          onLimitChange={(value) => setFilters({ limit: value })}
+          className="mt-6"
+        />
       </Content>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Hapus Template "${deleteTarget?.nama_template ?? ""}"?`}
+        description="Template ini akan dihapus permanen. Aksi ini tidak bisa dibatalkan."
+        confirmText="Hapus"
+        cancelText="Batal"
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen} modal={false}>
         <DialogContent className="sm:max-w-3xl max-h-[88vh] overflow-y-auto">

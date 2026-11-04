@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,7 +62,7 @@ import { fetchActiveBudgets } from "@/services/pettyCashBudgetService";
 import { fetchVoucherOwnerBankAccounts } from "@/services/pettyCashVoucherService";
 import { EMPTY_PC_PAYMENT, validatePcPayment } from "@/lib/pcPayment";
 import { PcPaymentMethodField } from "@/components/petty-cash/PcPaymentMethodField";
-import { Loader2, UploadCloud, X, PencilLine } from "lucide-react";
+import { Loader2, X, PencilLine } from "lucide-react";
 
 const WEEK_OPTIONS = [1, 2, 3, 4, 5];
 
@@ -167,8 +168,8 @@ export function PcEditAndApproveDialog({
       );
   }, [showBudget, open, companyCode]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
     const sizeError = getAttachmentSizeError(file);
     if (sizeError) {
@@ -190,7 +191,6 @@ export function PcEditAndApproveDialog({
       });
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -343,31 +343,11 @@ export function PcEditAndApproveDialog({
 
           <div className="space-y-2">
             <Label>Lampiran</Label>
-            <div className="flex items-center gap-3">
-              <Input
-                type="file"
-                className="hidden"
-                id="edit-approve-file-upload"
-                onChange={handleFileUpload}
-                disabled={uploading}
-              />
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="cursor-pointer"
-                disabled={uploading}
-              >
-                <label htmlFor="edit-approve-file-upload">
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <UploadCloud className="h-4 w-4 mr-2" />
-                  )}
-                  Tambah Lampiran
-                </label>
-              </Button>
-            </div>
+            <FileDropzone
+              id="edit-approve-file-upload"
+              onFiles={handleFileUpload}
+              loading={uploading}
+            />
             {attachments.length > 0 && (
               <div className="grid gap-2 pt-1">
                 {attachments.map((file, index) => (

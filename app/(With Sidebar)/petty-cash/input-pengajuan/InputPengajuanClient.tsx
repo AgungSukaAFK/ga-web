@@ -32,8 +32,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
+import Image from "next/image";
+import { COMPANY_LOGOS } from "@/components/company-logo-badge";
 import { Content } from "@/components/content";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/date-picker";
@@ -355,8 +358,8 @@ export default function InputPengajuanClient() {
     })();
   }, [ulangId]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
 
     const sizeError = getAttachmentSizeError(file);
@@ -383,7 +386,6 @@ export default function InputPengajuanClient() {
       });
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -705,21 +707,38 @@ export default function InputPengajuanClient() {
                 Company Pengajuan <span className="text-red-500">*</span>
               </Label>
               <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-                {(["GMI", "GIS"] as const).map((company) => (
-                  <button
-                    key={company}
-                    type="button"
-                    onClick={() => setLourdesCoa(company)}
-                    className={cn(
-                      "py-4 rounded-lg border-2 font-bold text-lg transition-all",
-                      lourdesCoa === company
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary/40 text-muted-foreground",
-                    )}
-                  >
-                    {company}
-                  </button>
-                ))}
+                {(["GMI", "GIS"] as const).map((company) => {
+                  const logo = COMPANY_LOGOS[company].landscape;
+                  return (
+                    <button
+                      key={company}
+                      type="button"
+                      onClick={() => setLourdesCoa(company)}
+                      className={cn(
+                        "flex flex-col items-center gap-2 px-3 py-3 rounded-lg border-2 font-bold text-lg transition-all",
+                        lourdesCoa === company
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary/40 text-muted-foreground",
+                      )}
+                    >
+                      {/* Tinggi tetap supaya label kedua tombol sejajar
+                          walau rasio logo GMI & GIS beda jauh. */}
+                      <span className="flex h-12 w-full items-center justify-center">
+                        <Image
+                          src={logo.src}
+                          alt={`Logo ${company}`}
+                          width={logo.width}
+                          height={logo.height}
+                          className={cn(
+                            "h-auto w-auto max-w-full",
+                            logo.className,
+                          )}
+                        />
+                      </span>
+                      {company}
+                    </button>
+                  );
+                })}
               </div>
               <p className="text-xs text-muted-foreground">
                 {lourdesCoa ? (
@@ -948,11 +967,7 @@ export default function InputPengajuanClient() {
         description="Opsional - referensi pendukung, misalnya quotation atau link produk. Format JPG, PNG, PDF, maksimal 5MB."
       >
         <div className="flex flex-col gap-4">
-          <Input
-            type="file"
-            onChange={handleFileUpload}
-            disabled={uploading}
-          />
+          <FileDropzone onFiles={handleFileUpload} disabled={uploading} />
           {uploading && (
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

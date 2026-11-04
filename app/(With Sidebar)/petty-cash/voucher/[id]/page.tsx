@@ -65,6 +65,7 @@ import {
   PC_VOUCHER_STATUS_OPTIONS,
   PC_SUB_VOUCHER_STATUS_COLORS,
   PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT,
+  pcStatusLabel,
 } from "@/type/enum";
 import { isMyApprovalTurn } from "@/lib/pcApprovalFlow";
 import { PcDocumentInfoPanel } from "@/components/petty-cash/PcDocumentInfoPanel";
@@ -80,7 +81,16 @@ import {
 } from "@/components/petty-cash/PcPrintMenu";
 import { getCompanyDetails, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
-import { getPendingPembatalan, pickCurrentDoc } from "@/lib/pcChain";
+import {
+  canCloseVoucherRemainder,
+  computeVoucherSisa,
+  getPendingPembatalan,
+  pickCurrentDoc,
+} from "@/lib/pcChain";
+import {
+  PcSisaDitutupInfo,
+  PcTutupSisaButton,
+} from "@/components/petty-cash/PcTutupSisaVoucher";
 import { PcEskalasiBadge } from "@/components/petty-cash/PcEskalasiBadge";
 import { PcPaymentInfoView } from "@/components/petty-cash/PcPaymentInfoView";
 import { PcPaymentMethodDialog } from "@/components/petty-cash/PcPaymentMethodDialog";
@@ -313,6 +323,12 @@ function VoucherDetailContent({ id }: { id: string }) {
   const pembatalanPending = !!getPendingPembatalan(
     doc.petty_cash_pengajuan?.petty_cash_pembatalan,
   );
+  const canCloseSisa =
+    (viewer?.id === doc.user_id || !!viewer?.isAdmin) &&
+    canCloseVoucherRemainder(
+      doc,
+      doc.petty_cash_pengajuan?.petty_cash_pembatalan,
+    );
 
   return (
     <>
@@ -335,6 +351,13 @@ function VoucherDetailContent({ id }: { id: string }) {
               >
                 <Wallet className="h-4 w-4 mr-1" /> Ubah Metode Pencairan
               </Button>
+            )}
+            {canCloseSisa && (
+              <PcTutupSisaButton
+                voucher={doc}
+                sisa={computeVoucherSisa(doc)}
+                onClosed={load}
+              />
             )}
             {viewer?.isAdmin && (
               <PcAdminControlSheet kode={doc.kode_voucher}>
@@ -373,7 +396,7 @@ function VoucherDetailContent({ id }: { id: string }) {
       >
         <div className="space-y-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Badge className={statusColor}>{doc.status}</Badge>
+            <Badge className={statusColor}>{pcStatusLabel(doc.status)}</Badge>
             <PcEskalasiBadge show={doc.petty_cash_pengajuan?.is_eskalasi} />
           </div>
           {pembatalanPending && (
@@ -382,6 +405,9 @@ function VoucherDetailContent({ id }: { id: string }) {
               Pengajuan Voucher ini sedang diajukan pembatalan - Tarik Dana &
               pembayaran tarikan ditahan sampai Finance memprosesnya.
             </p>
+          )}
+          {doc.closed_remainder && (
+            <PcSisaDitutupInfo closed={doc.closed_remainder} />
           )}
           <PcDocumentInfoPanel
             requesterName={doc.users_with_profiles?.nama}
@@ -484,7 +510,7 @@ function VoucherDetailContent({ id }: { id: string }) {
                                           PC_SUB_VOUCHER_STATUS_COLOR_DEFAULT
                                         }
                                       >
-                                        {sv.status}
+                                        {pcStatusLabel(sv.status, "sub_voucher")}
                                       </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm">
@@ -494,7 +520,7 @@ function VoucherDetailContent({ id }: { id: string }) {
                                           className="text-primary hover:underline"
                                         >
                                           {deklarasi.kode_deklarasi} -{" "}
-                                          {deklarasi.status}
+                                          {pcStatusLabel(deklarasi.status ?? "")}
                                         </Link>
                                       ) : (
                                         <span className="text-muted-foreground italic">
