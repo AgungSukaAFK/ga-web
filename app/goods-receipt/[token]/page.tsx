@@ -265,17 +265,22 @@ export default function GoodsReceiptPage() {
     });
   };
 
+  // Qty 0 = barang belum datang, jadi tidak perlu foto. Minimal satu barang
+  // harus benar-benar diterima.
   const isFormComplete =
-    view?.items.every((item) => {
+    (view?.items.every((item) => {
       const input = itemInputs[item.part_number];
+      if (!input || input.qty.trim() === "" || Number(input.qty) < 0) {
+        return false;
+      }
       return (
-        input &&
-        input.qty.trim() !== "" &&
-        Number(input.qty) >= 0 &&
-        !!input.photo &&
-        !!input.photoMeta
+        Number(input.qty) === 0 || (!!input.photo && !!input.photoMeta)
       );
-    }) ?? false;
+    }) ??
+      false) &&
+    !!view?.items.some(
+      (item) => Number(itemInputs[item.part_number]?.qty) > 0,
+    );
 
   const handleSubmit = async () => {
     if (!view || !isFormComplete) return;
@@ -547,7 +552,7 @@ export default function GoodsReceiptPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Foto Barang (wajib, dari kamera)</Label>
+                    <Label className="text-xs">Foto Barang (wajib kalau qty diisi)</Label>
                     <Button
                       type="button"
                       variant={input.photo ? "outline" : "default"}

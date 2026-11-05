@@ -293,6 +293,7 @@ export const processMrApproval = async (
   userId: string,
   decision: "approved" | "rejected",
   approvalsList: Approval[],
+  rejectionNote?: string,
 ) => {
   const { data: mr, error: fetchError } = await supabase
     .from("material_requests")
@@ -326,6 +327,7 @@ export const processMrApproval = async (
     ...updatedApprovals[myIndex],
     status: decision,
     processed_at: new Date().toISOString(),
+    rejection_note: decision === "rejected" ? rejectionNote || null : null,
   };
 
   let newStatus = mr.status;

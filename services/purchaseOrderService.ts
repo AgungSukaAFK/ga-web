@@ -1,6 +1,7 @@
 // src/services/purchaseOrderService.ts
 
 import { createClient } from "@/lib/supabase/client";
+import { deriveReceiveDrivenStatus } from "@/lib/requesterReceipt";
 import {
   Approval,
   Barang,
@@ -1001,48 +1002,7 @@ export const validatePurchaseOrder = async (
   return data;
 };
 
-/**
- * Menentukan status PO berikutnya seputar penerimaan barang, secara
- * simetris terhadap urutan step "Receiver" vs "Payment Validator" di
- * template approval-nya (urutannya beda-beda tergantung jalur pembayaran -
- * Cash/DP&BP-setelah-lunas taruh Payment Validator duluan, Termin/DP&BP-
- * setelah-DP taruh Receiver duluan - lihat supabase/migrations/0002_mr_po.sql (asal: po_receive_record_setup.sql)).
- * Dipanggil dari 2 sisi: begitu step Payment Validator selesai disetujui,
- * dan begitu checklist Receiver disubmit (baik lewat step approval Receiver
- * maupun tombol GA Receive manual).
- *
- * - `paymentJustSettled`: true kalau baru saja menyelesaikan sisi
- *   pembayaran (dp_paid && bp_paid sesuai payment_term, atau approve biasa
- *   utk non-DP&BP).
- * - `receiveJustSubmitted`: true kalau baru saja submit checklist receiver.
- * Salah satu harus true (dipanggil dari salah satu sisi), tidak keduanya.
- */
-export const deriveReceiveDrivenStatus = (
-  approvals: Approval[] | null | undefined,
-  hasPaymentValidatorStep: boolean,
-  isFullMatch: boolean | undefined,
-  opts: { paymentJustSettled?: boolean; receiveJustSubmitted?: boolean },
-):
-  | typeof PO_STATUS_PENDING_RECEIVE
-  | "Pending Payment"
-  | typeof PO_STATUS_FULL_RECEIVED
-  | typeof PO_STATUS_PARTIAL_RECEIVE => {
-  const receiverApproved = !!getApprovedReceiverStep(approvals);
-
-  if (opts.paymentJustSettled) {
-    if (receiverApproved && isFullMatch !== undefined) {
-      return isFullMatch ? PO_STATUS_FULL_RECEIVED : PO_STATUS_PARTIAL_RECEIVE;
-    }
-    return PO_STATUS_PENDING_RECEIVE;
-  }
-
-  // receiveJustSubmitted
-  const paymentSettled = !hasPaymentValidatorStep || isPoPaid(approvals);
-  if (paymentSettled) {
-    return isFullMatch ? PO_STATUS_FULL_RECEIVED : PO_STATUS_PARTIAL_RECEIVE;
-  }
-  return "Pending Payment";
-};
+export { deriveReceiveDrivenStatus } from "@/lib/requesterReceipt";
 
 /**
  * Payment Validator baru approve (via approval turn, edit DP/BP di luar

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { Fragment, use, useEffect, useRef, useState, Suspense } from "react";
+import { Fragment, use, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { removeAttachmentVps } from "@/services/storageService";
@@ -41,7 +41,6 @@ import {
   Trash2,
   Paperclip,
   Link2,
-  Upload,
   Truck,
   Building2,
   ExternalLink,
@@ -87,6 +86,29 @@ import {
 } from "@/lib/utils";
 import { DiscussionSection } from "./discussion-component";
 import { FileDropzone } from "@/components/file-dropzone";
+import {
+  ReceiptItemState,
+  getReceiptItemStates,
+  getRequesterReceivedQty,
+  wasConfirmedBeforeGa,
+} from "@/lib/requesterReceipt";
+import { TrackingPo, buildMrTracking } from "@/lib/mrTracking";
+import { TrackingLog } from "@/lib/tracking";
+import { notifyGAOnRequesterReceipt } from "@/lib/notifications/client";
+import {
+  RequesterReceiptDialog,
+  RequesterReceiptSubmission,
+} from "./RequesterReceiptDialog";
+import { MrTrackingCard } from "./MrTrackingCard";
+import {
+  APPROVAL_TURN_RING,
+  ApprovalDecision,
+  ApprovalDecisionButtons,
+  ApprovalStepHeader,
+  ApprovalTurnBadge,
+  ApprovalTurnPrompt,
+  ApprovalTurnSpacer,
+} from "@/components/approval-turn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Combobox, ComboboxData } from "@/components/combobox";
@@ -106,7 +128,6 @@ import {
 } from "@/components/rich-mention-editor";
 import { RichContentView } from "@/components/rich-content-view";
 import { parseRichValue, stringifyRichContent } from "@/lib/rich-content";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -129,7 +150,8 @@ import {
   MR_ITEM_STATUS_COLORS,
   MR_ITEM_STATUS_COLOR_DEFAULT,
   MR_ITEM_STATUS_LABELS,
-  MR_ITEM_BAST_ELIGIBLE_STATUSES,
+  PO_STATUS_PARTIAL_RECEIVE,
+  PO_STATUS_PENDING_RECEIVE,
   PO_REF_STATUS_COLORS,
   PO_REF_STATUS_COLOR_DEFAULT,
   DOC_STATUS_CANCELLED,
@@ -144,7 +166,8 @@ import {
   fetchMaterialRequestById,
   updateMrItemStatus,
   recalculateMrStatus,
-  uploadBastForMrItem,
+  confirmRequesterReceipt,
+  fetchTrackingPosForMr,
   removeBastForMrItem,
   addManualPoLink,
   removeManualPoLink,
@@ -166,11 +189,10 @@ import {
   notifyOnMRApproval,
   notifyGAOnMRSubmit,
 } from "@/lib/notifications/client";
-import { logActivity } from "@/services/logService";
+import { fetchActivityLogs, logActivity } from "@/services/logService";
 import { ActivityLogDialog } from "@/components/activity-log-dialog";
 import { NoteWithLinks } from "@/components/note-with-links";
 import { FollowupApprovalButton } from "@/components/followup-approval-button";
-import { UserAvatar } from "@/components/user-avatar";
 import {
   FormSummaryLayout,
   useUnsavedChanges,
@@ -300,16 +322,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const [manualLinkQty, setManualLinkQty] = useState("");
   const [savingManualLink, setSavingManualLink] = useState(false);
 
-  // --- STATE: UPLOAD BAST PER ITEM (REQUESTER) ---
-  // Bisa upload utk >1 barang sekaligus (mis. 1 foto BAST yg sama mewakili
-  // beberapa barang) - satu file diunggah sekali, lalu dilampirkan ke semua
-  // barang terpilih.
-  const [isBastUploadOpen, setIsBastUploadOpen] = useState(false);
-  const [selectedItemsForBast, setSelectedItemsForBast] = useState<Order[]>(
-    [],
-  );
-  const [bastFiles, setBastFiles] = useState<File[] | null>(null);
-  const [uploadingBast, setUploadingBast] = useState(false);
+  // --- STATE: KONFIRMASI TERIMA BARANG (REQUESTER) ---
+  const [receiptPos, setReceiptPos] = useState<TrackingPo[]>([]);
+  const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
+  const approvalActionsRef = useRef<HTMLDivElement>(null);
+  const [isReceiptDialogOpen, setIsReceiptDialogOpen] = useState(false);
+  const [receiptPreselected, setReceiptPreselected] = useState<number[]>([]);
+  const [submittingReceipt, setSubmittingReceipt] = useState(false);
 
   // --- FETCH DATA ---
   const fetchMrData = async () => {
@@ -386,7 +405,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     if (!mr?.id || isNaN(mrId)) return;
     fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
     fetchPosForMr(mrId).then(setPosForMr);
+    fetchTrackingPosForMr(mrId).then(setReceiptPos).catch(console.error);
   }, [mr?.id]);
+
+  // --- EFFECT: Riwayat validasi/hold utk Lacak MR ---
+  useEffect(() => {
+    if (!mr?.id || isNaN(mrId)) return;
+    fetchActivityLogs("material_request", String(mrId)).then(setTrackingLogs);
+  }, [mr?.id, mr?.status]);
 
   // --- EFFECT: Peta is_asset per barang_id (utk badge Aset/Barang) ---
   useEffect(() => {
@@ -410,6 +436,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
           .slice(0, myApprovalIndex)
           .every((a) => a.status === "approved")
       : false;
+
+  const isApprovalOpen =
+    !!mr &&
+    ["Pending Approval", "Pending Validation", "On Process"].includes(mr.status);
+  const isApprovalTurn = isApprovalOpen && isMyTurnForApproval && !isEditing;
 
   const canEdit =
     userProfile?.role === "admin" ||
@@ -556,7 +587,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     await fetchMrData();
   };
 
-  const handleApprovalAction = async (decision: "approved" | "rejected") => {
+  const handleApprovalAction = async (
+    decision: "approved" | "rejected",
+    rejectionNote?: string,
+  ) => {
     if (!mr || !currentUser) return;
 
     if (isEditing && decision === "approved") {
@@ -574,6 +608,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         currentUser.id,
         decision,
         mr.approvals,
+        rejectionNote,
       );
 
       // Notify next approver (if any) or creator
@@ -592,8 +627,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         decision === "approved" ? "APPROVE_MR" : "REJECT_MR_APPROVER",
         "material_request",
         String(mr.id),
-        `Approver ${userProfile?.nama || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} MR ${mr.kode_mr}`,
-        { decision, approval_index: myIndex },
+        `Approver ${userProfile?.nama || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} MR ${mr.kode_mr}${rejectionNote ? ` dengan catatan: ${rejectionNote}` : ""}`,
+        { decision, approval_index: myIndex, rejection_note: rejectionNote || null },
       );
 
       notifyOnMRApproval({
@@ -603,6 +638,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         decision,
         kodeMR: mr.kode_mr,
         mrId: mr.id,
+        rejectionNote,
       });
 
       toast.success(
@@ -1064,47 +1100,40 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     }
   };
 
-  // --- UPLOAD BAST PER ITEM (REQUESTER) ---
-  // `items` di-pre-select (1 barang dari tombol per-baris, semua barang dari
-  // banner "Konfirmasi Barang Diterima"); dialog tetap
-  // nampilin semua barang berstatus "On Delivery" (atau "Pending BAST" utk
-  // data lama) biar bisa nambah barang lain (utk kasus 1 foto BAST yg sama
-  // dipakai buat beberapa barang).
-  const bastEligibleItems = (mr?.orders || []).filter(
-    (o) =>
-      MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(o.status || "") &&
-      o.part_number,
+  // --- KONFIRMASI TERIMA BARANG (REQUESTER) ---
+  // Requester bisa langsung mengonfirmasi barang yang sudah sampai walaupun
+  // langkah GA/pembayaran di sistem belum jalan - lihat lib/requesterReceipt.ts.
+  const receiptStates = useMemo(
+    () => getReceiptItemStates(mr?.orders || [], receiptPos),
+    [mr?.orders, receiptPos],
+  );
+  const confirmableStates = useMemo(
+    () => receiptStates.filter((s) => s.canConfirm),
+    [receiptStates],
   );
 
-  const handleOpenBastUpload = (items: Order[] = []) => {
-    setSelectedItemsForBast(items);
-    setBastFiles(null);
-    setIsBastUploadOpen(true);
+  const handleOpenReceiptDialog = (indices: number[] = []) => {
+    setReceiptPreselected(indices);
+    setIsReceiptDialogOpen(true);
   };
 
-  const toggleBastItemSelection = (item: Order) => {
-    setSelectedItemsForBast((prev) =>
-      prev.some((it) => it.part_number === item.part_number)
-        ? prev.filter((it) => it.part_number !== item.part_number)
-        : [...prev, item],
-    );
+  const refreshAfterReceiptChange = async () => {
+    await fetchMrData();
+    await Promise.all([
+      fetchTrackingPosForMr(mrId).then(setReceiptPos),
+      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown),
+    ]);
   };
 
-  const handleUploadItemBast = async () => {
-    if (!mr || selectedItemsForBast.length === 0) {
-      toast.error("Pilih minimal satu barang");
-      return;
-    }
-    if (!bastFiles || bastFiles.length === 0) {
-      toast.error("Pilih file bukti penerimaan terlebih dahulu");
-      return;
-    }
-    if (!currentUser) {
+  const handleSubmitReceipt = async ({
+    items,
+    files,
+  }: RequesterReceiptSubmission) => {
+    if (!mr || !currentUser) {
       toast.error("Sesi tidak valid, silakan muat ulang halaman");
       return;
     }
-
-    for (const file of bastFiles) {
+    for (const file of files) {
       const sizeError = getAttachmentSizeError(file);
       if (sizeError) {
         toast.error("Ukuran file terlalu besar", { description: sizeError });
@@ -1112,77 +1141,95 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       }
     }
 
-    setUploadingBast(true);
+    setSubmittingReceipt(true);
     try {
-      // Upload file(s) SEKALI, lalu lampirkan hasil yang sama ke setiap
-      // barang terpilih - bukan upload ulang per barang.
-      const pathSegment =
-        selectedItemsForBast.length === 1
-          ? selectedItemsForBast[0].part_number
-          : "multi-item";
-      const uploadedAttachments: Attachment[] = [];
-      for (let i = 0; i < bastFiles.length; i++) {
-        const file = bastFiles[i];
-        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/bast/${pathSegment}/${Date.now()}_${file.name}`;
+      // File diunggah sekali, lalu dilampirkan ke semua barang terpilih.
+      const attachments: Attachment[] = [];
+      for (const file of files) {
+        const filePath = `${mr.kode_mr.replace(/\//g, "-")}/bast/multi-item/${Date.now()}_${file.name}`;
         const result = await uploadAttachmentDirect(file, filePath);
         if (!result.success) throw new Error(result.message);
-        uploadedAttachments.push({
-          name: file.name,
-          url: result.url,
-          type: "bast",
-        });
+        attachments.push({ name: file.name, url: result.url, type: "bast" });
       }
 
-      // Sequential (bukan Promise.all) - uploadBastForMrItem baca-ubah-tulis
-      // seluruh array `orders`, jadi kalau dijalankan paralel utk barang2
-      // dari MR yang sama, update bisa saling menimpa (lost update).
-      for (const item of selectedItemsForBast) {
-        if (!item.part_number) continue;
-        await uploadBastForMrItem(
-          mrId,
-          item.part_number,
-          uploadedAttachments,
-          currentUser.id,
-        );
-      }
+      const actorName = userProfile?.nama || currentUser.email || "Unknown";
+      const plan = await confirmRequesterReceipt({
+        mrId,
+        entries: items.map((item) => ({ ...item, attachments })),
+        actor: { id: currentUser.id, name: actorName },
+        via: "requester",
+      });
 
       await logActivity(
         currentUser.id,
-        "UPLOAD_ITEM_BAST",
+        "CONFIRM_REQUESTER_RECEIPT",
         "material_request",
         String(mrId),
-        `Requester ${userProfile?.nama || "Unknown"} mengunggah ${uploadedAttachments.length} file bukti penerimaan untuk ${selectedItemsForBast.length} barang pada MR ${mr.kode_mr}`,
+        `Requester ${actorName} mengonfirmasi penerimaan ${items.length} barang pada MR ${mr.kode_mr}`,
         {
-          part_numbers: selectedItemsForBast.map((it) => it.part_number),
-          files: uploadedAttachments.map((att) => att.name),
+          items: items.map(({ index, qty }) => ({
+            name: mr.orders[index]?.name,
+            part_number: mr.orders[index]?.part_number,
+            qty,
+          })),
+          files: attachments.map((att) => att.name),
+          po_updates: plan.poUpdates.map((po) => ({
+            kode_po: po.kode_po,
+            status: po.status,
+          })),
         },
       );
+      await Promise.all(
+        plan.poUpdates.map((po) =>
+          logActivity(
+            currentUser.id,
+            "RECEIVE_GOODS",
+            "purchase_order",
+            String(po.id),
+            `Requester ${actorName} mengonfirmasi barang PO ${po.kode_po} sudah diterima lewat MR ${mr.kode_mr}`,
+            { is_full_match: po.receive_record?.is_full_match },
+          ),
+        ),
+      );
+      if (plan.bypassedGaCount > 0 && mr.company_code) {
+        notifyGAOnRequesterReceipt({
+          actorId: currentUser.id,
+          actorName,
+          companyCode: mr.company_code,
+          kodeMR: mr.kode_mr,
+          mrId,
+          itemCount: plan.bypassedGaCount,
+        }).catch(console.error);
+      }
 
       toast.success(
-        selectedItemsForBast.length === 1
-          ? "Bukti penerimaan berhasil diunggah, item ditandai selesai"
-          : `Bukti penerimaan berhasil diunggah untuk ${selectedItemsForBast.length} barang`,
+        plan.partialCount > 0
+          ? `${plan.completedCount} barang selesai, ${plan.partialCount} barang diterima sebagian`
+          : `${plan.completedCount} barang ditandai selesai`,
       );
-      setIsBastUploadOpen(false);
-      await fetchMrData();
-      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+      setIsReceiptDialogOpen(false);
+      await refreshAfterReceiptChange();
     } catch (err: any) {
-      toast.error("Gagal upload bukti penerimaan", {
+      toast.error("Gagal mengonfirmasi penerimaan", {
         description: getUploadErrorMessage(err),
       });
+      // Bisa jadi gagal karena dokumen berubah - tampilkan kondisi terbaru.
+      await refreshAfterReceiptChange();
     } finally {
-      setUploadingBast(false);
+      setSubmittingReceipt(false);
     }
   };
 
   const handleRemoveItemBast = async (item: Order, attachmentUrl: string) => {
-    if (!item.part_number || !currentUser) return;
+    if (!currentUser) return;
+    const itemIndex = mr?.orders.indexOf(item) ?? -1;
     try {
       await removeBastForMrItem(
         mrId,
         item.part_number,
         attachmentUrl,
         currentUser.id,
+        itemIndex !== -1 ? itemIndex : undefined,
       );
 
       await logActivity(
@@ -1195,8 +1242,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
       );
 
       toast.success("Lampiran bukti penerimaan dihapus");
-      await fetchMrData();
-      fetchPoQtyBreakdownForMr(mrId).then(setPoBreakdown);
+      setBastDetailItem(null);
+      await refreshAfterReceiptChange();
     } catch (err: any) {
       toast.error("Gagal hapus lampiran bukti penerimaan", {
         description: err.message,
@@ -1465,15 +1512,11 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   };
 
 
-  const ApprovalActions = () => {
-    const activeStatuses = [
-      "Pending Approval",
-      "Pending Validation",
-      "On Process",
-    ];
-
+  // Dipanggil sebagai fungsi, bukan <Komponen />: komponen yang dibuat ulang tiap
+  // render akan ikut menutup dialog konfirmasi Tolak di dalamnya.
+  const renderApprovalActions = () => {
     if (!mr || !currentUser) return null;
-    if (!activeStatuses.includes(mr.status) || myApprovalIndex === -1)
+    if (!isApprovalOpen || myApprovalIndex === -1)
       return (
         <p className="text-sm text-muted-foreground text-center">
           Tidak ada tindakan yang diperlukan.
@@ -1487,35 +1530,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </p>
       );
 
-    return (
-      <div className="flex gap-2">
-        <Button
-          className="w-full"
-          onClick={() => handleApprovalAction("approved")}
-          disabled={actionLoading}
-        >
-          {actionLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Check className="mr-2 h-4 w-4" />
-          )}{" "}
-          Setujui
-        </Button>
-        <Button
-          variant="destructive"
-          className="w-full"
-          onClick={() => handleApprovalAction("rejected")}
-          disabled={actionLoading}
-        >
-          {actionLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <X className="mr-2 h-4 w-4" />
-          )}{" "}
-          Tolak
-        </Button>
-      </div>
-    );
+    return <ApprovalDecisionButtons decision={approvalDecision} />;
   };
 
   const getStatusBadge = (status: string) => {
@@ -1641,6 +1656,24 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
     isOwner && (mr.status === "Pending Validation" || mr.status === "Draft");
 
   const isRevision = mr.status === "On Hold";
+
+  const approvalDecision: ApprovalDecision = {
+    docLabel: "MR",
+    kode: mr.kode_mr,
+    approveLabel: "Setujui",
+    rejectLabel: "Tolak",
+    loading: actionLoading,
+    onApprove: () => handleApprovalAction("approved"),
+    onReject: (note) => handleApprovalAction("rejected", note),
+  };
+
+  const tracking = buildMrTracking({
+    mr,
+    pos: receiptPos,
+    logs: trackingLogs,
+    isOwner,
+    now: new Date(),
+  });
 
   return (
     <>
@@ -1794,34 +1827,25 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             />
           )}
 
-          {/* Requester bisa langsung menyelesaikan barang yang masih dalam
-              pengiriman dari sini (boleh upload file/galeri) - tanpa harus
-              scan QR dari cetakan BAST. Tombol per-baris di tabel barang
-              tetap ada, tapi gampang kelewat (tabel lebar, harus geser di HP). */}
-          {isOwner && !isEditing && bastEligibleItems.length > 0 && (
-            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
-              <div className="flex items-start gap-3">
-                <Truck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                <div>
-                  <p className="text-sm font-medium">
-                    {bastEligibleItems.length} barang sedang dalam pengiriman ke
-                    Anda
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Sudah terima barangnya? Konfirmasi di sini dengan unggah
-                    bukti penerimaan, tidak perlu scan QR dari cetakan BAST.
-                  </p>
-                </div>
-              </div>
-              <Button
-                className="shrink-0"
-                onClick={() => handleOpenBastUpload(bastEligibleItems)}
-              >
-                <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang
-                Diterima
-              </Button>
-            </div>
+          {isApprovalTurn && (
+            <ApprovalTurnPrompt
+              className="mb-6"
+              title="Giliran Anda menyetujui MR ini"
+              hint={`Tahap ${myApprovalIndex + 1} dari ${mr.approvals.length}. Periksa isi MR, lalu pilih Setujui atau Tolak.`}
+              decision={approvalDecision}
+              actionsRef={approvalActionsRef}
+            />
           )}
+
+          {isOwner && !isEditing && (
+            <RequesterReceiptBanner
+              mrStatus={mr.status}
+              states={receiptStates}
+              onConfirm={() => handleOpenReceiptDialog()}
+            />
+          )}
+
+          {!isEditing && <MrTrackingCard tracking={tracking} />}
         </div>
 
         <div
@@ -2089,13 +2113,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             title="Daftar Barang (Item Request)"
             cardAction={
               <div className="flex items-center gap-2">
-                {isOwner && bastEligibleItems.length > 0 && (
+                {isOwner && !isEditing && confirmableStates.length > 1 && (
                   <Button
                     variant="outline"
-                    onClick={() => handleOpenBastUpload()}
+                    onClick={() => handleOpenReceiptDialog()}
                   >
-                    <Upload className="mr-2 h-4 w-4" /> Upload Bukti Penerimaan
-                    Massal
+                    <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang
+                    Diterima
                   </Button>
                 )}
                 {isEditing && (
@@ -2390,19 +2414,34 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                                 </Button>
                               )}
 
+                              {item.status !== "Completed" &&
+                                getRequesterReceivedQty(item) > 0 && (
+                                  <span className="text-[10px] text-amber-600">
+                                    Diterima {getRequesterReceivedQty(item)} /{" "}
+                                    {Number(item.qty) || 0} {item.uom}
+                                  </span>
+                                )}
+
+                              {item.status === "Completed" &&
+                                wasConfirmedBeforeGa(item) && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Dikonfirmasi langsung oleh requester
+                                  </span>
+                                )}
+
                               {isOwner &&
-                                MR_ITEM_BAST_ELIGIBLE_STATUSES.includes(
-                                  item.status || "",
-                                ) &&
-                                item.part_number && (
+                                !isEditing &&
+                                receiptStates[index]?.canConfirm && (
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs"
-                                    onClick={() => handleOpenBastUpload([item])}
+                                    onClick={() =>
+                                      handleOpenReceiptDialog([index])
+                                    }
                                   >
-                                    <Upload className="mr-1 h-3 w-3" /> Upload
-                                    Bukti Terima
+                                    <PackageCheck className="mr-1 h-3 w-3" />{" "}
+                                    Konfirmasi Terima
                                   </Button>
                                 )}
 
@@ -2468,9 +2507,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             isEditing ? "@4xl/form:col-span-4" : "lg:col-span-4",
           )}
         >
-          <Content title="Tindakan">
-            <div className="flex flex-col gap-2">
-              {!isEditing && <ApprovalActions />}
+          <Content
+            title="Tindakan"
+            className={cn(isApprovalTurn && APPROVAL_TURN_RING)}
+            cardAction={isApprovalTurn ? <ApprovalTurnBadge /> : undefined}
+          >
+            <div ref={approvalActionsRef} className="flex flex-col gap-2">
+              {!isEditing && renderApprovalActions()}
               {isEditing && (
                 <p className="text-sm text-center text-muted-foreground">
                   Simpan perubahan atau setujui untuk melanjutkan.
@@ -2498,39 +2541,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                         isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
                       )}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <UserAvatar
-                          userId={approver.userid}
-                          name={approver.nama}
-                          className="h-9 w-9"
-                          fallbackClassName="text-xs"
-                        />
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="font-semibold flex flex-wrap items-center gap-2">
-                            <span className="break-words">{approver.nama}</span>
-                            <Badge variant={"outline"}>
-                              {approver.department}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {approver.type}
-                          </p>
-                          {approver.status !== "pending" &&
-                            approver.processed_at && (
-                              <p className="text-xs text-muted-foreground italic">
-                                {formatDateWithTime(approver.processed_at)}
-                              </p>
-                            )}
-                        </div>
-                        <div className="flex-shrink-0">
-                          {getApprovalStatusBadge(
-                            approver.status as
-                              | "approved"
-                              | "rejected"
-                              | "pending",
-                          )}
-                        </div>
-                      </div>
+                      <ApprovalStepHeader
+                        approver={approver}
+                        statusBadge={getApprovalStatusBadge(approver.status)}
+                      />
                       {isMyTurn &&
                         approver.status === "pending" &&
                         currentUser?.id !== approver.userid && (
@@ -2698,6 +2712,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             initialDiscussions={mr.discussions as Discussion[]}
           />
         </div>
+
+        {isApprovalTurn && <ApprovalTurnSpacer />}
       </FormSummaryLayout>
 
       {/* Dialog Item (Updated with Part Number & Status Preservation) */}
@@ -3317,89 +3333,75 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Upload BAST per Item (bisa pilih >1 barang sekaligus) */}
-      <Dialog open={isBastUploadOpen} onOpenChange={setIsBastUploadOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Bukti Penerimaan Barang</DialogTitle>
-            <DialogDescription>
-              Unggah bukti penerimaan barang (foto/dokumen serah terima).
-              Barang yang dicentang akan ditandai selesai dengan bukti yang
-              sama.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Barang ({selectedItemsForBast.length} dipilih)</Label>
-              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
-                {bastEligibleItems.length === 0 ? (
-                  <div className="p-3 text-sm text-muted-foreground">
-                    Tidak ada barang yang bisa diunggah bukti penerimaannya.
-                  </div>
-                ) : (
-                  bastEligibleItems.map((item) => {
-                    const checked = selectedItemsForBast.some(
-                      (it) => it.part_number === item.part_number,
-                    );
-                    return (
-                      <label
-                        key={item.part_number}
-                        className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-muted/50"
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() =>
-                            toggleBastItemSelection(item)
-                          }
-                        />
-                        <span className="flex-1">
-                          {item.name}{" "}
-                          <span className="text-muted-foreground">
-                            ({item.qty} {item.uom})
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="item-bast-file">
-                File Bukti Penerimaan / Bukti Foto
-              </Label>
-              <FileDropzone
-                id="item-bast-file"
-                multiple
-                onFiles={setBastFiles}
-                selectedFiles={bastFiles}
-                className="mt-2"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBastUploadOpen(false)}
-              disabled={uploadingBast}
-            >
-              Batal
-            </Button>
-            <Button
-              onClick={handleUploadItemBast}
-              disabled={uploadingBast || selectedItemsForBast.length === 0}
-            >
-              {uploadingBast && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Upload & Selesaikan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RequesterReceiptDialog
+        open={isReceiptDialogOpen}
+        onOpenChange={setIsReceiptDialogOpen}
+        states={confirmableStates}
+        preselectedIndices={receiptPreselected}
+        submitting={submittingReceipt}
+        onSubmit={handleSubmitReceipt}
+      />
     </>
   );
 }
+
+// Status MR yang barangnya sedang berjalan - sebelum ini belum ada PO, sesudah
+// ini tidak ada lagi yang perlu dikerjakan requester.
+const RECEIPT_ACTIVE_MR_STATUSES = [
+  "Waiting PO",
+  "On Process",
+  PO_STATUS_PENDING_RECEIVE,
+  PO_STATUS_PARTIAL_RECEIVE,
+];
+
+// Memberi tahu requester langkah berikutnya, supaya status dokumen yang belum
+// bergerak tidak terbaca sebagai jalan buntu.
+const RequesterReceiptBanner = ({
+  mrStatus,
+  states,
+  onConfirm,
+}: {
+  mrStatus: string;
+  states: ReceiptItemState[];
+  onConfirm: () => void;
+}) => {
+  if (!RECEIPT_ACTIVE_MR_STATUSES.includes(mrStatus)) return null;
+
+  const confirmableCount = states.filter((s) => s.canConfirm).length;
+  const waiting = new Map<string, number>();
+  for (const state of states) {
+    if (state.stage === "done" || state.stage === "closed") continue;
+    waiting.set(state.message, (waiting.get(state.message) || 0) + 1);
+  }
+  // Posisi barang yang belum bisa dikonfirmasi sudah tampil di Lacak MR.
+  if (waiting.size === 0 || confirmableCount === 0) return null;
+
+  return (
+    <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+      <div className="flex items-start gap-3 min-w-0">
+        <Truck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            Barang sudah sampai? Anda bisa langsung mengonfirmasi
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Tidak perlu menunggu proses GA atau status pembayaran PO.
+          </p>
+          <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            {[...waiting].map(([message, count]) => (
+              <li key={message}>
+                {count} barang: {message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <Button className="shrink-0" onClick={onConfirm}>
+        <PackageCheck className="mr-2 h-4 w-4" /> Konfirmasi Barang Diterima
+      </Button>
+    </div>
+  );
+};
 
 const DetailMRSkeleton = () => (
   <>

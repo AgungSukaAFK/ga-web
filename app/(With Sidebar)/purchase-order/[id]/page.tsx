@@ -89,6 +89,16 @@ import {
 } from "@/services/purchaseOrderService";
 import { getReceiverTurnIndex } from "@/services/adminApprovalOverrideService";
 import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
+import { PoTrackingCard } from "./PoTrackingCard";
+import {
+  APPROVAL_TURN_RING,
+  ApprovalDecision,
+  ApprovalDecisionButtons,
+  ApprovalStepHeader,
+  ApprovalTurnBadge,
+  ApprovalTurnPrompt,
+  ApprovalTurnSpacer,
+} from "@/components/approval-turn";
 import { PaginatedPrintDocument } from "./PaginatedPrintDocument";
 import { PrintablePO } from "../PrintablePO";
 import {
@@ -103,7 +113,9 @@ import {
   setItemPaymentIssue,
 } from "@/services/mrService";
 import { notifyOnPOApproval } from "@/lib/notifications/client";
-import { logActivity } from "@/services/logService";
+import { fetchActivityLogs, logActivity } from "@/services/logService";
+import { buildPoTracking } from "@/lib/poTracking";
+import { TrackingLog } from "@/lib/tracking";
 import { ensureReceiptToken } from "@/services/goodsReceiptService";
 import {
   DropdownMenu,
@@ -168,7 +180,6 @@ import { ItemLevelBadge } from "@/components/item-level-badge";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { COMPANY_DETAILS, waitForLogoReady } from "@/lib/companyDetails";
 import { printWithFileName } from "@/lib/print";
-import { UserAvatar } from "@/components/user-avatar";
 
 const PPH_LABELS: Record<string, string> = {
   pph21_npwp: "PPH 21 — Dengan NPWP",
@@ -221,6 +232,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const supabase = createClient();
 
   const [po, setPo] = useState<PurchaseOrderDetail | null>(null);
+  const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
+  const approvalActionsRef = useRef<HTMLDivElement>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -417,6 +430,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     };
     initializePage();
   }, [poId]);
+
+  useEffect(() => {
+    if (!po?.id) return;
+    fetchActivityLogs("purchase_order", String(po.id)).then(setTrackingLogs);
+  }, [po?.id, po?.status, po?.dp_paid, po?.bp_paid]);
 
   useEffect(() => {
     const barangIds = (po?.material_requests?.orders || [])
@@ -1298,6 +1316,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     decision: "approved" | "rejected",
     paymentProgress?: { dp_paid: boolean; bp_paid: boolean },
     proofFile?: File,
+    rejectionNote?: string,
   ) => {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
@@ -1361,6 +1380,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
       if (decision === "rejected") {
         newPoStatus = "Rejected";
+        updatedApprovals[myApprovalIndex].rejection_note = rejectionNote || null;
       } else if (decision === "approved") {
         const justApprovedApproval = updatedApprovals[myApprovalIndex];
         const justApprovedType = justApprovedApproval.type;
@@ -1470,23 +1490,31 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       decision,
       kodePO: po.kode_po,
       poId: po.id,
+      rejectionNote,
     });
 
+    const decisionSummary = `${userProfile?.nama || currentUser.email || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} PO ${po.kode_po} pada tahap ${updatedApprovals[myApprovalIndex]?.type || "approval"}${rejectionNote ? ` dengan catatan: ${rejectionNote}` : ""}`;
     await logActivity(
       currentUser.id,
       decision === "approved" ? "APPROVE_PO" : "REJECT_PO",
       "purchase_order",
       String(po.id),
-      `${userProfile?.nama || currentUser.email || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} PO ${po.kode_po} pada tahap ${updatedApprovals[myApprovalIndex]?.type || "approval"}`,
+      decisionSummary,
       {
         approval_type: updatedApprovals[myApprovalIndex]?.type,
         new_status: newPoStatus,
+        rejection_note: rejectionNote || null,
       },
     );
     await logMrActivity(
       decision === "approved" ? "APPROVE_PO" : "REJECT_PO",
-      `${userProfile?.nama || currentUser.email || "Unknown"} ${decision === "approved" ? "menyetujui" : "menolak"} PO ${po.kode_po} pada tahap ${updatedApprovals[myApprovalIndex]?.type || "approval"}`,
-      { po_id: po.id, approval_type: updatedApprovals[myApprovalIndex]?.type, new_status: newPoStatus },
+      decisionSummary,
+      {
+        po_id: po.id,
+        approval_type: updatedApprovals[myApprovalIndex]?.type,
+        new_status: newPoStatus,
+        rejection_note: rejectionNote || null,
+      },
     );
 
     toast.success(
@@ -1847,16 +1875,35 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     handleApprovalAction("approved");
   };
 
-  const ApprovalActions = () => {
+  const isApprovalOpen =
+    !!po &&
+    [
+      "Pending Approval",
+      "Pending Payment",
+      PO_STATUS_PENDING_RECEIVE,
+      PO_STATUS_PARTIAL_RECEIVE,
+      PO_STATUS_FULL_RECEIVED,
+    ].includes(po.status);
+  const isApprovalTurn = isApprovalOpen && isMyTurnForApproval;
+
+  const approvalDecision: ApprovalDecision = {
+    docLabel: "PO",
+    kode: po?.kode_po || "",
+    approveLabel: "Setujui PO",
+    rejectLabel: "Tolak PO",
+    loading: actionLoading,
+    approveOpensForm:
+      myApproval?.type === APPROVAL_TYPE_RECEIVER || isPaymentValidatorTurn,
+    onApprove: handleClickApprove,
+    onReject: (note) => handleApprovalAction("rejected", undefined, undefined, note),
+  };
+
+  // Dipanggil sebagai fungsi, bukan <Komponen />: komponen yang dibuat ulang tiap
+  // render akan ikut menutup dialog konfirmasi Tolak di dalamnya.
+  const renderApprovalActions = () => {
     if (!po || !currentUser) return null;
 
-    if (
-      po.status !== "Pending Approval" &&
-      po.status !== "Pending Payment" &&
-      po.status !== PO_STATUS_PENDING_RECEIVE &&
-      po.status !== PO_STATUS_PARTIAL_RECEIVE &&
-      po.status !== PO_STATUS_FULL_RECEIVED
-    )
+    if (!isApprovalOpen)
       return (
         <p className="text-sm text-muted-foreground text-center">
           Tidak ada tindakan yang diperlukan.
@@ -1885,35 +1932,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         </p>
       );
 
-    return (
-      <div className="flex gap-2">
-        <Button
-          className="w-full"
-          onClick={handleClickApprove}
-          disabled={actionLoading}
-        >
-          {actionLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Check className="mr-2 h-4 w-4" />
-          )}{" "}
-          Setujui PO
-        </Button>
-        <Button
-          variant="destructive"
-          className="w-full"
-          onClick={() => handleApprovalAction("rejected")}
-          disabled={actionLoading}
-        >
-          {actionLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <X className="mr-2 h-4 w-4" />
-          )}{" "}
-          Tolak PO
-        </Button>
-      </div>
-    );
+    return <ApprovalDecisionButtons decision={approvalDecision} />;
   };
 
   const getStatusBadge = (status: string) => {
@@ -2140,6 +2159,29 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const companyInfo = COMPANY_DETAILS[companyKey] || COMPANY_DETAILS.DEFAULT;
   const priorityText = getDaysRemaining(po.material_requests?.due_date);
 
+  const approvalTurnCopy =
+    myApproval?.type === APPROVAL_TYPE_RECEIVER
+      ? {
+          title: "Giliran Anda mencatat penerimaan barang",
+          hint: "Setujui PO akan membuka checklist penerimaan barang.",
+        }
+      : isPaymentValidatorTurn
+        ? {
+            title: "Giliran Anda memvalidasi pembayaran PO ini",
+            hint: "Setujui PO akan membuka form bukti pembayaran.",
+          }
+        : {
+            title: "Giliran Anda menyetujui PO ini",
+            hint: "Periksa isi PO, lalu pilih Setujui atau Tolak.",
+          };
+
+  const tracking = buildPoTracking({
+    po,
+    logs: trackingLogs,
+    isRequester: isMrRequesterForThisPO,
+    now: new Date(),
+  });
+
   return (
     <>
       <Content className="no-print">
@@ -2285,6 +2327,22 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           {po.closed_remainder && (
             <ClosedRemainderNotice className="col-span-12" closed={po.closed_remainder} />
           )}
+
+          {isApprovalTurn && (
+            <ApprovalTurnPrompt
+              className="col-span-12"
+              title={approvalTurnCopy.title}
+              hint={`Tahap ${myApprovalIndex + 1} dari ${po.approvals?.length}. ${approvalTurnCopy.hint}`}
+              decision={approvalDecision}
+              actionsRef={approvalActionsRef}
+            />
+          )}
+
+          <PoTrackingCard
+            className="col-span-12"
+            tracking={tracking}
+            paymentTerm={po.payment_term}
+          />
 
           <div className="col-span-12 lg:col-span-8 space-y-6">
             <Content title="Informasi Utama">
@@ -2807,8 +2865,12 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
           </div>
 
           <div className="col-span-12 lg:col-span-4 space-y-6">
-            <Content title="Tindakan">
-              <ApprovalActions />
+            <Content
+              title="Tindakan"
+              className={cn(isApprovalTurn && APPROVAL_TURN_RING)}
+              cardAction={isApprovalTurn ? <ApprovalTurnBadge /> : undefined}
+            >
+              <div ref={approvalActionsRef}>{renderApprovalActions()}</div>
               {po.status === PO_STATUS_FULL_RECEIVED && (
                 <div className="mt-2">
                   <p className="text-sm text-green-600 font-medium mb-2 flex items-center gap-2">
@@ -2833,41 +2895,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           isMyTurn && "bg-primary/10 ring-2 ring-primary/50",
                         )}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <UserAvatar
-                            userId={approver.userid}
-                            name={approver.nama}
-                            className="h-9 w-9"
-                            fallbackClassName="text-xs"
-                          />
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="font-semibold flex flex-wrap items-center gap-2">
-                              <span className="break-words">
-                                {approver.nama}
-                              </span>
-                              <Badge variant={"outline"}>
-                                {approver.department}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {approver.type}
-                            </p>
-                            {approver.status !== "pending" &&
-                              approver.processed_at && (
-                                <p className="text-xs text-muted-foreground italic">
-                                  {formatDateWithTime(approver.processed_at)}
-                                </p>
-                              )}
-                          </div>
-                          <div className="flex-shrink-0">
-                            {getApprovalStatusBadge(
-                              approver.status as
-                                | "approved"
-                                | "rejected"
-                                | "pending",
-                            )}
-                          </div>
-                        </div>
+                        <ApprovalStepHeader
+                          approver={approver}
+                          statusBadge={getApprovalStatusBadge(approver.status)}
+                        />
                         {isMyTurn &&
                           approver.status === "pending" &&
                           currentUser?.id !== approver.userid && (
@@ -3110,6 +3141,8 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               </Content>
             )}
           </div>
+
+          {isApprovalTurn && <ApprovalTurnSpacer />}
         </div>
 
         <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
@@ -4347,6 +4380,12 @@ const PrintableReceiveRecord = ({
         <span className="font-semibold">Waktu:</span>{" "}
         {new Date(receiveRecord.received_at).toLocaleString("id-ID")}
       </p>
+      {receiveRecord.requester_confirmed_by_name && (
+        <p>
+          <span className="font-semibold">Dikonfirmasi requester:</span>{" "}
+          {receiveRecord.requester_confirmed_by_name}
+        </p>
+      )}
     </div>
   );
 

@@ -9,6 +9,9 @@ export interface Approval {
   role: string;
   department: string;
   processed_at?: string | null;
+  // Catatan opsional dari approver yang menolak. Hanya berarti selama status
+  // "rejected" - baris yang direset admin bisa masih membawa catatan lama.
+  rejection_note?: string | null;
 }
 
 // REVISI: Tambahkan field untuk integrasi Master Barang
@@ -70,6 +73,33 @@ export interface Order {
   // adminDocumentActionService.ts) - `qty` sekarang = qty yang benar-benar
   // diterima/dipesan. Diisi sekali (qty paling awal), tidak ditimpa lagi.
   qty_before_close?: string;
+  // Konfirmasi terima dari requester, bertumpuk per kedatangan barang - lihat
+  // lib/requesterReceipt.ts. Item jadi "Completed" begitu totalnya penuh.
+  requester_receipts?: RequesterReceiptEntry[];
+}
+
+// Qty yang ditulis satu konfirmasi ke `receive_record` sebuah PO - disimpan
+// supaya bisa dikurangi lagi kalau konfirmasinya dibatalkan.
+export interface RequesterReceiptAllocation {
+  po_id: number;
+  kode_po: string;
+  part_number: string;
+  qty: number;
+  // True kalau PO belum punya receive_record sebelum konfirmasi ini.
+  created_record: boolean;
+}
+
+export interface RequesterReceiptEntry {
+  id: string;
+  qty: number;
+  confirmed_at: string;
+  confirmed_by: string;
+  confirmed_by_name: string;
+  via: "requester" | "scan_qr";
+  attachment_urls: string[];
+  allocations: RequesterReceiptAllocation[];
+  prev_status?: MrItemStatus;
+  prev_level?: MrItemLevel;
 }
 
 export interface MrConversionRecord {
@@ -457,6 +487,10 @@ export interface ReceiveRecord {
   received_by: string;
   received_by_name: string;
   received_at: string;
+  // Diisi kalau qty-nya (sebagian) berasal dari konfirmasi requester, bukan
+  // checklist GA - lihat lib/requesterReceipt.ts.
+  requester_confirmed_by_name?: string;
+  requester_confirmed_at?: string;
 }
 
 export interface MaterialRequestListItem {

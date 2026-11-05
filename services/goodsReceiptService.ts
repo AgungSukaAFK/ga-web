@@ -9,7 +9,8 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { normalizeMrOrders, uploadBastForMrItem } from "./mrService";
+import { confirmRequesterReceipt, fetchReceiptPosForMr, normalizeMrOrders } from "./mrService";
+import { getReceiptItemStates } from "@/lib/requesterReceipt";
 import {
   Attachment,
   GoodsReceipt,
@@ -196,6 +197,11 @@ export interface GoodsReceiptView {
 const isMrItemInPO = (order: Order, poItems: { part_number: string }[]) =>
   !!order.part_number && poItems.some((pi) => pi.part_number === order.part_number);
 
+const isOrderOpen = (order: Order) =>
+  order.status !== MR_ITEM_STATUSES.COMPLETED &&
+  order.status !== MR_ITEM_STATUSES.CANCELLED &&
+  order.status !== MR_ITEM_STATUSES.REPLACED;
+
 export async function fetchGoodsReceiptView(
   token: string,
 ): Promise<GoodsReceiptView | null> {
@@ -232,7 +238,7 @@ export async function fetchGoodsReceiptView(
   const vendorName = (po.vendor_details as any)?.nama_vendor || "N/A";
 
   const eligibleOrders = mrOrders.filter(
-    (o) => isMrItemInPO(o, poItems) && o.status !== MR_ITEM_STATUSES.COMPLETED,
+    (o) => isMrItemInPO(o, poItems) && isOrderOpen(o),
   );
 
   if (po.goods_receipt || eligibleOrders.length === 0) {
@@ -310,7 +316,7 @@ export async function submitGoodsReceipt(
   const poItems: any[] = Array.isArray(po.items) ? po.items : [];
   const mrOrders = normalizeMrOrders((mr as any)?.orders || []);
   const eligibleOrders = mrOrders.filter(
-    (o) => isMrItemInPO(o, poItems) && o.status !== MR_ITEM_STATUSES.COMPLETED,
+    (o) => isMrItemInPO(o, poItems) && isOrderOpen(o),
   );
 
   if (po.goods_receipt || eligibleOrders.length === 0) {
@@ -393,6 +399,8 @@ export async function submitGoodsReceipt(
     if (!match || !Number.isFinite(match.qty_received) || match.qty_received < 0) {
       return { success: false, message: `Qty untuk item ${pn} belum diisi dengan benar.` };
     }
+    // Barang yang belum datang (qty 0) tidak punya foto dan tidak diselesaikan.
+    if (match.qty_received === 0) continue;
     if (!submittedPhotos[pn]?.url) {
       return { success: false, message: `Foto untuk item ${pn} wajib diunggah.` };
     }
@@ -404,32 +412,70 @@ export async function submitGoodsReceipt(
     }
   }
 
+  // Jalur yang sama dengan konfirmasi di halaman MR, supaya item, status MR, dan
+  // receive_record PO selalu bergerak bersama.
+  const receiptStates = getReceiptItemStates(
+    mrOrders,
+    await fetchReceiptPosForMr(po.mr_id, admin),
+  );
+  const claimedIndices = new Set<number>();
   const goodsReceiptItems: GoodsReceiptItem[] = [];
+  const receiptEntries: { index: number; qty: number; attachments: Attachment[] }[] = [];
   for (const item of submittedItems) {
     if (!eligiblePartNumbers.has(item.part_number)) continue;
     const photo = submittedPhotos[item.part_number];
-    if (!photo?.url) continue;
+    if (item.qty_received <= 0 || !photo?.url) continue;
+
+    const state = receiptStates.find(
+      (s) =>
+        s.canConfirm &&
+        s.order.part_number === item.part_number &&
+        !claimedIndices.has(s.index),
+    );
+    if (!state) {
+      const blocked = receiptStates.find(
+        (s) => s.order.part_number === item.part_number,
+      );
+      return {
+        success: false,
+        message: `Item ${item.part_number} belum bisa dikonfirmasi: ${blocked?.message || "tidak ditemukan"}.`,
+      };
+    }
+    claimedIndices.add(state.index);
 
     const photoAttachment: Attachment = {
       name: photo.name,
       url: photo.url,
       type: "bast",
     };
-
-    await uploadBastForMrItem(
-      po.mr_id,
-      item.part_number,
-      [photoAttachment],
-      actorUserId,
-      admin,
-    );
-
+    receiptEntries.push({
+      index: state.index,
+      qty: Math.min(item.qty_received, state.maxQty),
+      attachments: [photoAttachment],
+    });
     goodsReceiptItems.push({
       part_number: item.part_number,
       qty_received: item.qty_received,
       photos: [photoAttachment],
       capture_meta: sanitizeCaptureMeta(photo.meta) ?? undefined,
     });
+  }
+
+  if (receiptEntries.length === 0) {
+    return { success: false, message: "Isi qty minimal satu barang yang diterima." };
+  }
+
+  try {
+    await confirmRequesterReceipt({
+      mrId: po.mr_id,
+      entries: receiptEntries,
+      actor: { id: actorUserId, name: receiverName },
+      via: "scan_qr",
+      preferPoId: po.id,
+      client: admin as any,
+    });
+  } catch (err: any) {
+    return { success: false, message: err.message };
   }
 
   const goodsReceipt: GoodsReceipt = {

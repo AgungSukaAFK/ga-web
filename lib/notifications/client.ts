@@ -239,6 +239,40 @@ export async function getGAUserIds(companyCode: string): Promise<string[]> {
 }
 
 /**
+ * Requester menerima barang sebelum langkah GA selesai - GA perlu tahu supaya
+ * tidak menunggu atau mengirim barang yang sama.
+ */
+export async function notifyGAOnRequesterReceipt({
+  actorId,
+  actorName,
+  companyCode,
+  kodeMR,
+  mrId,
+  itemCount,
+}: {
+  actorId: string;
+  actorName: string;
+  companyCode: string;
+  kodeMR: string;
+  mrId: number;
+  itemCount: number;
+}): Promise<void> {
+  const gaIds = await getGAUserIds(companyCode);
+  await sendNotifications(
+    gaIds.filter((id) => id !== actorId),
+    {
+      actorId,
+      type: "info",
+      title: "Barang dikonfirmasi langsung oleh requester",
+      message: `${actorName} sudah menerima ${itemCount} barang pada MR ${kodeMR} sebelum proses GA selesai.`,
+      link: `/material-request/${mrId}`,
+      resourceId: String(mrId),
+      resourceType: "material_request",
+    },
+  );
+}
+
+/**
  * Returns user IDs for GA + Finance staff (used for Petty Cash notifications).
  */
 export async function getGAAndFinanceUserIds(
@@ -377,6 +411,7 @@ export async function notifyOnMRApproval({
   decision,
   kodeMR,
   mrId,
+  rejectionNote,
 }: {
   actorId: string;
   creatorId: string;
@@ -384,6 +419,7 @@ export async function notifyOnMRApproval({
   decision: "approved" | "rejected";
   kodeMR: string;
   mrId: string | number;
+  rejectionNote?: string;
 }): Promise<void> {
   if (decision === "rejected") {
     if (creatorId && creatorId !== actorId) {
@@ -392,7 +428,7 @@ export async function notifyOnMRApproval({
         actorId,
         type: "mr_rejected",
         title: "MR Anda Ditolak",
-        message: `Material Request ${kodeMR} telah ditolak.`,
+        message: `Material Request ${kodeMR} telah ditolak.${rejectionNote ? ` Catatan: ${rejectionNote}` : ""}`,
         link: `/material-request/${mrId}`,
         resourceId: String(mrId),
         resourceType: "material_request",
@@ -508,6 +544,7 @@ export async function notifyOnPOApproval({
   decision,
   kodePO,
   poId,
+  rejectionNote,
 }: {
   actorId: string;
   creatorId: string;
@@ -515,6 +552,7 @@ export async function notifyOnPOApproval({
   decision: "approved" | "rejected";
   kodePO: string;
   poId: string | number;
+  rejectionNote?: string;
 }): Promise<void> {
   if (decision === "rejected") {
     if (creatorId && creatorId !== actorId) {
@@ -523,7 +561,7 @@ export async function notifyOnPOApproval({
         actorId,
         type: "po_rejected",
         title: "PO Anda Ditolak",
-        message: `Purchase Order ${kodePO} telah ditolak.`,
+        message: `Purchase Order ${kodePO} telah ditolak.${rejectionNote ? ` Catatan: ${rejectionNote}` : ""}`,
         link: `/purchase-order/${poId}`,
         resourceId: String(poId),
         resourceType: "purchase_order",

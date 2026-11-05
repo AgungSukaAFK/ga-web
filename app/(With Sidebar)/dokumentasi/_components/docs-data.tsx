@@ -996,7 +996,7 @@ export const STATUS_GROUPS: {
       { status: "Pending Approval", domain: "doc", main: true, desc: "Sedang dalam antrian persetujuan berjenjang sesuai template approval." },
       { status: "Waiting PO", domain: "doc", main: true, desc: "Sudah disetujui semua approver dan siap dibuatkan PO. Budget Cost Center terpotong di titik ini." },
       { status: "On Process", label: "PO Open", domain: "doc", main: true, desc: "Sebagian/semua barang sudah masuk PO, tapi belum semuanya diterima user." },
-      { status: "Pending Receive", domain: "doc", main: true, desc: "Semua barang sudah ter-cover PO, tapi belum ada satu pun yang dikonfirmasi diterima user." },
+      { status: "Pending Receive", domain: "doc", main: true, desc: "Semua barang sudah ter-cover PO, tapi belum ada satu pun yang dikonfirmasi diterima user. Barangnya belum tentu sudah dikirim - cek status per item di detail MR." },
       { status: "Partial Receive", domain: "doc", main: true, desc: "Sebagian barang sudah dikonfirmasi diterima user, tapi belum semuanya." },
       { status: "Full Received", domain: "doc", main: true, desc: "Semua barang sudah dikonfirmasi diterima user. Siklus MR selesai." },
       { status: "On Hold", domain: "doc", desc: "Ditahan GA (mis. menunggu info tambahan). Requester bisa memperbaiki lalu submit ulang." },
@@ -1086,10 +1086,12 @@ export const FAQS: { q: string; a: React.ReactNode; tags: RoleId[] }[] = [
     q: "Saya tidak menemukan tombol untuk konfirmasi barang diterima.",
     a: (
       <>
-        Tombol baru muncul setelah barang dikirim GA ke Anda (status{" "}
-        <StatusPill status="On Delivery" domain="item" label="Dalam Pengiriman" />
-        ). Hanya Requester pembuat MR yang bisa mengonfirmasi. Untuk vendor
-        Site, tombolnya ada di detail PO setelah PO berstatus Pending Receive.
+        Tombol {b("Konfirmasi Barang Diterima")} ada di detail MR dan muncul
+        begitu PO sudah selesai approval, walaupun GA belum memproses barangnya
+        atau PO belum tercatat lunas. Pilih barang yang sudah sampai, isi qty,
+        lalu unggah bukti. Barang yang baru datang sebagian tetap terbuka sampai
+        sisanya dikonfirmasi. Status pembayaran PO tidak ikut berubah. Hanya
+        Requester pembuat MR yang bisa mengonfirmasi.
       </>
     ),
     tags: ["requester"],

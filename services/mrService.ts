@@ -10,6 +10,16 @@ import {
   PO_STATUS_FULL_RECEIVED,
   DOC_STATUS_CANCELLED,
 } from "@/type/enum";
+import {
+  PO_RECEIPT_COLUMNS,
+  ReceiptActor,
+  ReceiptEntryInput,
+  ReceiptPlan,
+  ReceiptPo,
+  planRemoveReceiptAttachment,
+  planRequesterReceipt,
+} from "@/lib/requesterReceipt";
+import { PO_TRACKING_COLUMNS, TrackingPo } from "@/lib/mrTracking";
 
 const supabase = createClient();
 
@@ -654,6 +664,104 @@ export const editItemsDeliveryToRequester = async (
   return { success: true };
 };
 
+export const fetchReceiptPosForMr = async (
+  mrId: number,
+  client: ReturnType<typeof createClient> = createClient(),
+): Promise<ReceiptPo[]> => {
+  const { data, error } = await client
+    .from("purchase_orders")
+    .select(PO_RECEIPT_COLUMNS)
+    .eq("mr_id", mrId)
+    .order("id", { ascending: true });
+  if (error) throw new Error("Gagal mengambil data PO milik MR ini.");
+  return (data as unknown as ReceiptPo[]) || [];
+};
+
+export const fetchTrackingPosForMr = async (
+  mrId: number,
+  client: ReturnType<typeof createClient> = createClient(),
+): Promise<TrackingPo[]> => {
+  const { data, error } = await client
+    .from("purchase_orders")
+    .select(PO_TRACKING_COLUMNS)
+    .eq("mr_id", mrId)
+    .order("id", { ascending: true });
+  if (error) throw new Error("Gagal mengambil data PO milik MR ini.");
+  return (data as unknown as TrackingPo[]) || [];
+};
+
+// Simpan MR + PO dalam satu transaksi (lihat 0023_requester_receipt.sql).
+// Kalau dokumennya berubah sejak dibaca, rencananya dihitung ulang dari data
+// terbaru, jadi validasi qty selalu memakai kondisi paling baru.
+const commitReceiptPlan = async <T extends Pick<ReceiptPlan, "orders" | "poUpdates">>(
+  mrId: number,
+  client: ReturnType<typeof createClient>,
+  buildPlan: (orders: Order[], pos: ReceiptPo[]) => T,
+): Promise<T> => {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const [{ data: mr, error: mrError }, pos] = await Promise.all([
+      client.from("material_requests").select("orders").eq("id", mrId).single(),
+      fetchReceiptPosForMr(mrId, client),
+    ]);
+    if (mrError || !mr) throw new Error("Gagal mengambil data MR terbaru.");
+
+    const plan = buildPlan(normalizeMrOrders(mr.orders as any[]), pos);
+    const { error } = await client.rpc("apply_requester_receipt", {
+      p_mr_id: mrId,
+      p_expected_orders: mr.orders,
+      p_orders: plan.orders,
+      p_pos: plan.poUpdates,
+    });
+    if (!error) {
+      await recalculateMrStatus(mrId, client);
+      await recalculateMrLevel(mrId, client);
+      return plan;
+    }
+    if (error.code === "PGRST202") {
+      throw new Error(
+        "Fitur ini belum aktif di database (migrasi 0023 belum dijalankan).",
+      );
+    }
+    if (!error.message.includes("DOC_CHANGED")) throw new Error(error.message);
+    if (attempt === MAX_ATTEMPTS) {
+      throw new Error(
+        "Data MR/PO sedang diubah orang lain. Muat ulang halaman lalu coba lagi.",
+      );
+    }
+  }
+};
+
+// Requester mengonfirmasi barang yang sudah sampai - lihat
+// lib/requesterReceipt.ts. Dipakai halaman MR & scan QR BAST (via `client`
+// service-role, karena halaman publik tidak punya sesi Supabase).
+export const confirmRequesterReceipt = async ({
+  mrId,
+  entries,
+  actor,
+  via,
+  preferPoId,
+  client = createClient(),
+}: {
+  mrId: number;
+  entries: ReceiptEntryInput[];
+  actor: ReceiptActor;
+  via: "requester" | "scan_qr";
+  preferPoId?: number;
+  client?: ReturnType<typeof createClient>;
+}): Promise<ReceiptPlan> =>
+  commitReceiptPlan(mrId, client, (orders, pos) =>
+    planRequesterReceipt({
+      orders,
+      pos,
+      entries,
+      actor,
+      via,
+      preferPoId,
+      now: new Date().toISOString(),
+    }),
+  );
+
 // Hapus satu lampiran BAST dari item MR (kebalikan dari uploadBastForMrItem).
 // `bast_attachments` per-item adalah SATU-SATUNYA sumber data BAST di
 // seluruh app (list item MR, MR Management, tabel referensi barang di PO,
@@ -664,7 +772,7 @@ export const editItemsDeliveryToRequester = async (
 // - status/level MR ikut dihitung ulang biar konsisten.
 export const removeBastForMrItem = async (
   mrId: number,
-  partNumber: string,
+  partNumber: string | null | undefined,
   attachmentUrl: string,
   userId: string,
   // Lihat komentar preferredIndex di addManualPoLink.
@@ -683,10 +791,55 @@ export const removeBastForMrItem = async (
   }
 
   const currentOrders = mr.orders as any[];
-  const itemIndex = findMrOrderIndex(currentOrders, partNumber, preferredIndex);
+  // Part kembar: tanpa index, cari baris yang benar-benar memegang lampiran ini.
+  const holderIndex = currentOrders.findIndex(
+    (order) =>
+      (!partNumber || order.part_number === partNumber) &&
+      (order.bast_attachments || []).some(
+        (a: Attachment) => a.url === attachmentUrl,
+      ),
+  );
+  const itemIndex =
+    preferredIndex !== undefined
+      ? findMrOrderIndex(currentOrders, partNumber, preferredIndex)
+      : holderIndex !== -1
+        ? holderIndex
+        : findMrOrderIndex(currentOrders, partNumber);
 
   if (itemIndex === -1) {
     throw new Error("Item tidak ditemukan di MR ini.");
+  }
+
+  // Satu file bisa dipakai beberapa barang sekaligus - file fisiknya baru boleh
+  // dihapus kalau tidak ada barang lain yang masih memakainya.
+  const removeFileIfUnused = () => {
+    const usedElsewhere = currentOrders.some(
+      (order, i) =>
+        i !== itemIndex &&
+        (order.bast_attachments || []).some(
+          (a: Attachment) => a.url === attachmentUrl,
+        ),
+    );
+    if (usedElsewhere) return;
+    removeAttachment(attachmentUrl).catch((err) =>
+      console.error("removeBastForMrItem: gagal hapus file fisik", err),
+    );
+  };
+
+  // Item dari konfirmasi requester: qty di item & PO ikut dibatalkan.
+  if (currentOrders[itemIndex].requester_receipts?.length) {
+    await commitReceiptPlan(mrId, supabase, (orders, pos) =>
+      planRemoveReceiptAttachment({
+        orders,
+        pos,
+        index: itemIndex,
+        attachmentUrl,
+        actor: { id: userId },
+        now: new Date().toISOString(),
+      }),
+    );
+    removeFileIfUnused();
+    return { success: true };
   }
 
   const itemToUpdate = { ...currentOrders[itemIndex] };
@@ -721,9 +874,7 @@ export const removeBastForMrItem = async (
 
   // Best-effort hapus file fisik di storage - sama seperti pola hapus
   // lampiran lain di app ini (tidak nge-block kalau gagal).
-  removeAttachment(attachmentUrl).catch((err) =>
-    console.error("removeBastForMrItem: gagal hapus file fisik", err),
-  );
+  removeFileIfUnused();
 
   await recalculateMrStatus(mrId);
   await recalculateMrLevel(mrId);
@@ -979,7 +1130,9 @@ export const recalculateMrStatus = async (
     // tapi belum semua, MR "Partial Receive" - baru "Full Received" kalau
     // SEMUA item sudah "Completed".
     const allCompleted = relevantItems.every((i) => i.status === "Completed");
-    const someCompleted = relevantItems.some((i) => i.status === "Completed");
+    const someCompleted = relevantItems.some(
+      (i) => i.status === "Completed" || !!i.requester_receipts?.length,
+    );
     const newStatus = allCompleted
       ? PO_STATUS_FULL_RECEIVED
       : allLinked
