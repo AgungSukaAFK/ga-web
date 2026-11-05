@@ -1845,7 +1845,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             />
           )}
 
-          {!isEditing && <MrTrackingCard tracking={tracking} />}
+          {!isEditing && <MrTrackingCard tracking={tracking} className="mb-6" />}
         </div>
 
         <div

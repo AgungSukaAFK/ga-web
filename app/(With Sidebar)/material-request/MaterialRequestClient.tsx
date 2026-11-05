@@ -42,7 +42,9 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   useTransition,
+  lazy,
 } from "react";
 import { toast } from "@/lib/toast";
 import { CopyTextButton } from "@/components/ui/copy-text-button";
@@ -99,6 +101,8 @@ import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import { ComboboxData } from "@/components/combobox";
 import { dataDepartment } from "@/type/comboboxData";
 import { fetchBarangAssetFlags } from "@/services/purchaseOrderService";
+import { fetchMrQuickTracking } from "@/services/quickTrackingService";
+import { QuickTrackingSlot, useQuickTracking } from "@/components/quick-tracking";
 import {
   fetchActiveCostCenters,
   normalizeMrOrders,
@@ -136,6 +140,9 @@ import {
 } from "@/components/filter-panel";
 
 // --- Konstanta Filter ---
+const loadMrQuickTracking = () => import("./MrQuickTracking");
+const MrQuickTracking = lazy(loadMrQuickTracking);
+
 const dataLokasi: ComboboxData = [
   { label: "Head Office", value: "Head Office" },
   { label: "Tanjung Enim", value: "Tanjung Enim" },
@@ -232,10 +239,17 @@ export function MaterialRequestContent({
   const [quickViewAssetMap, setQuickViewAssetMap] = useState<
     Record<number, boolean>
   >({});
+  const quickTracking = useQuickTracking(fetchMrQuickTracking);
   // Peta kode_po -> {id, status} utk badge PO Refs per item di Quick View.
-  const [quickViewPoRefsMap, setQuickViewPoRefsMap] = useState<
-    Record<string, { id: number; status: string }>
-  >({});
+  const quickViewPoRefsMap = useMemo(() => {
+    const map: Record<string, { id: number; status: string }> = {};
+    if (quickTracking.state.status === "ready") {
+      for (const po of quickTracking.state.data.pos) {
+        map[po.kode_po] = { id: po.id, status: po.status };
+      }
+    }
+    return map;
+  }, [quickTracking.state]);
 
   // --- URL Params ---
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
@@ -716,6 +730,9 @@ export function MaterialRequestContent({
   const handleRowClick = (mr: MaterialRequestListItem) => {
     setSelectedMr(mr);
     setIsQuickViewOpen(true);
+    // Chunk kartu diunduh bersamaan dengan datanya, bukan sesudahnya.
+    void loadMrQuickTracking();
+    quickTracking.load(mr);
     const barangIds = (mr.orders || [])
       .map((o) => o.barang_id)
       .filter((id): id is number => !!id);
@@ -724,18 +741,6 @@ export function MaterialRequestContent({
     } else {
       setQuickViewAssetMap({});
     }
-    setQuickViewPoRefsMap({});
-    s.from("purchase_orders")
-      .select("id, kode_po, status")
-      .eq("mr_id", mr.id)
-      .then(({ data }) => {
-        if (!data) return;
-        const map: Record<string, { id: number; status: string }> = {};
-        for (const row of data) {
-          map[row.kode_po] = { id: row.id, status: row.status };
-        }
-        setQuickViewPoRefsMap(map);
-      });
   };
 
   const getStatusBadge = (status: string) => {
@@ -1430,6 +1435,16 @@ export function MaterialRequestContent({
                   </p>
                 </div>
               </div>
+
+              <QuickTrackingSlot
+                title="Lacak MR"
+                state={quickTracking.state}
+                onRetry={quickTracking.retry}
+              >
+                {(data) => (
+                  <MrQuickTracking data={data} userId={currentUser?.id} />
+                )}
+              </QuickTrackingSlot>
 
               {/* Table Items */}
               <div>

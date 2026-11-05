@@ -10,6 +10,7 @@ import {
   useTransition,
   useCallback,
   useMemo,
+  lazy,
 } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -53,6 +54,8 @@ import {
 } from "@/lib/utils";
 import { PicGaPopover } from "@/components/pic-ga-popover";
 import { CreatePOModal } from "./CreatePOModal";
+import { QuickTrackingSlot, useQuickTracking } from "@/components/quick-tracking";
+import { fetchPoQuickTracking } from "@/services/quickTrackingService";
 import { AssetGoodsBadge } from "@/components/asset-goods-badge";
 import {
   resolveSort,
@@ -173,6 +176,9 @@ const PAYMENT_TERM_OPTIONS = [
   },
 ];
 
+const loadPoQuickTracking = () => import("./PoQuickTracking");
+const PoQuickTracking = lazy(loadPoQuickTracking);
+
 // --- Komponen Modal Detail Vendor ---
 
 function VendorDetailModal({
@@ -278,6 +284,7 @@ function PurchaseOrderPageContent() {
     null,
   );
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
+  const quickTracking = useQuickTracking(fetchPoQuickTracking);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -499,6 +506,9 @@ function PurchaseOrderPageContent() {
   const handleRowClick = (po: PurchaseOrderListItem) => {
     setSelectedPo(po);
     setIsQuickViewOpen(true);
+    // Chunk kartu diunduh bersamaan dengan datanya, bukan sesudahnya.
+    void loadPoQuickTracking();
+    quickTracking.load(po);
   };
 
   // Isi 1 sel tabel; urutannya mengikuti columnOrder (lihat PO_COLUMNS).
@@ -1299,6 +1309,16 @@ function PurchaseOrderPageContent() {
                   </p>
                 </div>
               </div>
+
+              <QuickTrackingSlot
+                title="Lacak PO"
+                state={quickTracking.state}
+                onRetry={quickTracking.retry}
+              >
+                {(data) => (
+                  <PoQuickTracking data={data} userId={userProfile?.id} />
+                )}
+              </QuickTrackingSlot>
 
               {/* Table Items */}
               <div>

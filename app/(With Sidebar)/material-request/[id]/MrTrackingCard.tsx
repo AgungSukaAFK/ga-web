@@ -35,7 +35,13 @@ const toCardItem = (item: ItemTrack): TrackingCardItem => {
   };
 };
 
-export const MrTrackingCard = ({ tracking }: { tracking: MrTracking }) => {
+export const MrTrackingCard = ({
+  tracking,
+  className,
+}: {
+  tracking: MrTracking;
+  className?: string;
+}) => {
   const facts: TrackingFact[] = [];
   if (tracking.waitingOn) {
     facts.push({ icon: UserRound, label: "Menunggu:", value: tracking.waitingOn });
@@ -60,7 +66,7 @@ export const MrTrackingCard = ({ tracking }: { tracking: MrTracking }) => {
     <TrackingCard
       title="Lacak MR"
       storageKey="mr-tracking-collapsed"
-      className="mb-6"
+      className={className}
       tone={tracking.tone}
       headline={tracking.headline}
       detail={tracking.detail}
