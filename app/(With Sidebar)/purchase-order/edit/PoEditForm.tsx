@@ -1,8 +1,7 @@
 // src/app/(With Sidebar)/purchase-order/edit/PoEditForm.tsx
 //
 // Form edit PO yang dipakai bersama oleh:
-// - mode "user"  -> tidak dipakai lagi, purchase-order/edit/[id] sekarang
-//                   redirect ke detail PO
+// - mode "user"  -> purchase-order/edit/[id] (dibuka dari detail PO)
 // - mode "admin" -> po-management/edit/[id] (Manajemen PO)
 // Fitur & perhitungan (PPN/PPH/DP, lampiran, PO Aset) sama persis di kedua
 // mode; mode admin cuma menambah kontrol khusus admin: ubah Status PO, ubah
@@ -89,7 +88,6 @@ import {
   Approval,
   Order,
   Vendor,
-  StoredVendorDetails,
   PoConversionRecord,
 } from "@/type";
 import { Label } from "@/components/ui/label";
@@ -120,6 +118,10 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, ComboboxData } from "@/components/combobox";
 import { searchVendors } from "@/services/vendorService";
+import {
+  VendorQuickEditDialog,
+  toStoredVendorDetails,
+} from "@/components/vendor-quick-edit-dialog";
 import {
   APPROVAL_TYPE_RECEIVER,
   DOC_STATUS_CANCELLED,
@@ -211,6 +213,7 @@ function VendorSearchCombobox({
   poForm,
   setPoForm,
   onVendorSelected,
+  onQuickEdit,
 }: {
   poForm: any;
   setPoForm: React.Dispatch<React.SetStateAction<any>>;
@@ -219,6 +222,7 @@ function VendorSearchCombobox({
   // 11%). Taruh di sini (bukan useEffect watching vendor_id) supaya gak
   // ke-trigger pas data lama di-load ulang.
   onVendorSelected?: (vendor: Vendor) => void;
+  onQuickEdit: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -232,18 +236,9 @@ function VendorSearchCombobox({
   }, [searchQuery]);
 
   const handleSelect = (vendor: Vendor) => {
-    const newVendorDetails: StoredVendorDetails = {
-      vendor_id: vendor.id,
-      kode_vendor: vendor.kode_vendor,
-      nama_vendor: vendor.nama_vendor,
-      alamat: vendor.alamat || "",
-      contact_person: vendor.pic_contact_person || "",
-      email: vendor.email || "",
-      tipe_vendor: vendor.tipe_vendor,
-    };
     setPoForm((prev: any) => ({
       ...prev,
-      vendor_details: newVendorDetails,
+      vendor_details: toStoredVendorDetails(vendor),
     }));
     onVendorSelected?.(vendor);
     setOpen(false);
@@ -306,8 +301,14 @@ function VendorSearchCombobox({
       </Popover>
       {poForm.vendor_details && !poForm.vendor_details.tipe_vendor && (
         <p className="text-xs font-medium text-red-600 dark:text-red-400">
-          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site) - lengkapi
-          dulu di Manajemen Vendor sebelum PO ini bisa diajukan.
+          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site).{" "}
+          <button
+            type="button"
+            onClick={onQuickEdit}
+            className="underline underline-offset-2"
+          >
+            Lengkapi sekarang
+          </button>
         </p>
       )}
     </div>
@@ -411,6 +412,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
   const [error, setError] = useState<string | null>(null);
 
   // Dialog States
+  const [isVendorQuickEditOpen, setIsVendorQuickEditOpen] = useState(false);
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
@@ -916,9 +918,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
       return;
     }
     if (!poForm.vendor_details.tipe_vendor) {
-      toast.error(
-        "Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site). Lengkapi dulu di Manajemen Vendor sebelum PO bisa disimpan.",
-      );
+      setIsVendorQuickEditOpen(true);
       return;
     }
 
@@ -945,6 +945,14 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     if (!isAdmin) {
       delete payload.approvals;
       delete payload.status;
+      // Kolom aksi admin (batal & tutup sisa) - jangan ditimpa nilai lama form
+      // kalau admin memprosesnya selagi form non-admin terbuka.
+      delete (payload as any).cancelled_at;
+      delete (payload as any).cancelled_by;
+      delete (payload as any).cancel_reason;
+      delete (payload as any).cancelled_from_status;
+      delete (payload as any).refund_note;
+      delete (payload as any).closed_remainder;
     }
 
     setActionLoading(true);
@@ -1744,9 +1752,21 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
             <div className="min-w-0 space-y-4">
               <div>
                 <Label className="mb-1 block">Pilih Vendor Utama</Label>
+                <VendorQuickEditDialog
+                  open={isVendorQuickEditOpen}
+                  onOpenChange={setIsVendorQuickEditOpen}
+                  vendorId={poForm.vendor_details?.vendor_id ?? null}
+                  onSaved={(vendor) =>
+                    setPoForm((prev: any) => ({
+                      ...prev,
+                      vendor_details: toStoredVendorDetails(vendor),
+                    }))
+                  }
+                />
                 <VendorSearchCombobox
                   poForm={poForm}
                   setPoForm={setPoForm}
+                  onQuickEdit={() => setIsVendorQuickEditOpen(true)}
                   onVendorSelected={(vendor) => {
                     if (isMarketplaceVendor(vendor.nama_vendor)) {
                       setIsTaxIncluded(false);

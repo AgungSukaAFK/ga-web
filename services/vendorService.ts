@@ -53,6 +53,16 @@ export const fetchAllVendors = async (searchQuery: string | null) =>
       .order("id", { ascending: true });
   });
 
+export const fetchVendorById = async (id: number) => {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data as Vendor;
+};
+
 export const createVendor = async (
   newData: Omit<Vendor, "id" | "created_at">,
 ) => {

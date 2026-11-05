@@ -146,6 +146,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { searchVendors } from "@/services/vendorService";
+import {
+  VendorQuickEditDialog,
+  toStoredVendorDetails,
+} from "@/components/vendor-quick-edit-dialog";
 import { BarangSearchCombobox } from "../BarangSearchCombobox";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -192,6 +196,7 @@ function VendorSearchCombobox({
   poForm,
   setPoForm,
   onVendorSelected,
+  onQuickEdit,
 }: {
   poForm: any;
   setPoForm: React.Dispatch<React.SetStateAction<any>>;
@@ -200,6 +205,7 @@ function VendorSearchCombobox({
   // 11%). Taruh di sini (bukan useEffect watching vendor_id) supaya gak ke-
   // trigger pas data lama di-load ulang di halaman edit.
   onVendorSelected?: (vendor: Vendor) => void;
+  onQuickEdit: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -213,18 +219,9 @@ function VendorSearchCombobox({
   }, [searchQuery]);
 
   const handleSelect = (vendor: Vendor) => {
-    const newVendorDetails: StoredVendorDetails = {
-      vendor_id: vendor.id,
-      kode_vendor: vendor.kode_vendor,
-      nama_vendor: vendor.nama_vendor,
-      alamat: vendor.alamat || "",
-      contact_person: vendor.pic_contact_person || "",
-      email: vendor.email || "",
-      tipe_vendor: vendor.tipe_vendor,
-    };
     setPoForm((prev: any) => ({
       ...prev,
-      vendor_details: newVendorDetails,
+      vendor_details: toStoredVendorDetails(vendor),
     }));
     onVendorSelected?.(vendor);
     setOpen(false);
@@ -287,8 +284,14 @@ function VendorSearchCombobox({
       </Popover>
       {poForm.vendor_details && !poForm.vendor_details.tipe_vendor && (
         <p className="text-xs font-medium text-red-600 dark:text-red-400">
-          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site) - lengkapi
-          dulu di Manajemen Vendor sebelum PO ini bisa diajukan.
+          Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site).{" "}
+          <button
+            type="button"
+            onClick={onQuickEdit}
+            className="underline underline-offset-2"
+          >
+            Lengkapi sekarang
+          </button>
         </p>
       )}
     </div>
@@ -348,6 +351,7 @@ function CreatePOPageContent() {
   >({});
   const [vendorHistoryLoading, setVendorHistoryLoading] = useState(false);
   const [vendorHistoryError, setVendorHistoryError] = useState(false);
+  const [isVendorQuickEditOpen, setIsVendorQuickEditOpen] = useState(false);
   const [vendorHistoryReloadKey, setVendorHistoryReloadKey] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -880,9 +884,7 @@ function CreatePOPageContent() {
       return;
     }
     if (!poForm.vendor_details.tipe_vendor) {
-      toast.error(
-        "Vendor ini belum diset Tipe Vendor-nya (HO/Branch/Site). Lengkapi dulu di Manajemen Vendor sebelum PO bisa diajukan.",
-      );
+      setIsVendorQuickEditOpen(true);
       return;
     }
     if (poForm.items.length === 0) {
@@ -1881,9 +1883,21 @@ function CreatePOPageContent() {
             <div className="min-w-0 space-y-4">
               <div>
                 <Label className="mb-1 block">Pilih Vendor Utama</Label>
+                <VendorQuickEditDialog
+                  open={isVendorQuickEditOpen}
+                  onOpenChange={setIsVendorQuickEditOpen}
+                  vendorId={poForm.vendor_details?.vendor_id ?? null}
+                  onSaved={(vendor) =>
+                    setPoForm((prev: any) => ({
+                      ...prev,
+                      vendor_details: toStoredVendorDetails(vendor),
+                    }))
+                  }
+                />
                 <VendorSearchCombobox
                   poForm={poForm}
                   setPoForm={setPoForm}
+                  onQuickEdit={() => setIsVendorQuickEditOpen(true)}
                   onVendorSelected={(vendor) => {
                     if (isMarketplaceVendor(vendor.nama_vendor)) {
                       setIsTaxIncluded(false);
