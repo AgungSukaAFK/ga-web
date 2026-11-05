@@ -373,6 +373,16 @@ export const DELIVERY_TYPE_OPTIONS = [
   "Lainnya",
 ] as const;
 
+// Teks tampilan jenis pengiriman yang beda dari nilai tersimpannya. Nilai
+// "Dikirim ke KM 10" sengaja tidak diubah: sudah tersimpan di delivery_info
+// data lama & dipakai logika form di purchase-order/[id]/page.tsx.
+const DELIVERY_TYPE_LABELS: Record<string, string> = {
+  "Dikirim ke KM 10": "Dikirim ke KM 10 / Site",
+};
+
+export const getDeliveryTypeLabel = (deliveryType: string) =>
+  DELIVERY_TYPE_LABELS[deliveryType] ?? deliveryType;
+
 // Level fisik/approval/payment per item MR - terpisah dari MR_ITEM_STATUSES
 // (yang track progress dokumen PO/BAST). Lihat MrItemLevel di type/index.ts.
 export const MR_ITEM_LEVELS: Record<string, string> = {

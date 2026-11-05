@@ -155,6 +155,7 @@ import {
   PO_REF_STATUS_COLORS,
   PO_REF_STATUS_COLOR_DEFAULT,
   DELIVERY_TYPE_OPTIONS,
+  getDeliveryTypeLabel,
   MR_ITEM_STATUSES,
   DOC_STATUS_CANCELLED,
   isDpBpPaymentTerm,
@@ -3491,7 +3492,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <div>
                   <p className="text-xs text-muted-foreground">Jenis Kirim</p>
                   <p className="font-medium">
-                    {deliveryDetailItem.delivery_info.delivery_type}
+                    {getDeliveryTypeLabel(
+                      deliveryDetailItem.delivery_info.delivery_type,
+                    )}
                     {deliveryDetailItem.delivery_info.courier &&
                       ` - ${deliveryDetailItem.delivery_info.courier}`}
                   </p>
@@ -4179,7 +4182,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                     <SearchableSelectContent>
                       {DELIVERY_TYPE_OPTIONS.map((opt) => (
                         <SearchableSelectItem key={opt} value={opt}>
-                          {opt}
+                          {getDeliveryTypeLabel(opt)}
                         </SearchableSelectItem>
                       ))}
                     </SearchableSelectContent>

@@ -133,6 +133,7 @@ import {
   PO_REF_STATUS_COLORS,
   PO_REF_STATUS_COLOR_DEFAULT,
   DOC_STATUS_CANCELLED,
+  getDeliveryTypeLabel,
 } from "@/type/enum";
 import { CancelledDocumentNotice } from "@/components/admin-document-actions/CancelledDocumentNotice";
 import { ItemLevelBadge } from "@/components/item-level-badge";
@@ -2866,7 +2867,9 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <div>
                 <p className="text-xs text-muted-foreground">Jenis Kirim</p>
                 <p className="font-medium">
-                  {deliveryDetailItem.delivery_info.delivery_type}
+                  {getDeliveryTypeLabel(
+                    deliveryDetailItem.delivery_info.delivery_type,
+                  )}
                   {deliveryDetailItem.delivery_info.courier &&
                     ` - ${deliveryDetailItem.delivery_info.courier}`}
                 </p>
