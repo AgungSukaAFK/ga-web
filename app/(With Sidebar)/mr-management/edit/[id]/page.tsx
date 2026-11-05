@@ -126,10 +126,12 @@ import {
   applyAdminMrApprovalEffects,
   planAdminMrApprovalUpdate,
 } from "@/services/adminApprovalOverrideService";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import {
   MR_APPROVAL_PHASE_STATUSES,
   deriveApprovalOutcome,
   deriveMrStatus,
+  rejectCurrentTurn,
   resolveApprovalPhaseStatus,
 } from "@/lib/approvalOverride";
 import { LinkAttachmentForm } from "@/components/link-attachment-form";
@@ -378,6 +380,10 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
         nextApprovals: mr.approvals,
         baselineStatus: approvalBaselineRef.current.status,
         requestedStatus: mr.status,
+        actor: {
+          userid: currentUser.id,
+          nama: userProfile?.nama || currentUser.email || "Unknown",
+        },
       });
     } catch (err: any) {
       setActionLoading(false);
@@ -532,7 +538,11 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
   };
 
   const expectedMrStatus = mr
-    ? deriveMrStatus(deriveApprovalOutcome(mr.approvals))
+    ? deriveMrStatus(
+        deriveApprovalOutcome(
+          mr.status === "Rejected" ? rejectCurrentTurn(mr.approvals) : mr.approvals,
+        ),
+      )
     : null;
   const mrStatusMismatch =
     !!mr &&
@@ -1739,6 +1749,7 @@ function AdminEditMRPageContent({ params }: { params: { id: string } }) {
                           <p className="text-sm text-muted-foreground">
                             {approver.type}
                           </p>
+                          <AdminApprovalNote step={approver} />
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {approver.status === "pending" && (

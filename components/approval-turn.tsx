@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn, formatDateWithTime } from "@/lib/utils";
 import { Approval } from "@/type";
@@ -69,6 +70,7 @@ export const ApprovalStepHeader = ({
           {formatDateWithTime(approver.processed_at)}
         </p>
       )}
+      <AdminApprovalNote step={approver} />
       {approver.status === "rejected" && approver.rejection_note && (
         <p className="whitespace-pre-line text-sm text-red-700 [overflow-wrap:anywhere] dark:text-red-400">
           Catatan: {approver.rejection_note}

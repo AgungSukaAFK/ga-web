@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import {
   SearchableSelect,
   SearchableSelectTrigger,
@@ -58,6 +59,7 @@ import {
   PC_APPROVAL_PHASE_STATUSES,
   deriveApprovalOutcome,
   derivePcStatus,
+  rejectCurrentTurn,
   resolveApprovalPhaseStatus,
 } from "@/lib/approvalOverride";
 import { toast } from "@/lib/toast";
@@ -161,7 +163,11 @@ export function PcAdminOverridePanel({
     (s) => s !== "Dibatalkan" || s === status,
   );
 
-  const expectedStatus = derivePcStatus(deriveApprovalOutcome(editApprovals));
+  const expectedStatus = derivePcStatus(
+    deriveApprovalOutcome(
+      editStatus === "Rejected" ? rejectCurrentTurn(editApprovals) : editApprovals,
+    ),
+  );
   const statusMismatch =
     expectedStatus !== null &&
     (PC_APPROVAL_PHASE_STATUSES as readonly string[]).includes(editStatus) &&
@@ -240,11 +246,14 @@ export function PcAdminOverridePanel({
                 key={i}
                 className="flex items-center justify-between gap-2 text-sm border rounded-md px-3 py-1.5 bg-background"
               >
-                <span className="truncate">
-                  {i + 1}. {app.nama}{" "}
-                  <span className="text-xs text-muted-foreground">
-                    ({app.department})
+                <span className="min-w-0">
+                  <span className="block truncate">
+                    {i + 1}. {app.nama}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({app.department})
+                    </span>
                   </span>
+                  <AdminApprovalNote step={app} />
                 </span>
                 <SearchableSelect
                   value={app.status}

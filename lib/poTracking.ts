@@ -13,6 +13,7 @@
 //  - Pengiriman GA dan konfirmasi requester tercatat per item MR, bukan per PO.
 //    Item MR yang dipecah ke beberapa PO memakai angka gabungannya.
 //  - Tanggal hanya diambil dari data tercatat, tidak pernah diperkirakan.
+import { getAdminActionNote } from "@/lib/approvalOverride";
 import { Approval, Order, PurchaseOrderDetail } from "@/type";
 import {
   ITEM_RANK,
@@ -42,6 +43,7 @@ import {
   TrackTone,
   TrackingLog,
   buildApprovalEvents,
+  rejectedCaption,
   buildTarget,
   groupBy,
   haltAfterFailure,
@@ -503,7 +505,7 @@ const buildApprovalStep = (flow: PoFlow): PoStep => {
     return {
       ...base,
       state: "failed",
-      caption: `Ditolak ${rejected.nama}`,
+      caption: rejectedCaption(rejected),
       summary: "PO ditolak di jalur approval.",
     };
   }
@@ -559,6 +561,7 @@ const buildPaymentEvents = ({ po, pv }: PoFlow, logs: TrackingLog[]): TrackEvent
       note: log.users_with_profiles?.nama,
     });
   }
+  const pvAdminNote = pv ? getAdminActionNote(pv) : null;
   if (pv?.status === "approved") {
     events.push({
       at: pv.processed_at,
@@ -566,15 +569,17 @@ const buildPaymentEvents = ({ po, pv }: PoFlow, logs: TrackingLog[]): TrackEvent
         isDpBpPaymentTerm(po.payment_term) && po.dp_paid && !po.bp_paid
           ? "DP divalidasi"
           : "Pembayaran divalidasi",
-      note: pv.nama,
+      note: pvAdminNote ?? pv.nama,
+      byAdmin: !!pvAdminNote,
     });
   }
   if (pv?.status === "rejected") {
     events.push({
       at: pv.processed_at,
-      label: `Ditolak ${pv.nama}`,
+      label: pvAdminNote ?? `Ditolak ${pv.nama}`,
       note: pv.rejection_note,
       tone: "danger",
+      byAdmin: !!pvAdminNote,
     });
   }
   return sortEvents(events);
@@ -602,7 +607,7 @@ const buildPaymentStep = (
     return {
       ...base,
       state: "failed",
-      caption: `Ditolak ${pv.nama}`,
+      caption: rejectedCaption(pv),
       summary: "Pembayaran PO ditolak.",
     };
   }
@@ -699,13 +704,15 @@ const buildPaymentStep = (
 const buildArrivalEvents = ({ po, receiver }: PoFlow): TrackEvent[] => {
   const events: TrackEvent[] = [];
   const record = po.receive_record;
+  const receiverAdminNote = receiver ? getAdminActionNote(receiver) : null;
   if (record) {
     events.push({
       at: record.received_at,
       label: record.is_full_match
         ? "Penerimaan dicatat lengkap"
         : "Penerimaan dicatat sebagian",
-      note: record.received_by_name,
+      note: receiverAdminNote ?? record.received_by_name,
+      byAdmin: !!receiverAdminNote,
     });
     if (record.requester_confirmed_by_name) {
       events.push({
@@ -715,15 +722,16 @@ const buildArrivalEvents = ({ po, receiver }: PoFlow): TrackEvent[] => {
       });
     }
     if (receiver?.status === "pending") {
-      events.push({ label: `Menunggu ${receiver.nama} (Receiver)` });
+      events.push({ label: `Menunggu ${receiver.nama} (Receiver)`, waiting: true });
     }
   }
   if (receiver?.status === "rejected") {
     events.push({
       at: receiver.processed_at,
-      label: `Ditolak ${receiver.nama} (Receiver)`,
+      label: receiverAdminNote ?? `Ditolak ${receiver.nama} (Receiver)`,
       note: receiver.rejection_note,
       tone: "danger",
+      byAdmin: !!receiverAdminNote,
     });
   }
   const closed = po.closed_remainder;
@@ -810,7 +818,7 @@ export const buildPoTracking = ({
         : undefined),
     ...(flow.receiver?.status === "rejected" && {
       state: "failed",
-      caption: `Ditolak ${flow.receiver.nama}`,
+      caption: rejectedCaption(flow.receiver),
       summary: "PO ditolak saat penerimaan barang.",
       owner: undefined,
     }),

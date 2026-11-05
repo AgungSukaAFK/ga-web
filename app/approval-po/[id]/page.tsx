@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import { Check, Clock, X } from "lucide-react";
 
 type POApprovalDetail = Pick<
@@ -198,7 +199,10 @@ export default function ApprovalPOPage() {
                 ) : (
                   po.approvals.map((app, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-medium">{app.nama}</TableCell>
+                      <TableCell className="font-medium">
+                        {app.nama}
+                        <AdminApprovalNote step={app} />
+                      </TableCell>
                       <TableCell>{app.type}</TableCell>
                       <TableCell>
                         {getApprovalStatusBadge(app.status)}

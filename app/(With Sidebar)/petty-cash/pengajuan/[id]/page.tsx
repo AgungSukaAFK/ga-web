@@ -221,13 +221,14 @@ function PengajuanDetailContent({ id }: { id: string }) {
     status: string;
     approvals: any[];
   }) => {
-    if (!doc) return;
+    if (!doc || !viewer) return;
     try {
       await adminUpdatePcApprovals("pengajuan", doc.id, {
         baselineApprovals: doc.approvals,
         nextApprovals: patch.approvals,
         baselineStatus: doc.status,
         requestedStatus: patch.status,
+        actor: { userid: viewer.id, nama: viewer.nama },
       });
       toast.success(`${doc.kode_pengajuan} berhasil diperbarui (override).`);
       await load();

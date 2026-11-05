@@ -83,6 +83,7 @@ import {
   Layers,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { formatAdminName } from "@/lib/approvalOverride";
 import {
   Approval,
   POItem,
@@ -727,7 +728,9 @@ function PurchaseOrderPageContent() {
             po.status === "Full Received",
           ),
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
-          "Last Approve": lastApprover?.nama || "",
+          "Last Approve": lastApprover
+            ? `${lastApprover.nama}${lastApprover.processed_by_admin ? ` (diproses ${formatAdminName(lastApprover.processed_by_admin.nama)})` : ""}`
+            : "",
           DP: po.dp_paid ? "Dibayar" : "",
           BP: po.bp_paid ? "Dibayar" : "",
           Invoice: hasInvoice ? "Ada" : "Tidak Ada",

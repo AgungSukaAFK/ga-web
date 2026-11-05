@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PaginatedPrintDocument } from "@/app/(With Sidebar)/purchase-order/[id]/PaginatedPrintDocument";
 import { getCompanyDetails } from "@/lib/companyDetails";
 import { extractPlainText } from "@/lib/rich-content";
+import { formatAdminName } from "@/lib/approvalOverride";
 import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import { PcPenarikanSummary } from "@/lib/pcChain";
 import { PettyCashPengajuanApprover, PettyCashPengajuanItem } from "@/type";
@@ -54,6 +55,7 @@ interface SignatureSlot {
   subtitle?: string | null;
   state?: PcPrintSignature["state"];
   date?: string | Date | null;
+  adminNote?: string | null;
   qrValue: string | null;
 }
 
@@ -237,6 +239,10 @@ export function PrintablePettyCashDocument({
             ? ("rejected" as const)
             : ("pending" as const),
       date: a.processed_at,
+      adminNote:
+        a.status !== "pending" && a.processed_by_admin
+          ? `Diproses ${formatAdminName(a.processed_by_admin.nama)}`
+          : null,
       qrValue: buildStepUrl(approvalsQrUrl ?? qrUrl, i + 1),
     })),
     ...extraSignatures.map(({ step, ...s }, i) => ({
@@ -575,6 +581,11 @@ export function PrintablePettyCashDocument({
                   {s.subtitle && (
                     <p className="pcx-font-size-5-5pt text-gray-600 leading-tight pcx-overflow-wrap-anywhere">
                       {clamp(s.subtitle, PRINT_LIMIT.sigName)}
+                    </p>
+                  )}
+                  {s.adminNote && (
+                    <p className="pcx-font-size-5-5pt font-semibold text-amber-700 leading-tight pcx-overflow-wrap-anywhere">
+                      {clamp(s.adminNote, PRINT_LIMIT.sigName)}
                     </p>
                   )}
                   {isWet && s.qrValue !== null && (

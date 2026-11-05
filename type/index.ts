@@ -1,5 +1,10 @@
 // src/type/index.ts
 
+export interface ApprovalAdminActor {
+  userid: string;
+  nama: string;
+}
+
 export interface Approval {
   type: string;
   status: "pending" | "approved" | "rejected";
@@ -9,6 +14,9 @@ export interface Approval {
   role: string;
   department: string;
   processed_at?: string | null;
+  // Terisi kalau step ini diproses admin, bukan approver-nya (lihat
+  // lib/approvalOverride.ts). Kosong = diproses approver sendiri.
+  processed_by_admin?: ApprovalAdminActor | null;
   // Catatan opsional dari approver yang menolak. Hanya berarti selama status
   // "rejected" - baris yang direset admin bisa masih membawa catatan lama.
   rejection_note?: string | null;
@@ -1009,6 +1017,8 @@ export interface PettyCashPengajuanApprover {
   level?: PcApprovalLevel | null;
   status: "pending" | "approved" | "rejected";
   processed_at?: string | null;
+  // Lihat Approval.processed_by_admin.
+  processed_by_admin?: ApprovalAdminActor | null;
 }
 
 export interface PettyCashPengajuan {

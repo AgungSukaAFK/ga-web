@@ -2,6 +2,7 @@
 // status tiap barang menjadi satu tahap. Semua fungsi di sini murni. Aturan tiap
 // dokumen ada di lib/mrTracking.ts dan lib/poTracking.ts, tampilannya di
 // components/tracking-card.tsx.
+import { getAdminActionNote } from "@/lib/approvalOverride";
 import { Approval, MaterialRequest } from "@/type";
 
 export const EPS = 1e-6;
@@ -41,6 +42,11 @@ export interface TrackEvent {
   note?: string | null;
   itemName?: string;
   tone?: "warning" | "danger";
+  // Diproses admin, bukan approver-nya. Bukan `tone`: tone "warning" dibaca
+  // sebagai alasan kendala di headline Lacak.
+  byAdmin?: boolean;
+  // Masih menunggu seseorang - dibuang begitu dokumennya berhenti.
+  waiting?: boolean;
 }
 
 export interface TrackLink {
@@ -110,24 +116,37 @@ export const groupBy = (entries: { label: string; state: TrackState }[]) => {
   return [...groups.values()];
 };
 
+// Judul tahap yang ditolak - menyebut admin kalau admin yang memprosesnya.
+export const rejectedCaption = (step: Approval) =>
+  getAdminActionNote(step) ?? `Ditolak ${step.nama}`;
+
 export const buildApprovalEvents = (
   approvals: Approval[],
   next: Approval | undefined,
 ): TrackEvent[] =>
   approvals.map((a) => {
     const role = a.type ? `${a.nama} (${a.type})` : a.nama;
+    const adminNote = getAdminActionNote(a, role);
     if (a.status === "approved") {
-      return { at: a.processed_at, label: `Disetujui ${role}` };
+      return {
+        at: a.processed_at,
+        label: adminNote ?? `Disetujui ${role}`,
+        byAdmin: !!adminNote,
+      };
     }
     if (a.status === "rejected") {
       return {
         at: a.processed_at,
-        label: `Ditolak ${role}`,
+        label: adminNote ?? `Ditolak ${role}`,
         note: a.rejection_note,
         tone: "danger",
+        byAdmin: !!adminNote,
       };
     }
-    return { label: a === next ? `Menunggu ${role}` : `Antre: ${role}` };
+    return {
+      label: a === next ? `Menunggu ${role}` : `Antre: ${role}`,
+      waiting: true,
+    };
   });
 
 // Gabungan satu tahap dari semua barang yang masih aktif.
@@ -223,6 +242,8 @@ export const pendingStep = <Id extends string>(
 });
 
 // Hentikan alur di tahap pertama yang belum selesai.
+const dropWaiting = (events: TrackEvent[]) => events.filter((e) => !e.waiting);
+
 export const markStopped = <Id extends string>(
   steps: TrackStep<Id>[],
   docLabel: string,
@@ -240,21 +261,29 @@ export const markStopped = <Id extends string>(
         caption,
         summary: `${docLabel} ${caption.toLowerCase()} di tahap ini.`,
         owner: undefined,
-        events: [...step.events, ...events],
+        events: [...dropWaiting(step.events), ...events],
       };
     }
-    return { ...step, state: "halted", caption: "Tidak dilanjutkan", owner: undefined };
+    return {
+      ...step,
+      state: "halted",
+      caption: "Tidak dilanjutkan",
+      owner: undefined,
+      events: dropWaiting(step.events),
+    };
   });
 };
 
 export const haltAfterFailure = <Id extends string>(steps: TrackStep<Id>[]) => {
   const failedIndex = steps.findIndex((s) => s.state === "failed");
   if (failedIndex === -1) return steps;
-  return steps.map((step, index): TrackStep<Id> =>
-    index > failedIndex
-      ? { ...step, state: "halted", caption: "Tidak dilanjutkan", owner: undefined }
-      : step,
-  );
+  return steps.map((step, index): TrackStep<Id> => {
+    if (index < failedIndex) return step;
+    const events = dropWaiting(step.events);
+    return index === failedIndex
+      ? { ...step, events }
+      : { ...step, state: "halted", caption: "Tidak dilanjutkan", owner: undefined, events };
+  });
 };
 
 const startOfDay = (date: Date) =>

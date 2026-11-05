@@ -29,6 +29,7 @@ import {
 import { PcPaymentInfoView } from "./PcPaymentInfoView";
 import { formatCurrency } from "@/lib/utils";
 import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import { PcApprovalLevelBadge } from "./PcApprovalLevelBadge";
 import {
   Building2,
@@ -225,6 +226,7 @@ export function PcDocumentInfoPanel({
                   <span className="text-xs text-muted-foreground">
                     ({app.department})
                   </span>
+                  <AdminApprovalNote step={app} />
                 </span>
                 <PcApprovalLevelBadge level={getPcApprovalLevel(approvals, i)} />
               </span>

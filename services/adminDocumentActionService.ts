@@ -755,6 +755,7 @@ export const previewReopenPo = async (poId: number): Promise<AdminActionPreview>
     ...a,
     status: "pending" as const,
     processed_at: null,
+    processed_by_admin: null,
   }));
   const status = approvals.length ? "Pending Approval" : "Pending Validation";
 
@@ -1125,13 +1126,16 @@ const approvalStepLabel = (a: Approval, i: number) =>
 // Step i dst. yang sudah diproses dikembalikan ke pending.
 const resetApprovalsFrom = (approvals: Approval[], from: number): Approval[] =>
   approvals.map((a, i) =>
-    i >= from && a.status !== "pending" ? { ...a, status: "pending", processed_at: null } : a,
+    i >= from && a.status !== "pending"
+      ? { ...a, status: "pending", processed_at: null, processed_by_admin: null }
+      : a,
   );
 
 export const previewApprovalShortcut = async (
   docType: "mr" | "po",
   kind: "reset" | "force",
   id: number,
+  actor: { id: string; name: string },
   stepIndex?: number,
 ): Promise<AdminActionPreview> => {
   const row =
@@ -1216,6 +1220,7 @@ export const previewApprovalShortcut = async (
     nextApprovals: next,
     baselineStatus: row.status,
     requestedStatus: row.status,
+    actor: { userid: actor.id, nama: actor.name },
   };
 
   let approval: ApprovalShortcutCommit;
@@ -1443,18 +1448,18 @@ export const previewUnreceivePo = async (poId: number): Promise<AdminActionPrevi
 export const previewAdminDocumentAction = (
   action: AdminDocumentAction,
   id: number,
-  actor: { name: string },
+  actor: { id: string; name: string },
   options: AdminActionOptions = {},
 ): Promise<AdminActionPreview> => {
   switch (action) {
     case "reset_mr_approval":
-      return previewApprovalShortcut("mr", "reset", id, options.stepIndex);
+      return previewApprovalShortcut("mr", "reset", id, actor, options.stepIndex);
     case "reset_po_approval":
-      return previewApprovalShortcut("po", "reset", id, options.stepIndex);
+      return previewApprovalShortcut("po", "reset", id, actor, options.stepIndex);
     case "force_mr_approval":
-      return previewApprovalShortcut("mr", "force", id, options.stepIndex);
+      return previewApprovalShortcut("mr", "force", id, actor, options.stepIndex);
     case "force_po_approval":
-      return previewApprovalShortcut("po", "force", id, options.stepIndex);
+      return previewApprovalShortcut("po", "force", id, actor, options.stepIndex);
     case "unpay_po":
       return previewUnpayPo(id);
     case "unreceive_po":

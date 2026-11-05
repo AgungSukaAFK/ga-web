@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { Approval, FollowupRequest, MaterialRequest, PurchaseOrder } from "@/type";
+import { INACTIVE_DOC_STATUSES } from "@/type/enum";
 import {
   normalizeMrOrders,
   updateMrItemStatus,
@@ -266,6 +267,16 @@ export const requestApprovalFollowup = async (params: {
   requestedBy: string;
   requestedByName: string;
 }): Promise<FollowupRequest[]> => {
+  const { data: doc, error: fetchError } = await supabase
+    .from(params.table)
+    .select("status")
+    .eq("id", params.resourceId)
+    .single();
+  if (fetchError || !doc) throw new Error("Gagal memeriksa status dokumen terbaru.");
+  if (INACTIVE_DOC_STATUSES.includes(doc.status)) {
+    throw new Error(`Dokumen ini sudah berstatus ${doc.status} - tidak perlu follow-up.`);
+  }
+
   const entry: FollowupRequest = {
     approver_id: params.approverId,
     approver_name: params.approverName,
@@ -303,6 +314,10 @@ export const processMrApproval = async (
 
   if (fetchError || !mr) {
     throw new Error("Gagal mengambil data MR terbaru untuk validasi.");
+  }
+  // Halaman bisa terbuka sejak sebelum MR dibatalkan/ditolak.
+  if (INACTIVE_DOC_STATUSES.includes(mr.status)) {
+    throw new Error(`MR ini sudah berstatus ${mr.status} - tidak bisa diproses lagi.`);
   }
 
   // Gunakan data dari DB sebagai referensi utama

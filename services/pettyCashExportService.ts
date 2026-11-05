@@ -28,6 +28,7 @@ import {
   formatPcPayment,
   resolveSubVoucherPayment,
 } from "@/lib/pcPayment";
+import { formatAdminName } from "@/lib/approvalOverride";
 import { getPcApprovalLevel } from "@/lib/pcApprovalFlow";
 import { computePcOverallStatus } from "@/services/pettyCashDashboardService";
 import {
@@ -202,7 +203,11 @@ const approvalProgress = (approvals: PettyCashPengajuanApprover[] | null) => {
 const approvalCurrent = (approvals: PettyCashPengajuanApprover[] | null) => {
   const list = approvals ?? [];
   const rejected = list.find((a) => a.status === "rejected");
-  if (rejected) return `${rejected.nama} (menolak)`;
+  if (rejected) {
+    return rejected.processed_by_admin
+      ? `${rejected.nama} (ditolak ${formatAdminName(rejected.processed_by_admin.nama)})`
+      : `${rejected.nama} (menolak)`;
+  }
   const idx = list.findIndex((a) => a.status === "pending");
   if (idx === -1) return "-";
   return `${list[idx].nama} (${getPcApprovalLevel(list, idx)})`;

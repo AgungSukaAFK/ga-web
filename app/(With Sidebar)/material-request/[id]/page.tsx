@@ -2531,6 +2531,7 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
               <ul className="space-y-2">
                 {mr.approvals.map((approver, index) => {
                   const isMyTurn =
+                    isApprovalOpen &&
                     currentTurnIndex === index &&
                     (currentTurnIndex === 0 || allPreviousApproved);
                   return (

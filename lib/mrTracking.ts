@@ -9,6 +9,7 @@
 //  - Tahap hanya ditandai "dilewati" kalau ada buktinya (Stok GA, vendor Site,
 //    konfirmasi requester sebelum GA). Data lama tanpa jejak tetap "selesai".
 //  - Tanggal hanya diambil dari data tercatat, tidak pernah diperkirakan.
+import { formatAdminName, getAdminActionNote } from "@/lib/approvalOverride";
 import { Approval, Discussion, MaterialRequest, Order, StoredVendorDetails } from "@/type";
 import {
   PO_PRE_APPROVAL_STATUSES,
@@ -34,6 +35,7 @@ import {
   TrackTone,
   TrackingLog,
   buildApprovalEvents,
+  rejectedCaption,
   buildTarget,
   groupBy,
   haltAfterFailure,
@@ -181,32 +183,46 @@ const buildPoPaymentEvents = (po: TrackingPo): TrackEvent[] => {
   const approvals = po.approvals || [];
   const events: TrackEvent[] = [];
   if (!PO_PRE_APPROVAL_STATUSES.includes(po.status)) {
-    const approved = approvals
-      .filter(
-        (a) =>
-          a.status === "approved" &&
-          !isPaymentValidatorApproval(a) &&
-          a.type !== APPROVAL_TYPE_RECEIVER,
-      )
+    const approvedSteps = approvals.filter(
+      (a) =>
+        a.status === "approved" &&
+        !isPaymentValidatorApproval(a) &&
+        a.type !== APPROVAL_TYPE_RECEIVER,
+    );
+    const approved = approvedSteps
       .map((a) => a.processed_at)
       .filter((at): at is string => !!at)
       .sort();
+    const admins = [
+      ...new Set(
+        approvedSteps.flatMap((a) =>
+          a.processed_by_admin ? formatAdminName(a.processed_by_admin.nama) : [],
+        ),
+      ),
+    ];
     events.push({
       at: approved[approved.length - 1],
       label: `${po.kode_po} disetujui`,
+      note: admins.length
+        ? `Ada approval yang diproses ${admins.join(", ")}`
+        : null,
+      byAdmin: admins.length > 0,
     });
   }
   const paid = approvals.find(
     (a) => a.status === "approved" && isPaymentValidatorApproval(a),
   );
   if (paid) {
+    const adminNote = getAdminActionNote(paid);
+    const paymentNote =
+      isDpBpPaymentTerm(po.payment_term) && !po.bp_paid
+        ? "DP tercatat, pelunasan menyusul."
+        : null;
     events.push({
       at: paid.processed_at,
       label: `Pembayaran ${po.kode_po} divalidasi`,
-      note:
-        isDpBpPaymentTerm(po.payment_term) && !po.bp_paid
-          ? "DP tercatat, pelunasan menyusul."
-          : null,
+      note: [adminNote, paymentNote].filter(Boolean).join(". ") || null,
+      byAdmin: !!adminNote,
     });
   }
   return events;
@@ -721,7 +737,7 @@ const buildApprovalStep = (mr: MaterialRequest, isPreApproval: boolean): MrStep 
     return {
       ...base,
       state: "failed",
-      caption: `Ditolak ${rejected.nama}`,
+      caption: rejectedCaption(rejected),
       summary: "MR ditolak di jalur approval.",
     };
   }

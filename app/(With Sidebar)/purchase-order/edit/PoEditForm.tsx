@@ -134,6 +134,7 @@ import {
   isPoStatusBehindApprovals,
   planAdminPoApprovalUpdate,
 } from "@/services/adminApprovalOverrideService";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import { UserAvatar } from "@/components/user-avatar";
 import {
   FormSummaryLayout,
@@ -959,12 +960,16 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
     const toastId = toast.loading(`Memperbarui PO...`);
     try {
       const approvalPlan =
-        isAdmin && approvalBaselineRef.current
+        isAdmin && approvalBaselineRef.current && currentUser
           ? await planAdminPoApprovalUpdate(poId, {
               baselineApprovals: approvalBaselineRef.current.approvals,
               nextApprovals: poForm.approvals ?? [],
               baselineStatus: approvalBaselineRef.current.status,
               requestedStatus: poForm.status,
+              actor: {
+                userid: currentUser.id,
+                nama: userProfile?.nama || currentUser.email || "Unknown",
+              },
             })
           : null;
       if (approvalPlan) {
@@ -2210,6 +2215,7 @@ export function PoEditForm({ poId, mode }: { poId: number; mode: PoEditMode }) {
                       <p className="text-sm text-muted-foreground">
                         {approver.type} ({approver.role})
                       </p>
+                      <AdminApprovalNote step={approver} />
                     </div>
                     <SearchableSelect
                       value={approver.status}

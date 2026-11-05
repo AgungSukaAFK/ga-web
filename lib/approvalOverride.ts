@@ -12,6 +12,8 @@
 // - sama seperti hasil alur normal (approve berurutan, reject menghentikan
 // alur). Approve melompati step yang masih pending tidak diizinkan.
 
+import type { ApprovalAdminActor } from "@/type";
+
 export type ApprovalStepStatus = "pending" | "approved" | "rejected";
 
 export interface OverrideApprovalStep {
@@ -19,6 +21,7 @@ export interface OverrideApprovalStep {
   status: ApprovalStepStatus;
   nama?: string;
   processed_at?: string | null;
+  processed_by_admin?: ApprovalAdminActor | null;
 }
 
 export interface ApprovalChange {
@@ -98,6 +101,20 @@ export const getCurrentTurnIndex = (
   return idx !== -1 && list[idx].status === "pending" ? idx : -1;
 };
 
+/**
+ * Admin memilih status "Rejected" tanpa menolak step mana pun: step yang sedang
+ * giliran ikut ditolak, supaya jalur approval, notifikasi, & keterangannya sama
+ * dengan penolakan biasa. Tidak berubah kalau tidak ada step yang giliran.
+ */
+export const rejectCurrentTurn = <T extends OverrideApprovalStep>(
+  approvals: T[],
+): T[] => {
+  const turn = getCurrentTurnIndex(approvals);
+  return approvals.map((step, i) =>
+    i === turn ? { ...step, status: "rejected" as const } : step,
+  );
+};
+
 export const deriveApprovalOutcome = (
   approvals: OverrideApprovalStep[] | null | undefined,
 ): ApprovalOutcome => {
@@ -108,17 +125,54 @@ export const deriveApprovalOutcome = (
   return "in_progress";
 };
 
-/** processed_at diisi utk step yang baru diproses admin, dikosongkan utk yang dikembalikan ke pending. */
+/**
+ * Stempel admin utk step yang diproses `actor`. Admin yang memang approver di
+ * step itu memproses miliknya sendiri, jadi tidak perlu keterangan.
+ */
+export const getAdminStamp = (
+  step: Pick<OverrideApprovalStep, "userid">,
+  actor: ApprovalAdminActor,
+): ApprovalAdminActor | null => (step.userid === actor.userid ? null : actor);
+
+/**
+ * processed_at & processed_by_admin diisi utk step yang baru diproses admin,
+ * dikosongkan utk yang dikembalikan ke pending.
+ */
 export const stampProcessedAt = <T extends OverrideApprovalStep>(
   baseline: OverrideApprovalStep[],
   next: T[],
+  actor: ApprovalAdminActor,
   now: string = new Date().toISOString(),
 ): T[] =>
-  next.map((step, i) =>
-    step.status === baseline[i]?.status
-      ? step
-      : { ...step, processed_at: step.status === "pending" ? null : now },
-  );
+  next.map((step, i) => {
+    if (step.status === baseline[i]?.status) return step;
+    return step.status === "pending"
+      ? { ...step, processed_at: null, processed_by_admin: null }
+      : {
+          ...step,
+          processed_at: now,
+          processed_by_admin: getAdminStamp(step, actor),
+        };
+  });
+
+/** "Admin Agung" - nama akun seperti "Administrator" tidak diberi awalan lagi. */
+export const formatAdminName = (nama: string): string =>
+  /admin/i.test(nama) ? nama : `Admin ${nama}`;
+
+/**
+ * Keterangan step yang diproses admin, mis. "Disetujui oleh Admin Agung, saat
+ * proses persetujuan Budi". Sengaja netral: tidak menyiratkan approver step itu
+ * dilangkahi. `null` kalau diproses approver sendiri.
+ */
+export const getAdminActionNote = (
+  step: OverrideApprovalStep,
+  stepLabel: string | undefined = step.nama,
+): string | null => {
+  const admin = step.processed_by_admin;
+  if (!admin || step.status === "pending") return null;
+  const verb = step.status === "approved" ? "Disetujui" : "Ditolak";
+  return `${verb} oleh ${formatAdminName(admin.nama)}${stepLabel ? `, saat proses persetujuan ${stepLabel}` : ""}`;
+};
 
 /** Ringkasan perubahan untuk log aktivitas, mis. "Budi (step 2): pending -> approved". */
 export const describeApprovalChanges = (

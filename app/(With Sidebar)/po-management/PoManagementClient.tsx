@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/table";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
+import { formatAdminName } from "@/lib/approvalOverride";
 import { Loader2, Edit, CreditCard, Eye } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -395,7 +396,9 @@ export function PoManagementClientContent() {
           "Ref. Kode MR": po.material_requests?.kode_mr || "N/A",
           Status: po.status,
           "Status Pembayaran": isPaid ? "Paid" : "Unpaid",
-          "Last Approve": lastApprover?.nama || "",
+          "Last Approve": lastApprover
+            ? `${lastApprover.nama}${lastApprover.processed_by_admin ? ` (diproses ${formatAdminName(lastApprover.processed_by_admin.nama)})` : ""}`
+            : "",
           DP: po.dp_paid ? "Dibayar" : "",
           BP: po.bp_paid ? "Dibayar" : "",
           Invoice: hasInvoice ? "Ada" : "Tidak Ada",

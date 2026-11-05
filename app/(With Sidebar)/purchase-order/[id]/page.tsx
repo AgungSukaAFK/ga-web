@@ -88,6 +88,7 @@ import {
   PoQtyBreakdownEntry,
 } from "@/services/purchaseOrderService";
 import { getReceiverTurnIndex } from "@/services/adminApprovalOverrideService";
+import { getAdminStamp } from "@/lib/approvalOverride";
 import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
 import { PoTrackingCard } from "./PoTrackingCard";
 import {
@@ -170,6 +171,7 @@ import {
   getDeliveryTypeLabel,
   MR_ITEM_STATUSES,
   DOC_STATUS_CANCELLED,
+  INACTIVE_DOC_STATUSES,
   isDpBpPaymentTerm,
   isPaymentValidatorApproval,
   VENDOR_TIPE_LABELS,
@@ -1037,9 +1039,36 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // (subsume alur "Tandai BP Lunas" yang lama). Kalau row belum approved
   // sama sekali, edit ini cuma koreksi nilai - approval-nya sendiri tetap
   // harus lewat tombol Setujui PO seperti biasa.
+  // Halaman bisa terbuka sejak sebelum PO dibatalkan/ditolak, dan aksi di bawah
+  // menulis status dari data lama - tanpa cek ini PO-nya bisa hidup lagi.
+  const isPoStillOpen = async (
+    blockedStatuses: readonly string[] = INACTIVE_DOC_STATUSES,
+  ) => {
+    if (!po) return false;
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .select("status")
+      .eq("id", po.id)
+      .single();
+    if (error || !data) {
+      toast.error("Gagal memeriksa status PO terbaru.");
+      return false;
+    }
+    if (!blockedStatuses.includes(data.status)) return true;
+    toast.error(`PO ini sudah berstatus ${data.status}.`, {
+      description: "Tidak ada tindakan yang bisa dilakukan lagi.",
+    });
+    await fetchPoData();
+    return false;
+  };
+
   const handleEditDpBpPayment = async () => {
     if (!po || !currentUser) return;
     setActionLoading(true);
+    if (!(await isPoStillOpen([DOC_STATUS_CANCELLED]))) {
+      setActionLoading(false);
+      return;
+    }
     try {
       const updatePayload: Record<string, any> = {
         dp_paid: dpChecked,
@@ -1064,6 +1093,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         ) as Approval[];
         updatedApprovals[pvIndex].status = "approved";
         updatedApprovals[pvIndex].processed_at = new Date().toISOString();
+        updatedApprovals[pvIndex].processed_by_admin =
+          userProfile?.role === "admin"
+            ? getAdminStamp(updatedApprovals[pvIndex], {
+                userid: currentUser.id,
+                nama: userProfile.nama || currentUser.email || "Unknown",
+              })
+            : null;
         updatePayload.approvals = updatedApprovals;
         updatePayload.status = deriveReceiveDrivenStatus(
           updatedApprovals,
@@ -1124,6 +1160,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   ) => {
     if (!po || !currentUser) return;
     setActionLoading(true);
+    if (!(await isPoStillOpen())) {
+      setActionLoading(false);
+      return;
+    }
     try {
       // Step Receiver yang ikut di-approve: milik user ini sendiri, atau -
       // khusus admin - step Receiver yang sedang giliran.
@@ -1142,6 +1182,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         updatedApprovals[receiverStepIndex].status = "approved";
         updatedApprovals[receiverStepIndex].processed_at =
           new Date().toISOString();
+        updatedApprovals[receiverStepIndex].processed_by_admin =
+          userProfile?.role === "admin"
+            ? getAdminStamp(updatedApprovals[receiverStepIndex], {
+                userid: currentUser.id,
+                nama: userProfile.nama || currentUser.email || "Unknown",
+              })
+            : null;
         const { error: approvalError } = await supabase
           .from("purchase_orders")
           .update({ approvals: updatedApprovals })
@@ -1321,6 +1368,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     if (!po || !currentUser || myApprovalIndex === -1) return;
 
     setActionLoading(true);
+    if (!(await isPoStillOpen())) {
+      setActionLoading(false);
+      return;
+    }
 
     let updatedAttachments = po.attachments || [];
     if (proofFile) {
@@ -2885,6 +2936,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                 <ul className="space-y-2">
                   {po.approvals.map((approver, index) => {
                     const isMyTurn =
+                      isApprovalOpen &&
                       currentTurnIndex === index &&
                       (currentTurnIndex === 0 || allPreviousApproved);
                     return (

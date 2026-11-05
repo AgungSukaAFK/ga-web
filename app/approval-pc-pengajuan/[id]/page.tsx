@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AdminApprovalNote } from "@/components/admin-approval-note";
 import { PcCoaBadge } from "@/components/petty-cash/PcCoaBadge";
 import { Check, Clock, X } from "lucide-react";
 import { PcApprovalLevelBadge } from "@/components/petty-cash/PcApprovalLevelBadge";
@@ -291,6 +292,7 @@ export default function ApprovalPcPengajuanPage() {
                       >
                         <TableCell className="font-medium">
                           {app.nama}
+                          <AdminApprovalNote step={app} />
                         </TableCell>
                         <TableCell>{app.department}</TableCell>
                         <TableCell>

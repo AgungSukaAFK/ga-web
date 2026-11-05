@@ -26,6 +26,7 @@
 import { createClient } from "@/lib/supabase/client";
 import {
   Approval,
+  ApprovalAdminActor,
   PettyCashPengajuanApprover,
   POItem,
   ReceiveRecord,
@@ -58,6 +59,7 @@ import {
   getCurrentTurnIndex,
   isApprovalRollback,
   isSameApprovalChain,
+  rejectCurrentTurn,
   resolveApprovalPhaseStatus,
   stampProcessedAt,
 } from "@/lib/approvalOverride";
@@ -97,6 +99,8 @@ interface AdminOverrideInput<TStep extends OverrideApprovalStep> {
   nextApprovals: TStep[];
   baselineStatus: string;
   requestedStatus: string;
+  // Admin yang menyimpan - dicatat di step yang diprosesnya (processed_by_admin).
+  actor: ApprovalAdminActor;
 }
 
 // Admin yang mencoba "membatalkan" dokumen berjalan lewat form (status
@@ -134,11 +138,15 @@ const prepareOverride = <TStep extends OverrideApprovalStep>(
   db: { approvals: TStep[]; status: string },
   input: AdminOverrideInput<TStep>,
 ) => {
+  const statusChanged = input.requestedStatus !== input.baselineStatus;
+  const nextApprovals =
+    statusChanged && input.requestedStatus === "Rejected"
+      ? rejectCurrentTurn(input.nextApprovals)
+      : input.nextApprovals;
   const approvalsChanged = !isSameApprovalChain(
     input.baselineApprovals,
-    input.nextApprovals,
+    nextApprovals,
   );
-  const statusChanged = input.requestedStatus !== input.baselineStatus;
   if (!approvalsChanged && !statusChanged) return null;
 
   if (
@@ -163,15 +171,15 @@ const prepareOverride = <TStep extends OverrideApprovalStep>(
   }
 
   const changes = approvalsChanged
-    ? getApprovalChanges(input.baselineApprovals, input.nextApprovals)
+    ? getApprovalChanges(input.baselineApprovals, nextApprovals)
     : [];
-  if (changes.length) assertSequentialApprovals(input.nextApprovals);
+  if (changes.length) assertSequentialApprovals(nextApprovals);
 
   return {
     changes,
     statusChanged,
     approvals: approvalsChanged
-      ? stampProcessedAt(input.baselineApprovals, input.nextApprovals)
+      ? stampProcessedAt(input.baselineApprovals, nextApprovals, input.actor)
       : db.approvals,
   };
 };
@@ -559,6 +567,18 @@ const planPoApprovalUpdate = async (
     receiveRecord,
   });
   const status = statusChanged ? input.requestedStatus : computed;
+
+  // Ditolak lewat status melewatkan catatan refund & penerimaan - PO yang sudah
+  // sejauh ini dibereskan lewat Aksi Admin.
+  if (
+    statusChanged &&
+    status === "Rejected" &&
+    (po.dp_paid || po.bp_paid || isPoPaid(db.approvals) || receiveRecord)
+  ) {
+    throw new Error(
+      "PO ini sudah dibayar atau barangnya sudah dicatat diterima - tidak bisa ditolak.",
+    );
+  }
 
   assertStatusMatchesApprovals({
     docLabel: "PO",

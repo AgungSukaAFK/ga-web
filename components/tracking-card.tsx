@@ -251,12 +251,21 @@ const EventList = ({ events }: { events: TrackEvent[] }) => {
                   ? "bg-red-600"
                   : event.tone === "warning"
                     ? "bg-orange-500"
-                    : "bg-muted-foreground/40",
+                    : event.byAdmin
+                      ? "bg-amber-500"
+                      : "bg-muted-foreground/40",
               )}
             />
             <div className="min-w-0 [overflow-wrap:anywhere]">
               <p>
-                {event.label}
+                <span
+                  className={cn(
+                    event.byAdmin &&
+                      "font-medium text-amber-700 dark:text-amber-400",
+                  )}
+                >
+                  {event.label}
+                </span>
                 {event.itemName && (
                   <span className="text-muted-foreground">
                     {" "}
