@@ -106,7 +106,20 @@ type NotificationRow = {
  * Never throws — a failed notification must not break the main user flow,
  * but errors ARE logged (the previous silent-swallow hid a total outage).
  */
+// TODO(SEMENTARA - WAJIB DIBALIKIN): notifikasi Petty Cash dimatikan selama
+// persiapan demo/presentasi (data demo dibuat di DB produksi) supaya user
+// Finance/GA asli tidak kebanjiran notif in-app & push. Setelah selesai, set
+// ke `false` (atau hapus blok ini) lalu deploy ulang.
+const PC_NOTIFICATIONS_PAUSED = true;
+
+function isPettyCashRow(row: NotificationRow): boolean {
+  return row.resource_type === "petty_cash" || row.type.startsWith("pc_");
+}
+
 async function dispatchNotifications(rows: NotificationRow[]): Promise<void> {
+  if (PC_NOTIFICATIONS_PAUSED) {
+    rows = rows.filter((row) => !isPettyCashRow(row));
+  }
   if (rows.length === 0) return;
   try {
     const supabase = createClient();
