@@ -435,6 +435,26 @@ export const getAgeGrade = (ageDays: number): AgeGrade => {
   return "E";
 };
 
+// Nilai poin per grade (mirip IPK). Skor periode = rata-rata poin per
+// dokumen, BUKAN rata-rata hari — supaya 1 dokumen outlier (mis. 200 hari)
+// tidak menjatuhkan grade seluruh periode. Dokumen telat tetap dapat 0 poin.
+export const GRADE_POINTS: Record<AgeGrade, number> = { A: 4, B: 3, C: 2, D: 1, E: 0 };
+
+// Batas bawah rata-rata poin untuk tiap grade periode.
+export const POINT_THRESHOLDS: { grade: AgeGrade; minPoints: number }[] = [
+  { grade: "A", minPoints: 3.5 },
+  { grade: "B", minPoints: 2.5 },
+  { grade: "C", minPoints: 1.5 },
+  { grade: "D", minPoints: 0.5 },
+  { grade: "E", minPoints: 0 },
+];
+
+export const getPointsGrade = (avgPoints: number): AgeGrade =>
+  POINT_THRESHOLDS.find((t) => avgPoints >= t.minPoints)?.grade ?? "E";
+
+// Batas "tepat waktu" = grade B ke atas.
+export const ON_TIME_MAX_DAYS = 15;
+
 export interface ScoreEntry {
   id: number;
   kode: string;
@@ -446,7 +466,14 @@ export interface ScoreEntry {
 
 export interface ScoreResult {
   grade: AgeGrade | null;
+  /** Rata-rata poin grade per dokumen (0–4), dasar penentuan grade periode. */
+  avgPoints: number;
+  /** Rata-rata umur (hari) biasa — informasi saja, tidak menentukan grade. */
   avgDays: number;
+  medianDays: number;
+  /** Persentase dokumen dengan umur ≤ ON_TIME_MAX_DAYS. */
+  onTimePct: number;
+  gradeCounts: Record<AgeGrade, number>;
   count: number;
   entries: ScoreEntry[];
 }
@@ -461,13 +488,30 @@ const buildScoreResult = (
     return { ...row, age_days: ageDays, grade: getAgeGrade(ageDays) };
   });
   entries.sort((a, b) => new Date(b.full_received_at).getTime() - new Date(a.full_received_at).getTime());
-  const avgDays = entries.length
-    ? entries.reduce((sum, e) => sum + e.age_days, 0) / entries.length
+  const n = entries.length;
+  const avgDays = n ? entries.reduce((sum, e) => sum + e.age_days, 0) / n : 0;
+  const avgPoints = n ? entries.reduce((sum, e) => sum + GRADE_POINTS[e.grade], 0) / n : 0;
+
+  const sortedAges = entries.map((e) => e.age_days).sort((a, b) => a - b);
+  const mid = Math.floor(n / 2);
+  const medianDays = n
+    ? n % 2
+      ? sortedAges[mid]
+      : (sortedAges[mid - 1] + sortedAges[mid]) / 2
     : 0;
+
+  const gradeCounts: Record<AgeGrade, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  entries.forEach((e) => gradeCounts[e.grade]++);
+  const onTimePct = n ? (entries.filter((e) => e.age_days <= ON_TIME_MAX_DAYS).length / n) * 100 : 0;
+
   return {
-    grade: entries.length ? getAgeGrade(avgDays) : null,
+    grade: n ? getPointsGrade(avgPoints) : null,
+    avgPoints,
     avgDays,
-    count: entries.length,
+    medianDays,
+    onTimePct,
+    gradeCounts,
+    count: n,
     entries,
   };
 };

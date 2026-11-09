@@ -22,7 +22,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatDateFriendly } from "@/lib/utils";
 import { GaugeCircle } from "lucide-react";
-import { AgeGrade, GRADE_THRESHOLDS, ScoreResult } from "@/services/dashboardService";
+import {
+  AgeGrade,
+  GRADE_POINTS,
+  GRADE_THRESHOLDS,
+  ON_TIME_MAX_DAYS,
+  POINT_THRESHOLDS,
+  ScoreResult,
+} from "@/services/dashboardService";
+
+const GRADES: AgeGrade[] = ["A", "B", "C", "D", "E"];
+
+const fmt = (n: number, digits = 1) => n.toFixed(digits).replace(".", ",");
+
+const pointRangeLabel = (i: number) => {
+  const t = POINT_THRESHOLDS[i];
+  if (i === 0) return `≥ ${fmt(t.minPoints)}`;
+  return `${fmt(t.minPoints)} – <${fmt(POINT_THRESHOLDS[i - 1].minPoints)}`;
+};
 
 const PAGE_SIZE = 10;
 
@@ -87,9 +104,12 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
               >
                 {grade}
               </span>
-              <span className="text-sm text-muted-foreground">
-                {score!.avgDays.toFixed(1)} hari rata-rata
-              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="text-sm font-semibold">{fmt(score!.avgPoints, 2)} / 4 poin</span>
+                <span className="text-xs text-muted-foreground">
+                  median {fmt(score!.medianDays)} hari · {Math.round(score!.onTimePct)}% tepat waktu
+                </span>
+              </div>
             </div>
           ) : (
             <p className="text-2xl font-bold text-muted-foreground">-</p>
@@ -127,9 +147,9 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
                 </span>
               )}
               <div>
-                <p className="text-sm text-muted-foreground">Rata-rata umur periode ini</p>
+                <p className="text-sm text-muted-foreground">Rata-rata poin periode ini</p>
                 <p className="text-xl font-bold">
-                  {grade ? `${score!.avgDays.toFixed(1)} Hari` : "Belum ada data selesai"}
+                  {grade ? `${fmt(score!.avgPoints, 2)} / 4 poin` : "Belum ada data selesai"}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Dihitung dari {score?.count ?? 0} data yang sudah Full Received
@@ -137,27 +157,101 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
               </div>
             </div>
 
-            {/* Legenda grading */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                Keterangan Grading
-              </p>
-              <div className="grid grid-cols-5 gap-1.5">
-                {GRADE_THRESHOLDS.map((g) => (
-                  <div
-                    key={g.grade}
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center",
-                      g.grade === grade
-                        ? GRADE_COLORS[g.grade]
-                        : "border-input text-muted-foreground",
-                    )}
-                  >
-                    <span className="text-sm font-bold">{g.grade}</span>
-                    <span className="text-[9px] leading-tight">{g.label}</span>
+            {/* Statistik pendukung */}
+            {grade && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: "Median umur", value: `${fmt(score!.medianDays)} hari` },
+                  {
+                    label: `Tepat waktu (≤ ${ON_TIME_MAX_DAYS} hari)`,
+                    value: `${Math.round(score!.onTimePct)}%`,
+                  },
+                  { label: "Lewat 30 hari (E)", value: `${score!.gradeCounts.E} data` },
+                  { label: "Rata-rata umur (info)", value: `${fmt(score!.avgDays)} hari` },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-md border p-2">
+                    <p className="text-[11px] text-muted-foreground leading-tight">{s.label}</p>
+                    <p className="text-base font-semibold">{s.value}</p>
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Cara perhitungan */}
+            <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Cara Perhitungan
+              </p>
+
+              <div className="space-y-1.5">
+                <p className="text-sm">
+                  <span className="font-semibold">1. Grade tiap dokumen</span> ditentukan dari
+                  umurnya (tanggal dibuat → tanggal Full Received), lalu diberi poin:
+                </p>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {GRADE_THRESHOLDS.map((g) => (
+                    <div
+                      key={g.grade}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-md border bg-background px-1 py-2 text-center"
+                    >
+                      <span className={cn("text-sm font-bold rounded px-1.5 border", GRADE_COLORS[g.grade])}>
+                        {g.grade}
+                      </span>
+                      <span className="text-[10px] leading-tight text-muted-foreground">{g.label}</span>
+                      <span className="text-[11px] font-semibold">{GRADE_POINTS[g.grade]} poin</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-sm">
+                  <span className="font-semibold">2. Rata-rata poin</span> = total poin semua
+                  dokumen ÷ jumlah dokumen.
+                </p>
+                {grade && (
+                  <div className="rounded-md border bg-background p-2 font-mono text-xs overflow-x-auto whitespace-nowrap">
+                    (
+                    {GRADES.filter((g) => score!.gradeCounts[g] > 0)
+                      .map((g) => `${score!.gradeCounts[g]}×${g}(${GRADE_POINTS[g]})`)
+                      .join(" + ")}
+                    ) ÷ {score!.count} ={" "}
+                    {GRADES.reduce((s, g) => s + score!.gradeCounts[g] * GRADE_POINTS[g], 0)} ÷{" "}
+                    {score!.count} ={" "}
+                    <span className="font-bold">{fmt(score!.avgPoints, 2)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-sm">
+                  <span className="font-semibold">3. Grade periode</span> diambil dari rata-rata
+                  poin:
+                </p>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {POINT_THRESHOLDS.map((t, i) => (
+                    <div
+                      key={t.grade}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-2 text-center",
+                        t.grade === grade
+                          ? GRADE_COLORS[t.grade]
+                          : "border-input bg-background text-muted-foreground",
+                      )}
+                    >
+                      <span className="text-sm font-bold">{t.grade}</span>
+                      <span className="text-[10px] leading-tight">{pointRangeLabel(i)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Kenapa bukan rata-rata hari? Dengan rata-rata hari, satu dokumen yang sangat lama
+                (mis. 200 hari) bisa menjatuhkan grade seluruh periode. Dengan sistem poin, setiap
+                dokumen berbobot sama: dokumen &gt; 30 hari tetap dapat 0 poin, tapi tidak
+                &quot;menghukum&quot; dokumen lain yang selesai tepat waktu.
+              </p>
             </div>
 
             {/* Tabel data aktual */}
@@ -170,6 +264,7 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
                     <TableHead>Selesai</TableHead>
                     <TableHead className="text-right">Umur</TableHead>
                     <TableHead className="text-center">Grade</TableHead>
+                    <TableHead className="text-center">Poin</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -187,11 +282,14 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
                             {row.grade}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          {GRADE_POINTS[row.grade]}
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
                         Tidak ada data selesai pada periode ini.
                       </TableCell>
                     </TableRow>
