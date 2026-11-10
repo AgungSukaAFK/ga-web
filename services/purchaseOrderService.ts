@@ -1020,6 +1020,14 @@ export { deriveReceiveDrivenStatus } from "@/lib/requesterReceipt";
  * dari PO lain yang juga meng-cover part_number yang sama) dilewati,
  * tidak dimundurkan.
  */
+// Baris item MR yang belum pernah ke-link ke PO mana pun dan masih "Pending".
+// Kalau baris ini dipasangkan ke baris PO (matchPoLinesToMrOrders), berarti
+// ini baris kembar dari data lama yang terlewat saat PO dibuat.
+const isUnlinkedPendingOrder = (order: Order | undefined) =>
+  !!order &&
+  (!order.status || order.status === MR_ITEM_STATUSES.PENDING) &&
+  !(Array.isArray(order.po_refs) && order.po_refs.length > 0);
+
 export const markPoItemsShippedByVendor = async (
   mrId: number,
   poItems: POItem[],
@@ -1047,11 +1055,13 @@ export const markPoItemsShippedByVendor = async (
     if (orderIndex === -1 || handled.has(orderIndex)) continue;
     handled.add(orderIndex);
     const order = orders[orderIndex];
+    // Lihat isUnlinkedPendingOrder - baris kembar lama yang belum ke-link.
+    const isUnlinkedLegacy = !!kodePo && isUnlinkedPendingOrder(order);
     if (
       !order ||
       order.level === "Open 5" ||
       order.level === "Close" ||
-      order.status !== MR_ITEM_STATUSES.PROCESSING
+      (order.status !== MR_ITEM_STATUSES.PROCESSING && !isUnlinkedLegacy)
     ) {
       continue;
     }
@@ -1059,7 +1069,11 @@ export const markPoItemsShippedByVendor = async (
       await updateMrItemStatus(
         mrId,
         item.part_number,
-        { level: "Open 4", status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR },
+        {
+          level: "Open 4",
+          status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR,
+          poRef: isUnlinkedLegacy ? kodePo : undefined,
+        },
         userId,
         orderIndex,
       );
@@ -1244,6 +1258,10 @@ export const submitReceiveRecord = async (
     if (orderIndex === -1 || handledIndices.has(orderIndex)) continue;
     handledIndices.add(orderIndex);
     const order = orders[orderIndex];
+    // Data lama: baris kembar kedua tidak pernah ke-link waktu PO dibuat
+    // (masih "Pending", `po_refs` kosong) padahal barisnya ada di PO ini -
+    // anggap ter-link sekarang supaya ikut diterima, bukan tertahan selamanya.
+    const isUnlinkedLegacy = isUnlinkedPendingOrder(order);
     // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
     // PO lain) dilewati supaya tidak ketimpa - sama seperti guard lama.
     // "PO Created" di sini cuma backward-compat buat data lama yang belum
@@ -1256,6 +1274,7 @@ export const submitReceiveRecord = async (
     // di-skip terus (guard ini nolak), jadi klik "Terima Barang" jadi
     // no-op - status item gak pernah pindah ke "Diterima GA"/"On Delivery".
     if (
+      !isUnlinkedLegacy &&
       (order?.status as string | undefined) !== "PO Created" &&
       order?.status !== MR_ITEM_STATUSES.SHIPPED_BY_VENDOR &&
       order?.status !== MR_ITEM_STATUSES.PROCESSING &&
@@ -1290,6 +1309,7 @@ export const submitReceiveRecord = async (
               : MR_ITEM_STATUSES.DITERIMA_GA
             : MR_ITEM_STATUSES.PROCESSING,
           level: "Open 5",
+          poRef: isUnlinkedLegacy ? po.kode_po : undefined,
         },
         userId,
         orderIndex,
