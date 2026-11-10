@@ -1472,6 +1472,10 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
 
   const removeAttachment = (indexToRemove: number) => {
     if (!mr || !Array.isArray(mr.attachments)) return;
+    if (userProfile?.role !== "admin") {
+      toast.error("Hanya admin yang dapat menghapus lampiran.");
+      return;
+    }
     const attachmentToRemove = mr.attachments[indexToRemove];
     if (!attachmentToRemove) return;
     const updatedAttachments = mr.attachments.filter(
@@ -1654,6 +1658,14 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
   const isOwner = currentUser?.id === mr.userid;
   const canDelete =
     isOwner && (mr.status === "Pending Validation" || mr.status === "Draft");
+
+  // Lampiran: upload boleh oleh requester (pembuat MR), approver, & admin -
+  // tanpa harus masuk mode edit. Hapus tetap khusus admin.
+  const canUploadAttachment =
+    isOwner ||
+    userProfile?.role === "approver" ||
+    userProfile?.role === "admin";
+  const canDeleteAttachment = userProfile?.role === "admin";
 
   const isRevision = mr.status === "On Hold";
 
@@ -2578,8 +2590,8 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
             )}
           </Content>
           <Content id={MR_EDIT_TARGETS.attachments} title="Lampiran">
-            {isEditing ? (
-              <div className="space-y-4">
+            {canUploadAttachment && (
+              <div className="space-y-2 mb-4">
                 <Label htmlFor="attachments">Tambah Lampiran</Label>
                 <FileDropzone
                   id="attachments"
@@ -2593,51 +2605,40 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                     Mengunggah...
                   </div>
                 )}
-                {mr.attachments.length > 0 && (
-                  <ul className="space-y-2 mt-2">
-                    {mr.attachments.map((file, index) => (
-                      <li
-                        key={index}
-                        className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded"
-                      >
-                        <div className="flex items-center gap-2 truncate min-w-0">
-                          {file.is_link ? (
-                            <Link2 className="h-4 w-4 flex-shrink-0" />
-                          ) : (
-                            <Paperclip className="h-4 w-4 flex-shrink-0" />
-                          )}
-                          <span className="truncate">{file.name}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => removeAttachment(index)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
-            ) : (mr.attachments || []).length > 0 ? (
+            )}
+            {(mr.attachments || []).length > 0 ? (
               <ul className="space-y-2">
                 {(mr.attachments as Attachment[]).map((file, index) => (
-                  <li key={index}>
+                  <li
+                    key={index}
+                    className="flex items-center justify-between gap-2"
+                  >
                     <Link
                       href={resolveAttachmentUrl(file.url)}
                       target="_blank"
-                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      className="flex items-center gap-2 text-sm text-primary hover:underline min-w-0"
                     >
                       {file.is_link ? (
-                        <Link2 className="h-4 w-4" />
+                        <Link2 className="h-4 w-4 flex-shrink-0" />
                       ) : (
-                        <Paperclip className="h-4 w-4" />
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
                       )}
-                      <span>{file.name}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      <span className="truncate">{file.name}</span>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                     </Link>
+                    {canDeleteAttachment && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        disabled={actionLoading || isUploading}
+                        onClick={() => removeAttachment(index)}
+                        title="Hapus lampiran (admin)"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
