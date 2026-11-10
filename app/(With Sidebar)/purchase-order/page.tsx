@@ -130,6 +130,11 @@ import {
   formatFilterRange,
   formatFilterRupiah,
 } from "@/components/filter-panel";
+import {
+  applyPendingApproverFilter,
+  fetchPendingApprovers,
+  type PendingApprover,
+} from "@/lib/pending-approver";
 
 // Kolom tabel sebelum "Aksi" (tetap paling kanan), urutan bawaan. Urutannya
 // bisa digeser user - lihat hooks/use-column-order.ts. `sortDirection`
@@ -305,6 +310,19 @@ function PurchaseOrderPageContent() {
   const paymentTermFilter = searchParams.get("payment_term_filter") || "";
   const assetTypeFilter = searchParams.get("asset_type") || "";
   const sortFilter = searchParams.get("sort") || PO_DEFAULT_SORT;
+  const approverFilter = searchParams.get("approver") || "";
+
+  // Pilihan filter "Menunggu Approval" (sesuai hak akses company)
+  const [pendingApprovers, setPendingApprovers] = useState<PendingApprover[]>(
+    [],
+  );
+  const loadPendingApprovers = async (company: string | null | undefined) => {
+    const result = await fetchPendingApprovers(s, "purchase_orders", (q) =>
+      applyPoCompanyAccess(q, company),
+    );
+    setPendingApprovers(result);
+    return result;
+  };
 
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
   const [searchInput, setSearchInput, resetSearchInput] = useUrlSearchInput(
@@ -422,6 +440,13 @@ function PurchaseOrderPageContent() {
         // --- 3. FILTER STANDAR ---
         query = applyPoFilters(query, poFilters);
 
+        // --- 4. FILTER MENUNGGU APPROVAL ---
+        // Diambil ulang tiap load supaya pilihan & hasilnya selalu terbaru.
+        const approvers = await loadPendingApprovers(profile?.company);
+        if (approverFilter) {
+          query = applyPendingApproverFilter(query, approvers, approverFilter);
+        }
+
         // Eksekusi Query
         const sort = resolveSort(sortFilter, PO_SORTABLE_COLUMNS, PO_DEFAULT_SORT);
         query = query
@@ -489,6 +514,7 @@ function PurchaseOrderPageContent() {
     assetTypeFilter,
     sortFilter,
     poFilters,
+    approverFilter,
   ]);
 
   const handleFilterChange = (
@@ -648,6 +674,10 @@ function PurchaseOrderPageContent() {
         useFilters && searchTerm
           ? await buildPoSearchFilter(s, searchTerm)
           : "";
+      const approversForExport =
+        useFilters && approverFilter
+          ? await loadPendingApprovers(userProfile.company)
+          : [];
 
       // Penambahan query department dan cost_centers untuk data Excel
       const buildQuery = () => {
@@ -671,6 +701,12 @@ function PurchaseOrderPageContent() {
         );
         if (searchOrFilter) query = query.or(searchOrFilter);
         if (useFilters) query = applyPoFilters(query, poFilters);
+        if (useFilters && approverFilter)
+          query = applyPendingApproverFilter(
+            query,
+            approversForExport,
+            approverFilter,
+          );
 
         return query
           .order(exportSort.column, {
@@ -820,6 +856,15 @@ function PurchaseOrderPageContent() {
       value: statusFilter,
       onRemove: () => handleFilterChange({ status: undefined }),
     });
+  if (approverFilter)
+    activeFilters.push({
+      key: "approver",
+      label: "Menunggu Approval",
+      value:
+        pendingApprovers.find((a) => a.userid === approverFilter)?.nama ??
+        "User terpilih",
+      onRemove: () => handleFilterChange({ approver: undefined }),
+    });
   if (paymentFilter && paymentFilter !== "all")
     activeFilters.push({
       key: "payment_status",
@@ -939,6 +984,38 @@ function PurchaseOrderPageContent() {
                       {STATUS_OPTIONS.map((status) => (
                         <SearchableSelectItem key={status} value={status}>
                           {status}
+                        </SearchableSelectItem>
+                      ))}
+                    </SearchableSelectContent>
+                  </SearchableSelect>
+                </FilterField>
+                <FilterField label="Menunggu Approval">
+                  <SearchableSelect
+                    onValueChange={(value) =>
+                      handleFilterChange({
+                        approver: value === "all" ? undefined : value,
+                      })
+                    }
+                    value={approverFilter || "all"}
+                  >
+                    <SearchableSelectTrigger className="bg-background">
+                      <SearchableSelectValue placeholder="Approver" />
+                    </SearchableSelectTrigger>
+                    <SearchableSelectContent>
+                      <SearchableSelectItem value="all">
+                        Semua Approver
+                      </SearchableSelectItem>
+                      {approverFilter &&
+                        !pendingApprovers.some(
+                          (a) => a.userid === approverFilter,
+                        ) && (
+                          <SearchableSelectItem value={approverFilter}>
+                            User terpilih (0)
+                          </SearchableSelectItem>
+                        )}
+                      {pendingApprovers.map((a) => (
+                        <SearchableSelectItem key={a.userid} value={a.userid}>
+                          {a.nama} ({a.ids.length})
                         </SearchableSelectItem>
                       ))}
                     </SearchableSelectContent>

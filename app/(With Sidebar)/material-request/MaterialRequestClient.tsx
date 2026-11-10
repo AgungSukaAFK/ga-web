@@ -138,6 +138,11 @@ import {
   formatFilterRange,
   formatFilterRupiah,
 } from "@/components/filter-panel";
+import {
+  applyPendingApproverFilter,
+  fetchPendingApprovers,
+  type PendingApprover,
+} from "@/lib/pending-approver";
 
 // --- Konstanta Filter ---
 const loadMrQuickTracking = () => import("./MrQuickTracking");
@@ -266,6 +271,7 @@ export function MaterialRequestContent({
   const maxEstimasi = searchParams.get("max_estimasi") || "";
   const costCenterFilter = searchParams.get("cost_center") || "all";
   const prioritasFilter = searchParams.get("prioritas") || "";
+  const approverFilter = searchParams.get("approver") || "";
 
   // Local Input State
   // Push ke URL hanya dari ketikan user - lihat hooks/use-url-search-input.ts
@@ -354,6 +360,24 @@ export function MaterialRequestContent({
     loadUser();
   }, []);
 
+  // --- Pilihan filter "Menunggu Approval" (sesuai hak akses company) ---
+  const [pendingApprovers, setPendingApprovers] = useState<PendingApprover[]>(
+    [],
+  );
+  const loadPendingApprovers = useCallback(async () => {
+    if (!currentUser) return [];
+    const allowedScope = getMrAllowedScope(currentUser.company);
+    const result = await fetchPendingApprovers(s, "material_requests", (q) =>
+      allowedScope.includes("ALL") ? q : q.in("company_code", allowedScope),
+    );
+    setPendingApprovers(result);
+    return result;
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadPendingApprovers().catch((e) => console.error(e));
+  }, [loadPendingApprovers]);
+
   // --- Fetch Data Tabel ---
   useEffect(() => {
     if (!currentUser) return;
@@ -399,6 +423,14 @@ export function MaterialRequestContent({
           query = query.gte("cost_estimation", Number(minEstimasi));
         if (maxEstimasi)
           query = query.lte("cost_estimation", Number(maxEstimasi));
+        if (approverFilter) {
+          // Selalu ambil ulang supaya hasilnya sesuai kondisi approval terbaru.
+          query = applyPendingApproverFilter(
+            query,
+            await loadPendingApprovers(),
+            approverFilter,
+          );
+        }
 
         // FILTER PERUSAHAAN (Untuk Tabel)
         const allowedScope = getMrAllowedScope(currentUser.company);
@@ -474,6 +506,8 @@ export function MaterialRequestContent({
     minEstimasi,
     maxEstimasi,
     costCenterFilter,
+    approverFilter,
+    loadPendingApprovers,
     selectedCompanies,
   ]);
 
@@ -560,6 +594,8 @@ export function MaterialRequestContent({
 
       // HAK AKSES PERUSAHAAN (selalu berlaku, termasuk mode "all")
       const allowedScope = getMrAllowedScope(currentUser.company);
+      const approversForExport =
+        useFilters && approverFilter ? await loadPendingApprovers() : [];
 
       const buildQuery = () => {
         let query = s.from("material_requests").select(`
@@ -593,6 +629,12 @@ export function MaterialRequestContent({
             query = query.gte("cost_estimation", Number(minEstimasi));
           if (maxEstimasi)
             query = query.lte("cost_estimation", Number(maxEstimasi));
+          if (approverFilter)
+            query = applyPendingApproverFilter(
+              query,
+              approversForExport,
+              approverFilter,
+            );
         }
 
         if (useFilters && selectedCompanies.length > 0) {
@@ -989,6 +1031,15 @@ export function MaterialRequestContent({
       value: filterOptionLabel(dataLokasi, siteFilter),
       onRemove: () => handleFilterChange({ tujuan_site: undefined }),
     });
+  if (approverFilter)
+    activeFilters.push({
+      key: "approver",
+      label: "Menunggu Approval",
+      value:
+        pendingApprovers.find((a) => a.userid === approverFilter)?.nama ??
+        "User terpilih",
+      onRemove: () => handleFilterChange({ approver: undefined }),
+    });
   if (levelFilter && levelFilter !== "all")
     activeFilters.push({
       key: "level",
@@ -1089,6 +1140,32 @@ export function MaterialRequestContent({
                   {STATUS_OPTIONS.map((s) => (
                     <SearchableSelectItem key={s} value={s}>
                       {s}
+                    </SearchableSelectItem>
+                  ))}
+                </SearchableSelectContent>
+              </SearchableSelect>
+            </FilterField>
+            <FilterField label="Menunggu Approval">
+              <SearchableSelect
+                value={approverFilter || "all"}
+                onValueChange={(v) =>
+                  handleFilterChange({ approver: v === "all" ? undefined : v })
+                }
+              >
+                <SearchableSelectTrigger className="bg-background">
+                  <SearchableSelectValue placeholder="Approver" />
+                </SearchableSelectTrigger>
+                <SearchableSelectContent>
+                  <SearchableSelectItem value="all">Semua Approver</SearchableSelectItem>
+                  {approverFilter &&
+                    !pendingApprovers.some((a) => a.userid === approverFilter) && (
+                      <SearchableSelectItem value={approverFilter}>
+                        User terpilih (0)
+                      </SearchableSelectItem>
+                    )}
+                  {pendingApprovers.map((a) => (
+                    <SearchableSelectItem key={a.userid} value={a.userid}>
+                      {a.nama} ({a.ids.length})
                     </SearchableSelectItem>
                   ))}
                 </SearchableSelectContent>
