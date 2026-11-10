@@ -441,6 +441,8 @@ export interface PhotoCaptureMeta {
 
 export interface GoodsReceiptItem {
   part_number: string;
+  // Index baris item MR - membedakan part_number kembar. Kosong utk data lama.
+  order_index?: number;
   qty_received: number;
   photos: Attachment[];
   // Kosong utk data lama (sebelum foto wajib dari kamera + timestamp).

@@ -327,10 +327,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // pengiriman (jenis/ekspedisi/resi/catatan) & lampiran dibagi bareng utk
   // semua barang terpilih.
   const [isDeliverDialogOpen, setIsDeliverDialogOpen] = useState(false);
-  const [selectedPartNumbersForDelivery, setSelectedPartNumbersForDelivery] =
-    useState<Set<string>>(new Set());
-  const [deliveryQtyByPartNumber, setDeliveryQtyByPartNumber] = useState<
-    Record<string, string>
+  // Dikunci per INDEX baris `orders` MR, bukan part_number - MR bisa punya
+  // part_number kembar (barang sama diinput 2x), dan memilih satu baris tidak
+  // boleh ikut memilih baris kembarnya.
+  const [selectedOrderIndicesForDelivery, setSelectedOrderIndicesForDelivery] =
+    useState<Set<number>>(new Set());
+  const [deliveryQtyByOrderIndex, setDeliveryQtyByOrderIndex] = useState<
+    Record<number, string>
   >({});
   const [deliveryType, setDeliveryType] = useState<DeliveryType>(
     DELIVERY_TYPE_OPTIONS[0],
@@ -585,6 +588,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     (po?.items || []).map((i) => [i.part_number, i.qty]),
   );
 
+  // Posisi baris di `orders` MR - kunci dialog "Kirim ke Requester".
+  const mrOrderIndexOf = (item: Order) =>
+    ((po?.material_requests?.orders || []) as Order[]).indexOf(item);
+
   // "Cetak BAST" tersedia begitu PO ada (selama belum Rejected/Cancelled) - GA/
   // Purchasing perlu bisa cetak & tempel BAST ke paket SEBELUM barang
   // dikirim (QR di dalamnya baru berarti setelah discan pas barang sampai),
@@ -610,11 +617,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   const handleOpenDeliverDialog = () => {
     setIsEditingDelivery(false);
     setEditingDeliverySentAt(null);
-    setSelectedPartNumbersForDelivery(new Set());
-    setDeliveryQtyByPartNumber(
+    setSelectedOrderIndicesForDelivery(new Set());
+    setDeliveryQtyByOrderIndex(
       Object.fromEntries(
         deliverEligibleItems.map((item) => [
-          item.part_number as string,
+          mrOrderIndexOf(item),
           String(item.qty),
         ]),
       ),
@@ -643,13 +650,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
     setIsEditingDelivery(true);
     setEditingDeliverySentAt(sentAt);
-    setSelectedPartNumbersForDelivery(
-      new Set(group.map((o) => o.part_number as string)),
-    );
-    setDeliveryQtyByPartNumber(
+    setSelectedOrderIndicesForDelivery(new Set(group.map(mrOrderIndexOf)));
+    setDeliveryQtyByOrderIndex(
       Object.fromEntries(
         group.map((o) => [
-          o.part_number as string,
+          mrOrderIndexOf(o),
           String(o.delivery_info?.qty_sent ?? o.qty),
         ]),
       ),
@@ -664,11 +669,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     setIsDeliverDialogOpen(true);
   };
 
-  const toggleDeliveryItemSelection = (partNumber: string) => {
-    setSelectedPartNumbersForDelivery((prev) => {
+  const toggleDeliveryItemSelection = (orderIndex: number) => {
+    setSelectedOrderIndicesForDelivery((prev) => {
       const next = new Set(prev);
-      if (next.has(partNumber)) next.delete(partNumber);
-      else next.add(partNumber);
+      if (next.has(orderIndex)) next.delete(orderIndex);
+      else next.add(orderIndex);
       return next;
     });
   };
@@ -700,8 +705,13 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     const selectedItems = deliverDialogItems.filter(
       (item) =>
         item.part_number &&
-        selectedPartNumbersForDelivery.has(item.part_number),
+        selectedOrderIndicesForDelivery.has(mrOrderIndexOf(item)),
     );
+    const toDeliveryPayload = (item: Order) => ({
+      partNumber: item.part_number as string,
+      qtySent: Number(deliveryQtyByOrderIndex[mrOrderIndexOf(item)]),
+      index: mrOrderIndexOf(item),
+    });
     if (selectedItems.length === 0) {
       toast.error("Pilih minimal satu barang");
       return;
@@ -711,7 +721,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       return;
     }
     for (const item of selectedItems) {
-      const qty = Number(deliveryQtyByPartNumber[item.part_number as string]);
+      const qty = Number(deliveryQtyByOrderIndex[mrOrderIndexOf(item)]);
       if (!qty || qty <= 0) {
         toast.error(`Isi qty terkirim untuk ${item.name}`);
         return;
@@ -766,24 +776,23 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       const partNumbers = selectedItems.map((item) => item.part_number);
 
       if (isEditingDelivery && editingDeliverySentAt) {
-        const removedPartNumbers = editingGroupItems
-          .filter(
-            (o) =>
-              o.part_number &&
-              !selectedPartNumbersForDelivery.has(o.part_number),
-          )
-          .map((o) => o.part_number as string);
+        const removedItems = editingGroupItems.filter(
+          (o) =>
+            o.part_number &&
+            !selectedOrderIndicesForDelivery.has(mrOrderIndexOf(o)),
+        );
+        const removedPartNumbers = removedItems.map(
+          (o) => o.part_number as string,
+        );
 
         await editItemsDeliveryToRequester(
           po.mr_id,
           editingDeliverySentAt,
-          selectedItems.map((item) => ({
-            partNumber: item.part_number as string,
-            qtySent: Number(
-              deliveryQtyByPartNumber[item.part_number as string],
-            ),
+          selectedItems.map(toDeliveryPayload),
+          removedItems.map((o) => ({
+            partNumber: o.part_number as string,
+            index: mrOrderIndexOf(o),
           })),
-          removedPartNumbers,
           {
             delivery_type: deliveryType,
             courier: deliveryCourier.trim() || undefined,
@@ -822,12 +831,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
       } else {
         await sendItemsToRequester(
           po.mr_id,
-          selectedItems.map((item) => ({
-            partNumber: item.part_number as string,
-            qtySent: Number(
-              deliveryQtyByPartNumber[item.part_number as string],
-            ),
-          })),
+          selectedItems.map(toDeliveryPayload),
           {
             delivery_type: deliveryType,
             courier: deliveryCourier.trim() || undefined,
@@ -1030,7 +1034,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // juga oleh override approval admin di PO Management.
   const markItemsShippedByVendor = async (mrId: number, poItems: POItem[]) => {
     if (!currentUser) return;
-    await markPoItemsShippedByVendor(mrId, poItems, currentUser.id);
+    await markPoItemsShippedByVendor(mrId, poItems, currentUser.id, po?.kode_po);
   };
 
   // Edit dp_paid/bp_paid di luar approval turn (row Payment Validator sudah
@@ -1155,9 +1159,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
   // approve row-nya (approval lanjut ke step berikutnya) sebelum menghitung
   // status - kalau bukan (tombol manual/template tanpa step Receiver),
   // approvals dibiarkan apa adanya.
-  const handleSubmitReceive = async (
-    receivedQtyByPartNumber: Record<string, number>,
-  ) => {
+  const handleSubmitReceive = async (receivedQtys: number[]) => {
     if (!po || !currentUser) return;
     setActionLoading(true);
     if (!(await isPoStillOpen())) {
@@ -1200,7 +1202,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         { ...po, approvals: updatedApprovals },
         currentUser.id,
         userProfile?.nama || currentUser.email || "Unknown",
-        receivedQtyByPartNumber,
+        receivedQtys,
       );
 
       if (isReceiverTurn) {
@@ -1225,7 +1227,10 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
         `${userProfile?.nama || currentUser.email || "Unknown"} mencatat penerimaan barang PO ${po.kode_po} (${receiveRecord.is_full_match ? "lengkap sesuai PO" : "sebagian / qty tidak sesuai"})`,
         {
           is_full_match: receiveRecord.is_full_match,
-          received_qty: receivedQtyByPartNumber,
+          received_qty: receiveRecord.items.map((i) => ({
+            part_number: i.part_number,
+            received_qty: i.received_qty,
+          })),
         },
       );
       await logMrActivity(
@@ -4179,7 +4184,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             <div className="space-y-4 py-2">
               <div>
                 <Label>
-                  Barang ({selectedPartNumbersForDelivery.size} dipilih)
+                  Barang ({selectedOrderIndicesForDelivery.size} dipilih)
                 </Label>
                 <div className="mt-2 max-h-48 overflow-y-auto rounded-md border divide-y">
                   {deliverDialogItems.length === 0 ? (
@@ -4201,18 +4206,19 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                       </div>
                       {deliverDialogItems.map((item) => {
                         const partNumber = item.part_number as string;
+                        const orderIndex = mrOrderIndexOf(item);
                         const checked =
-                          selectedPartNumbersForDelivery.has(partNumber);
+                          selectedOrderIndicesForDelivery.has(orderIndex);
                         const poQty = poQtyByPartNumber[partNumber];
                         return (
                           <div
-                            key={partNumber}
+                            key={orderIndex}
                             className="flex items-center gap-2 p-2 text-sm"
                           >
                             <Checkbox
                               checked={checked}
                               onCheckedChange={() =>
-                                toggleDeliveryItemSelection(partNumber)
+                                toggleDeliveryItemSelection(orderIndex)
                               }
                             />
                             <span className="flex-1">{item.name}</span>
@@ -4222,11 +4228,11 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                             <Input
                               type="number"
                               min={0}
-                              value={deliveryQtyByPartNumber[partNumber] ?? ""}
+                              value={deliveryQtyByOrderIndex[orderIndex] ?? ""}
                               onChange={(e) =>
-                                setDeliveryQtyByPartNumber((prev) => ({
+                                setDeliveryQtyByOrderIndex((prev) => ({
                                   ...prev,
-                                  [partNumber]: e.target.value,
+                                  [orderIndex]: e.target.value,
                                 }))
                               }
                               className="h-8 w-24"
@@ -4343,7 +4349,7 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <Button
                 onClick={handleSendToRequester}
                 disabled={
-                  sendingDelivery || selectedPartNumbersForDelivery.size === 0
+                  sendingDelivery || selectedOrderIndicesForDelivery.size === 0
                 }
               >
                 {sendingDelivery && (
@@ -4547,12 +4553,13 @@ const PrintableBAST = ({
   const hasReceipt = !!goodsReceipt;
 
   const rows: BastRow[] = mrOrders
+    .map((order, orderIndex) => ({ order, orderIndex }))
     .filter(
-      (order) =>
+      ({ order }) =>
         !!order.part_number &&
         poItems.some((pi) => pi.part_number === order.part_number),
     )
-    .map((order) => {
+    .map(({ order, orderIndex }) => {
       const poItem = poItems.find((pi) => pi.part_number === order.part_number);
       const receiveRecordEntry = po.receive_record?.items?.find(
         (i) => i.part_number === order.part_number,
@@ -4563,8 +4570,12 @@ const PrintableBAST = ({
         poItem?.qty ??
         Number(order.qty) ??
         0;
-      const receiptItem = goodsReceipt?.items.find(
-        (i) => i.part_number === order.part_number,
+      // Konfirmasi baru menyimpan index baris (part_number bisa kembar);
+      // data lama dicocokkan lewat part_number.
+      const receiptItem = goodsReceipt?.items.find((i) =>
+        i.order_index !== undefined
+          ? i.order_index === orderIndex
+          : i.part_number === order.part_number,
       );
       return {
         name: order.name,

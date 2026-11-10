@@ -9,7 +9,12 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { confirmRequesterReceipt, fetchReceiptPosForMr, normalizeMrOrders } from "./mrService";
+import {
+  confirmRequesterReceipt,
+  fetchReceiptPosForMr,
+  matchPoLinesToMrOrders,
+  normalizeMrOrders,
+} from "./mrService";
 import { getReceiptItemStates } from "@/lib/requesterReceipt";
 import {
   Attachment,
@@ -175,6 +180,9 @@ export async function verifyGoodsReceiptCode(code: string): Promise<boolean> {
 }
 
 export interface GoodsReceiptItemView {
+  // Index baris item MR (sebagai string) - kunci input di halaman scan QR.
+  // Bukan part_number, karena MR bisa punya part_number kembar.
+  key: string;
   part_number: string;
   name: string;
   uom: string;
@@ -201,6 +209,12 @@ const isOrderOpen = (order: Order) =>
   order.status !== MR_ITEM_STATUSES.COMPLETED &&
   order.status !== MR_ITEM_STATUSES.CANCELLED &&
   order.status !== MR_ITEM_STATUSES.REPLACED;
+
+// Baris item MR (beserta index-nya) yang masih bisa dikonfirmasi lewat PO ini.
+const getEligibleOrders = (mrOrders: Order[], poItems: { part_number: string }[]) =>
+  mrOrders
+    .map((order, index) => ({ order, index }))
+    .filter(({ order }) => isMrItemInPO(order, poItems) && isOrderOpen(order));
 
 export async function fetchGoodsReceiptView(
   token: string,
@@ -237,9 +251,7 @@ export async function fetchGoodsReceiptView(
     )?.nama || "N/A";
   const vendorName = (po.vendor_details as any)?.nama_vendor || "N/A";
 
-  const eligibleOrders = mrOrders.filter(
-    (o) => isMrItemInPO(o, poItems) && isOrderOpen(o),
-  );
+  const eligibleOrders = getEligibleOrders(mrOrders, poItems);
 
   if (po.goods_receipt || eligibleOrders.length === 0) {
     const gr = po.goods_receipt as GoodsReceipt | null;
@@ -256,11 +268,31 @@ export async function fetchGoodsReceiptView(
     };
   }
 
-  const items: GoodsReceiptItemView[] = eligibleOrders.map((order) => {
-    const poItem = poItems.find((pi) => pi.part_number === order.part_number);
-    const receiveRecordEntry = receiveRecordItems.find(
-      (i) => i.part_number === order.part_number,
-    );
+  // Baris PO & baris receive_record milik tiap baris MR - dipasangkan per
+  // baris (bukan cari part_number pertama) supaya part_number kembar
+  // menampilkan qty-nya masing-masing.
+  const poLines = poItems.filter((pi) => !!pi.part_number);
+  const lineOrderIndices = matchPoLinesToMrOrders(
+    mrOrders,
+    poLines.map((pi) => pi.part_number),
+    po.kode_po,
+  );
+  const records = [...receiveRecordItems];
+  const lineRecords = poLines.map((pi) => {
+    const i = records.findIndex((r) => r.part_number === pi.part_number);
+    return i !== -1 ? records.splice(i, 1)[0] : undefined;
+  });
+
+  const items: GoodsReceiptItemView[] = eligibleOrders.map(({ order, index }) => {
+    const lineIndex = lineOrderIndices.indexOf(index);
+    const poItem =
+      lineIndex !== -1
+        ? poLines[lineIndex]
+        : poItems.find((pi) => pi.part_number === order.part_number);
+    const receiveRecordEntry =
+      lineIndex !== -1
+        ? lineRecords[lineIndex]
+        : receiveRecordItems.find((i) => i.part_number === order.part_number);
     const qtyDikirim =
       order.delivery_info?.qty_sent ??
       receiveRecordEntry?.received_qty ??
@@ -268,6 +300,7 @@ export async function fetchGoodsReceiptView(
       Number(order.qty) ??
       0;
     return {
+      key: String(index),
       part_number: order.part_number as string,
       name: order.name,
       uom: order.uom,
@@ -315,9 +348,7 @@ export async function submitGoodsReceipt(
     : po.material_requests;
   const poItems: any[] = Array.isArray(po.items) ? po.items : [];
   const mrOrders = normalizeMrOrders((mr as any)?.orders || []);
-  const eligibleOrders = mrOrders.filter(
-    (o) => isMrItemInPO(o, poItems) && isOrderOpen(o),
-  );
+  const eligibleOrders = getEligibleOrders(mrOrders, poItems);
 
   if (po.goods_receipt || eligibleOrders.length === 0) {
     return {
@@ -365,7 +396,10 @@ export async function submitGoodsReceipt(
 
   const itemsJson = formData.get("items_json");
   if (!itemsJson) return { success: false, message: "Data item tidak lengkap." };
-  let submittedItems: { part_number: string; qty_received: number }[];
+  // `key` = index baris item MR (lihat GoodsReceiptItemView.key). Halaman
+  // versi lama yang masih terbuka di browser belum mengirim `key` - fallback
+  // ke part_number.
+  let submittedItems: { key?: string; part_number: string; qty_received: number }[];
   try {
     submittedItems = JSON.parse(String(itemsJson));
   } catch {
@@ -391,20 +425,50 @@ export async function submitGoodsReceipt(
     return { success: false, message: "Data foto tidak valid." };
   }
 
-  const eligiblePartNumbers = new Set(
-    eligibleOrders.map((o) => o.part_number as string),
-  );
-  for (const pn of eligiblePartNumbers) {
-    const match = submittedItems.find((i) => i.part_number === pn);
-    if (!match || !Number.isFinite(match.qty_received) || match.qty_received < 0) {
+  // Pasangkan tiap baris MR yang eligible ke input-nya - per baris (index),
+  // BUKAN per part_number: baris dgn part_number kembar punya qty & foto
+  // sendiri, dan baris yang qty-nya 0 tidak boleh ikut diselesaikan hanya
+  // karena kembarannya sudah diterima.
+  const hasKeys = submittedItems.some((i) => i.key !== undefined);
+  const usedLegacy = new Set<number>();
+  const inputs: {
+    order: Order;
+    index: number;
+    item: (typeof submittedItems)[number] | undefined;
+    photo: { url: string; name: string; meta?: unknown } | undefined;
+  }[] = eligibleOrders.map(({ order, index }) => {
+    if (hasKeys) {
+      const key = String(index);
+      return {
+        order,
+        index,
+        item: submittedItems.find((i) => i.key === key),
+        photo: submittedPhotos[key],
+      };
+    }
+    const legacyIndex = submittedItems.findIndex(
+      (i, n) => !usedLegacy.has(n) && i.part_number === order.part_number,
+    );
+    if (legacyIndex !== -1) usedLegacy.add(legacyIndex);
+    return {
+      order,
+      index,
+      item: legacyIndex !== -1 ? submittedItems[legacyIndex] : undefined,
+      photo: submittedPhotos[order.part_number as string],
+    };
+  });
+
+  for (const { order, item, photo } of inputs) {
+    const pn = order.part_number;
+    if (!item || !Number.isFinite(item.qty_received) || item.qty_received < 0) {
       return { success: false, message: `Qty untuk item ${pn} belum diisi dengan benar.` };
     }
     // Barang yang belum datang (qty 0) tidak punya foto dan tidak diselesaikan.
-    if (match.qty_received === 0) continue;
-    if (!submittedPhotos[pn]?.url) {
+    if (item.qty_received === 0) continue;
+    if (!photo?.url) {
       return { success: false, message: `Foto untuk item ${pn} wajib diunggah.` };
     }
-    if (!sanitizeCaptureMeta(submittedPhotos[pn].meta)) {
+    if (!sanitizeCaptureMeta(photo.meta)) {
       return {
         success: false,
         message: `Lokasi foto item ${pn} tidak valid. Aktifkan lokasi lalu foto ulang.`,
@@ -418,30 +482,18 @@ export async function submitGoodsReceipt(
     mrOrders,
     await fetchReceiptPosForMr(po.mr_id, admin),
   );
-  const claimedIndices = new Set<number>();
   const goodsReceiptItems: GoodsReceiptItem[] = [];
   const receiptEntries: { index: number; qty: number; attachments: Attachment[] }[] = [];
-  for (const item of submittedItems) {
-    if (!eligiblePartNumbers.has(item.part_number)) continue;
-    const photo = submittedPhotos[item.part_number];
-    if (item.qty_received <= 0 || !photo?.url) continue;
+  for (const { order, index, item, photo } of inputs) {
+    if (!item || item.qty_received <= 0 || !photo?.url) continue;
 
-    const state = receiptStates.find(
-      (s) =>
-        s.canConfirm &&
-        s.order.part_number === item.part_number &&
-        !claimedIndices.has(s.index),
-    );
-    if (!state) {
-      const blocked = receiptStates.find(
-        (s) => s.order.part_number === item.part_number,
-      );
+    const state = receiptStates[index];
+    if (!state?.canConfirm) {
       return {
         success: false,
-        message: `Item ${item.part_number} belum bisa dikonfirmasi: ${blocked?.message || "tidak ditemukan"}.`,
+        message: `Item ${order.part_number} belum bisa dikonfirmasi: ${state?.message || "tidak ditemukan"}.`,
       };
     }
-    claimedIndices.add(state.index);
 
     const photoAttachment: Attachment = {
       name: photo.name,
@@ -449,12 +501,13 @@ export async function submitGoodsReceipt(
       type: "bast",
     };
     receiptEntries.push({
-      index: state.index,
+      index,
       qty: Math.min(item.qty_received, state.maxQty),
       attachments: [photoAttachment],
     });
     goodsReceiptItems.push({
-      part_number: item.part_number,
+      part_number: order.part_number as string,
+      order_index: index,
       qty_received: item.qty_received,
       photos: [photoAttachment],
       capture_meta: sanitizeCaptureMeta(photo.meta) ?? undefined,

@@ -27,11 +27,15 @@ interface ReceiveGoodsDialogProps {
   onOpenChange: (open: boolean) => void;
   items: POItem[];
   receiveRecord?: ReceiveRecord | null;
-  onSubmit: (receivedQtyByPartNumber: Record<string, number>) => Promise<void>;
+  // Qty diterima per baris PO yang punya part_number, urutannya sama dengan
+  // `items` - BUKAN per part_number, karena PO bisa punya part_number kembar
+  // (barang sama diinput 2x) yang qty diterimanya berbeda.
+  onSubmit: (receivedQtys: number[]) => Promise<void>;
   isSubmitting: boolean;
 }
 
 interface Row {
+  key: number;
   part_number: string;
   name: string;
   ordered_qty: number;
@@ -55,14 +59,20 @@ export function ReceiveGoodsDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Baris receive_record diklaim berurutan, sama seperti buildPoLines -
+    // part_number kembar kebagian catatan masing-masing.
+    const records = [...(receiveRecord?.items || [])];
     setRows(
       items
         .filter((item) => !!item.part_number)
-        .map((item) => {
-          const prev = receiveRecord?.items.find(
+        .map((item, key) => {
+          const prevIndex = records.findIndex(
             (i) => i.part_number === item.part_number,
           );
+          const prev =
+            prevIndex !== -1 ? records.splice(prevIndex, 1)[0] : undefined;
           return {
+            key,
             part_number: item.part_number,
             name: item.name,
             ordered_qty: item.qty,
@@ -72,12 +82,10 @@ export function ReceiveGoodsDialog({
     );
   }, [open]);
 
-  const setReceivedQty = (partNumber: string, value: number) => {
+  const setReceivedQty = (key: number, value: number) => {
     setRows((prev) =>
       prev.map((r) =>
-        r.part_number === partNumber
-          ? { ...r, received_qty: Math.max(0, value) }
-          : r,
+        r.key === key ? { ...r, received_qty: Math.max(0, value) } : r,
       ),
     );
   };
@@ -85,10 +93,7 @@ export function ReceiveGoodsDialog({
   const isFullMatch = rows.every((r) => r.received_qty === r.ordered_qty);
 
   const handleSubmit = async () => {
-    const receivedQtyByPartNumber = Object.fromEntries(
-      rows.map((r) => [r.part_number, r.received_qty]),
-    );
-    await onSubmit(receivedQtyByPartNumber);
+    await onSubmit(rows.map((r) => r.received_qty));
   };
 
   return (
@@ -121,7 +126,7 @@ export function ReceiveGoodsDialog({
                 const mismatch = row.received_qty !== row.ordered_qty;
                 return (
                   <TableRow
-                    key={row.part_number}
+                    key={row.key}
                     className={mismatch ? "bg-amber-50 dark:bg-amber-950/30" : ""}
                   >
                     <TableCell className="font-medium">{row.name}</TableCell>
@@ -135,10 +140,7 @@ export function ReceiveGoodsDialog({
                         className="w-24 ml-auto text-right"
                         value={row.received_qty}
                         onChange={(e) =>
-                          setReceivedQty(
-                            row.part_number,
-                            Number(e.target.value),
-                          )
+                          setReceivedQty(row.key, Number(e.target.value))
                         }
                       />
                     </TableCell>

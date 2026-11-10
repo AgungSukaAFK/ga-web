@@ -674,7 +674,12 @@ export const applyAdminPoApprovalEffects = async (
   },
 ) => {
   if (plan.markItemsShipped && plan.mrId) {
-    await markPoItemsShippedByVendor(plan.mrId, plan.items, ctx.actorId);
+    await markPoItemsShippedByVendor(
+      plan.mrId,
+      plan.items,
+      ctx.actorId,
+      ctx.kodePo,
+    );
   }
 
   if (plan.changes.length || plan.status !== plan.previousStatus) {

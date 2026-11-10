@@ -701,10 +701,13 @@ export default function MrManagementClient() {
     setIsBastUploadOpen(true);
   };
 
+  // Dicocokkan per baris (referensi objek), bukan part_number: MR bisa punya
+  // part_number kembar, dan mencentang satu baris tidak boleh ikut mencentang
+  // baris kembarnya.
   const toggleBastItemSelection = (item: Order) => {
     setSelectedItemsForBast((prev) =>
-      prev.some((it) => it.part_number === item.part_number)
-        ? prev.filter((it) => it.part_number !== item.part_number)
+      prev.includes(item)
+        ? prev.filter((it) => it !== item)
         : [...prev, item],
     );
   };
@@ -782,13 +785,19 @@ export default function MrManagementClient() {
       // Sequential (bukan Promise.all) - uploadBastForMrItem baca-ubah-tulis
       // seluruh array `orders`, jadi kalau dijalankan paralel utk barang2
       // dari MR yang sama, update bisa saling menimpa (lost update).
+      // Index baris dikirim supaya baris dgn part_number kembar tidak salah
+      // sasaran ke baris pertama.
+      const mrOrders = (selectedMr.orders || []) as Order[];
       for (const item of selectedItemsForBast) {
         if (!item.part_number) continue;
+        const index = mrOrders.indexOf(item);
         await uploadBastForMrItem(
           Number(selectedMr.id),
           item.part_number,
           uploadedAttachments,
           currentUser.id,
+          undefined,
+          index !== -1 ? index : undefined,
         );
       }
 
@@ -1701,12 +1710,10 @@ export default function MrManagementClient() {
                   </div>
                 ) : (
                   bastEligibleItems.map((item) => {
-                    const checked = selectedItemsForBast.some(
-                      (it) => it.part_number === item.part_number,
-                    );
+                    const checked = selectedItemsForBast.includes(item);
                     return (
                       <label
-                        key={item.part_number}
+                        key={(selectedMr?.orders || []).indexOf(item)}
                         className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-muted/50"
                       >
                         <Checkbox

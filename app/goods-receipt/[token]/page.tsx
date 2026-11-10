@@ -101,7 +101,7 @@ export default function GoodsReceiptPage() {
       setItemInputs(
         Object.fromEntries(
           result.items.map((item) => [
-            item.part_number,
+            item.key,
             {
               qty: String(item.qty_dikirim),
               photo: null,
@@ -269,7 +269,7 @@ export default function GoodsReceiptPage() {
   // harus benar-benar diterima.
   const isFormComplete =
     (view?.items.every((item) => {
-      const input = itemInputs[item.part_number];
+      const input = itemInputs[item.key];
       if (!input || input.qty.trim() === "" || Number(input.qty) < 0) {
         return false;
       }
@@ -279,7 +279,7 @@ export default function GoodsReceiptPage() {
     }) ??
       false) &&
     !!view?.items.some(
-      (item) => Number(itemInputs[item.part_number]?.qty) > 0,
+      (item) => Number(itemInputs[item.key]?.qty) > 0,
     );
 
   const handleSubmit = async () => {
@@ -296,7 +296,7 @@ export default function GoodsReceiptPage() {
         { url: string; name: string; meta: PhotoCaptureMeta | null }
       > = {};
       for (const item of view.items) {
-        const photo = itemInputs[item.part_number].photo;
+        const photo = itemInputs[item.key].photo;
         if (!photo) continue;
         const path = `${safeKode}/goods-receipt/${item.part_number}/${Date.now()}_${photo.name}`;
         const uploadResult = await uploadAttachmentDirectPublic(photo, path);
@@ -306,10 +306,10 @@ export default function GoodsReceiptPage() {
           });
           return;
         }
-        photos[item.part_number] = {
+        photos[item.key] = {
           url: uploadResult.url,
           name: photo.name,
-          meta: itemInputs[item.part_number].photoMeta,
+          meta: itemInputs[item.key].photoMeta,
         };
       }
 
@@ -318,8 +318,9 @@ export default function GoodsReceiptPage() {
         "items_json",
         JSON.stringify(
           view.items.map((item) => ({
+            key: item.key,
             part_number: item.part_number,
-            qty_received: Number(itemInputs[item.part_number].qty),
+            qty_received: Number(itemInputs[item.key].qty),
           })),
         ),
       );
@@ -524,14 +525,14 @@ export default function GoodsReceiptPage() {
 
         <div className="space-y-4">
           {view?.items.map((item) => {
-            const input = itemInputs[item.part_number] || {
+            const input = itemInputs[item.key] || {
               qty: "",
               photo: null,
               photoMeta: null,
               previewUrl: null,
             };
             return (
-              <div key={item.part_number} className="rounded-lg border p-4 space-y-3">
+              <div key={item.key} className="rounded-lg border p-4 space-y-3">
                 <div>
                   <p className="font-medium text-sm">{item.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">
@@ -548,7 +549,7 @@ export default function GoodsReceiptPage() {
                       type="number"
                       min={0}
                       value={input.qty}
-                      onChange={(e) => updateItemQty(item.part_number, e.target.value)}
+                      onChange={(e) => updateItemQty(item.key, e.target.value)}
                     />
                   </div>
                   <div className="space-y-1">
@@ -558,7 +559,7 @@ export default function GoodsReceiptPage() {
                       variant={input.photo ? "outline" : "default"}
                       className="w-full"
                       disabled={location.status !== "ok"}
-                      onClick={() => setCameraFor(item.part_number)}
+                      onClick={() => setCameraFor(item.key)}
                     >
                       <Camera className="mr-2 h-4 w-4" />
                       {input.photo ? "Foto Ulang" : "Ambil Foto"}
@@ -592,7 +593,7 @@ export default function GoodsReceiptPage() {
         open={cameraFor !== null}
         onOpenChange={(open) => !open && setCameraFor(null)}
         title={
-          view?.items.find((i) => i.part_number === cameraFor)?.name ||
+          view?.items.find((i) => i.key === cameraFor)?.name ||
           "Foto Barang"
         }
         getStampLines={buildStampLines}

@@ -356,6 +356,78 @@ export const findMrOrderIndex = (
   return -1;
 };
 
+const CLOSED_ORDER_STATUSES = ["Completed", "Cancelled", "Replaced"];
+
+// Versi findMrOrderIndex utk mencocokkan baris PO ke baris MR saat MR punya
+// part_number kembar. Klaim berurutan saja tidak cukup: kalau baris kembar
+// pertama sudah di-PO-kan lewat PO lain, baris PO ini bisa nyasar ke baris
+// pertama itu (dan ikut menandainya diterima/selesai), sementara baris yang
+// benar tidak pernah bergerak. Urutan pilihan:
+//  1. baris yang sudah tercatat milik PO ini (`po_refs` berisi `kodePo`),
+//  2. baris yang belum punya PO sama sekali dan belum ditutup,
+//  3. kemunculan part_number pertama yang belum diklaim (perilaku lama),
+//  4. baris yang part_number LAMA-nya cocok (PO yang tidak ikut "Konversi
+//     Barang").
+export const findMrOrderIndexForPo = (
+  orders: {
+    part_number?: string | null;
+    po_refs?: string[] | null;
+    status?: string | null;
+    conversion_history?: { from_part_number?: string | null }[] | null;
+  }[],
+  partNumber: string | null | undefined,
+  kodePo: string | null | undefined,
+  claimed: Set<number>,
+): number => {
+  if (!partNumber) return -1;
+  const isFree = (i: number) => !claimed.has(i);
+  const isSamePart = (o: (typeof orders)[number]) => o?.part_number === partNumber;
+  const refs = (o: (typeof orders)[number]) =>
+    Array.isArray(o?.po_refs) ? o.po_refs : [];
+
+  if (kodePo) {
+    const own = orders.findIndex(
+      (o, i) => isFree(i) && isSamePart(o) && refs(o).includes(kodePo),
+    );
+    if (own !== -1) return own;
+  }
+  const fresh = orders.findIndex(
+    (o, i) =>
+      isFree(i) &&
+      isSamePart(o) &&
+      refs(o).length === 0 &&
+      !CLOSED_ORDER_STATUSES.includes(o?.status || ""),
+  );
+  if (fresh !== -1) return fresh;
+  const first = findMrOrderIndex(orders, partNumber, undefined, claimed);
+  if (first !== -1) return first;
+  return orders.findIndex(
+    (o, i) =>
+      isFree(i) &&
+      (o?.conversion_history || []).some((c) => c?.from_part_number === partNumber),
+  );
+};
+
+// Pasangkan setiap baris PO (urutan `partNumbers`) ke index baris MR - tiap
+// baris PO kebagian baris MR yang berbeda selama masih ada. Kalau PO punya
+// part_number kembar tapi MR-nya cuma 1 baris, baris PO sisanya ikut ke baris
+// MR yang sama (qty-nya tetap dihitung, bukan hilang). -1 = tidak terhubung.
+export const matchPoLinesToMrOrders = (
+  orders: Parameters<typeof findMrOrderIndexForPo>[0],
+  partNumbers: (string | null | undefined)[],
+  kodePo: string | null | undefined,
+): number[] => {
+  const claimed = new Set<number>();
+  return partNumbers.map((partNumber) => {
+    const index = findMrOrderIndexForPo(orders, partNumber, kodePo, claimed);
+    if (index !== -1) {
+      claimed.add(index);
+      return index;
+    }
+    return findMrOrderIndexForPo(orders, partNumber, kodePo, new Set());
+  });
+};
+
 export const updateMrItemStatus = async (
   mrId: number,
   partNumber: string | null | undefined,
@@ -499,7 +571,9 @@ export const uploadBastForMrItem = async (
 // dibagi bareng (1 pengiriman yg sama).
 export const sendItemsToRequester = async (
   mrId: number,
-  items: { partNumber: string; qtySent: number }[],
+  // `index` = posisi baris di `orders` (lihat findMrOrderIndex) supaya baris
+  // dgn part_number kembar tidak nyasar ke baris pertama.
+  items: { partNumber: string; qtySent: number; index?: number }[],
   delivery: {
     delivery_type: DeliveryType;
     courier?: string;
@@ -522,11 +596,11 @@ export const sendItemsToRequester = async (
   const currentOrders = mr.orders as any[];
   const sentAt = new Date().toISOString();
 
-  for (const { partNumber, qtySent } of items) {
-    const itemIndex = currentOrders.findIndex(
-      (item) => item.part_number && item.part_number === partNumber,
-    );
+  const claimed = new Set<number>();
+  for (const { partNumber, qtySent, index } of items) {
+    const itemIndex = findMrOrderIndex(currentOrders, partNumber, index, claimed);
     if (itemIndex === -1) continue;
+    claimed.add(itemIndex);
 
     const itemToUpdate = { ...currentOrders[itemIndex] };
     itemToUpdate.status = "On Delivery";
@@ -571,8 +645,8 @@ export const sendItemsToRequester = async (
 export const editItemsDeliveryToRequester = async (
   mrId: number,
   originalSentAt: string,
-  selectedItems: { partNumber: string; qtySent: number }[],
-  removedPartNumbers: string[],
+  selectedItems: { partNumber: string; qtySent: number; index?: number }[],
+  removedItems: { partNumber: string; index?: number }[],
   delivery: {
     delivery_type: DeliveryType;
     courier?: string;
@@ -595,11 +669,11 @@ export const editItemsDeliveryToRequester = async (
   const currentOrders = mr.orders as any[];
   const editedAt = new Date().toISOString();
 
-  for (const { partNumber, qtySent } of selectedItems) {
-    const itemIndex = currentOrders.findIndex(
-      (item) => item.part_number && item.part_number === partNumber,
-    );
+  const claimed = new Set<number>();
+  for (const { partNumber, qtySent, index } of selectedItems) {
+    const itemIndex = findMrOrderIndex(currentOrders, partNumber, index, claimed);
     if (itemIndex === -1) continue;
+    claimed.add(itemIndex);
 
     const itemToUpdate = { ...currentOrders[itemIndex] };
     const wasInGroup = itemToUpdate.delivery_info?.sent_at === originalSentAt;
@@ -630,11 +704,10 @@ export const editItemsDeliveryToRequester = async (
     currentOrders[itemIndex] = itemToUpdate;
   }
 
-  for (const partNumber of removedPartNumbers) {
-    const itemIndex = currentOrders.findIndex(
-      (item) => item.part_number && item.part_number === partNumber,
-    );
+  for (const { partNumber, index } of removedItems) {
+    const itemIndex = findMrOrderIndex(currentOrders, partNumber, index, claimed);
     if (itemIndex === -1) continue;
+    claimed.add(itemIndex);
 
     const itemToUpdate = { ...currentOrders[itemIndex] };
     if (

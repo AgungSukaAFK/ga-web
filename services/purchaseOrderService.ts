@@ -7,6 +7,7 @@ import {
   Barang,
   MaterialRequest,
   MrConversionRecord,
+  Order,
   PurchaseOrderDetail,
   PurchaseOrderPayload,
   PurchaseOrderListItem,
@@ -21,7 +22,8 @@ import {
   updateMrItemStatus,
   recalculateMrStatus,
   recalculateMrLevel,
-  findMrOrderIndex,
+  findMrOrderIndexForPo,
+  matchPoLinesToMrOrders,
 } from "./mrService";
 import {
   PAYMENT_VALIDATOR_USER_ID,
@@ -801,10 +803,13 @@ export const createPurchaseOrder = async (
 
     for (const poItem of poData.items) {
       if (!poItem.part_number) continue;
-      const orderIndex = findMrOrderIndex(
+      // Utamakan baris kembar yang belum punya PO - jangan nyasar ke baris
+      // pertama yang sudah di-PO-kan lewat PO lain (lihat
+      // findMrOrderIndexForPo).
+      const orderIndex = findMrOrderIndexForPo(
         originalOrders,
         poItem.part_number,
-        undefined,
+        newPo.kode_po,
         claimedIndices,
       );
       if (orderIndex === -1) continue;
@@ -1019,6 +1024,9 @@ export const markPoItemsShippedByVendor = async (
   mrId: number,
   poItems: POItem[],
   userId: string,
+  // Dipakai buat mencocokkan baris PO ke baris MR yang benar kalau MR punya
+  // part_number kembar (lihat findMrOrderIndexForPo).
+  kodePo?: string,
 ) => {
   const { data: mrRow } = await supabase
     .from("material_requests")
@@ -1026,9 +1034,19 @@ export const markPoItemsShippedByVendor = async (
     .eq("id", mrId)
     .single();
   const orders = normalizeMrOrders((mrRow?.orders as any[]) || []);
-  for (const item of poItems) {
-    if (!item.part_number) continue;
-    const order = orders.find((o) => o.part_number === item.part_number);
+  const lines = poItems.filter((item) => !!item.part_number);
+  const orderIndices = matchPoLinesToMrOrders(
+    orders,
+    lines.map((item) => item.part_number),
+    kodePo,
+  );
+  const handled = new Set<number>();
+  for (let i = 0; i < lines.length; i++) {
+    const item = lines[i];
+    const orderIndex = orderIndices[i];
+    if (orderIndex === -1 || handled.has(orderIndex)) continue;
+    handled.add(orderIndex);
+    const order = orders[orderIndex];
     if (
       !order ||
       order.level === "Open 5" ||
@@ -1043,6 +1061,7 @@ export const markPoItemsShippedByVendor = async (
         item.part_number,
         { level: "Open 4", status: MR_ITEM_STATUSES.SHIPPED_BY_VENDOR },
         userId,
+        orderIndex,
       );
     } catch (err) {
       console.error(
@@ -1068,56 +1087,48 @@ export const getFullReceivedStamp = (
     ? { full_received_at: new Date().toISOString() }
     : {};
 
-// Total qty yang SUDAH diterima GA per part_number, dijumlah dari
-// `receive_record` semua PO (selain Rejected & selain `excludePoId`) yang
-// terhubung ke MR ini. Dipakai submitReceiveRecord buat nentuin item MR
-// "Diterima GA" berdasarkan qty GABUNGAN dari SEMUA PO-nya - bukan cuma qty
-// di 1 PO - soalnya 1 item MR bisa dipecah ke >1 PO (mirror pola yang sama
-// dgn fetchPoQtyBreakdownForMr, cuma versi qty yang SUDAH diterima, bukan
-// qty yang di-PO-kan).
-export const fetchReceivedQtyByPartNumber = async (
+// Total qty yang SUDAH diterima GA per BARIS item MR (index di `orders`),
+// dijumlah dari `receive_record` semua PO (selain Rejected & selain
+// `excludePoId`) yang terhubung ke MR ini. Dipakai submitReceiveRecord buat
+// nentuin item MR "Diterima GA" berdasarkan qty GABUNGAN dari SEMUA PO-nya -
+// bukan cuma qty di 1 PO - soalnya 1 item MR bisa dipecah ke >1 PO.
+//
+// Sengaja per baris, BUKAN per part_number: MR bisa punya part_number kembar
+// (barang sama diinput 2x). Kalau dijumlah per part_number, qty yang diterima
+// utk baris pertama ikut terhitung sebagai milik baris kembarnya, sehingga
+// baris kembar itu ikut dianggap "sudah diterima semua". Tiap baris
+// receive_record dicocokkan ke baris MR lewat findMrOrderIndexForPo, yang
+// juga menangani part_number LAMA (PO yang tidak ikut "Konversi Barang").
+export const fetchReceivedQtyByOrderIndex = async (
   mrId: number,
+  orders: Order[],
   excludePoId?: number,
-): Promise<Record<string, number>> => {
+): Promise<Map<number, number>> => {
   let query = supabase
     .from("purchase_orders")
-    .select("id, receive_record")
+    .select("id, kode_po, receive_record")
     .eq("mr_id", mrId)
-    .not("status", "in", INACTIVE_DOC_STATUS_FILTER);
+    .not("status", "in", INACTIVE_DOC_STATUS_FILTER)
+    .order("id", { ascending: true });
   if (excludePoId) query = query.neq("id", excludePoId);
 
-  const [{ data, error }, mrResult] = await Promise.all([
-    query,
-    supabase.from("material_requests").select("orders").eq("id", mrId).single(),
-  ]);
-  if (error || !data) return {};
+  const { data, error } = await query;
+  const totals = new Map<number, number>();
+  if (error || !data) return totals;
 
-  const totals: Record<string, number> = {};
   for (const po of data) {
     const record = po.receive_record as ReceiveRecord | null;
-    if (!record?.items) continue;
-    for (const item of record.items) {
-      if (!item.part_number) continue;
-      totals[item.part_number] =
-        (totals[item.part_number] || 0) + (item.received_qty || 0);
-    }
-  }
-
-  // Sama seperti fetchPoQtyBreakdownForMr: gabungkan qty yang sudah diterima
-  // di bawah part_number LAMA (PO yang sengaja tidak ikut "Konversi Barang")
-  // ke bucket part_number SEKARANG, supaya perhitungan "sudah diterima
-  // semua?" tetap benar walau identitas item berubah di tengah jalan.
-  const orders = (mrResult.data?.orders as any[]) || [];
-  for (const order of orders) {
-    if (!order.part_number || !Array.isArray(order.conversion_history)) {
-      continue;
-    }
-    for (const record of order.conversion_history as MrConversionRecord[]) {
-      const oldPn = record.from_part_number;
-      if (!oldPn || oldPn === order.part_number) continue;
-      if (totals[oldPn] === undefined) continue;
-      totals[order.part_number] = (totals[order.part_number] || 0) + totals[oldPn];
-    }
+    const recordItems = (record?.items || []).filter((i) => !!i.part_number);
+    const indices = matchPoLinesToMrOrders(
+      orders,
+      recordItems.map((i) => i.part_number),
+      po.kode_po,
+    );
+    recordItems.forEach((item, i) => {
+      const index = indices[i];
+      if (index === -1) return;
+      totals.set(index, (totals.get(index) || 0) + (Number(item.received_qty) || 0));
+    });
   }
   return totals;
 };
@@ -1134,11 +1145,19 @@ export const fetchReceivedQtyByPartNumber = async (
 export const submitReceiveRecord = async (
   po: Pick<
     PurchaseOrderDetail,
-    "id" | "mr_id" | "items" | "approvals" | "vendor_details" | "status"
+    | "id"
+    | "kode_po"
+    | "mr_id"
+    | "items"
+    | "approvals"
+    | "vendor_details"
+    | "status"
   >,
   userId: string,
   userName: string,
-  receivedQtyByPartNumber: Record<string, number>,
+  // Qty diterima per baris `po.items` yang punya part_number (urutan sama),
+  // BUKAN per part_number - PO bisa punya part_number kembar.
+  receivedQtys: number[],
 ): Promise<ReceiveRecord> => {
   if (!po.mr_id) throw new Error("PO ini tidak terhubung ke MR.");
   const { data: closedRow } = await supabase
@@ -1166,11 +1185,11 @@ export const submitReceiveRecord = async (
 
   const items: ReceiveRecordItem[] = (po.items || [])
     .filter((item) => !!item.part_number)
-    .map((item) => ({
+    .map((item, i) => ({
       part_number: item.part_number,
       part_name: item.name,
       ordered_qty: item.qty,
-      received_qty: receivedQtyByPartNumber[item.part_number] ?? 0,
+      received_qty: Math.max(0, Number(receivedQtys[i]) || 0),
     }));
   const isFullMatch = items.every((i) => i.received_qty === i.ordered_qty);
 
@@ -1193,8 +1212,9 @@ export const submitReceiveRecord = async (
   // yang baru ke-save ke DB di akhir fungsi) - dipakai buat cek qty
   // gabungan lintas PO, bukan cuma qty di PO ini (lihat 1 item MR bisa
   // dipecah ke >1 PO).
-  const receivedFromOtherPos = await fetchReceivedQtyByPartNumber(
+  const receivedFromOtherPos = await fetchReceivedQtyByOrderIndex(
     po.mr_id,
+    orders,
     po.id,
   );
 
@@ -1202,16 +1222,28 @@ export const submitReceiveRecord = async (
   // duplikat (barang yang sama diminta 2x terpisah di MR-nya), pastikan
   // masing2 kebagian baris `orders` yang BEDA supaya keduanya ikut maju
   // status penerimaannya, bukan cuma baris pertama yang ke-update berulang.
-  const claimedIndices = new Set<number>();
-  for (const item of items) {
-    const orderIndex = findMrOrderIndex(
-      orders,
-      item.part_number,
-      undefined,
-      claimedIndices,
-    );
-    const order = orderIndex !== -1 ? orders[orderIndex] : undefined;
-    if (orderIndex !== -1) claimedIndices.add(orderIndex);
+  // matchPoLinesToMrOrders mengutamakan baris yang memang milik PO ini
+  // (`po_refs`), supaya tidak nyasar ke baris kembar yang di-PO-kan lewat PO
+  // lain. Qty diterima dijumlah per baris MR (bukan per part_number), jadi
+  // baris kembar yang barangnya belum datang tidak ikut dianggap diterima.
+  const lineOrderIndices = matchPoLinesToMrOrders(
+    orders,
+    items.map((i) => i.part_number),
+    po.kode_po,
+  );
+  const receivedThisPo = new Map<number, number>();
+  items.forEach((item, i) => {
+    const index = lineOrderIndices[i];
+    if (index === -1) return;
+    receivedThisPo.set(index, (receivedThisPo.get(index) || 0) + item.received_qty);
+  });
+  const handledIndices = new Set<number>();
+  for (let lineIndex = 0; lineIndex < items.length; lineIndex++) {
+    const item = items[lineIndex];
+    const orderIndex = lineOrderIndices[lineIndex];
+    if (orderIndex === -1 || handledIndices.has(orderIndex)) continue;
+    handledIndices.add(orderIndex);
+    const order = orders[orderIndex];
     // Item yang belum linked ke PO ini (mis. sudah Cancelled/Completed dari
     // PO lain) dilewati supaya tidak ketimpa - sama seperti guard lama.
     // "PO Created" di sini cuma backward-compat buat data lama yang belum
@@ -1235,9 +1267,10 @@ export const submitReceiveRecord = async (
     // Qty total yg diminta di item MR-nya (bukan cuma qty di PO ini) -
     // dibandingin ke qty gabungan yg sudah diterima dari SEMUA PO terkait,
     // termasuk submission ini.
-    const totalRequestedQty = Number(order?.qty) || item.ordered_qty;
+    const totalRequestedQty = Number(order.qty) || item.ordered_qty;
     const cumulativeReceivedQty =
-      (receivedFromOtherPos[item.part_number] || 0) + item.received_qty;
+      (receivedFromOtherPos.get(orderIndex) || 0) +
+      (receivedThisPo.get(orderIndex) || 0);
     const isItemFullyReceived = cumulativeReceivedQty >= totalRequestedQty;
     try {
       await updateMrItemStatus(
@@ -1259,7 +1292,7 @@ export const submitReceiveRecord = async (
           level: "Open 5",
         },
         userId,
-        orderIndex !== -1 ? orderIndex : undefined,
+        orderIndex,
       );
     } catch (err) {
       console.error(
