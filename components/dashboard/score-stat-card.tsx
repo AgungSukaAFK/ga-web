@@ -20,7 +20,7 @@ import {
 import { CustomPagination } from "@/components/custom-pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatDateFriendly } from "@/lib/utils";
+import { cn, formatDateFriendly, formatDurationDays } from "@/lib/utils";
 import { GaugeCircle } from "lucide-react";
 import {
   AgeGrade,
@@ -107,7 +107,7 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
               <div className="flex flex-col leading-tight">
                 <span className="text-sm font-semibold">{fmt(score!.avgPoints, 2)} / 4 poin</span>
                 <span className="text-xs text-muted-foreground">
-                  median {fmt(score!.medianDays)} hari · {Math.round(score!.onTimePct)}% tepat waktu
+                  median {formatDurationDays(score!.medianDays)} ·{Math.round(score!.onTimePct)}% tepat waktu
                 </span>
               </div>
             </div>
@@ -161,13 +161,13 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
             {grade && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { label: "Median umur", value: `${fmt(score!.medianDays)} hari` },
+                  { label: "Median umur", value: formatDurationDays(score!.medianDays) },
                   {
                     label: `Tepat waktu (≤ ${ON_TIME_MAX_DAYS} hari)`,
                     value: `${Math.round(score!.onTimePct)}%`,
                   },
                   { label: "Lewat 30 hari (E)", value: `${score!.gradeCounts.E} data` },
-                  { label: "Rata-rata umur (info)", value: `${fmt(score!.avgDays)} hari` },
+                  { label: "Rata-rata umur (info)", value: formatDurationDays(score!.avgDays) },
                 ].map((s) => (
                   <div key={s.label} className="rounded-md border p-2">
                     <p className="text-[11px] text-muted-foreground leading-tight">{s.label}</p>
@@ -275,7 +275,7 @@ export function ScoreStatCard({ title, description, score, loading }: ScoreStatC
                         <TableCell>{formatDateFriendly(row.created_at)}</TableCell>
                         <TableCell>{formatDateFriendly(row.full_received_at)}</TableCell>
                         <TableCell className="text-right">
-                          {row.age_days.toFixed(1)} hari
+                          {formatDurationDays(row.age_days)}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline" className={cn("font-bold", GRADE_COLORS[row.grade])}>

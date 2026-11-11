@@ -195,6 +195,22 @@ export const formatDateFriendly = (date?: Date | string): string => {
   });
 };
 
+/**
+ * Format durasi dalam satuan hari (boleh pecahan) jadi teks yang mudah dibaca,
+ * mis. 48.1 -> "48 hari 2 jam", 0.3 -> "7 jam", 0.02 -> "29 menit".
+ */
+export const formatDurationDays = (days: number): string => {
+  if (!isFinite(days) || days < 0) return "-";
+  const totalMinutes = Math.round(days * 24 * 60);
+  const d = Math.floor(totalMinutes / (24 * 60));
+  const h = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const m = totalMinutes % 60;
+
+  if (d > 0) return h > 0 ? `${d} hari ${h} jam` : `${d} hari`;
+  if (h > 0) return m > 0 ? `${h} jam ${m} menit` : `${h} jam`;
+  return m > 0 ? `${m} menit` : "< 1 menit";
+};
+
 // --- TAMBAHKAN FUNGSI BARU DI BAWAH INI ---
 export const formatDateWithTime = (date?: Date | string | null): string => {
   if (!date) return "";
