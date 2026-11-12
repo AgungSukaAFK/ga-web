@@ -82,6 +82,10 @@ import { Button } from "@/components/ui/button";
 import { ClickableStatCard } from "@/components/dashboard/clickable-stat-card";
 import { ScoreStatCard } from "@/components/dashboard/score-stat-card";
 import { DashboardProfileAvatar } from "@/components/dashboard/dashboard-profile-avatar";
+import { TopMrItemsCard } from "@/components/dashboard/insights/top-mr-items-card";
+import { TopPoItemsCard } from "@/components/dashboard/insights/top-po-items-card";
+import { TopVendorsCard } from "@/components/dashboard/insights/top-vendors-card";
+import { ApprovalTimeCard } from "@/components/dashboard/insights/approval-time-card";
 import { createClient } from "@/lib/supabase/client";
 
 // Warna baru yang lebih cerah untuk Pie Chart
@@ -956,6 +960,35 @@ export default function Dashboard() {
           </ResponsiveContainer>
         )}
       </Content>
+
+      {profile?.company && (
+        <>
+          <TopMrItemsCard
+            companyCode={profile.company}
+            startDate={effectiveRange.start.toISOString()}
+            endDate={effectiveRange.end.toISOString()}
+            className="col-span-12 lg:col-span-7"
+          />
+          <ApprovalTimeCard
+            companyCode={profile.company}
+            startDate={effectiveRange.start.toISOString()}
+            endDate={effectiveRange.end.toISOString()}
+            className="col-span-12 lg:col-span-5"
+          />
+          <TopPoItemsCard
+            companyCode={profile.company}
+            startDate={effectiveRange.start.toISOString()}
+            endDate={effectiveRange.end.toISOString()}
+            className="col-span-12 lg:col-span-7"
+          />
+          <TopVendorsCard
+            companyCode={profile.company}
+            startDate={effectiveRange.start.toISOString()}
+            endDate={effectiveRange.end.toISOString()}
+            className="col-span-12 lg:col-span-5"
+          />
+        </>
+      )}
 
       <Content
         size="lg"
