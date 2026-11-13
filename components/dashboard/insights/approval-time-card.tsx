@@ -12,7 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   fetchApprovalDetail,
   fetchApprovalTime,
@@ -105,50 +104,8 @@ function ApprovalDetailDialog({
         </div>
       )}
 
-      <Tabs defaultValue="approvers" className="min-w-0">
-        <TabsList>
-          <TabsTrigger value="approvers">Per Approver</TabsTrigger>
-          <TabsTrigger value="slowest">Dokumen Terlama</TabsTrigger>
-        </TabsList>
-        <TabsContent value="approvers">
-          {data?.approvers.length ? (
-            <DetailTableWrap>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Approver</TableHead>
-                    <TableHead>Tahap</TableHead>
-                    <TableHead className="text-right">Jml Approve</TableHead>
-                    <TableHead className="text-right">Rata-rata</TableHead>
-                    <TableHead className="text-right">Terlama</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.approvers.map((a) => (
-                    <TableRow key={`${a.nama}-${a.step_type}`}>
-                      <TableCell className="font-medium">{a.nama}</TableCell>
-                      <TableCell>{a.step_type}</TableCell>
-                      <TableCell className="text-right tabular-nums">{a.step_count}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {formatHours(a.avg_hours)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {formatHours(a.max_hours)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </DetailTableWrap>
-          ) : (
-            <InsightMessage>Tidak ada data.</InsightMessage>
-          )}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Durasi 1 tahap = dari approval sebelumnya (atau dokumen dibuat, untuk tahap pertama)
-            sampai approver tsb menyetujui.
-          </p>
-        </TabsContent>
-        <TabsContent value="slowest">
+      <div className="min-w-0 space-y-2">
+        <h4 className="text-sm font-semibold">Dokumen dengan Approval Terlama</h4>
           {data?.slowest.length && row ? (
             <DetailTableWrap>
               <Table>
@@ -191,8 +148,7 @@ function ApprovalDetailDialog({
           ) : (
             <InsightMessage>Tidak ada data.</InsightMessage>
           )}
-        </TabsContent>
-      </Tabs>
+      </div>
     </InsightDetailDialog>
   );
 }
@@ -216,7 +172,7 @@ export function ApprovalTimeCard({ className, periodLabel, ...range }: InsightCa
     <Content
       size="md"
       title="Rata-rata Waktu Approval"
-      description={`Dari dokumen dibuat sampai approval terakhir disetujui (tidak termasuk pembayaran & penerimaan barang), ${periodLabel}. Klik untuk detail per approver.`}
+      description={`Dari dokumen dibuat sampai approval terakhir disetujui (tidak termasuk pembayaran & penerimaan barang), ${periodLabel}. Klik untuk melihat dokumen terlama.`}
       className={className}
     >
       {loading ? (

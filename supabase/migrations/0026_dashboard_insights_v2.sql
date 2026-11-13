@@ -9,7 +9,7 @@
 --   * get_dashboard_top_items        : Top Barang (jumlah MR + qty MR + jumlah PO + qty PO)
 --   * get_dashboard_item_detail      : detail 1 barang (daftar MR & PO) - popup
 --   * get_dashboard_vendor_detail    : detail 1 vendor (daftar PO & barang) - popup
---   * get_dashboard_approval_detail  : detail waktu approval per approver + dokumen terlama - popup
+--   * get_dashboard_approval_detail  : daftar dokumen dengan approval terlama - popup
 --   * get_dashboard_top_po_items     : didefinisikan ulang pakai identitas barang baru
 --     (signature sama dengan 0025, jadi cukup create or replace).
 --
@@ -458,10 +458,9 @@ $$;
 -- Dokumen dihitung dengan aturan yang sama dengan get_dashboard_approval_time
 -- (semua step selesai approved, approval terakhir jatuh di periode; step
 -- Payment Validator & Receiver tidak dihitung).
--- Durasi per step = processed_at step tsb - processed_at step sebelumnya
--- (step pertama: - created_at dokumen), urutan sesuai processed_at.
--- jsonb: { approvers: [{nama, step_type, step_count, avg_hours, max_hours}],
---          slowest:   [{id, kode, department, created_at, approved_at, hours}] }
+-- Sengaja TIDAK ada rincian per approver/user (sensitif) - hanya daftar
+-- dokumen dengan approval terlama.
+-- jsonb: { slowest: [{id, kode, department, created_at, approved_at, hours}] }
 create or replace function public.get_dashboard_approval_detail(
   p_company_code text,
   p_start_date timestamptz,
@@ -491,8 +490,6 @@ as $$
     select
       d.id, d.kode, d.department, d.created_at,
       s.elem->>'status' as status,
-      coalesce(nullif(trim(s.elem->>'nama'), ''), '(Tanpa nama)') as nama,
-      coalesce(nullif(trim(s.elem->>'type'), ''), '-') as step_type,
       nullif(s.elem->>'processed_at', '')::timestamptz as processed_at
     from docs d
     cross join lateral jsonb_array_elements(
@@ -508,32 +505,8 @@ as $$
        and count(*) = count(*) filter (where st.status = 'approved' and st.processed_at is not null)
        and max(st.processed_at) >= p_start_date
        and max(st.processed_at) <= p_end_date
-  ),
-  step_durations as (
-    select
-      st.nama,
-      st.step_type,
-      greatest(extract(epoch from (
-        st.processed_at - coalesce(
-          lag(st.processed_at) over (partition by st.id order by st.processed_at),
-          st.created_at
-        )
-      )) / 3600.0, 0) as hours
-    from steps st
-    where st.id in (select id from done_docs)
   )
   select jsonb_build_object(
-    'approvers', coalesce((
-      select jsonb_agg(a order by a.avg_hours desc)
-      from (
-        select sd.nama, sd.step_type,
-               count(*) as step_count,
-               round(avg(sd.hours)::numeric, 1) as avg_hours,
-               round(max(sd.hours)::numeric, 1) as max_hours
-        from step_durations sd
-        group by sd.nama, sd.step_type
-      ) a
-    ), '[]'::jsonb),
     'slowest', coalesce((
       select jsonb_agg(s order by s.hours desc)
       from (

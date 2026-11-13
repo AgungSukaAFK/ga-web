@@ -114,13 +114,6 @@ export interface VendorDetail {
 }
 
 export interface ApprovalDetail {
-  approvers: {
-    nama: string;
-    step_type: string;
-    step_count: number;
-    avg_hours: number;
-    max_hours: number;
-  }[];
   slowest: {
     id: number;
     kode: string;
@@ -212,7 +205,6 @@ export const fetchApprovalDetail = async (
   });
   if (error) throw error;
   return {
-    approvers: numify(data?.approvers, ["step_count", "avg_hours", "max_hours"]),
     slowest: numify(data?.slowest, ["id", "hours"]),
   };
 };
