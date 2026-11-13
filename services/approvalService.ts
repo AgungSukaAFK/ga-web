@@ -14,10 +14,10 @@ const supabase = createClient();
 export const fetchPendingValidationPOs = async () => {
   const { data, error } = await supabase
     .from("purchase_orders")
-    // Join ke user pembuat + MR asal (prioritas/due date/dept dipakai halaman
-    // Approval & Validation sebagai bahan pertimbangan).
+    // Join ke user pembuat + MR asal (prioritas ditampilkan di halaman
+    // Approval & Validation).
     .select(
-      "*, users_with_profiles!user_id(nama), material_requests!mr_id(id, kode_mr, prioritas, due_date, department, tujuan_site, kategori)",
+      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr, prioritas, due_date)",
     )
     .eq("status", "Pending Validation")
     .order("created_at", { ascending: false });
@@ -39,7 +39,7 @@ export const fetchPendingValidationMRs = async (): Promise<
     .from("material_requests")
     // REVISI: Tambahkan join ke cost_centers
     .select(
-      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, code, current_budget)",
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)",
     )
     .eq("status", "Pending Validation")
     .order("created_at", { ascending: false });
@@ -62,7 +62,7 @@ export const fetchMyPendingMrApprovals = async (
     .from("material_requests")
     // REVISI: Tambahkan join ke cost_centers
     .select(
-      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, code, current_budget)",
+      "*, users_with_profiles!userid(nama), cost_centers!cost_center_id(name, current_budget)",
     )
     .eq("status", "Pending Approval");
 
@@ -124,7 +124,7 @@ export const fetchMyPendingPoApprovals = async (
   const { data: allPendingPOs, error } = await supabase
     .from("purchase_orders")
     .select(
-      "*, users_with_profiles!user_id(nama), material_requests!mr_id(id, kode_mr, prioritas, due_date, department, tujuan_site, kategori)",
+      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr, prioritas, due_date)",
     )
     // "Pending Payment" disertakan agar step Payment Validator tetap muncul di antrian.
     .in("status", ["Pending Approval", "Pending Payment"]);
@@ -172,7 +172,7 @@ export const fetchPosReadyForGaReceive = async (): Promise<PurchaseOrder[]> => {
   const { data, error } = await supabase
     .from("purchase_orders")
     .select(
-      "*, users_with_profiles!user_id(nama), material_requests!mr_id(id, kode_mr, orders, prioritas, due_date, department, tujuan_site, kategori)",
+      "*, users_with_profiles!user_id(nama), material_requests!mr_id(kode_mr, orders, prioritas, due_date)",
     )
     .in("status", ["Pending Receive", "Partial Receive"])
     .order("created_at", { ascending: false });

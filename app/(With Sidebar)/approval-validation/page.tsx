@@ -1,21 +1,549 @@
 // src/app/(With Sidebar)/approval-validation/page.tsx
 
-import { Suspense } from "react";
-import { Content } from "@/components/content";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ApprovalValidationClient } from "./ApprovalValidationClient";
+"use client";
 
-// Suspense wajib karena client memakai useSearchParams (filter di URL).
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { isGADepartment, isITAdmin } from "@/lib/constants/departments";
+import { Content } from "@/components/content";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/lib/toast";
+import {
+  fetchMyPendingMrApprovals,
+  fetchPendingValidationMRs,
+  fetchPendingValidationPOs,
+  fetchMyPendingPoApprovals,
+  fetchPosReadyForGaReceive,
+} from "@/services/approvalService";
+import { MaterialRequest, User as Profile, PurchaseOrder } from "@/type";
+import { cn, formatCurrency, formatDateFriendly } from "@/lib/utils";
+import { extractPlainText } from "@/lib/rich-content";
+import {
+  ApprovalDetailDialog,
+  PriorityBadge,
+  type ApprovalDetailTarget,
+} from "./ApprovalDetailDialog";
+
+// Baris tabel bisa diklik (atau Enter/Spasi) untuk membuka ringkasan.
+const rowProps = (open: () => void) => ({
+  className: "cursor-pointer transition-colors hover:bg-muted/50",
+  tabIndex: 0,
+  onClick: open,
+  onKeyDown: (e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    }
+  },
+});
+// Tombol/link aksi di dalam baris tidak ikut membuka dialog.
+const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+// Tipe baru untuk daftar PO yang butuh validasi
+interface ValidationPO {
+  id: number;
+  kode_po: string;
+  created_at: string;
+  total_price: number;
+  users_with_profiles: {
+    nama: string;
+  } | null;
+  material_requests: { kode_mr: string; prioritas: string | null } | null;
+}
+
+function ApprovalValidationContent() {
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [pendingValidationMRs, setPendingValidationMRs] = useState<
+    MaterialRequest[]
+  >([]);
+  const [pendingValidationPOs, setPendingValidationPOs] = useState<
+    ValidationPO[]
+  >([]);
+  const [pendingApprovalMRs, setPendingApprovalMRs] = useState<
+    MaterialRequest[]
+  >([]);
+  const [pendingApprovalPOs, setPendingApprovalPOs] = useState<PurchaseOrder[]>(
+    []
+  ); // <-- State baru
+  const [gaReceivePOs, setGaReceivePOs] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<ApprovalDetailTarget | null>(null);
+
+  const s = createClient();
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await s.auth.getUser();
+
+      if (user) {
+        const { data: profile } = await s
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        setUserProfile(profile);
+
+        try {
+          // REVISI: Logika fetch data disederhanakan
+
+          // 1. Selalu fetch data yang relevan untuk semua user
+          const [myMrApprovals, myPoApprovals] = await Promise.all([
+            fetchMyPendingMrApprovals(user.id),
+            fetchMyPendingPoApprovals(user.id),
+          ]);
+          setPendingApprovalMRs(myMrApprovals);
+          setPendingApprovalPOs(myPoApprovals);
+
+          // 2. Fetch data tambahan KHUSUS jika user adalah General Affair (atau
+          // setara), atau admin IT (setara superadmin)
+          if (isGADepartment(profile?.department) || isITAdmin(profile)) {
+            const [validationMRs, validationPOs] = await Promise.all([
+              fetchPendingValidationMRs(),
+              fetchPendingValidationPOs(),
+            ]);
+            setPendingValidationMRs(validationMRs);
+            setPendingValidationPOs((validationPOs as ValidationPO[]) || []);
+          }
+
+          // 3. Daftar PO yang siap "Terima Barang di WH" - GA departemen ATAU
+          // admin (samain dengan gate isGA di halaman detail PO, biar nggak
+          // ada GA/admin yang berhak terima tapi nggak keliatan di sini).
+          if (isGADepartment(profile?.department) || profile?.role === "admin") {
+            setGaReceivePOs(await fetchPosReadyForGaReceive());
+          }
+        } catch (error: any) {
+          toast.error("Gagal memuat data", { description: error.message });
+        }
+      }
+      setLoading(false);
+    };
+    loadInitialData();
+  }, [s]);
+
+  if (loading) {
+    return (
+      <>
+        <Content className="col-span-12">
+          <Skeleton className="h-64 w-full" />
+        </Content>
+        <Content className="col-span-12">
+          <Skeleton className="h-64 w-full" />
+        </Content>
+      </>
+    );
+  }
+
+  // Sama dengan gate `isGA` di halaman detail PO - GA departemen atau admin.
+  const isGA =
+    isGADepartment(userProfile?.department) || userProfile?.role === "admin";
+
+  return (
+    <>
+      {(isGADepartment(userProfile?.department) || isITAdmin(userProfile)) && (
+        <>
+          <Content
+            title="Menunggu Validasi Anda (Material Request)"
+            description="Daftar MR baru yang membutuhkan validasi dan penentuan alur approval."
+            className="col-span-12"
+            cardAction={
+              <Button asChild variant={"outline"} size={"sm"}>
+                <Link href={"/approval-validation/templates"}>
+                  Kelola Template
+                </Link>
+              </Button>
+            }
+          >
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kode MR</TableHead>
+                    <TableHead>Prioritas</TableHead>
+                    <TableHead>Requester</TableHead>
+                    <TableHead>Departemen</TableHead>
+                    <TableHead>Tanggal Dibuat</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingValidationMRs.length > 0 ? (
+                    pendingValidationMRs.map((mr) => (
+                      <TableRow
+                        key={`mr-val-${mr.id}`}
+                        {...rowProps(() =>
+                          setDetail({
+                            type: "mr",
+                            data: mr,
+                            actionHref: `/material-request/validate/${mr.id}`,
+                            actionLabel: "Validasi MR",
+                          }),
+                        )}
+                      >
+                        <TableCell className="font-medium">
+                          {mr.kode_mr}
+                        </TableCell>
+                        <TableCell>
+                          <PriorityBadge priority={mr.prioritas} />
+                        </TableCell>
+                        <TableCell>
+                          {(mr as any).users_with_profiles?.nama || "N/A"}
+                        </TableCell>
+                        <TableCell>{mr.department}</TableCell>
+                        <TableCell>
+                          {formatDateFriendly(mr.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button asChild variant="default" size="sm">
+                            <Link
+                              href={`/material-request/validate/${mr.id}`}
+                              onClick={stop}
+                            >
+                              Validasi MR
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center h-24">
+                        Tidak ada Material Request yang menunggu validasi.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+
+          <Content
+            title="Menunggu Validasi Anda (Purchase Order)"
+            description="Daftar PO baru yang membutuhkan validasi dan penentuan alur approval."
+            className="col-span-12"
+          >
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kode PO</TableHead>
+                    <TableHead>Prioritas</TableHead>
+                    <TableHead>Pembuat</TableHead>
+                    <TableHead>Total Harga</TableHead>
+                    <TableHead>Tanggal Dibuat</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingValidationPOs.length > 0 ? (
+                    pendingValidationPOs.map((po) => (
+                      <TableRow
+                        key={`po-val-${po.id}`}
+                        {...rowProps(() =>
+                          setDetail({
+                            type: "po",
+                            data: po as unknown as PurchaseOrder,
+                            actionHref: `/purchase-order/validate/${po.id}`,
+                            actionLabel: "Validasi PO",
+                          }),
+                        )}
+                      >
+                        <TableCell className="font-medium">
+                          {po.kode_po}
+                        </TableCell>
+                        <TableCell>
+                          <PriorityBadge
+                            priority={po.material_requests?.prioritas}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {(po as any).users_with_profiles?.nama || "N/A"}
+                        </TableCell>
+                        <TableCell>{formatCurrency(po.total_price)}</TableCell>
+                        <TableCell>
+                          {formatDateFriendly(po.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button asChild variant="default" size="sm">
+                            <Link
+                              href={`/purchase-order/validate/${po.id}`}
+                              onClick={stop}
+                            >
+                              Validasi PO
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center h-24">
+                        Tidak ada Purchase Order yang menunggu validasi.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Content>
+        </>
+      )}
+
+      {isGA && (
+        <Content
+          title="Siap Terima Barang di WH (Purchase Order)"
+          description="Daftar PO yang barangnya sudah boleh diterima GA - baik yang sudah lunas penuh maupun DP&BP skema Kirim Setelah DP yang BP-nya masih menyusul."
+          className="col-span-12"
+        >
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Kode PO</TableHead>
+                  <TableHead>Prioritas</TableHead>
+                  <TableHead>Ref. MR</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Total Harga</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {gaReceivePOs.length > 0 ? (
+                  gaReceivePOs.map((po) => (
+                    <TableRow
+                      key={`po-ga-receive-${po.id}`}
+                      {...rowProps(() =>
+                        setDetail({
+                          type: "po",
+                          data: po,
+                          actionHref: `/purchase-order/${po.id}`,
+                          actionLabel: "Terima Barang",
+                        }),
+                      )}
+                    >
+                      <TableCell className="font-medium">
+                        {po.kode_po}
+                      </TableCell>
+                      <TableCell>
+                        <PriorityBadge
+                          priority={po.material_requests?.prioritas}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {po.material_requests?.kode_mr || "N/A"}
+                      </TableCell>
+                      <TableCell>
+                        {(po.vendor_details as any)?.nama_vendor ||
+                          po.vendor_details?.name ||
+                          "N/A"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            "w-fit",
+                            po.status === "Partial Receive"
+                              ? "bg-amber-600 text-white"
+                              : "bg-blue-600 text-white",
+                          )}
+                        >
+                          {po.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatCurrency(po.total_price)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="default" size="sm">
+                          <Link href={`/purchase-order/${po.id}`} onClick={stop}>
+                            Terima Barang
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center h-24">
+                      Tidak ada Purchase Order yang siap diterima di WH saat
+                      ini.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Content>
+      )}
+
+      <Content
+        title="Menunggu Persetujuan Anda (Material Request)"
+        description="Daftar MR berikut membutuhkan tindakan persetujuan dari Anda."
+        className="col-span-12"
+      >
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kode MR</TableHead>
+                <TableHead>Prioritas</TableHead>
+                <TableHead>Requester</TableHead>
+                <TableHead>Remarks</TableHead>
+                <TableHead>Tanggal Dibuat</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pendingApprovalMRs.length > 0 ? (
+                pendingApprovalMRs.map((mr) => (
+                  <TableRow
+                    key={`mr-app-${mr.id}`}
+                    {...rowProps(() =>
+                      setDetail({
+                        type: "mr",
+                        data: mr,
+                        actionHref: `/material-request/${mr.id}`,
+                        actionLabel: "Lihat & Respon",
+                      }),
+                    )}
+                  >
+                    <TableCell className="font-medium">{mr.kode_mr}</TableCell>
+                    <TableCell>
+                      <PriorityBadge priority={mr.prioritas} />
+                    </TableCell>
+                    <TableCell>
+                      {(mr as any).users_with_profiles?.nama || "N/A"}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {extractPlainText(mr.remarks)}
+                    </TableCell>
+                    <TableCell>{formatDateFriendly(mr.created_at)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/material-request/${mr.id}`} onClick={stop}>
+                          Lihat & Respon
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center h-24">
+                    Tidak ada Material Request yang menunggu persetujuan Anda
+                    saat ini.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Content>
+
+      {/* --- TABEL BARU UNTUK APPROVAL PO --- */}
+      <Content
+        title="Menunggu Persetujuan Anda (Purchase Order)"
+        description="Daftar PO berikut membutuhkan tindakan persetujuan dari Anda."
+        className="col-span-12"
+      >
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kode PO</TableHead>
+                <TableHead>Prioritas</TableHead>
+                <TableHead>Ref. MR</TableHead>
+                <TableHead>Pembuat</TableHead>
+                <TableHead>Total Harga</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pendingApprovalPOs.length > 0 ? (
+                pendingApprovalPOs.map((po) => (
+                  <TableRow
+                    key={`po-app-${po.id}`}
+                    {...rowProps(() =>
+                      setDetail({
+                        type: "po",
+                        data: po,
+                        actionHref: `/purchase-order/${po.id}`,
+                        actionLabel: "Lihat & Respon",
+                      }),
+                    )}
+                  >
+                    <TableCell className="font-medium">{po.kode_po}</TableCell>
+                    <TableCell>
+                      <PriorityBadge
+                        priority={po.material_requests?.prioritas}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {(po as any).material_requests?.kode_mr || "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      {(po as any).users_with_profiles?.nama || "N/A"}
+                    </TableCell>
+                    <TableCell>{formatCurrency(po.total_price)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        {/* TODO: Buat halaman detail/respon untuk PO */}
+                        <Link href={`/purchase-order/${po.id}`} onClick={stop}>
+                          Lihat & Respon
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center h-24">
+                    Tidak ada Purchase Order yang menunggu persetujuan Anda saat
+                    ini.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Content>
+
+      <ApprovalDetailDialog
+        target={detail}
+        onOpenChange={(open) => !open && setDetail(null)}
+      />
+    </>
+  );
+}
+
+// Komponen Induk untuk membungkus dengan Suspense
 export default function ApprovalValidationPage() {
   return (
     <Suspense
       fallback={
-        <Content className="col-span-12">
-          <Skeleton className="h-96 w-full" />
-        </Content>
+        <>
+          <Content className="col-span-12">
+            <Skeleton className="h-64 w-full" />
+          </Content>
+          <Content className="col-span-12">
+            <Skeleton className="h-64 w-full" />
+          </Content>
+        </>
       }
     >
-      <ApprovalValidationClient />
+      <ApprovalValidationContent />
     </Suspense>
   );
 }
