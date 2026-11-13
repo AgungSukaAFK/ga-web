@@ -82,7 +82,7 @@ import { Button } from "@/components/ui/button";
 import { ClickableStatCard } from "@/components/dashboard/clickable-stat-card";
 import { ScoreStatCard } from "@/components/dashboard/score-stat-card";
 import { DashboardProfileAvatar } from "@/components/dashboard/dashboard-profile-avatar";
-import { TopMrItemsCard } from "@/components/dashboard/insights/top-mr-items-card";
+import { TopItemsCard } from "@/components/dashboard/insights/top-items-card";
 import { TopPoItemsCard } from "@/components/dashboard/insights/top-po-items-card";
 import { TopVendorsCard } from "@/components/dashboard/insights/top-vendors-card";
 import { ApprovalTimeCard } from "@/components/dashboard/insights/approval-time-card";
@@ -165,6 +165,14 @@ const PIPELINE_STAGES: { key: string; label: string }[] = [
 // Batas hari MR/PO dianggap "Minggu N" di dalam bulan terpilih - potongan
 // per 7 hari dari tanggal 1 (bukan minggu kalender ISO), supaya "Minggu 1
 // bulan ini" gak ambigu/gak nyambung ke bulan sebelumnya.
+type InsightScope = "period" | "3m" | "12m" | "all";
+const INSIGHT_SCOPES: { value: InsightScope; label: string }[] = [
+  { value: "period", label: "Periode terpilih" },
+  { value: "3m", label: "3 bulan" },
+  { value: "12m", label: "12 bulan" },
+  { value: "all", label: "Semua waktu" },
+];
+
 const getMonthWeekRanges = (monthAnchor: Date) => {
   const year = monthAnchor.getFullYear();
   const month = monthAnchor.getMonth();
@@ -238,6 +246,42 @@ export default function Dashboard() {
       end: new Date(year, month + 1, 0, 23, 59, 59, 999),
     };
   }, [selectedMonth, selectedWeek, weekRanges]);
+
+  // Rentang khusus kartu insight (Top Barang, Top Vendor, Belanja Terbesar,
+  // Waktu Approval). Default ikut filter bulan/minggu di atas; bisa diperlebar
+  // supaya barang yang rutin diminta terlihat utuh (1 bulan saja angkanya kecil).
+  const [insightScope, setInsightScope] = useState<InsightScope>("period");
+
+  const insightRange = useMemo(() => {
+    if (insightScope === "period") {
+      const monthText = selectedMonth.toLocaleDateString("id-ID", {
+        month: "long",
+        year: "numeric",
+      });
+      return {
+        start: effectiveRange.start,
+        end: effectiveRange.end,
+        label: selectedWeek ? `Minggu ${selectedWeek} ${monthText}` : monthText,
+      };
+    }
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = new Date(end);
+    start.setHours(0, 0, 0, 0);
+    if (insightScope === "all") return { start: new Date(2000, 0, 1), end, label: "semua waktu" };
+    const months = insightScope === "3m" ? 3 : 12;
+    start.setMonth(start.getMonth() - months);
+    return { start, end, label: `${months} bulan terakhir` };
+  }, [insightScope, effectiveRange, selectedMonth, selectedWeek]);
+
+  const insightProps = profile?.company
+    ? {
+        companyCode: profile.company,
+        startDate: insightRange.start.toISOString(),
+        endDate: insightRange.end.toISOString(),
+        periodLabel: insightRange.label,
+      }
+    : null;
 
   const handlePrevMonth = () => {
     setSelectedWeek(null);
@@ -961,32 +1005,30 @@ export default function Dashboard() {
         )}
       </Content>
 
-      {profile?.company && (
+      {insightProps && (
         <>
-          <TopMrItemsCard
-            companyCode={profile.company}
-            startDate={effectiveRange.start.toISOString()}
-            endDate={effectiveRange.end.toISOString()}
-            className="col-span-12 lg:col-span-7"
-          />
-          <ApprovalTimeCard
-            companyCode={profile.company}
-            startDate={effectiveRange.start.toISOString()}
-            endDate={effectiveRange.end.toISOString()}
-            className="col-span-12 lg:col-span-5"
-          />
-          <TopPoItemsCard
-            companyCode={profile.company}
-            startDate={effectiveRange.start.toISOString()}
-            endDate={effectiveRange.end.toISOString()}
-            className="col-span-12 lg:col-span-7"
-          />
-          <TopVendorsCard
-            companyCode={profile.company}
-            startDate={effectiveRange.start.toISOString()}
-            endDate={effectiveRange.end.toISOString()}
-            className="col-span-12 lg:col-span-5"
-          />
+          <div className="col-span-12 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Insight Barang, Vendor &amp; Approval
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {INSIGHT_SCOPES.map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={insightScope === opt.value ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setInsightScope(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <TopItemsCard {...insightProps} className="col-span-12 lg:col-span-7" />
+          <TopVendorsCard {...insightProps} className="col-span-12 lg:col-span-5" />
+          <TopPoItemsCard {...insightProps} className="col-span-12 lg:col-span-7" />
+          <ApprovalTimeCard {...insightProps} className="col-span-12 lg:col-span-5" />
         </>
       )}
 

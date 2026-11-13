@@ -7,6 +7,8 @@ export interface InsightCardProps {
   companyCode: string;
   startDate: string; // ISO
   endDate: string; // ISO
+  /** Teks periode untuk deskripsi kartu & popup, mis. "November 2026". */
+  periodLabel: string;
   className?: string;
 }
 

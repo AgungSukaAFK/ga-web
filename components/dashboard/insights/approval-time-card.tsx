@@ -1,8 +1,32 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchApprovalTime, type ApprovalTimeRow } from "@/services/dashboardInsightService";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  fetchApprovalDetail,
+  fetchApprovalTime,
+  type ApprovalTimeRow,
+  type InsightRangeInput,
+} from "@/services/dashboardInsightService";
+import {
+  DetailStat,
+  DetailTableWrap,
+  InsightDetailDialog,
+  formatHours,
+  formatShortDate,
+  useDetailData,
+} from "./insight-detail";
 import {
   INSIGHT_ERROR_TEXT,
   InsightMessage,
@@ -10,25 +34,28 @@ import {
   type InsightCardProps,
 } from "./use-insight-data";
 
-const formatDuration = (hours: number | null): string => {
-  if (hours == null) return "–";
-  if (hours < 1) return "< 1 jam";
-  if (hours < 24) return `${Math.round(hours)} jam`;
-  return `${(hours / 24).toLocaleString("id-ID", { maximumFractionDigits: 1 })} hari`;
-};
-
 const DOC_LABELS: Record<ApprovalTimeRow["doc_type"], string> = {
   MR: "Material Request",
   PO: "Purchase Order",
 };
 
-function ApprovalTimeBlock({ row }: { row: ApprovalTimeRow }) {
+const DOC_PATHS: Record<ApprovalTimeRow["doc_type"], string> = {
+  MR: "/material-request",
+  PO: "/purchase-order",
+};
+
+function ApprovalTimeBlock({ row, onClick }: { row: ApprovalTimeRow; onClick: () => void }) {
   const empty = row.doc_count === 0;
   return (
-    <div className="rounded-lg border p-4">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={empty}
+      className="rounded-lg border p-4 text-left transition-colors enabled:hover:bg-muted/50 disabled:cursor-default"
+    >
       <div className="text-sm text-muted-foreground">{DOC_LABELS[row.doc_type]}</div>
       <div className="mt-1 text-3xl font-bold tabular-nums">
-        {empty ? "–" : formatDuration(row.avg_hours)}
+        {empty ? "–" : formatHours(row.avg_hours)}
       </div>
       {empty ? (
         <div className="mt-2 text-xs text-muted-foreground">
@@ -36,16 +63,143 @@ function ApprovalTimeBlock({ row }: { row: ApprovalTimeRow }) {
         </div>
       ) : (
         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-          <div>Median: {formatDuration(row.median_hours)}</div>
+          <div>Median: {formatHours(row.median_hours)}</div>
           <div>{row.doc_count} dokumen</div>
+          <div className="pt-1 text-primary">Lihat detail →</div>
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
-export function ApprovalTimeCard({ className, ...range }: InsightCardProps) {
+function ApprovalDetailDialog({
+  row,
+  range,
+  periodLabel,
+  onClose,
+}: {
+  row: ApprovalTimeRow | null;
+  range: InsightRangeInput;
+  periodLabel: string;
+  onClose: () => void;
+}) {
+  const key = row ? `${row.doc_type}|${range.startDate}|${range.endDate}` : null;
+  const { data, loading, error } = useDetailData(key, () =>
+    fetchApprovalDetail(range, row!.doc_type),
+  );
+
+  return (
+    <InsightDetailDialog
+      open={row != null}
+      onOpenChange={(open) => !open && onClose()}
+      title={row ? `Waktu Approval ${DOC_LABELS[row.doc_type]}` : ""}
+      description={`Dokumen yang selesai di-approve, ${periodLabel}.`}
+      loading={loading}
+      error={error}
+    >
+      {row && (
+        <div className="grid grid-cols-3 gap-3">
+          <DetailStat label="Rata-rata" value={formatHours(row.avg_hours)} />
+          <DetailStat label="Median" value={formatHours(row.median_hours)} />
+          <DetailStat label="Dokumen" value={row.doc_count} />
+        </div>
+      )}
+
+      <Tabs defaultValue="approvers" className="min-w-0">
+        <TabsList>
+          <TabsTrigger value="approvers">Per Approver</TabsTrigger>
+          <TabsTrigger value="slowest">Dokumen Terlama</TabsTrigger>
+        </TabsList>
+        <TabsContent value="approvers">
+          {data?.approvers.length ? (
+            <DetailTableWrap>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Approver</TableHead>
+                    <TableHead>Tahap</TableHead>
+                    <TableHead className="text-right">Jml Approve</TableHead>
+                    <TableHead className="text-right">Rata-rata</TableHead>
+                    <TableHead className="text-right">Terlama</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.approvers.map((a) => (
+                    <TableRow key={`${a.nama}-${a.step_type}`}>
+                      <TableCell className="font-medium">{a.nama}</TableCell>
+                      <TableCell>{a.step_type}</TableCell>
+                      <TableCell className="text-right tabular-nums">{a.step_count}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {formatHours(a.avg_hours)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {formatHours(a.max_hours)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </DetailTableWrap>
+          ) : (
+            <InsightMessage>Tidak ada data.</InsightMessage>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Durasi 1 tahap = dari approval sebelumnya (atau dokumen dibuat, untuk tahap pertama)
+            sampai approver tsb menyetujui.
+          </p>
+        </TabsContent>
+        <TabsContent value="slowest">
+          {data?.slowest.length && row ? (
+            <DetailTableWrap>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Dokumen</TableHead>
+                    <TableHead>Dibuat</TableHead>
+                    <TableHead>Selesai Approve</TableHead>
+                    <TableHead className="text-right">Durasi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.slowest.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="whitespace-nowrap">
+                        <Link
+                          href={`${DOC_PATHS[row.doc_type]}/${d.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {d.kode}
+                        </Link>
+                        {d.department && (
+                          <div className="text-xs text-muted-foreground">{d.department}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {formatShortDate(d.created_at)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {formatShortDate(d.approved_at)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {formatHours(d.hours)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </DetailTableWrap>
+          ) : (
+            <InsightMessage>Tidak ada data.</InsightMessage>
+          )}
+        </TabsContent>
+      </Tabs>
+    </InsightDetailDialog>
+  );
+}
+
+export function ApprovalTimeCard({ className, periodLabel, ...range }: InsightCardProps) {
   const { data, loading, error } = useInsightData(range, fetchApprovalTime);
+  const [selected, setSelected] = useState<ApprovalTimeRow | null>(null);
 
   // RPC selalu balikin baris MR & PO, tapi tetap dijaga kalau salah satunya hilang.
   const rows: ApprovalTimeRow[] = (["MR", "PO"] as const).map(
@@ -62,7 +216,7 @@ export function ApprovalTimeCard({ className, ...range }: InsightCardProps) {
     <Content
       size="md"
       title="Rata-rata Waktu Approval"
-      description="Dari dokumen dibuat sampai approval terakhir disetujui (tidak termasuk pembayaran & penerimaan barang). Dihitung dari dokumen yang selesai di-approve pada periode terpilih."
+      description={`Dari dokumen dibuat sampai approval terakhir disetujui (tidak termasuk pembayaran & penerimaan barang), ${periodLabel}. Klik untuk detail per approver.`}
       className={className}
     >
       {loading ? (
@@ -72,10 +226,17 @@ export function ApprovalTimeCard({ className, ...range }: InsightCardProps) {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {rows.map((row) => (
-            <ApprovalTimeBlock key={row.doc_type} row={row} />
+            <ApprovalTimeBlock key={row.doc_type} row={row} onClick={() => setSelected(row)} />
           ))}
         </div>
       )}
+
+      <ApprovalDetailDialog
+        row={selected}
+        range={range}
+        periodLabel={periodLabel}
+        onClose={() => setSelected(null)}
+      />
     </Content>
   );
 }

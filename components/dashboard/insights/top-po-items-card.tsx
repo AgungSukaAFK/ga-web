@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -14,6 +15,7 @@ import { Content } from "@/components/content";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 import { fetchTopPoItems, type TopPoItem } from "@/services/dashboardInsightService";
+import { ItemDetailDialog, type ItemDetailTarget } from "./item-detail-dialog";
 import {
   INSIGHT_EMPTY_TEXT,
   INSIGHT_ERROR_TEXT,
@@ -60,8 +62,9 @@ const PoItemTooltip = ({ active, payload }: TooltipProps<number, string>) => {
   );
 };
 
-export function TopPoItemsCard({ className, ...range }: InsightCardProps) {
+export function TopPoItemsCard({ className, periodLabel, ...range }: InsightCardProps) {
   const { data, loading, error } = useInsightData(range, (input) => fetchTopPoItems(input, 10));
+  const [selected, setSelected] = useState<ItemDetailTarget | null>(null);
 
   const chartData: ChartRow[] = (data || []).map((item) => {
     const name = item.item_name || item.part_number || "-";
@@ -75,7 +78,7 @@ export function TopPoItemsCard({ className, ...range }: InsightCardProps) {
     <Content
       size="md"
       title="Barang dengan Belanja Terbesar (PO)"
-      description="Total nilai barang di PO (sebelum pajak & diskon), periode terpilih."
+      description={`Total nilai barang di PO (sebelum pajak & diskon), ${periodLabel}. Klik batang untuk detail.`}
       className={className}
     >
       {loading ? (
@@ -104,10 +107,34 @@ export function TopPoItemsCard({ className, ...range }: InsightCardProps) {
               width={160}
             />
             <Tooltip content={<PoItemTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
-            <Bar dataKey="total_value" name="Nilai" fill="var(--color-po)" radius={[0, 4, 4, 0]} />
+            <Bar
+              dataKey="total_value"
+              name="Nilai"
+              fill="var(--color-po)"
+              radius={[0, 4, 4, 0]}
+              className="cursor-pointer"
+              onClick={(entry: { payload?: ChartRow }) => {
+                const row = entry?.payload;
+                if (!row) return;
+                setSelected({
+                  item_key: row.item_key,
+                  item_name: row.item_name,
+                  part_number: row.part_number,
+                  uom: row.uom,
+                });
+              }}
+            />
           </BarChart>
         </ResponsiveContainer>
       )}
+
+      <ItemDetailDialog
+        item={selected}
+        range={range}
+        periodLabel={periodLabel}
+        defaultTab="po"
+        onClose={() => setSelected(null)}
+      />
     </Content>
   );
 }
