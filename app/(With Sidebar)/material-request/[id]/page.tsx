@@ -13,6 +13,7 @@ import {
   getUploadErrorMessage,
 } from "@/lib/attachments";
 import { Content } from "@/components/content";
+import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -1874,7 +1875,13 @@ function DetailMRPageContent({ params }: { params: { id: string } }) {
                 <div className="flex items-center gap-2">
                   <CircleUser className="w-4 h-4 text-muted-foreground" />
                   {/* Kotak mirip input tapi bukan input */}
-                  <div className="flex min-h-10 w-full min-w-0 items-center rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                  <div className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm [overflow-wrap:anywhere]">
+                    <UserAvatar
+                      userId={(mr as any).userid}
+                      name={(mr as any).users_with_profiles?.nama}
+                      className="h-6 w-6"
+                      fallbackClassName="text-[10px]"
+                    />
                     {(mr as any).users_with_profiles?.nama || "N/A"}
                   </div>
                 </div>

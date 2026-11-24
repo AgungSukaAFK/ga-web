@@ -13,6 +13,7 @@ import {
 } from "@/lib/attachments";
 import { isGADepartment } from "@/lib/constants/departments";
 import { Content } from "@/components/content";
+import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -190,26 +191,43 @@ const PPH_LABELS: Record<string, string> = {
   pph23_non_npwp: "PPH 23 — Tanpa NPWP",
 };
 
-const InfoItem = ({
+// Layout section info (Informasi Utama & Detail Referensi MR): label di atas
+// nilai, dikelompokkan per sub-judul supaya kolomnya rata.
+const InfoGroup = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <section className="space-y-3">
+    <h4 className="border-b pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {title}
+    </h4>
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2 [&>*]:min-w-0">
+      {children}
+    </dl>
+  </section>
+);
+
+const InfoField = ({
   icon: Icon,
   label,
-  value,
-  isBlock = false,
+  className,
+  children,
 }: {
   icon: React.ElementType;
-  label: string;
-  value: React.ReactNode;
-  isBlock?: boolean;
+  label: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
 }) => (
-  <div
-    className={cn(isBlock ? "flex flex-col gap-1" : "grid grid-cols-3 gap-x-2")}
-  >
-    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
-      <Icon className="h-4 w-4" />
+  <div className={cn("space-y-1", className)}>
+    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Icon className="h-3.5 w-3.5" />
       {label}
     </dt>
-    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
-      {value}
+    <dd className="text-sm font-semibold [overflow-wrap:anywhere]">
+      {children}
     </dd>
   </div>
 );
@@ -2402,171 +2420,164 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
 
           <div className="col-span-12 lg:col-span-8 space-y-6">
             <Content title="Informasi Utama">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                <InfoItem
-                  icon={CircleUser}
-                  label="Pembuat PO"
-                  value={po.users_with_profiles?.nama || "N/A"}
-                />
-                <InfoItem
-                  icon={Building}
-                  label="Perusahaan"
-                  value={po.company_code}
-                />
-                <InfoItem
-                  icon={Calendar}
-                  label="Tanggal Dibuat"
-                  value={formatDateFriendly(po.created_at)}
-                />
-                <InfoItem
-                  icon={DollarSign}
-                  label="Grand Total"
-                  value={
+              <div className="space-y-6">
+                {/* --- Dokumen --- */}
+                <InfoGroup title="Dokumen">
+                  <InfoField icon={CircleUser} label="Pembuat PO">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">
-                        {formatCurrency(po.total_price)}
+                      <UserAvatar
+                        userId={po.user_id}
+                        name={po.users_with_profiles?.nama}
+                        className="h-6 w-6"
+                        fallbackClassName="text-[10px]"
+                      />
+                      <span className="[overflow-wrap:anywhere]">
+                        {po.users_with_profiles?.nama || "N/A"}
                       </span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setIsBudgetDialogOpen(true)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
                     </div>
-                  }
-                />
-                <InfoItem
-                  icon={Tag}
-                  label="Ref. MR"
-                  value={
-                    po.material_requests ? (
+                  </InfoField>
+                  <InfoField icon={Building} label="Perusahaan">
+                    {po.company_code || "N/A"}
+                  </InfoField>
+                  <InfoField icon={Calendar} label="Tanggal Dibuat">
+                    {formatDateFriendly(po.created_at)}
+                  </InfoField>
+                  <InfoField icon={Tag} label="Ref. MR">
+                    {po.material_requests ? (
                       <Link
                         href={`/material-request/${po.material_requests.id}`}
-                        className="text-primary hover:underline flex items-center gap-1"
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
                         target="_blank"
                       >
                         {po.material_requests.kode_mr}
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     ) : (
-                      "Tidak ada"
-                    )
-                  }
-                />
-                <InfoItem
-                  icon={Wallet}
-                  label="Payment Term"
-                  value={po.payment_term}
-                />
-                {isDpBpPO && (
-                  <InfoItem
-                    icon={Wallet}
-                    label="Progress DP & BP"
-                    value={
-                      <div className="flex flex-col gap-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            className={cn(
-                              "w-fit",
-                              po.dp_paid
-                                ? "bg-green-500 text-white"
-                                : "bg-secondary text-secondary-foreground",
-                            )}
-                          >
-                            DP {po.dp_paid ? "Lunas" : "Belum"}
-                          </Badge>
-                          <Badge
-                            className={cn(
-                              "w-fit",
-                              po.bp_paid
-                                ? "bg-green-500 text-white"
-                                : "bg-secondary text-secondary-foreground",
-                            )}
-                          >
-                            BP {po.bp_paid ? "Lunas" : "Belum"}
-                          </Badge>
-                          <Badge variant="outline" className="w-fit">
-                            {dpBpRequiresFullPayment
-                              ? "Kirim Setelah Pelunasan"
-                              : "Kirim Setelah DP"}
-                          </Badge>
-                        </div>
+                      <span className="text-muted-foreground">Tidak ada</span>
+                    )}
+                  </InfoField>
+                </InfoGroup>
+
+                {/* --- Pembayaran & Pengiriman --- */}
+                <InfoGroup title="Pembayaran & Pengiriman">
+                  <InfoField icon={DollarSign} label="Grand Total">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">
+                        {formatCurrency(po.total_price)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="Lihat rincian biaya"
+                        onClick={() => setIsBudgetDialogOpen(true)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </InfoField>
+                  <InfoField icon={Wallet} label="Payment Term">
+                    {po.payment_term || "N/A"}
+                  </InfoField>
+                  {isDpBpPO && (
+                    <InfoField
+                      icon={Wallet}
+                      label="Progress DP & BP"
+                      className="md:col-span-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          className={cn(
+                            po.dp_paid
+                              ? "bg-green-500 text-white"
+                              : "bg-secondary text-secondary-foreground",
+                          )}
+                        >
+                          DP {po.dp_paid ? "Lunas" : "Belum"}
+                        </Badge>
+                        <Badge
+                          className={cn(
+                            po.bp_paid
+                              ? "bg-green-500 text-white"
+                              : "bg-secondary text-secondary-foreground",
+                          )}
+                        >
+                          BP {po.bp_paid ? "Lunas" : "Belum"}
+                        </Badge>
+                        <Badge variant="outline">
+                          {dpBpRequiresFullPayment
+                            ? "Kirim Setelah Pelunasan"
+                            : "Kirim Setelah DP"}
+                        </Badge>
                       </div>
-                    }
-                  />
-                )}
-                <InfoItem
-                  icon={Truck}
-                  label="Alamat Pengiriman"
-                  value={po.shipping_address}
-                />
-                <div className="md:col-span-2">
-                  <InfoItem
+                    </InfoField>
+                  )}
+                  <InfoField
+                    icon={Truck}
+                    label="Alamat Pengiriman"
+                    className="md:col-span-2"
+                  >
+                    <span className="whitespace-pre-wrap font-normal">
+                      {po.shipping_address || "N/A"}
+                    </span>
+                  </InfoField>
+                  <InfoField
                     icon={Info}
                     label="Catatan PO"
-                    value={
-                      po.notes ? (
+                    className="md:col-span-2"
+                  >
+                    {po.notes ? (
+                      <div className="font-normal">
                         <RichContentView content={parseRichValue(po.notes)} />
-                      ) : (
-                        "N/A"
-                      )
-                    }
-                    isBlock
-                  />
-                </div>
-                <hr className="md:col-span-2" />
-                <InfoItem
-                  icon={CircleUser}
-                  label="Vendor"
-                  value={
-                    <div>
-                      <span className="block font-medium">
-                        {vendorData.name}
-                      </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </InfoField>
+                </InfoGroup>
+
+                {/* --- Vendor --- */}
+                <InfoGroup title="Vendor">
+                  <InfoField icon={CircleUser} label="Nama Vendor">
+                    <div className="flex flex-col">
+                      <span>{vendorData.name || "N/A"}</span>
                       {vendorData.code && (
-                        <span className="text-xs text-muted-foreground font-mono">
+                        <span className="font-mono text-xs font-normal text-muted-foreground">
                           {vendorData.code}
                         </span>
                       )}
                     </div>
-                  }
-                />
-                <InfoItem
-                  icon={Building2}
-                  label="Tipe Vendor"
-                  value={
-                    vendorData.tipeVendor ? (
-                      <Badge variant="outline" className="w-fit">
+                  </InfoField>
+                  <InfoField icon={Building2} label="Tipe Vendor">
+                    {vendorData.tipeVendor ? (
+                      <Badge variant="outline">
                         {VENDOR_TIPE_LABELS[vendorData.tipeVendor] ||
                           vendorData.tipeVendor}
                       </Badge>
                     ) : (
                       "N/A"
-                    )
-                  }
-                />
-                <InfoItem
-                  icon={Info}
-                  label="Kontak Vendor"
-                  value={
-                    <div>
-                      <div>{vendorData.contact}</div>
-                      <div className="text-xs text-muted-foreground font-normal">
-                        {vendorData.email}
-                      </div>
+                    )}
+                  </InfoField>
+                  <InfoField icon={Info} label="Kontak Vendor">
+                    <div className="flex flex-col">
+                      <span>{vendorData.contact || "N/A"}</span>
+                      {vendorData.email && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {vendorData.email}
+                        </span>
+                      )}
                     </div>
-                  }
-                />
-                <div className="md:col-span-2">
-                  <InfoItem
+                  </InfoField>
+                  <InfoField
                     icon={Building2}
                     label="Alamat Vendor"
-                    value={vendorData.address}
-                    isBlock
-                  />
-                </div>
+                    className="md:col-span-2"
+                  >
+                    <span className="whitespace-pre-wrap font-normal">
+                      {vendorData.address || "N/A"}
+                    </span>
+                  </InfoField>
+                </InfoGroup>
               </div>
             </Content>
 
@@ -2835,44 +2846,38 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
               <Content
                 title={`Detail Referensi dari ${po.material_requests.kode_mr}`}
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                  <InfoItem
-                    icon={CircleUser}
-                    label="Pembuat MR"
-                    value={
-                      po.material_requests.users_with_profiles?.nama || "N/A"
-                    }
-                  />
-                  <InfoItem
-                    icon={Building}
-                    label="Departemen MR"
-                    value={po.material_requests.department}
-                  />
-                  <InfoItem
-                    icon={Tag}
-                    label="Kategori MR"
-                    value={po.material_requests.kategori}
-                  />
-                  <InfoItem
-                    icon={DollarSign}
-                    label="Estimasi Biaya MR"
-                    value={formatCurrency(po.material_requests.cost_estimation)}
-                  />
-                  <InfoItem
-                    icon={Building2}
-                    label="Cost Center"
-                    value={getCostCenterName()}
-                  />
-                  <InfoItem
-                    icon={Truck}
-                    label="Tujuan Site (MR)"
-                    value={po.material_requests.tujuan_site || "N/A"}
-                  />
-                  <InfoItem
-                    icon={Zap}
-                    label="Prioritas MR"
-                    value={
+                <div className="space-y-6">
+                  {/* --- Umum --- */}
+                  <InfoGroup title="Umum">
+                    <InfoField icon={CircleUser} label="Pembuat MR">
                       <div className="flex items-center gap-2">
+                        <UserAvatar
+                          userId={po.material_requests.userid}
+                          name={po.material_requests.users_with_profiles?.nama}
+                          className="h-6 w-6"
+                          fallbackClassName="text-[10px]"
+                        />
+                        <span className="[overflow-wrap:anywhere]">
+                          {po.material_requests.users_with_profiles?.nama ||
+                            "N/A"}
+                        </span>
+                      </div>
+                    </InfoField>
+                    <InfoField icon={Building} label="Departemen">
+                      {po.material_requests.department || "N/A"}
+                    </InfoField>
+                    <InfoField icon={Tag} label="Kategori">
+                      {po.material_requests.kategori || "N/A"}
+                    </InfoField>
+                    <InfoField icon={Truck} label="Tujuan Site">
+                      {po.material_requests.tujuan_site || "N/A"}
+                    </InfoField>
+                  </InfoGroup>
+
+                  {/* --- Prioritas & Biaya --- */}
+                  <InfoGroup title="Prioritas & Biaya">
+                    <InfoField icon={Zap} label="Prioritas">
+                      <div className="flex flex-wrap items-baseline gap-x-2">
                         <span>{po.material_requests.prioritas || "N/A"}</span>
                         {priorityText && (
                           <span className="text-xs font-normal text-muted-foreground">
@@ -2880,40 +2885,53 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                           </span>
                         )}
                       </div>
-                    }
-                  />
-                  <div className="grid grid-cols-3 gap-x-2">
-                    <dt className="text-sm text-muted-foreground col-span-1 flex items-center gap-2">
-                      <Layers className="h-4 w-4" />
-                      Level MR{" "}
-                      <button
-                        onClick={() => setIsLevelInfoOpen(true)}
-                        className="text-muted-foreground hover:text-primary transition-colors"
-                        title="Lihat Definisi Level"
-                      >
-                        <HelpCircle className="h-3 w-3" />
-                      </button>
-                    </dt>
-                    <dd className="text-sm font-semibold col-span-2 whitespace-pre-wrap">
+                    </InfoField>
+                    <InfoField
+                      icon={Layers}
+                      label={
+                        <>
+                          Level
+                          <button
+                            type="button"
+                            onClick={() => setIsLevelInfoOpen(true)}
+                            className="text-muted-foreground transition-colors hover:text-primary"
+                            title="Lihat Definisi Level"
+                          >
+                            <HelpCircle className="h-3 w-3" />
+                          </button>
+                        </>
+                      }
+                    >
                       {po.material_requests.level || "N/A"}
-                    </dd>
-                  </div>
-                  <div className="md:col-span-2">
-                    <InfoItem
+                    </InfoField>
+                    <InfoField icon={DollarSign} label="Estimasi Biaya">
+                      {formatCurrency(po.material_requests.cost_estimation)}
+                    </InfoField>
+                    <InfoField icon={Building2} label="Cost Center">
+                      {getCostCenterName() || "N/A"}
+                    </InfoField>
+                  </InfoGroup>
+
+                  {/* --- Remarks --- */}
+                  <InfoGroup title="Remarks">
+                    <InfoField
                       icon={Info}
                       label="Remarks MR"
-                      value={
-                        po.material_requests.remarks ? (
+                      className="md:col-span-2"
+                    >
+                      {po.material_requests.remarks ? (
+                        <div className="font-normal">
                           <RichContentView
-                            content={parseRichValue(po.material_requests.remarks)}
+                            content={parseRichValue(
+                              po.material_requests.remarks,
+                            )}
                           />
-                        ) : (
-                          "N/A"
-                        )
-                      }
-                      isBlock
-                    />
-                  </div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </InfoField>
+                  </InfoGroup>
                 </div>
               </Content>
             )}
@@ -3078,65 +3096,106 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
             </Content>
 
             <Content title="Lampiran Purchasing">
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {canUploadAttachment && (
-                  <div>
-                    <Label className="text-xs">
-                      Tambah Lampiran Purchasing (Quotation/Invoice)
-                    </Label>
-                    <div className="mt-1 flex flex-col sm:flex-row gap-2">
-                      <SearchableSelect
-                        value={purchasingAttachmentType}
-                        onValueChange={(v) =>
-                          setPurchasingAttachmentType(
-                            v as "quotation" | "invoice",
-                          )
-                        }
+                  <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        1. Pilih jenis lampiran
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(
+                          [
+                            { value: "quotation", label: "Quotation" },
+                            { value: "invoice", label: "Invoice" },
+                          ] as const
+                        ).map((opt) => (
+                          <Button
+                            key={opt.value}
+                            type="button"
+                            size="sm"
+                            variant={
+                              purchasingAttachmentType === opt.value
+                                ? "default"
+                                : "outline"
+                            }
+                            disabled={isUploadingPurchasing}
+                            onClick={() =>
+                              setPurchasingAttachmentType(opt.value)
+                            }
+                          >
+                            {purchasingAttachmentType === opt.value && (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="purchasing-attachment-upload"
+                        className="text-xs text-muted-foreground"
                       >
-                        <SearchableSelectTrigger className="w-full sm:w-40">
-                          <SearchableSelectValue placeholder="Jenis lampiran" />
-                        </SearchableSelectTrigger>
-                        <SearchableSelectContent>
-                          <SearchableSelectItem value="quotation">Quotation</SearchableSelectItem>
-                          <SearchableSelectItem value="invoice">Invoice</SearchableSelectItem>
-                        </SearchableSelectContent>
-                      </SearchableSelect>
+                        2. Unggah file
+                      </Label>
                       <FileDropzone
                         id="purchasing-attachment-upload"
-                        className="flex-1"
                         onFiles={handlePurchasingAttachmentUpload}
-                        disabled={isUploadingPurchasing}
+                        disabled={!purchasingAttachmentType}
+                        loading={isUploadingPurchasing}
+                        title={
+                          purchasingAttachmentType
+                            ? `Seret & lepas file ${
+                                purchasingAttachmentType === "invoice"
+                                  ? "Invoice"
+                                  : "Quotation"
+                              }, atau klik untuk memilih`
+                            : "Pilih jenis lampiran terlebih dahulu"
+                        }
                       />
                     </div>
-                    {isUploadingPurchasing && (
-                      <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
-                    )}
                   </div>
                 )}
-                <ul className="space-y-2">
-                  {purchasingAttachments.length > 0 ? (
-                    purchasingAttachments.map((file, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px]">
-                          {file.type === "invoice" ? "Invoice" : "Quotation"}
-                        </Badge>
+                {purchasingAttachments.length > 0 ? (
+                  <ul className="space-y-2">
+                    {purchasingAttachments.map((file, index) => (
+                      <li key={index}>
                         <Link
                           href={resolveAttachmentUrl(file.url)}
                           target="_blank"
-                          className="flex items-center gap-2 text-sm text-primary hover:underline"
+                          className="group flex items-center gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-muted/50"
                         >
-                          <Paperclip className="h-4 w-4" />
-                          <span>{file.name}</span>
-                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="truncate text-sm font-medium group-hover:text-primary"
+                              title={file.name}
+                            >
+                              {file.name}
+                            </p>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "mt-1 px-1.5 py-0 text-[10px] font-medium",
+                                file.type === "invoice"
+                                  ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                  : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300",
+                              )}
+                            >
+                              {file.type === "invoice" ? "Invoice" : "Quotation"}
+                            </Badge>
+                          </div>
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
                         </Link>
                       </li>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Tidak ada lampiran.
-                    </p>
-                  )}
-                </ul>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Tidak ada lampiran.
+                  </p>
+                )}
               </div>
             </Content>
 
