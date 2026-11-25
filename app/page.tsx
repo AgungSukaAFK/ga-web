@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -35,8 +36,17 @@ import {
   PhoneFrame,
   ThemedScreenshot,
 } from "@/components/landing/screenshot";
+import { LandingStructuredData } from "@/components/landing/structured-data";
+import { publicPageMetadata, SITE_DESCRIPTION, SITE_TITLE } from "@/lib/seo";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+
+export const metadata: Metadata = publicPageMetadata({
+  path: "/",
+  title: SITE_TITLE,
+  absoluteTitle: true,
+  description: SITE_DESCRIPTION,
+});
 
 const NAV_LINKS = [
   { name: "Fitur", href: "#fitur" },
@@ -327,6 +337,7 @@ export default async function LandingPage() {
 
   return (
     <div className="min-h-svh bg-background text-foreground antialiased">
+      <LandingStructuredData />
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -468,7 +479,6 @@ export default async function LandingPage() {
                     width={720}
                     height={1559}
                     sizes="220px"
-                    priority
                   />
                 </PhoneFrame>
 
@@ -710,7 +720,7 @@ export default async function LandingPage() {
                     </span>
                   </div>
                   <div>
-                    <p className="font-semibold lg:mt-4">{title}</p>
+                    <h3 className="font-semibold lg:mt-4">{title}</h3>
                     <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                       {desc}
                     </p>

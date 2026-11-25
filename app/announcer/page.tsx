@@ -8,7 +8,7 @@ import type { Metadata } from "next";
 import AnnouncerClient from "./AnnouncerClient";
 
 export const metadata: Metadata = {
-  title: "Announcer Follow-up | Garuda Procure",
+  title: "Announcer Follow-up",
 };
 
 export default function AnnouncerPage() {

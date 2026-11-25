@@ -78,6 +78,7 @@ Dengan dua file itu, `npm run dev` **tidak menyentuh production sama sekali**.
 | `NEXT_PUBLIC_VPS_SUPABASE_URL`, `NEXT_PUBLIC_VPS_SUPABASE_ANON_KEY` | Upload langsung dari browser ke storage VPS (anon key, **bukan** service role) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push. Generate sekali (`npx web-push generate-vapid-keys`); jangan diganti setelah user mulai subscribe |
 | `NEXT_PUBLIC_FONNTE_TOKEN`                                 | Notifikasi WhatsApp lewat Fonnte                         |
+| `NEXT_PUBLIC_SITE_URL` | Domain production (canonical, sitemap, gambar share). Kosong = domain production Vercel |
 | `NEXT_PUBLIC_GOA_URL`                                      | Base URL web GOA untuk app switcher di sidebar           |
 
 ## Scripts

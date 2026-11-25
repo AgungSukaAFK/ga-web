@@ -6,15 +6,34 @@ import { fontInitScript } from "@/lib/font-options";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { NotificationProvider } from "@/components/providers/NotificationProvider";
-
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
+import {
+  NOINDEX,
+  OG_IMAGE,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+} from "@/lib/seo";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(defaultUrl),
-  title: "Garuda Procure",
-  description: "Sistem Manajemen MR & PO - PT. Garuda Mart Indonesia",
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  // Default noindex; halaman publik opt-in lewat publicPageMetadata().
+  // Canonical sengaja tidak di sini supaya tidak diwarisi semua halaman.
+  robots: NOINDEX,
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
+  twitter: { card: "summary_large_image", images: [OG_IMAGE] },
+  // Cegah iOS mengubah nomor dokumen/NRP jadi link telepon.
+  formatDetection: { telephone: false },
   // manifest + icons dibutuhkan supaya "Add to Home Screen" di HP jalan
   // (syarat Web Push tetap masuk walau browser ditutup, terutama di
   // iOS/Safari - lihat lib/notifications/push.ts).
@@ -53,7 +72,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={fontVariables} suppressHydrationWarning>
+    <html lang="id" className={fontVariables} suppressHydrationWarning>
       <head>
         {/* Terapkan font & ukuran font tersimpan sebelum render (anti-flash) */}
         <script dangerouslySetInnerHTML={{ __html: fontInitScript }} />

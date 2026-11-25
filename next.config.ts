@@ -5,6 +5,16 @@ const nextConfig: NextConfig = {
   images: {
     domains: ["api.qrserver.com"],
   },
+  // Lapis kedua selain meta noindex: halaman ber-token/nomor dokumen yang
+  // bisa dibuka tanpa login tidak boleh masuk mesin pencari.
+  async headers() {
+    return ["/goods-receipt/:path*", "/approval-po/:path*", "/api/:path*"].map(
+      (source) => ({
+        source,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      }),
+    );
+  },
   experimental: {
     serverActions: {
       // CATATAN: attachment (PO/MR/BAST/dll) TIDAK lagi lewat body Server

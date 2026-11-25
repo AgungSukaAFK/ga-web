@@ -12,7 +12,7 @@ import type { NavProfile } from "@/lib/sidebar/nav-config";
 import { NotFoundClient } from "./NotFoundClient";
 
 export const metadata: Metadata = {
-  title: "Halaman Tidak Ditemukan · Garuda Procure",
+  title: "Halaman Tidak Ditemukan",
 };
 
 export default async function NotFound() {
