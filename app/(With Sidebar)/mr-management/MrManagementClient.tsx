@@ -52,6 +52,7 @@ import { toast } from "@/lib/toast";
 import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { User as AuthUser } from "@supabase/supabase-js";
 import { Profile, Order, MaterialRequestListItem, Attachment } from "@/type";
+import { getItemPoRefs } from "@/lib/mrItemPoRefs";
 import { exportStyledExcel, fetchAllRows } from "@/lib/excel-export";
 import {
   ExcelDownloadMenu,
@@ -642,7 +643,7 @@ export default function MrManagementClient() {
               MR_ITEM_STATUS_LABELS[item.status || "Pending"] ||
               item.status ||
               "Pending",
-            "No. PO": item.po_refs?.join(", ") || "-",
+            "No. PO": getItemPoRefs(item).join(", ") || "-",
             "Catatan Item": item.note || item.status_note || "-",
             URL: item.url || "-",
           }));
@@ -1563,9 +1564,9 @@ export default function MrManagementClient() {
                               >
                                 {statusLabel}
                               </Badge>
-                              {item.po_refs && item.po_refs.length > 0 && (
+                              {getItemPoRefs(item).length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1">
-                                  {item.po_refs.map((ref, refIdx) => (
+                                  {getItemPoRefs(item).map((ref, refIdx) => (
                                     <Link
                                       key={refIdx}
                                       href={`/purchase-order/${quickViewPoRefsMap[ref]?.id ?? ""}`}

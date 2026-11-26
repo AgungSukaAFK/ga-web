@@ -70,6 +70,7 @@ import {
   DeliveryType,
   POItem,
 } from "@/type";
+import { getItemPoRefs } from "@/lib/mrItemPoRefs";
 import {
   formatCurrency,
   formatDateFriendly,
@@ -546,6 +547,15 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
     // Strict Part Number check
     if (!mrItem.part_number) return false;
     if (po.items.some((poItem) => poItem.part_number === mrItem.part_number)) {
+      return true;
+    }
+    // Link manual dari detail MR/PO (barang disubstitusi saat pembelian -
+    // part_number PO beda dari MR).
+    if (
+      (mrItem.manual_po_links || []).some(
+        (l: any) => l.kode_po === po.kode_po,
+      )
+    ) {
       return true;
     }
     // Item ini pernah "Konversi Barang" (lihat mr-management/edit/[id]/page.tsx)
@@ -2734,10 +2744,9 @@ function DetailPOPageContent({ params }: { params: { id: string } }) {
                                   </div>
 
                                   {/* List PO References - klik utk quick view PO */}
-                                  {mrItem.po_refs &&
-                                    mrItem.po_refs.length > 0 && (
+                                  {getItemPoRefs(mrItem).length > 0 && (
                                       <div className="mt-2 flex flex-wrap gap-1">
-                                        {mrItem.po_refs.map((ref, i) => (
+                                        {getItemPoRefs(mrItem).map((ref, i) => (
                                           <button
                                             key={i}
                                             type="button"
